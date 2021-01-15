@@ -1,0 +1,36 @@
+version: '2.4'
+
+services:
+  movistar_u7d:
+    build: .
+    container_name: movistar_u7d
+    cap_add:
+      - NET_BROADCAST
+      - SYS_ADMIN
+      - SYS_NICE
+    restart: on-failure
+    #networks:
+    #  tvlan:
+    #mac_address: ${MAC_MOVISTAR_U7D}
+    ports:
+      - '8888:8888'
+    volumes:
+      - /etc/localtime:/etc/localtime
+      - /storage/timeshift/u7d:/storage/timeshift/u7d
+    #environment:
+    #  - PUID=${PUID}
+    #  - PGID=${PGID}
+    #  - RUN_OPTS=<run options here> #optional
+    devices:
+      - /dev/dri:/dev/dri
+    cpu_shares: 2048
+    cpus: 2
+    mem_limit: 1gb
+    memswap_limit: 1gb
+    healthcheck:
+      test: nc -4vz localhost 8888
+      interval: 30s
+      timeout: 5s
+      retries: 3
+
+# vim: et ci pi sts=2 sw=2 ts=2
