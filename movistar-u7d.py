@@ -9,6 +9,13 @@ from sanic.response import file_stream, html, json, redirect, stream, text
 import logging
 import os
 
+app_settings = {
+    'REQUEST_TIMEOUT': 900,
+    'RESPONSE_TIMEOUT': 900,
+    'KEEP_ALIVE_TIMEOUT': 1800,
+    'KEEP_ALIVE': True
+}
+
 logging_format = "[%(asctime)s] %(process)d-%(levelname)s "
 logging_format += "%(module)s::%(funcName)s():l%(lineno)d: "
 logging_format += "%(message)s"
@@ -19,7 +26,6 @@ logging.basicConfig(
 )
 log = logging.getLogger()
 
-#CHANNEL = ''
 CHUNK = 65536
 MIME = 'video/MP2T'
 MIN_SIZE = 10 * 1024 * 1024
@@ -28,24 +34,18 @@ U7D = '/storage/timeshift/u7d/'
 UDPXY = 'http://192.168.137.1:4022/rtp/'
 
 app = Sanic('Movistar_u7d')
+app.config.update(app_settings)
+
 testfile = U7D + 'test.ts'
 
-#@app.middleware('response')
-#async def print_on_response(request, response):
-#    log.info(f'Response ended')
 
 @app.get('/rtp/<channel>/<url>')
 async def handle_rtp(request, channel, url):
     try:
         if url.startswith('239'):
-            #global CHANNEL
-            #CHANNEL = channel
             log.info(f'Redirecting to {UDPXY + url}')
-            #return json({'path': request.path, 'url': url, 'channel': CHANNEL}, 403)
+            #return json({'path': request.path, 'url': url, 'channel': channel}, 403)
             return redirect(UDPXY + url)
-        #elif CHANNEL:
-            #return stream(streaming_fn)
-            #return redirect(DAVFS)
         elif url.startswith('video-'):
             start = url.split('-')[1]
             duration = url.split('-')[2].split('.')[0]
