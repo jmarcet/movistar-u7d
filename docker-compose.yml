@@ -5,22 +5,31 @@ services:
     build: .
     container_name: movistar_u7d
     cap_add:
+      - NET_ADMIN
       - NET_BROADCAST
       - SYS_ADMIN
       - SYS_NICE
     restart: on-failure
     #networks:
     #  tvlan:
-    #mac_address: ${MAC_MOVISTAR_U7D}
+    #  iptv:
+    #    ipv4_address: ${IPTV_ADDRESS}
     ports:
       - '8888:8888'
     volumes:
       - /etc/localtime:/etc/localtime
-      - /storage/timeshift/u7d:/storage/timeshift/u7d
-    #environment:
-    #  - PUID=${PUID}
-    #  - PGID=${PGID}
-    #  - RUN_OPTS=<run options here> #optional
+      - ./:/app
+      - ${U7D_HOME}:/home
+      - ${U7D_DIR}:${U7D_DIR}
+    environment:
+      - IPTV_GW=${IPTV_GW}
+      - MAC_IPTV_U7D=${MAC_IPTV_U7D}
+      - MAC_MOVISTAR_U7D=${MAC_MOVISTAR_U7D}
+      - SANIC_HOST=${SANIC_HOST}
+      - SANIC_PORT=${SANIC_PORT}
+      - U7D_GW=${U7D_GW}
+      - U7D_DIR=${U7D_DIR}
+      - UDPXY=${UDPXY}
     devices:
       - /dev/dri:/dev/dri
     cpu_shares: 2048
@@ -28,7 +37,7 @@ services:
     mem_limit: 1gb
     memswap_limit: 1gb
     healthcheck:
-      test: nc -4vz localhost 8888
+      test: ping -c 1 -W 1 www-60.svc.imagenio.telefonica.net | grep -q '172.26.22.23' && nc -vz ${SANIC_HOST} 8888
       interval: 30s
       timeout: 5s
       retries: 3

@@ -8,8 +8,9 @@ import argparse
 import socket
 import json
 import time
+import os
 
-U7D = '/storage/timeshift/u7d/'
+U7D_DIR = os.environ.get('U7D_DIR') or '/storage/timeshift/u7d/'
 
 class RtspClient(object):
     def __init__(self, sock, url):
@@ -19,15 +20,18 @@ class RtspClient(object):
 
     def read_message(self, resp):
         Response = collections.namedtuple('Response', ['version', 'status', 'headers'])
-        version, status = resp.readline().rstrip().split(' ', 1)
-        headers = dict()
-        while True:
-            line = resp.readline().rstrip()
-            if not line:
-                break
-            key, value = line.split(': ', 1)
-            headers[key] = value
-        return Response(version, status, headers)
+        try:
+            version, status = resp.readline().rstrip().split(' ', 1)
+            headers = dict()
+            while True:
+                line = resp.readline().rstrip()
+                if not line:
+                    break
+                key, value = line.split(': ', 1)
+                headers[key] = value
+            return Response(version, status, headers)
+        except Exception as ex:
+            print(f'Excepted with {repr(ex)}')
 
     def serialize_headers(self, headers):
         return '\r\n'.join(map(lambda x: '{0}: {1}'.format(*x), headers.items()))
@@ -90,7 +94,7 @@ def main(args):
         thread.start()
         try:
             print('Dumping to file')
-            subprocess.call(['ffmpeg', '-y', '-re', '-i', stream, '-bsf:v', 'h264_mp4toannexb', '-c', 'copy', '-f', 'mpegts', U7D + 'test2.ts'])
+            subprocess.call(['ffmpeg', '-y', '-re', '-i', stream, '-bsf:v', 'h264_mp4toannexb', '-c', 'copy', '-f', 'mpegts', U7D_DIR + 'test2.ts'])
             #if args.write:
             #    subprocess.call(['ffmpeg', '-fflags', 'nobuffer', '-i', stream, '-c', 'copy', '-map', '0', '-f', 'mpegts', '/tmp/pepe'])
             #else:
