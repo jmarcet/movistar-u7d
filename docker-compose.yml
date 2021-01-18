@@ -12,6 +12,7 @@ services:
     restart: on-failure
     #networks:
     #  tvlan:
+    #    ipv4_address: ${U7D_ADDRESS}
     #  iptv:
     #    ipv4_address: ${IPTV_ADDRESS}
     ports:
@@ -30,6 +31,7 @@ services:
       - U7D_GW=${U7D_GW}
       - U7D_DIR=${U7D_DIR}
       - UDPXY=${UDPXY}
+      - UDPXY_VOD=${UDPXY_VOD}
     devices:
       - /dev/dri:/dev/dri
     cpu_shares: 2048

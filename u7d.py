@@ -10,7 +10,7 @@ import json
 import time
 import os
 
-U7D_DIR = os.environ.get('U7D_DIR') or '/storage/timeshift/u7d/'
+from contextlib import closing
 
 class RtspClient(object):
     def __init__(self, sock, url):
@@ -20,18 +20,15 @@ class RtspClient(object):
 
     def read_message(self, resp):
         Response = collections.namedtuple('Response', ['version', 'status', 'headers'])
-        try:
-            version, status = resp.readline().rstrip().split(' ', 1)
-            headers = dict()
-            while True:
-                line = resp.readline().rstrip()
-                if not line:
-                    break
-                key, value = line.split(': ', 1)
-                headers[key] = value
-            return Response(version, status, headers)
-        except Exception as ex:
-            print(f'Excepted with {repr(ex)}')
+        version, status = resp.readline().rstrip().split(' ', 1)
+        headers = dict()
+        while True:
+            line = resp.readline().rstrip()
+            if not line:
+                break
+            key, value = line.split(': ', 1)
+            headers[key] = value
+        return Response(version, status, headers)
 
     def serialize_headers(self, headers):
         return '\r\n'.join(map(lambda x: '{0}: {1}'.format(*x), headers.items()))
@@ -56,6 +53,12 @@ class RtspClient(object):
         print(f'Response: {resp.version} {resp.status}\n{headers}\n')
         return resp
 
+def find_free_port():
+    with closing(socket.socket(socket.AF_INET, socket.SOCK_DGRAM)) as s:
+        s.bind(('', 0))
+        s.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+        return s.getsockname()[1]
+
 def main(args):
     params = f'action=getCatchUpUrl&extInfoID={args.broadcast}&channelID={args.channel}&service={args.quality}&mode=1'
     resp = urllib.request.urlopen(f'http://www-60.svc.imagenio.telefonica.net:2001/appserver/mvtv.do?{params}')
@@ -64,41 +67,42 @@ def main(args):
         print(f'error: {data["resultText"]}')
         return
     url = data['resultData']['url']
-    #url = 'rtsp://cdvr1.wp0.catchup1.imagenio.telefonica.net:554/rolling_buffer/2543/2021-01-12T07:34:00Z/2021-01-12T09:31:00Z/vxttoken_cGF0aFVSST0vcm9sbGluZ19idWZmZXIvMjU0My8yMDIxLTAxLTEyVDAxOjM0OjAwWi8yMDIxLTAxLTEyVDAzOjMxOjAwWiZleHBpcnk9MTYxMDYyNzcwMyZjLWlwPTEwLjc3LjI1MS4xNiw5N2M2YmM4MTNiNTQzZjA4MDEwYzlhN2NhMTkwODE1NjI1ZjRjMGY5MjcwNjc4MDU4YjBiYTBhNDYwZjAzNjhk'
     print(f'rolling_buffer: {url}')
     uri = urllib.parse.urlparse(url)
     print('Connecting to %s:%d' % (uri.hostname, uri.port))
     headers = {'User-Agent': 'MICA-IP-STB'}
+    client_port = str(find_free_port())
     with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
         s.connect((uri.hostname, uri.port))
         client = RtspClient(s, url)
         client.print(client.send_request('OPTIONS', headers))
         client.print(client.send_request('DESCRIBE', headers))
         setup = headers.copy()
-        setup['Transport'] = 'MP2T/H2221/UDP;unicast;client_port=28246'
+        setup['Transport'] = f'MP2T/H2221/UDP;unicast;client_port={client_port}'
         r = client.print(client.send_request('SETUP', setup))
         play = headers.copy()
         play['Session'] = r.headers['Session'].split(';')[0]
         play['Range'] = 'npt={0}-end'.format(*args.start)
         client.print(client.send_request('PLAY', play))
         host = socket.gethostbyname(socket.gethostname())
-        stream = f'udp://@{host}:28246'
+        stream = f'udp://@{host}:{client_port}'
         session = headers.copy()
         session['Session'] = play['Session']
         def keep_alive():
             while True:
                 time.sleep(30)
-                client.send_request('GET_PARAMETER', session)
+                client.print(client.send_request('GET_PARAMETER', session))
         thread = threading.Thread(target=keep_alive)
         thread.daemon = True
         thread.start()
         try:
-            print('Dumping to file')
-            subprocess.call(['ffmpeg', '-y', '-re', '-i', stream, '-bsf:v', 'h264_mp4toannexb', '-c', 'copy', '-f', 'mpegts', U7D_DIR + 'test2.ts'])
-            #if args.write:
-            #    subprocess.call(['ffmpeg', '-fflags', 'nobuffer', '-i', stream, '-c', 'copy', '-map', '0', '-f', 'mpegts', '/tmp/pepe'])
-            #else:
-            #subprocess.call(['vlc', stream])
+            command = ['socat']
+            command.append('-u')
+            command.append(f'UDP4-LISTEN:{client_port}')
+            command.append('UDP4-DATAGRAM:239.1.0.1:6667,broadcast')
+            #command.append('OPEN:/storage/timeshift/u7d/test2.ts,creat,trunc')
+            print(f'Opening {stream} with {command}')
+            subprocess.call(command)
         except KeyboardInterrupt:
             pass
         finally:
@@ -107,8 +111,10 @@ def main(args):
 if __name__ == '__main__':
     services = {'sd': 1, 'hd': 2}
     parser = argparse.ArgumentParser('Stream content from the Movistar U7D service.')
-    parser.add_argument('broadcast', help='broadcast id')
     parser.add_argument('channel', help='channel id')
+    parser.add_argument('broadcast', help='broadcast id')
+    parser.add_argument('--dumpfile', '-f', help='dump file path', default='test2.ts')
+    parser.add_argument('--duration', '-t', default=[0], type=int, help='duration in seconds')
     parser.add_argument('--quality', '-q', choices=services, nargs=1, default=['hd'], help='stream quality')
     parser.add_argument('--start', '-s', metavar='seconds', nargs=1, default=[0], type=int, help='stream start offset')
     args = parser.parse_args()

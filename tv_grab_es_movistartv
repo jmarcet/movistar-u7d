@@ -1062,6 +1062,8 @@ class XMLTV:
         for channel_id in channels:
             if channel_id in self.__channels:
                 channel_name = self.__channels[channel_id]['name']
+                if channel_name == 'FDF':
+                    continue
                 channel_key = channel_id
                 channel_ip = self.__channels[channel_id]['address']
                 channel_port = str(self.__channels[channel_id]['port'])
@@ -1076,7 +1078,7 @@ class XMLTV:
                 m3u += '#EXTINF:-1 tvg-chnum="%s" ' % channel_number
                 m3u += 'tvg-id="%s.movistar.tv" group-title="%s" ' % (channel_id, channel_tag)
                 m3u += 'tvg-logo="%s",%s\n' % (channel_logo, channel_name)
-                m3u += 'http://%s/rtp/%s/%s:%s\n' % (sanic, channel_id, channel_ip, channel_port)
+                m3u += 'http://%s/rtp/%s/%s/%s:%s\n' % (sanic, channel_id, channel_key, channel_ip, channel_port)
         return m3u
 
     @staticmethod
