@@ -1,6 +1,5 @@
 #!/usr/bin/env python3
 
-#from asyncio import sleep
 from sanic import Sanic, response
 from sanic.log import logger
 
@@ -10,7 +9,7 @@ import glob
 import json
 import logging
 import os
-import pgrep
+import psutil
 import sys
 import time
 
@@ -75,9 +74,13 @@ async def handle_guide(request):
 async def handle_rtp(request, channel_id, channel_key, url):
     global _lastprogram, _proc
     if url.startswith('239'):
-        if pgrep.pgrep('socat'):
-            p = await asyncio.create_subprocess_exec('/usr/bin/pkill', 'socat')
-            await p.wait()
+        if _proc and _proc.pid:
+            #log.info(f'_proc.kill() on channel change')
+            try:
+                _proc.kill()
+            except Exception as ex:
+                log.info(f'_proc.kill() EXCEPTED with {repr(ex)}')
+        [ proc.kill() for proc in psutil.process_iter() if proc.name() == 'socat' ]
         _lastprogram = ()
         _proc = None
         log.info(f'Redirecting to {UDPXY + url}')
@@ -99,40 +102,38 @@ async def handle_rtp(request, channel_id, channel_key, url):
             offset = str(int(new_start) - int(start))
 
         if not program_id:
-            return response.json({'status': 'URL not understood'}, 404)
+            return response.json({'status': 'channel_id={channel_id} program_id={program_id} not found'}, 404)
 
-        log.info(f'Found program: channel={channel_id} program_id={program_id} offset={offset}')
+        log.info(f'Found program: channel_id={channel_id} program_id={program_id} offset={offset}')
         log.info(f'Need to exec: /app/u7d.py {channel_id} {program_id} --start {offset} --live {islive}')
-        if _proc:
-            p = await asyncio.create_subprocess_exec('/usr/bin/pkill', 'socat')
-            await p.wait()
+        if _proc and _proc.pid:
+            #log.info(f'_proc.kill() before new u7d.py')
             try:
                 _proc.kill()
             except Exception as ex:
-                log.info(f'EXCEPTED 2 with {repr(ex)}')
-        _proc = await asyncio.create_subprocess_exec('/app/u7d.py', channel_id, program_id, '--start', offset, '--islive', islive)
+                log.info(f'_proc.kill() EXCEPTED with {repr(ex)}')
+        [ proc.kill() for proc in psutil.process_iter() if proc.name() == 'socat' ]
+        _proc = await asyncio.create_subprocess_exec('/app/u7d.py', channel_id, program_id,
+                                                     '--start', offset, '--islive', islive)
+                                                     #stdout=asyncio.subprocess.PIPE,
+                                                     #stderr=asyncio.subprocess.PIPE)
 
-        #log.info(str({'path': request.path, 'url': url,
+        #log.info(str({'path': request.path, 'url': url, 'islive': str(islive),
         #              'channel_id': channel_id, 'channel_key': channel_key,
         #              'start': start, 'offset': offset, 'duration': duration}))
 
         log.info(f'Streaming response from udpxy')
         async def sample_streaming_fn(response):
-            global _proc
             async with aiohttp.ClientSession() as session:
                 async with session.get(UDPXY_VOD) as resp:
-                    log.info(f'Status from udpxy = {resp.status}')
                     while True:
-                        if not (data := await resp.content.read(CHUNK)):
+                        try:
+                            if not (data := await resp.content.read(CHUNK)):
+                                break
+                            await response.write(data)
+                        except Exception as ex:
+                            log.info(f'udpxy session EXCEPTED with {repr(ex)}')
                             break
-                        await response.write(data)
-            if _proc:
-                log.info(f'_proc.kill() sample_streaming_fn')
-                try:
-                    _proc.kill()
-                except Exception as ex:
-                    log.info(f'EXCEPTED 3 with {repr(ex)}')
-                _proc = None
         return response.stream(sample_streaming_fn, content_type=MIME)
     else:
         _lastprogram = ()
