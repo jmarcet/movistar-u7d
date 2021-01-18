@@ -12,6 +12,7 @@ import logging
 import os
 import pgrep
 import sys
+import time
 
 HOME = os.environ.get('HOME') or '/home/'
 SANIC_HOST = os.environ.get('SANIC_HOST') or '127.0.0.1'
@@ -89,17 +90,19 @@ async def handle_rtp(request, channel_id, channel_key, url):
 
         if 'data' in EPG_DATA and channel_key in EPG_DATA['data'] and start in EPG_DATA['data'][channel_key]:
             program_id = str(EPG_DATA['data'][channel_key][start]['pid'])
-            _lastprogram = (channel_id, program_id, start)
+            # if end time is bigger than current timestamp, the show is live
+            islive = str(int(int(EPG_DATA['data'][channel_key][start]['end']) > int(time.time())))
+            _lastprogram = (channel_id, program_id, start, islive)
         elif _lastprogram:
             new_start = start
-            channel_id, program_id, start = _lastprogram
+            channel_id, program_id, start, islive = _lastprogram
             offset = str(int(new_start) - int(start))
 
         if not program_id:
             return response.json({'status': 'URL not understood'}, 404)
 
         log.info(f'Found program: channel={channel_id} program_id={program_id} offset={offset}')
-        log.info(f'Need to exec: /app/u7d.py {channel_id} {program_id} --start {offset}')
+        log.info(f'Need to exec: /app/u7d.py {channel_id} {program_id} --start {offset} --live {islive}')
         if _proc:
             p = await asyncio.create_subprocess_exec('/usr/bin/pkill', 'socat')
             await p.wait()
@@ -107,7 +110,7 @@ async def handle_rtp(request, channel_id, channel_key, url):
                 _proc.kill()
             except Exception as ex:
                 log.info(f'EXCEPTED 2 with {repr(ex)}')
-        _proc = await asyncio.create_subprocess_exec('/app/u7d.py', channel_id, program_id, '--start', offset)
+        _proc = await asyncio.create_subprocess_exec('/app/u7d.py', channel_id, program_id, '--start', offset, '--islive', islive)
 
         #log.info(str({'path': request.path, 'url': url,
         #              'channel_id': channel_id, 'channel_key': channel_key,

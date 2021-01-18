@@ -41,6 +41,11 @@ class RtspClient(object):
         self.cseq += 1
         req = f'{method} {url} RTSP/1.0\r\n{headers}\r\n\r\n'
         self.sock.send(req.encode())
+        if args.islive and method == 'DESCRIBE':
+            resp = self.sock.recv(4096).decode()
+            recs = resp.split('\r\n')
+            newurl=recs[-1].split(':', 1)[1:][0].rstrip()
+            return newurl
         with self.sock.makefile('r') as f:
             resp = self.read_message(f)
         return Request(req, resp)
@@ -76,7 +81,11 @@ def main(args):
         s.connect((uri.hostname, uri.port))
         client = RtspClient(s, url)
         client.print(client.send_request('OPTIONS', headers))
-        client.print(client.send_request('DESCRIBE', headers))
+        if args.islive:
+            url = client.send_request('DESCRIBE', headers)
+            client = RtspClient(s, url)
+        else:
+            client.print(client.send_request('DESCRIBE', headers))
         setup = headers.copy()
         setup['Transport'] = f'MP2T/H2221/UDP;unicast;client_port={client_port}'
         r = client.print(client.send_request('SETUP', setup))
@@ -100,7 +109,6 @@ def main(args):
             command.append('-u')
             command.append(f'UDP4-LISTEN:{client_port}')
             command.append('UDP4-DATAGRAM:239.1.0.1:6667,broadcast')
-            #command.append('OPEN:/storage/timeshift/u7d/test2.ts,creat,trunc')
             print(f'Opening {stream} with {command}')
             subprocess.call(command)
         except KeyboardInterrupt:
@@ -115,6 +123,7 @@ if __name__ == '__main__':
     parser.add_argument('broadcast', help='broadcast id')
     parser.add_argument('--dumpfile', '-f', help='dump file path', default='test2.ts')
     parser.add_argument('--duration', '-t', default=[0], type=int, help='duration in seconds')
+    parser.add_argument('--islive', '-l', default=[0], type=int, help='is live')
     parser.add_argument('--quality', '-q', choices=services, nargs=1, default=['hd'], help='stream quality')
     parser.add_argument('--start', '-s', metavar='seconds', nargs=1, default=[0], type=int, help='stream start offset')
     args = parser.parse_args()
