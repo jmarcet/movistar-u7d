@@ -88,6 +88,7 @@ async def handle_rtp(request, channel_id, channel_key, url):
     elif url.startswith('video-'):
         start = url.split('-')[1]
         duration = url.split('-')[2].split('.')[0]
+        last_event = None
         offset = '0'
         program_id = None
 
@@ -100,12 +101,22 @@ async def handle_rtp(request, channel_id, channel_key, url):
             new_start = start
             channel_id, program_id, start, islive = _lastprogram
             offset = str(int(new_start) - int(start))
+        elif 'data' in EPG_DATA and channel_key in EPG_DATA['data']:
+            for event in sorted(EPG_DATA['data'][channel_key].keys()):
+                if int(event) > int(start):
+                    break
+                last_event = event
+            if last_event:
+                islive = '1'
+                offset = str(int(start) - int(last_event))
+                program_id = str(EPG_DATA['data'][channel_key][last_event]['pid'])
+                _lastprogram = (channel_id, program_id, last_event, islive)
 
         if not program_id:
             return response.json({'status': 'channel_id={channel_id} program_id={program_id} not found'}, 404)
 
         log.info(f'Found program: channel_id={channel_id} program_id={program_id} offset={offset}')
-        log.info(f'Need to exec: /app/u7d.py {channel_id} {program_id} --start {offset} --live {islive}')
+        log.info(f'Need to exec: /app/u7d.py {channel_id} {program_id} --start {offset} --islive {islive}')
         if _proc and _proc.pid:
             #log.info(f'_proc.kill() before new u7d.py')
             try:
@@ -118,9 +129,9 @@ async def handle_rtp(request, channel_id, channel_key, url):
                                                      #stdout=asyncio.subprocess.PIPE,
                                                      #stderr=asyncio.subprocess.PIPE)
 
-        #log.info(str({'path': request.path, 'url': url, 'islive': str(islive),
-        #              'channel_id': channel_id, 'channel_key': channel_key,
-        #              'start': start, 'offset': offset, 'duration': duration}))
+        log.info(str({'path': request.path, 'url': url, 'islive': str(islive),
+                      'channel_id': channel_id, 'channel_key': channel_key,
+                      'start': start, 'offset': offset, 'duration': duration}))
 
         log.info(f'Streaming response from udpxy')
         async def sample_streaming_fn(response):
