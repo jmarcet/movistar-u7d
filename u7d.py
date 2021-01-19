@@ -21,7 +21,10 @@ class RtspClient(object):
 
     def read_message(self, resp):
         Response = collections.namedtuple('Response', ['version', 'status', 'headers'])
-        version, status = resp.readline().rstrip().split(' ', 1)
+        temp = resp.readline().rstrip()
+        print(f'read_message {temp}')
+        #version, status = resp.readline().rstrip().split(' ', 1)
+        version, status = temp.split(' ', 1)
         headers = dict()
         while True:
             line = resp.readline().rstrip()
@@ -56,7 +59,26 @@ class RtspClient(object):
             self.ip = recs[-1].split(':', 1)[1:][0].rstrip()
             Response = collections.namedtuple('Response', ['version', 'status', 'headers'])
             resp = Response(version, status, headers)
-            print(f'send_request DESCRIBE-> resp={resp}')
+            print(f'send_request DESCRIBE resp={resp}')
+        elif method == 'GET_PARAMETER':
+            resp = self.sock.recv(4096).decode()
+            #print(f'send_request GET_PARAMETER resp={resp}')
+            recs = resp.split('\r\n')
+            version, status = recs[0].rstrip().split(' ', 1)
+            recs = recs[1:]
+            headers = dict()
+            for linenr in range(len(recs)):
+                line = recs[linenr]
+                if not line:
+                    break
+                key, value = line.split(': ', 1)
+                headers[key] = value
+            linenr += 1
+            if linenr < len(recs):
+                body = recs[linenr:]
+            print(body)
+            Response = collections.namedtuple('Response', ['version', 'status', 'headers'])
+            resp = Response(version, status, headers)
         else:
             with self.sock.makefile('r') as f:
                 resp = self.read_message(f)
@@ -128,7 +150,7 @@ def main(args):
         get_parameter['Content-length'] = 10
         def keep_alive():
             while True:
-                time.sleep(5)
+                time.sleep(30)
                 client.print(client.send_request('GET_PARAMETER', get_parameter))
         thread = threading.Thread(target=keep_alive)
         thread.daemon = True
