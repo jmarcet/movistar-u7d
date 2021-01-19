@@ -50,6 +50,7 @@ class RtspClient(object):
         self.sock.send(req.encode())
         if method == 'DESCRIBE':
             resp = self.sock.recv(4096).decode()
+            print(f'send_request resp={resp}')
             recs = resp.split('\r\n')
             version, status = recs[0].rstrip().split(' ', 1)
             self.ip = recs[-1].split(':', 1)[1:][0].rstrip()
@@ -124,10 +125,10 @@ def main(args):
         session['Session'] = play['Session']
         get_parameter = session.copy()
         get_parameter['Content-type'] = 'text/parameters'
-        get_parameter['Content-length'] = '10'
+        get_parameter['Content-length'] = 10
         def keep_alive():
             while True:
-                time.sleep(30)
+                time.sleep(5)
                 client.print(client.send_request('GET_PARAMETER', get_parameter))
         thread = threading.Thread(target=keep_alive)
         thread.daemon = True

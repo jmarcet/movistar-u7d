@@ -26,7 +26,11 @@ CHANNELS = os.path.join(HOME, 'MovistarTV.m3u')
 
 
 EPG_DATA = {}
-for epg in glob.glob('/home/epg.*.json'):
+EPG_CACHE = '/home/.xmltv/cache/epg.json'
+epgs = glob.glob('/home/epg.*.json')
+if os.path.exists(EPG_CACHE):
+    epgs.append('/home/.xmltv/cache/epg.json')
+for epg in epgs:
     day_epg = json.loads(open(epg).read())
     if EPG_DATA:
         EPG_DATA = {**EPG_DATA, **day_epg}
