@@ -13,6 +13,6 @@ echo "nameserver 127.0.0.1" >> /etc/resolv.conf
 echo "172.26.22.23 www-60.svc.imagenio.telefonica.net" >> /etc/hosts
 
 while (true); do 
-    /app/movistar-u7d.py
+    nice -n -19 ionice -c 1 -n 0 /app/movistar-u7d.py
     sleep 1
 done

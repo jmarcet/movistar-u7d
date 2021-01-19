@@ -19,7 +19,7 @@ SANIC_PORT = os.environ.get('SANIC_PORT') or '8888'
 UDPXY = os.environ.get('UDPXY') or 'http://192.168.137.1:4022/rtp/'
 UDPXY_VOD = os.environ.get('UDPXY_VOD') or 'http://192.168.137.1:4022/udp/239.1.0.1:6667'
 
-CHUNK = 65536
+CHUNK = 42112
 MIME = 'video/MP2T'
 GUIDE = os.path.join(HOME, 'guide.xml')
 CHANNELS = os.path.join(HOME, 'MovistarTV.m3u')
@@ -33,13 +33,6 @@ for epg in glob.glob('/home/epg.*.json'):
     else:
         EPG_DATA = day_epg
 
-app_settings = {
-    'REQUEST_TIMEOUT': 5,
-    'RESPONSE_TIMEOUT': 5,
-    'KEEP_ALIVE_TIMEOUT': 7200,
-    'KEEP_ALIVE': True
-}
-
 logging_format = "[%(asctime)s] %(process)d-%(levelname)s "
 logging_format += "%(module)s::%(funcName)s():l%(lineno)d: "
 logging_format += "%(message)s"
@@ -51,6 +44,12 @@ logging.basicConfig(
 log = logging.getLogger()
 
 app = Sanic('Movistar_u7d')
+app_settings = {
+    'REQUEST_TIMEOUT': 60,
+    'RESPONSE_TIMEOUT': 60,
+    'KEEP_ALIVE_TIMEOUT': 7200,
+    'KEEP_ALIVE': True
+}
 app.config.update(app_settings)
 
 _lastprogram = ()
@@ -72,6 +71,7 @@ async def handle_guide(request):
 
 @app.get('/rtp/<channel_id>/<channel_key>/<url>')
 async def handle_rtp(request, channel_id, channel_key, url):
+    log.info(f'handle_rtp: {repr(request)}')
     global _lastprogram, _proc
     if url.startswith('239'):
         if _proc and _proc.pid:
@@ -94,12 +94,10 @@ async def handle_rtp(request, channel_id, channel_key, url):
 
         if 'data' in EPG_DATA and channel_key in EPG_DATA['data'] and start in EPG_DATA['data'][channel_key]:
             program_id = str(EPG_DATA['data'][channel_key][start]['pid'])
-            # if end time is bigger than current timestamp, the show is live
-            islive = str(int(int(EPG_DATA['data'][channel_key][start]['end']) > int(time.time())))
-            _lastprogram = (channel_id, program_id, start, islive)
+            _lastprogram = (channel_id, program_id, start)
         elif _lastprogram:
             new_start = start
-            channel_id, program_id, start, islive = _lastprogram
+            channel_id, program_id, start = _lastprogram
             offset = str(int(new_start) - int(start))
         elif 'data' in EPG_DATA and channel_key in EPG_DATA['data']:
             for event in sorted(EPG_DATA['data'][channel_key].keys()):
@@ -107,16 +105,15 @@ async def handle_rtp(request, channel_id, channel_key, url):
                     break
                 last_event = event
             if last_event:
-                islive = '1'
                 offset = str(int(start) - int(last_event))
                 program_id = str(EPG_DATA['data'][channel_key][last_event]['pid'])
-                _lastprogram = (channel_id, program_id, last_event, islive)
+                _lastprogram = (channel_id, program_id, last_event)
 
         if not program_id:
             return response.json({'status': 'channel_id={channel_id} program_id={program_id} not found'}, 404)
 
         log.info(f'Found program: channel_id={channel_id} program_id={program_id} offset={offset}')
-        log.info(f'Need to exec: /app/u7d.py {channel_id} {program_id} --start {offset} --islive {islive}')
+        log.info(f'Need to exec: /app/u7d.py {channel_id} {program_id} --start {offset}')
         if _proc and _proc.pid:
             #log.info(f'_proc.kill() before new u7d.py')
             try:
@@ -125,17 +122,17 @@ async def handle_rtp(request, channel_id, channel_key, url):
                 log.info(f'_proc.kill() EXCEPTED with {repr(ex)}')
         [ proc.kill() for proc in psutil.process_iter() if proc.name() == 'socat' ]
         _proc = await asyncio.create_subprocess_exec('/app/u7d.py', channel_id, program_id,
-                                                     '--start', offset, '--islive', islive)
+                                                     '--start', offset)
                                                      #stdout=asyncio.subprocess.PIPE,
                                                      #stderr=asyncio.subprocess.PIPE)
 
-        log.info(str({'path': request.path, 'url': url, 'islive': str(islive),
+        log.info(str({'path': request.path, 'url': url,
                       'channel_id': channel_id, 'channel_key': channel_key,
                       'start': start, 'offset': offset, 'duration': duration}))
 
         log.info(f'Streaming response from udpxy')
         async def sample_streaming_fn(response):
-            async with aiohttp.ClientSession() as session:
+            async with aiohttp.ClientSession(timeout=aiohttp.ClientTimeout(sock_read=60)) as session:
                 async with session.get(UDPXY_VOD) as resp:
                     while True:
                         try:

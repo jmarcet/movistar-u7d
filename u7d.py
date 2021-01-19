@@ -17,6 +17,7 @@ class RtspClient(object):
         self.sock = sock
         self.url = url
         self.cseq = 1
+        self.ip = None
 
     def read_message(self, resp):
         Response = collections.namedtuple('Response', ['version', 'status', 'headers'])
@@ -26,7 +27,10 @@ class RtspClient(object):
             line = resp.readline().rstrip()
             if not line:
                 break
-            key, value = line.split(': ', 1)
+            try:
+                key, value = line.split(': ', 1)
+            except:
+                continue
             headers[key] = value
         return Response(version, status, headers)
 
@@ -37,17 +41,35 @@ class RtspClient(object):
         Request = collections.namedtuple('Request', ['request', 'response'])
         url = '*' if method == 'OPTIONS' else self.url
         headers['CSeq'] = self.cseq
-        headers = self.serialize_headers(headers)
+        ser_headers = self.serialize_headers(headers)
         self.cseq += 1
-        req = f'{method} {url} RTSP/1.0\r\n{headers}\r\n\r\n'
+        if method == 'GET_PARAMETER':
+            req = f'{method} {url} RTSP/1.0\r\n{ser_headers}\r\n\r\nposition\r\n\r\n'
+        else:
+            req = f'{method} {url} RTSP/1.0\r\n{ser_headers}\r\n\r\n'
         self.sock.send(req.encode())
-        if args.islive and method == 'DESCRIBE':
+        if method == 'DESCRIBE':
             resp = self.sock.recv(4096).decode()
             recs = resp.split('\r\n')
-            newurl=recs[-1].split(':', 1)[1:][0].rstrip()
-            return newurl
-        with self.sock.makefile('r') as f:
-            resp = self.read_message(f)
+            version, status = recs[0].rstrip().split(' ', 1)
+            self.ip = recs[-1].split(':', 1)[1:][0].rstrip()
+            Response = collections.namedtuple('Response', ['version', 'status', 'headers'])
+            resp = Response(version, status, headers)
+            print(f'send_request DESCRIBE-> resp={resp}')
+        else:
+            with self.sock.makefile('r') as f:
+                resp = self.read_message(f)
+            if method == 'SETUP' and resp.status != '200 OK':
+                print(f'send_request SETUP 1 resp={resp}')
+                self.url = self.ip
+                headers['CSeq'] = self.cseq
+                self.cseq += 1
+                ser_headers = self.serialize_headers(headers)
+                req = f'{method} {self.url} RTSP/1.0\r\n{ser_headers}\r\n\r\n'
+                self.sock.send(req.encode())
+                with self.sock.makefile('r') as f:
+                    resp = self.read_message(f)
+                    print(f'send_request SETUP 2 resp={resp}')
         return Request(req, resp)
 
     def print(self, req):
@@ -75,40 +97,46 @@ def main(args):
     print(f'rolling_buffer: {url}')
     uri = urllib.parse.urlparse(url)
     print('Connecting to %s:%d' % (uri.hostname, uri.port))
-    headers = {'User-Agent': 'MICA-IP-STB'}
+    headers = {'CSeq': '', 'User-Agent': 'MICA-IP-STB'}
     client_port = str(find_free_port())
     with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
         s.connect((uri.hostname, uri.port))
         client = RtspClient(s, url)
         client.print(client.send_request('OPTIONS', headers))
-        if args.islive:
-            url = client.send_request('DESCRIBE', headers)
-            client = RtspClient(s, url)
-        else:
-            client.print(client.send_request('DESCRIBE', headers))
+        describe = headers.copy()
+        describe['Accept'] = 'application/sdp'
+        client.print(client.send_request('DESCRIBE', describe))
         setup = headers.copy()
         setup['Transport'] = f'MP2T/H2221/UDP;unicast;client_port={client_port}'
+        setup['x-mayNotify'] = ''
         r = client.print(client.send_request('SETUP', setup))
         play = headers.copy()
+        play = {'CSeq': '', 'Session': '', 'User-Agent': 'MICA-IP-STB'}
         play['Session'] = r.headers['Session'].split(';')[0]
         play['Range'] = 'npt={0}-end'.format(*args.start)
+        play['Scale'] = '1.000'
+        play['x-playNow'] = ''
+        play['x-noFlush'] = ''
         client.print(client.send_request('PLAY', play))
         host = socket.gethostbyname(socket.gethostname())
         stream = f'udp://@{host}:{client_port}'
-        session = headers.copy()
+        session = {'User-Agent': 'MICA-IP-STB', 'Session': '', 'CSeq': ''}
         session['Session'] = play['Session']
+        get_parameter = session.copy()
+        get_parameter['Content-type'] = 'text/parameters'
+        get_parameter['Content-length'] = '10'
         def keep_alive():
             while True:
                 time.sleep(30)
-                client.print(client.send_request('GET_PARAMETER', session))
+                client.print(client.send_request('GET_PARAMETER', get_parameter))
         thread = threading.Thread(target=keep_alive)
         thread.daemon = True
         thread.start()
         try:
             command = ['socat']
             command.append('-u')
-            command.append(f'UDP4-LISTEN:{client_port}')
-            command.append('UDP4-DATAGRAM:239.1.0.1:6667,broadcast')
+            command.append(f'UDP4-LISTEN:{client_port},tos=40')
+            command.append('UDP4-DATAGRAM:239.1.0.1:6667,broadcast,keepalive,tos=40')
             print(f'Opening {stream} with {command}')
             subprocess.call(command)
         except KeyboardInterrupt:
@@ -123,7 +151,6 @@ if __name__ == '__main__':
     parser.add_argument('broadcast', help='broadcast id')
     parser.add_argument('--dumpfile', '-f', help='dump file path', default='test2.ts')
     parser.add_argument('--duration', '-t', default=[0], type=int, help='duration in seconds')
-    parser.add_argument('--islive', '-l', default=[0], type=int, help='is live')
     parser.add_argument('--quality', '-q', choices=services, nargs=1, default=['hd'], help='stream quality')
     parser.add_argument('--start', '-s', metavar='seconds', nargs=1, default=[0], type=int, help='stream start offset')
     args = parser.parse_args()

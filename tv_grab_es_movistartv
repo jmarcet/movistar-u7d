@@ -1062,7 +1062,7 @@ class XMLTV:
         for channel_id in channels:
             if channel_id in self.__channels:
                 channel_name = self.__channels[channel_id]['name']
-                if channel_name == 'FDF':
+                if channel_name == 'FDF' or channel_id == '4809': #Barça TV HD
                     continue
                 channel_key = channel_id
                 channel_ip = self.__channels[channel_id]['address']
