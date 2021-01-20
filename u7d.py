@@ -99,9 +99,9 @@ def main(args):
         return
 
     url = data['resultData']['url']
-    print(f'rolling_buffer: {url}', flush=True)
+    print('-' * 135)
+    print(f'Opening rolling_buffer: {url}', flush=True)
     uri = urllib.parse.urlparse(url)
-    print('Connecting to %s:%d' % (uri.hostname, uri.port), flush=True)
     headers = {'CSeq': '', 'User-Agent': UA}
     client_port = str(find_free_port())
 
@@ -114,7 +114,6 @@ def main(args):
         client.print(client.send_request('DESCRIBE', describe))
         setup = headers.copy()
         setup['Transport'] = f'MP2T/H2221/UDP;unicast;client_port={client_port}'
-        #setup['x-mayNotify'] = ''
         r = client.print(client.send_request('SETUP', setup))
         print(f'RESP {resp.status}')
         if resp.status != '200 OK':

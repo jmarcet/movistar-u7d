@@ -48,13 +48,7 @@ logging.basicConfig(
 log = logging.getLogger()
 
 app = Sanic('Movistar_u7d')
-app_settings = {
-    'REQUEST_TIMEOUT': 60,
-    'RESPONSE_TIMEOUT': 60,
-    'KEEP_ALIVE': False
-}
-#    'KEEP_ALIVE_TIMEOUT': 7200,
-app.config.update(app_settings)
+app.config.update({'KEEP_ALIVE': False, 'REQUEST_BUFFER_QUEUE_SIZE': 65536})
 
 _lastprogram = ()
 _proc = None
@@ -81,7 +75,7 @@ async def handle_rtp(request, channel_id, channel_key, url):
     # Nromal IPTV Channel
     if url.startswith('239'):
         if _proc and _proc.pid:
-            #log.info(f'_proc.kill() on channel change')
+            log.info(f'_proc.kill() on channel change')
             try:
                 _proc.kill()
             except Exception as ex:
@@ -124,7 +118,7 @@ async def handle_rtp(request, channel_id, channel_key, url):
         log.info(f'Need to exec: /app/u7d.py {channel_id} {program_id} --start {offset}')
 
         if _proc and _proc.pid:
-            #log.info(f'_proc.kill() before new u7d.py')
+            log.info(f'_proc.kill() before new u7d.py')
             try:
                 _proc.kill()
             except Exception as ex:
