@@ -30,9 +30,9 @@ class RtspClient(object):
         resp = self.sock.recv(4096).decode()
 
         if not ' 200 OK' in resp:
-            print('=' * 135)
-            print(f'read_message resp={resp}', flush=True)
-            print('=' * 135)
+            #print('=' * 135)
+            #print(f'read_message resp={resp}', flush=True)
+            #print('=' * 135)
             version, status = resp.rstrip().split(' ', 1)
             return Response(version, status, {}, '')
 
@@ -46,8 +46,11 @@ class RtspClient(object):
             headers[key] = value
 
         if 'Content-Length' in headers.keys():
+            length = headers['Content-Length']
+            #print(f'read_message got length {length}')
             if 'a=control:rtsp:' in body:
                 self.ip = body.split('\n')[-1].split(':', 1)[1].strip()
+                #print(f'read_message got AN IP {self.ip}')
         else:
             body = ''
 
@@ -121,9 +124,10 @@ def main(args):
         describe['Accept'] = 'application/sdp'
         client.print(client.send_request('DESCRIBE', describe))
         setup = headers.copy()
-        setup.update({'Transport': f'MP2T/H2221/UDP;unicast;client_port={client_port}', 'x-mayNotify': ''})
+        setup.update({'Transport': f'MP2T/H2221/UDP;unicast;client_port={client_port}'})
         r = client.print(client.send_request('SETUP', setup))
-        if resp.status != 200:
+        if r.status != '200 OK':
+            #print(f'NEEDS POSITION status={r.status}')
             needs_position = True
             r = client.print(client.send_request('SETUP2', setup))
         play = headers.copy()
