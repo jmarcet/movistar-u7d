@@ -48,7 +48,7 @@ logging.basicConfig(
 log = logging.getLogger()
 
 app = Sanic('Movistar_u7d')
-app.config.update({'KEEP_ALIVE': False, 'REQUEST_BUFFER_QUEUE_SIZE': 65536})
+app.config.update({'KEEP_ALIVE': False, 'REQUEST_BUFFER_QUEUE_SIZE': CHUNK})
 
 _lastprogram = ()
 _proc = None
@@ -149,4 +149,4 @@ async def handle_rtp(request, channel_id, channel_key, url):
         return response.json({'status': 'URL not understood'}, 404)
 
 if __name__ == '__main__':
-    app.run(host=SANIC_HOST, port=SANIC_PORT, workers=1, debug=True, access_log=True)
+    app.run(host=SANIC_HOST, port=SANIC_PORT, workers=1, debug=True, access_log=False)

@@ -28,6 +28,9 @@ class RtspClient(object):
         resp = self.sock.recv(4096).decode()
 
         if not ' 200 OK' in resp:
+            print('=' * 135)
+            print(f'read_message resp={resp}', flush=True)
+            print('=' * 135)
             version, status = resp.rstrip().split(' ', 1)
             return Response(version, status, {}, '')
 
@@ -107,13 +110,14 @@ def main(args):
 
     with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
         s.connect((uri.hostname, uri.port))
+        s.settimeout(60)
         client = RtspClient(s, url)
         client.print(client.send_request('OPTIONS', headers))
         describe = headers.copy()
         describe['Accept'] = 'application/sdp'
         client.print(client.send_request('DESCRIBE', describe))
         setup = headers.copy()
-        setup['Transport'] = f'MP2T/H2221/UDP;unicast;client_port={client_port}'
+        setup.update({'Transport': f'MP2T/H2221/UDP;unicast;client_port={client_port}', 'x-mayNotify': ''})
         r = client.print(client.send_request('SETUP', setup))
         print(f'RESP {resp.status}')
         if resp.status != '200 OK':
