@@ -17,6 +17,8 @@ Request = namedtuple('Request', ['request', 'response'])
 Response = namedtuple('Response', ['version', 'status', 'headers', 'body'])
 UA = 'MICA-IP-STB'
 
+needs_position = False
+
 class RtspClient(object):
     def __init__(self, sock, url):
         self.sock = sock
@@ -55,6 +57,7 @@ class RtspClient(object):
         return '\r\n'.join(map(lambda x: '{0}: {1}'.format(*x), headers.items()))
 
     def send_request(self, method, headers={}):
+        global needs_position
         if method == 'OPTIONS':
             url = '*'
         elif method == 'SETUP2':
@@ -67,7 +70,7 @@ class RtspClient(object):
         ser_headers = self.serialize_headers(headers)
         self.cseq += 1
 
-        if method == 'GET_PARAMETER':
+        if method == 'GET_PARAMETER' and needs_position:
             req = f'{method} {url} RTSP/1.0\r\n{ser_headers}\r\n\r\nposition\r\n\r\n'
         else:
             req = f'{method} {url} RTSP/1.0\r\n{ser_headers}\r\n\r\n'
@@ -94,6 +97,7 @@ def find_free_port():
         return s.getsockname()[1]
 
 def main(args):
+    global needs_position
     params = f'action=getCatchUpUrl&extInfoID={args.broadcast}&channelID={args.channel}&service={args.quality}&mode=1'
     resp = urllib.request.urlopen(f'http://www-60.svc.imagenio.telefonica.net:2001/appserver/mvtv.do?{params}')
     data = json.loads(resp.read())
@@ -119,8 +123,8 @@ def main(args):
         setup = headers.copy()
         setup.update({'Transport': f'MP2T/H2221/UDP;unicast;client_port={client_port}', 'x-mayNotify': ''})
         r = client.print(client.send_request('SETUP', setup))
-        print(f'RESP {resp.status}')
-        if resp.status != '200 OK':
+        if resp.status != 200:
+            needs_position = True
             r = client.print(client.send_request('SETUP2', setup))
         play = headers.copy()
         play = {'CSeq': '', 'Session': '', 'User-Agent': UA}
@@ -132,7 +136,8 @@ def main(args):
         stream = f'udp://@{host}:{client_port}'
         session = {'User-Agent': UA, 'Session': play['Session'], 'CSeq': ''}
         get_parameter = session.copy()
-        get_parameter.update({'Content-type': 'text/parameters', 'Content-length': 10})
+        if needs_position:
+            get_parameter.update({'Content-type': 'text/parameters', 'Content-length': 10})
 
         def keep_alive():
             while True:
