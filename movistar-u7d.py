@@ -51,8 +51,8 @@ app = Sanic('Movistar_u7d')
 app_settings = {
     'REQUEST_TIMEOUT': 60,
     'RESPONSE_TIMEOUT': 60,
-    'KEEP_ALIVE_TIMEOUT': 7200,
-    'KEEP_ALIVE': True
+    #'KEEP_ALIVE_TIMEOUT': 7200,
+    'KEEP_ALIVE': False
 }
 app.config.update(app_settings)
 
@@ -77,6 +77,8 @@ async def handle_guide(request):
 async def handle_rtp(request, channel_id, channel_key, url):
     log.info(f'handle_rtp: {repr(request)}')
     global _lastprogram, _proc
+
+    # Nromal IPTV Channel
     if url.startswith('239'):
         if _proc and _proc.pid:
             #log.info(f'_proc.kill() on channel change')
@@ -89,6 +91,8 @@ async def handle_rtp(request, channel_id, channel_key, url):
         _proc = None
         log.info(f'Redirecting to {UDPXY + url}')
         return response.redirect(UDPXY + url)
+
+    # Flussonic catchup style url
     elif url.startswith('video-'):
         start = url.split('-')[1]
         duration = url.split('-')[2].split('.')[0]
@@ -118,6 +122,7 @@ async def handle_rtp(request, channel_id, channel_key, url):
 
         log.info(f'Found program: channel_id={channel_id} program_id={program_id} offset={offset}')
         log.info(f'Need to exec: /app/u7d.py {channel_id} {program_id} --start {offset}')
+
         if _proc and _proc.pid:
             #log.info(f'_proc.kill() before new u7d.py')
             try:
@@ -125,28 +130,26 @@ async def handle_rtp(request, channel_id, channel_key, url):
             except Exception as ex:
                 log.info(f'_proc.kill() EXCEPTED with {repr(ex)}')
         [ proc.kill() for proc in psutil.process_iter() if proc.name() == 'socat' ]
-        _proc = await asyncio.create_subprocess_exec('/app/u7d.py', channel_id, program_id,
-                                                     '--start', offset)
-                                                     #stdout=asyncio.subprocess.PIPE,
-                                                     #stderr=asyncio.subprocess.PIPE)
+        _proc = await asyncio.create_subprocess_exec('/app/u7d.py', channel_id, program_id, '--start', offset)
 
-        log.info(str({'path': request.path, 'url': url,
-                      'channel_id': channel_id, 'channel_key': channel_key,
-                      'start': start, 'offset': offset, 'duration': duration}))
+        #log.info(str({'path': request.path, 'url': url,
+        #              'channel_id': channel_id, 'channel_key': channel_key,
+        #              'start': start, 'offset': offset, 'duration': duration}))
 
         log.info(f'Streaming response from udpxy')
+
         async def sample_streaming_fn(response):
             async with aiohttp.ClientSession(timeout=aiohttp.ClientTimeout(sock_read=60)) as session:
                 async with session.get(UDPXY_VOD) as resp:
-                    while True:
-                        try:
-                            if not (data := await resp.content.read(CHUNK)):
-                                break
+                    try:
+                        while data := await resp.content.read(CHUNK):
                             await response.write(data)
-                        except Exception as ex:
-                            log.info(f'udpxy session EXCEPTED with {repr(ex)}')
-                            break
+                    except Exception as ex:
+                        log.info(f'udpxy session EXCEPTED with {repr(ex)}')
+
         return response.stream(sample_streaming_fn, content_type=MIME)
+
+    # Not recognized url
     else:
         _lastprogram = ()
         return response.json({'status': 'URL not understood'}, 404)

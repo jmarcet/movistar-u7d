@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-import collections
+
 import urllib.request
 import urllib.parse
 import subprocess
@@ -11,6 +11,11 @@ import time
 import os
 
 from contextlib import closing
+from collections import namedtuple
+
+Request = namedtuple('Request', ['request', 'response'])
+Response = namedtuple('Response', ['version', 'status', 'headers', 'body'])
+UA = 'MICA-IP-STB'
 
 class RtspClient(object):
     def __init__(self, sock, url):
@@ -20,87 +25,63 @@ class RtspClient(object):
         self.ip = None
 
     def read_message(self, resp):
-        Response = collections.namedtuple('Response', ['version', 'status', 'headers'])
-        temp = resp.readline().rstrip()
-        print(f'read_message {temp}')
-        #version, status = resp.readline().rstrip().split(' ', 1)
-        version, status = temp.split(' ', 1)
+        version, status = resp.readline().rstrip().split(' ', 1)
         headers = dict()
-        while True:
-            line = resp.readline().rstrip()
-            if not line:
-                break
-            try:
-                key, value = line.split(': ', 1)
-            except:
-                continue
+
+        while line := resp.readline().rstrip():
+            key, value = line.split(': ', 1)
             headers[key] = value
-        return Response(version, status, headers)
+
+        if 'Content-Length' in headers.keys():
+            body = resp.read(int(headers['Content-Length']) - 1)
+            if 'a=control:rtsp:' in body:
+                self.ip = body.split('\n')[-1].split(':', 1)[1].strip()
+        else:
+            body = ''
+
+        return Response(version, status, headers, body)
 
     def serialize_headers(self, headers):
         return '\r\n'.join(map(lambda x: '{0}: {1}'.format(*x), headers.items()))
 
     def send_request(self, method, headers={}):
-        Request = collections.namedtuple('Request', ['request', 'response'])
         url = '*' if method == 'OPTIONS' else self.url
         headers['CSeq'] = self.cseq
         ser_headers = self.serialize_headers(headers)
         self.cseq += 1
+
         if method == 'GET_PARAMETER':
             req = f'{method} {url} RTSP/1.0\r\n{ser_headers}\r\n\r\nposition\r\n\r\n'
         else:
             req = f'{method} {url} RTSP/1.0\r\n{ser_headers}\r\n\r\n'
+
         self.sock.send(req.encode())
-        if method == 'DESCRIBE':
-            resp = self.sock.recv(4096).decode()
-            print(f'send_request resp={resp}')
-            recs = resp.split('\r\n')
-            version, status = recs[0].rstrip().split(' ', 1)
-            self.ip = recs[-1].split(':', 1)[1:][0].rstrip()
-            Response = collections.namedtuple('Response', ['version', 'status', 'headers'])
-            resp = Response(version, status, headers)
-            print(f'send_request DESCRIBE resp={resp}')
-        elif method == 'GET_PARAMETER':
-            resp = self.sock.recv(4096).decode()
-            #print(f'send_request GET_PARAMETER resp={resp}')
-            recs = resp.split('\r\n')
-            version, status = recs[0].rstrip().split(' ', 1)
-            recs = recs[1:]
-            headers = dict()
-            for linenr in range(len(recs)):
-                line = recs[linenr]
-                if not line:
-                    break
-                key, value = line.split(': ', 1)
-                headers[key] = value
-            linenr += 1
-            if linenr < len(recs):
-                body = recs[linenr:]
-            print(body)
-            Response = collections.namedtuple('Response', ['version', 'status', 'headers'])
-            resp = Response(version, status, headers)
-        else:
+
+        with self.sock.makefile('r') as f:
+            resp = self.read_message(f)
+
+        if method == 'SETUP' and resp.status != '200 OK' and self.ip:
+            print(f'send_request SETUP 1st: {resp.status}', flush=True)
+            self.url = self.ip
+            headers['CSeq'] = self.cseq
+            self.cseq += 1
+            ser_headers = self.serialize_headers(headers)
+            req = f'{method} {self.url} RTSP/1.0\r\n{ser_headers}\r\n\r\n'
+            self.sock.send(req.encode())
             with self.sock.makefile('r') as f:
                 resp = self.read_message(f)
-            if method == 'SETUP' and resp.status != '200 OK':
-                print(f'send_request SETUP 1 resp={resp}')
-                self.url = self.ip
-                headers['CSeq'] = self.cseq
-                self.cseq += 1
-                ser_headers = self.serialize_headers(headers)
-                req = f'{method} {self.url} RTSP/1.0\r\n{ser_headers}\r\n\r\n'
-                self.sock.send(req.encode())
-                with self.sock.makefile('r') as f:
-                    resp = self.read_message(f)
-                    print(f'send_request SETUP 2 resp={resp}')
+                print(f'send_request SETUP 2nd: {resp.status}', flush=True)
+
         return Request(req, resp)
 
     def print(self, req):
         resp = req.response
         headers = self.serialize_headers(resp.headers)
-        print('-' * 100)
+        print('-' * 135)
         print('Request: ' + req.request, end='', flush=True)
-        print(f'Response: {resp.version} {resp.status}\n{headers}\n')
+        print(f'Response: {resp.version} {resp.status}\n{headers}', flush=True)
+        if resp.body:
+            print(f'\n{resp.body}', flush=True)
         return resp
 
 def find_free_port():
@@ -116,12 +97,14 @@ def main(args):
     if data['resultCode'] != 0:
         print(f'error: {data["resultText"]}')
         return
+
     url = data['resultData']['url']
-    print(f'rolling_buffer: {url}')
+    print(f'rolling_buffer: {url}', flush=True)
     uri = urllib.parse.urlparse(url)
-    print('Connecting to %s:%d' % (uri.hostname, uri.port))
-    headers = {'CSeq': '', 'User-Agent': 'MICA-IP-STB'}
+    print('Connecting to %s:%d' % (uri.hostname, uri.port), flush=True)
+    headers = {'CSeq': '', 'User-Agent': UA}
     client_port = str(find_free_port())
+
     with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
         s.connect((uri.hostname, uri.port))
         client = RtspClient(s, url)
@@ -130,37 +113,35 @@ def main(args):
         describe['Accept'] = 'application/sdp'
         client.print(client.send_request('DESCRIBE', describe))
         setup = headers.copy()
-        setup['Transport'] = f'MP2T/H2221/UDP;unicast;client_port={client_port}'
-        setup['x-mayNotify'] = ''
+        setup.update({'Transport': f'MP2T/H2221/UDP;unicast;client_port={client_port}', 'x-mayNotify': ''})
         r = client.print(client.send_request('SETUP', setup))
         play = headers.copy()
-        play = {'CSeq': '', 'Session': '', 'User-Agent': 'MICA-IP-STB'}
+        play = {'CSeq': '', 'Session': '', 'User-Agent': UA}
         play['Session'] = r.headers['Session'].split(';')[0]
         play['Range'] = 'npt={0}-end'.format(*args.start)
-        play['Scale'] = '1.000'
-        play['x-playNow'] = ''
-        play['x-noFlush'] = ''
+        play.update({'Scale': '1.000', 'x-playNow': '', 'x-noFlush': ''})
         client.print(client.send_request('PLAY', play))
         host = socket.gethostbyname(socket.gethostname())
         stream = f'udp://@{host}:{client_port}'
-        session = {'User-Agent': 'MICA-IP-STB', 'Session': '', 'CSeq': ''}
-        session['Session'] = play['Session']
+        session = {'User-Agent': UA, 'Session': play['Session'], 'CSeq': ''}
         get_parameter = session.copy()
-        get_parameter['Content-type'] = 'text/parameters'
-        get_parameter['Content-length'] = 10
+        get_parameter.update({'Content-type': 'text/parameters', 'Content-length': 10})
+
         def keep_alive():
             while True:
-                time.sleep(30)
+                time.sleep(5)
                 client.print(client.send_request('GET_PARAMETER', get_parameter))
+
         thread = threading.Thread(target=keep_alive)
         thread.daemon = True
         thread.start()
+
         try:
-            command = ['socat']
-            command.append('-u')
+            command = ['socat', '-u']
             command.append(f'UDP4-LISTEN:{client_port},tos=40')
             command.append('UDP4-DATAGRAM:239.1.0.1:6667,broadcast,keepalive,tos=40')
-            print(f'Opening {stream} with {command}')
+            print('-' * 135)
+            print(f'Opening {stream} with {command}', flush=True)
             subprocess.call(command)
         except KeyboardInterrupt:
             pass
@@ -179,3 +160,4 @@ if __name__ == '__main__':
     args = parser.parse_args()
     args.quality = services.get(*args.quality)
     main(args)
+
