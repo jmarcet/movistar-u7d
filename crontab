@@ -1,0 +1,2 @@
+0   * * * * /usr/sbin/logrotate -s /opt/var/logrotate.status -v /etc/logrotate.conf
+30 23 * * * /etc/updateguide.sh
