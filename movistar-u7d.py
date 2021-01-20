@@ -51,9 +51,9 @@ app = Sanic('Movistar_u7d')
 app_settings = {
     'REQUEST_TIMEOUT': 60,
     'RESPONSE_TIMEOUT': 60,
-    #'KEEP_ALIVE_TIMEOUT': 7200,
     'KEEP_ALIVE': False
 }
+#    'KEEP_ALIVE_TIMEOUT': 7200,
 app.config.update(app_settings)
 
 _lastprogram = ()

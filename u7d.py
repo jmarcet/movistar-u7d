@@ -24,16 +24,23 @@ class RtspClient(object):
         self.cseq = 1
         self.ip = None
 
-    def read_message(self, resp):
-        version, status = resp.readline().rstrip().split(' ', 1)
+    def read_message(self):
+        resp = self.sock.recv(4096).decode()
+
+        if not ' 200 OK' in resp:
+            version, status = resp.rstrip().split(' ', 1)
+            return Response(version, status, {}, '')
+
+        head, body = resp.split('\r\n\r\n')
+        version, status = head.split('\r\n')[0].rstrip().split(' ', 1)
         headers = dict()
 
-        while line := resp.readline().rstrip():
+        for line in head.split('\r\n')[1:]:
+            #print(f'Extracting line={line}')
             key, value = line.split(': ', 1)
             headers[key] = value
 
         if 'Content-Length' in headers.keys():
-            body = resp.read(int(headers['Content-Length']) - 1)
             if 'a=control:rtsp:' in body:
                 self.ip = body.split('\n')[-1].split(':', 1)[1].strip()
         else:
@@ -45,7 +52,14 @@ class RtspClient(object):
         return '\r\n'.join(map(lambda x: '{0}: {1}'.format(*x), headers.items()))
 
     def send_request(self, method, headers={}):
-        url = '*' if method == 'OPTIONS' else self.url
+        if method == 'OPTIONS':
+            url = '*'
+        elif method == 'SETUP2':
+            method = 'SETUP'
+            url = self.url = self.ip
+        else:
+            url = self.url
+
         headers['CSeq'] = self.cseq
         ser_headers = self.serialize_headers(headers)
         self.cseq += 1
@@ -56,21 +70,7 @@ class RtspClient(object):
             req = f'{method} {url} RTSP/1.0\r\n{ser_headers}\r\n\r\n'
 
         self.sock.send(req.encode())
-
-        with self.sock.makefile('r') as f:
-            resp = self.read_message(f)
-
-        if method == 'SETUP' and resp.status != '200 OK' and self.ip:
-            print(f'send_request SETUP 1st: {resp.status}', flush=True)
-            self.url = self.ip
-            headers['CSeq'] = self.cseq
-            self.cseq += 1
-            ser_headers = self.serialize_headers(headers)
-            req = f'{method} {self.url} RTSP/1.0\r\n{ser_headers}\r\n\r\n'
-            self.sock.send(req.encode())
-            with self.sock.makefile('r') as f:
-                resp = self.read_message(f)
-                print(f'send_request SETUP 2nd: {resp.status}', flush=True)
+        resp = self.read_message()
 
         return Request(req, resp)
 
@@ -113,8 +113,12 @@ def main(args):
         describe['Accept'] = 'application/sdp'
         client.print(client.send_request('DESCRIBE', describe))
         setup = headers.copy()
-        setup.update({'Transport': f'MP2T/H2221/UDP;unicast;client_port={client_port}', 'x-mayNotify': ''})
+        setup['Transport'] = f'MP2T/H2221/UDP;unicast;client_port={client_port}'
+        #setup['x-mayNotify'] = ''
         r = client.print(client.send_request('SETUP', setup))
+        print(f'RESP {resp.status}')
+        if resp.status != '200 OK':
+            r = client.print(client.send_request('SETUP2', setup))
         play = headers.copy()
         play = {'CSeq': '', 'Session': '', 'User-Agent': UA}
         play['Session'] = r.headers['Session'].split(';')[0]
@@ -129,7 +133,7 @@ def main(args):
 
         def keep_alive():
             while True:
-                time.sleep(5)
+                time.sleep(30)
                 client.print(client.send_request('GET_PARAMETER', get_parameter))
 
         thread = threading.Thread(target=keep_alive)
