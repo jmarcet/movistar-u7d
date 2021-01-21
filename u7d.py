@@ -86,10 +86,10 @@ class RtspClient(object):
 
     def print(self, req):
         resp = req.response
-        return resp
+        #return resp
         headers = self.serialize_headers(resp.headers)
         print('=' * WIDTH, flush=True)
-        print('Request: ' + req.request, end='', flush=True)
+        print('Request: ' + req.request.split('\m')[0], end='', flush=True)
         print(f'Response: {resp.version} {resp.status}\n{headers}', flush=True)
         if resp.body:
             print(f'\n{resp.body}', flush=True)
@@ -160,6 +160,7 @@ def main(args):
             print(f'Rtsp session EXCEPTED with {repr(ex)}')
         finally:
             client.print(client.send_request('TEARDOWN', session))
+            return
 
 if __name__ == '__main__':
     services = {'sd': 1, 'hd': 2}

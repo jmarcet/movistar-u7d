@@ -8,6 +8,7 @@ import glob
 import json
 import logging
 import os
+import signal
 import socket
 import sys
 import time
@@ -50,8 +51,8 @@ async def notify_server_start(app, loop):
 
 @app.listener('after_server_stop')
 async def notify_server_stop(app, loop):
-    log.info(f'after_server_stop killing u7d.py')
-    p = await asyncio.create_subprocess_exec('/usr/bin/pkill', '-f', '/app/u7d.py .+ --client_port')
+    log.debug(f'after_server_stop killing u7d.py')
+    p = await asyncio.create_subprocess_exec('/usr/bin/pkill', '-INT', '-f', '/app/u7d.py .+ --client_port')
     await p.wait()
 
 @app.get('/reload_epg')
@@ -169,11 +170,11 @@ async def handle_rtp(request, channel_id, channel_key, url):
 
 async def cleanup_proc(request, message):
     if request.ip in _proc.keys() and _proc[request.ip].pid:
-        #log.info(f'_proc[{request.ip}].kill() {message}')
-        try:
-            _proc[request.ip].kill()
-        except Exception as ex:
-            log.info(f'_proc[{request.ip}].kill() EXCEPTED with {repr(ex)}')
+        log.info(f'_proc[{request.ip}].send_signal() {message}')
+        #try:
+        _proc[request.ip].send_signal(signal.SIGINT)
+        #except Exception as ex:
+        #    log.info(f'_proc[{request.ip}].send_signal() EXCEPTED with {repr(ex)}')
         _proc.pop(request.ip, None)
 
 
