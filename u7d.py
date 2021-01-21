@@ -3,7 +3,6 @@
 import urllib.request
 import urllib.parse
 import subprocess
-import threading
 import argparse
 import socket
 import json
@@ -79,6 +78,7 @@ class RtspClient(object):
 
     def print(self, req):
         resp = req.response
+        #return resp
         headers = self.serialize_headers(resp.headers)
         print('=' * WIDTH, flush=True)
         print('Request: ' + req.request, end='', flush=True)
@@ -111,19 +111,9 @@ def main(args):
     uri = urllib.parse.urlparse(url)
     headers = {'CSeq': '', 'User-Agent': UA}
 
-    client_port = str(find_free_port())
-    transport = f'MP2T/H2221/UDP;unicast;client_port={client_port}'
-    print(f'Transport: {transport}', flush=True)
-
     host = socket.gethostbyname(socket.gethostname())
-    stream = f'udp://@{host}:{client_port}'
+    stream = f'udp://@{host}:{args.client_port}'
     print(f'Stream: {stream}', flush=True)
-
-    command = ['socat', '-u']
-    command.append(f'UDP4-LISTEN:{client_port},tos=40')
-    command.append('UDP4-DATAGRAM:239.1.0.1:6667,broadcast,keepalive,tos=40')
-    cmd = ' '.join(command)
-    print(f'Command: {cmd}', flush=True)
     print('=' * 134, flush=True)
 
     with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
@@ -138,7 +128,7 @@ def main(args):
         client.print(client.send_request('DESCRIBE', describe))
 
         setup = headers.copy()
-        setup.update({'Transport': transport})
+        setup.update({'Transport': f'MP2T/H2221/UDP;unicast;client_port={args.client_port}'})
         r = client.print(client.send_request('SETUP', setup))
         if r.status != '200 OK':
             needs_position = True
@@ -156,19 +146,12 @@ def main(args):
         if needs_position:
             get_parameter.update({'Content-type': 'text/parameters', 'Content-length': 10})
 
-        def keep_alive():
+        try:
             while True:
                 time.sleep(30)
                 client.print(client.send_request('GET_PARAMETER', get_parameter))
-
-        thread = threading.Thread(target=keep_alive)
-        thread.daemon = True
-        thread.start()
-
-        try:
-            subprocess.call(command)
-        except KeyboardInterrupt:
-            pass
+        except Exception as ex:
+            print(f'Rtsp session EXCEPTED with {repr(ex)}')
         finally:
             client.print(client.send_request('TEARDOWN', session))
 
@@ -177,11 +160,16 @@ if __name__ == '__main__':
     parser = argparse.ArgumentParser('Stream content from the Movistar U7D service.')
     parser.add_argument('channel', help='channel id')
     parser.add_argument('broadcast', help='broadcast id')
+    parser.add_argument('--client_port', help='client udp port')
     parser.add_argument('--dumpfile', '-f', help='dump file path', default='test2.ts')
     parser.add_argument('--duration', '-t', default=[0], type=int, help='duration in seconds')
     parser.add_argument('--quality', '-q', choices=services, nargs=1, default=['hd'], help='stream quality')
     parser.add_argument('--start', '-s', metavar='seconds', nargs=1, default=[0], type=int, help='stream start offset')
     args = parser.parse_args()
+    if args.client_port is not None:
+        args.client_port = int(args.client_port)
+    elif not args.client_port:
+        args.client_port = find_free_port()
     args.quality = services.get(*args.quality)
     main(args)
 

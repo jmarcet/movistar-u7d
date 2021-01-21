@@ -1,17 +1,20 @@
 #!/usr/bin/env python3
 
-from sanic import Sanic, response
-from sanic.log import logger
-
 import aiohttp
 import asyncio
+import asyncio_dgram
 import glob
 import json
 import logging
 import os
-import psutil
+import socket
 import sys
 import time
+
+from contextlib import closing
+from sanic import Sanic, response
+from sanic.log import logger
+
 
 HOME = os.environ.get('HOME') or '/home/'
 SANIC_HOST = os.environ.get('SANIC_HOST') or '127.0.0.1'
@@ -19,7 +22,6 @@ SANIC_PORT = os.environ.get('SANIC_PORT') or '8888'
 UDPXY = os.environ.get('UDPXY') or 'http://192.168.137.1:4022/rtp/'
 UDPXY_VOD = os.environ.get('UDPXY_VOD') or 'http://192.168.137.1:4022/udp/239.1.0.1:6667'
 
-CHUNK = 42112
 MIME = 'video/MP2T'
 GUIDE = os.path.join(HOME, 'guide.xml')
 CHANNELS = os.path.join(HOME, 'MovistarTV.m3u')
@@ -48,11 +50,17 @@ logging.basicConfig(
 log = logging.getLogger()
 
 app = Sanic('Movistar_u7d')
-app.config.update({'KEEP_ALIVE': False, 'REQUEST_BUFFER_QUEUE_SIZE': CHUNK})
+app.config.update({'KEEP_ALIVE': False})
 
 _lastprogram = ()
-_proc = None
+_proc = {}
 
+
+@app.listener('after_server_start')
+@app.listener('after_server_stop')
+async def notify_server(app, loop):
+    p = await asyncio.create_subprocess_exec('/usr/bin/pkill', '-f', '/app/u7d.py .+ --client_port')
+    await p.wait()
 
 @app.get('/channels.m3u')
 @app.get('/MovistarTV.m3u')
@@ -72,17 +80,14 @@ async def handle_rtp(request, channel_id, channel_key, url):
     log.info(f'handle_rtp: {repr(request)}')
     global _lastprogram, _proc
 
+    if request.ip:
+        log.info(f'handle_rtp: connection from ip={request.ip}')
+
     # Nromal IPTV Channel
     if url.startswith('239'):
-        if _proc and _proc.pid:
-            log.info(f'_proc.kill() on channel change')
-            try:
-                _proc.kill()
-            except Exception as ex:
-                log.info(f'_proc.kill() EXCEPTED with {repr(ex)}')
-        [ proc.kill() for proc in psutil.process_iter() if proc.name() == 'socat' ]
+        await cleanup_proc(request, 'on channel change')
         _lastprogram = ()
-        _proc = None
+
         log.info(f'Redirecting to {UDPXY + url}')
         return response.redirect(UDPXY + url)
 
@@ -114,39 +119,50 @@ async def handle_rtp(request, channel_id, channel_key, url):
         if not program_id:
             return response.json({'status': 'channel_id={channel_id} program_id={program_id} not found'}, 404)
 
-        [ proc.kill() for proc in psutil.process_iter() if proc.name() == 'socat' ]
-        if _proc and _proc.pid:
-            log.info(f'_proc.kill() before new u7d.py')
-            try:
-                _proc.kill()
-            except Exception as ex:
-                log.info(f'_proc.kill() EXCEPTED with {repr(ex)}')
+        await cleanup_proc(request, 'before new u7d.py')
 
+        host = socket.gethostbyname(socket.gethostname())
+        with closing(socket.socket(socket.AF_INET, socket.SOCK_DGRAM)) as s:
+            s.bind(('', 0))
+            s.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+            client_port = str(s.getsockname()[1])
+
+        log.info(f'Allocated client_port={client_port} for host={host}')
         log.info(f'Found program: channel_id={channel_id} program_id={program_id} offset={offset}')
-        log.info(f'Need to exec: /app/u7d.py {channel_id} {program_id} --start {offset}')
-        _proc = await asyncio.create_subprocess_exec('/app/u7d.py', channel_id, program_id, '--start', offset)
+        log.info(f'Need to exec: /app/u7d.py {channel_id} {program_id} --start {offset} --client_port {client_port}')
+
+        _proc[request.ip] = await asyncio.create_subprocess_exec('/app/u7d.py', channel_id, program_id,
+                                                                 '--start', offset, '--client_port', client_port)
 
         #log.info(str({'path': request.path, 'url': url,
         #              'channel_id': channel_id, 'channel_key': channel_key,
         #              'start': start, 'offset': offset, 'duration': duration}))
 
-        log.info(f'Streaming response from udpxy')
 
-        async def udpxy_streaming(response):
-            async with aiohttp.ClientSession(timeout=aiohttp.ClientTimeout(sock_read=60)) as session:
-                async with session.get(UDPXY_VOD) as resp:
-                    try:
-                        while data := await resp.content.read(CHUNK):
-                            await response.write(data)
-                    except Exception as ex:
-                        log.info(f'udpxy session EXCEPTED with {repr(ex)}')
+        async def udp_streaming(response):
+            log.info(f'Reading data from @{host}:{client_port}')
+            stream = await asyncio_dgram.bind((host, client_port))
+            while True:
+                data, remote_addr = await stream.recv()
+                await response.write(data)
+            await cleanup_proc(request, 'after udp_streaming')
 
-        return response.stream(udpxy_streaming, content_type=MIME)
+        return response.stream(udp_streaming, content_type=MIME)
 
     # Not recognized url
     else:
         _lastprogram = ()
         return response.json({'status': 'URL not understood'}, 404)
+
+async def cleanup_proc(request, message):
+    if request.ip in _proc.keys() and _proc[request.ip].pid:
+        log.info(f'_proc[{request.ip}].kill() {message}')
+        try:
+            _proc[request.ip].kill()
+        except Exception as ex:
+            log.info(f'_proc[{request.ip}].kill() EXCEPTED with {repr(ex)}')
+        _proc.pop(request.ip, None)
+
 
 if __name__ == '__main__':
     app.run(host=SANIC_HOST, port=SANIC_PORT, workers=1, debug=True, access_log=False)
