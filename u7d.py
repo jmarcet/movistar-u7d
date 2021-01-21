@@ -16,6 +16,7 @@ from collections import namedtuple
 Request = namedtuple('Request', ['request', 'response'])
 Response = namedtuple('Response', ['version', 'status', 'headers', 'body'])
 UA = 'MICA-IP-STB'
+WIDTH = 134
 
 needs_position = False
 
@@ -28,29 +29,22 @@ class RtspClient(object):
 
     def read_message(self):
         resp = self.sock.recv(4096).decode()
-
         if not ' 200 OK' in resp:
-            #print('=' * 135)
-            #print(f'read_message resp={resp}', flush=True)
-            #print('=' * 135)
             version, status = resp.rstrip().split(' ', 1)
             return Response(version, status, {}, '')
 
         head, body = resp.split('\r\n\r\n')
         version, status = head.split('\r\n')[0].rstrip().split(' ', 1)
-        headers = dict()
 
+        headers = dict()
         for line in head.split('\r\n')[1:]:
-            #print(f'Extracting line={line}')
             key, value = line.split(': ', 1)
             headers[key] = value
 
         if 'Content-Length' in headers.keys():
             length = headers['Content-Length']
-            #print(f'read_message got length {length}')
             if 'a=control:rtsp:' in body:
                 self.ip = body.split('\n')[-1].split(':', 1)[1].strip()
-                #print(f'read_message got AN IP {self.ip}')
         else:
             body = ''
 
@@ -86,7 +80,7 @@ class RtspClient(object):
     def print(self, req):
         resp = req.response
         headers = self.serialize_headers(resp.headers)
-        print('-' * 135)
+        print('=' * WIDTH, flush=True)
         print('Request: ' + req.request, end='', flush=True)
         print(f'Response: {resp.version} {resp.status}\n{headers}', flush=True)
         if resp.body:
@@ -101,43 +95,62 @@ def find_free_port():
 
 def main(args):
     global needs_position
+
     params = f'action=getCatchUpUrl&extInfoID={args.broadcast}&channelID={args.channel}&service={args.quality}&mode=1'
     resp = urllib.request.urlopen(f'http://www-60.svc.imagenio.telefonica.net:2001/appserver/mvtv.do?{params}')
     data = json.loads(resp.read())
+
     if data['resultCode'] != 0:
         print(f'error: {data["resultText"]}')
         return
 
     url = data['resultData']['url']
-    print('-' * 135)
-    print(f'Opening rolling_buffer: {url}', flush=True)
+    print('=' * WIDTH, flush=True)
+    print('=' * WIDTH, flush=True)
+    print(f'RollingBuffer: {url}', flush=True)
     uri = urllib.parse.urlparse(url)
     headers = {'CSeq': '', 'User-Agent': UA}
+
     client_port = str(find_free_port())
+    transport = f'MP2T/H2221/UDP;unicast;client_port={client_port}'
+    print(f'Transport: {transport}', flush=True)
+
+    host = socket.gethostbyname(socket.gethostname())
+    stream = f'udp://@{host}:{client_port}'
+    print(f'Stream: {stream}', flush=True)
+
+    command = ['socat', '-u']
+    command.append(f'UDP4-LISTEN:{client_port},tos=40')
+    command.append('UDP4-DATAGRAM:239.1.0.1:6667,broadcast,keepalive,tos=40')
+    cmd = ' '.join(command)
+    print(f'Command: {cmd}', flush=True)
+    print('=' * 134, flush=True)
 
     with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
         s.connect((uri.hostname, uri.port))
         s.settimeout(60)
+
         client = RtspClient(s, url)
         client.print(client.send_request('OPTIONS', headers))
+
         describe = headers.copy()
         describe['Accept'] = 'application/sdp'
         client.print(client.send_request('DESCRIBE', describe))
+
         setup = headers.copy()
-        setup.update({'Transport': f'MP2T/H2221/UDP;unicast;client_port={client_port}'})
+        setup.update({'Transport': transport})
         r = client.print(client.send_request('SETUP', setup))
         if r.status != '200 OK':
-            #print(f'NEEDS POSITION status={r.status}')
             needs_position = True
             r = client.print(client.send_request('SETUP2', setup))
+
         play = headers.copy()
         play = {'CSeq': '', 'Session': '', 'User-Agent': UA}
         play['Session'] = r.headers['Session'].split(';')[0]
         play['Range'] = 'npt={0}-end'.format(*args.start)
         play.update({'Scale': '1.000', 'x-playNow': '', 'x-noFlush': ''})
         client.print(client.send_request('PLAY', play))
-        host = socket.gethostbyname(socket.gethostname())
-        stream = f'udp://@{host}:{client_port}'
+
         session = {'User-Agent': UA, 'Session': play['Session'], 'CSeq': ''}
         get_parameter = session.copy()
         if needs_position:
@@ -153,11 +166,6 @@ def main(args):
         thread.start()
 
         try:
-            command = ['socat', '-u']
-            command.append(f'UDP4-LISTEN:{client_port},tos=40')
-            command.append('UDP4-DATAGRAM:239.1.0.1:6667,broadcast,keepalive,tos=40')
-            print('-' * 135)
-            print(f'Opening {stream} with {command}', flush=True)
             subprocess.call(command)
         except KeyboardInterrupt:
             pass

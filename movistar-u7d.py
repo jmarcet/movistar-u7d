@@ -114,16 +114,16 @@ async def handle_rtp(request, channel_id, channel_key, url):
         if not program_id:
             return response.json({'status': 'channel_id={channel_id} program_id={program_id} not found'}, 404)
 
-        log.info(f'Found program: channel_id={channel_id} program_id={program_id} offset={offset}')
-        log.info(f'Need to exec: /app/u7d.py {channel_id} {program_id} --start {offset}')
-
+        [ proc.kill() for proc in psutil.process_iter() if proc.name() == 'socat' ]
         if _proc and _proc.pid:
             log.info(f'_proc.kill() before new u7d.py')
             try:
                 _proc.kill()
             except Exception as ex:
                 log.info(f'_proc.kill() EXCEPTED with {repr(ex)}')
-        [ proc.kill() for proc in psutil.process_iter() if proc.name() == 'socat' ]
+
+        log.info(f'Found program: channel_id={channel_id} program_id={program_id} offset={offset}')
+        log.info(f'Need to exec: /app/u7d.py {channel_id} {program_id} --start {offset}')
         _proc = await asyncio.create_subprocess_exec('/app/u7d.py', channel_id, program_id, '--start', offset)
 
         #log.info(str({'path': request.path, 'url': url,
@@ -132,7 +132,7 @@ async def handle_rtp(request, channel_id, channel_key, url):
 
         log.info(f'Streaming response from udpxy')
 
-        async def sample_streaming_fn(response):
+        async def udpxy_streaming(response):
             async with aiohttp.ClientSession(timeout=aiohttp.ClientTimeout(sock_read=60)) as session:
                 async with session.get(UDPXY_VOD) as resp:
                     try:
@@ -141,7 +141,7 @@ async def handle_rtp(request, channel_id, channel_key, url):
                     except Exception as ex:
                         log.info(f'udpxy session EXCEPTED with {repr(ex)}')
 
-        return response.stream(sample_streaming_fn, content_type=MIME)
+        return response.stream(udpxy_streaming, content_type=MIME)
 
     # Not recognized url
     else:
