@@ -3,6 +3,7 @@
 import aiohttp
 import asyncio
 import asyncio_dgram
+import concurrent.futures
 import glob
 import json
 import logging
@@ -44,12 +45,24 @@ _proc = {}
 
 
 @app.listener('after_server_start')
+async def notify_server_start(app, loop):
+    handle_reload_epg_task()
+
 @app.listener('after_server_stop')
-async def notify_server(app, loop):
-    global _epgdata
+async def notify_server_stop(app, loop):
+    log.info(f'after_server_stop killing u7d.py')
     p = await asyncio.create_subprocess_exec('/usr/bin/pkill', '-f', '/app/u7d.py .+ --client_port')
     await p.wait()
 
+@app.get('/reload_epg')
+async def handle_reload_epg(request):
+    loop = asyncio.get_running_loop()
+    with concurrent.futures.ProcessPoolExecutor() as pool:
+        await loop.run_in_executor(pool, handle_reload_epg_task)
+    return response.json({'status': 'EPG Updated'}, 200)
+
+def handle_reload_epg_task():
+    global _epgdata
     epg_cache = '/home/.xmltv/cache/epg.json'
     epgs = glob.glob('/home/epg.*.json')
     if os.path.exists(epg_cache) and os.stat(epg_cache).st_size > 1024:
@@ -60,7 +73,7 @@ async def notify_server(app, loop):
             _epgdata = {**_epgdata, **day_epg}
         else:
             _epgdata = day_epg
-
+    log.info('EPG: Updated')
 
 @app.get('/channels.m3u')
 @app.get('/MovistarTV.m3u')
