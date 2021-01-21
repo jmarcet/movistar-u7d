@@ -29,7 +29,8 @@ class RtspClient(object):
     def read_message(self):
         resp = self.sock.recv(4096).decode()
         if not ' 200 OK' in resp:
-            version, status = resp.rstrip().split(' ', 1)
+            version, status = resp.rstrip().split('\n')[0].split(' ', 1)
+            print(f'Response: {version} {status}')
             return Response(version, status, {}, '')
 
         head, body = resp.split('\r\n\r\n')
@@ -59,8 +60,15 @@ class RtspClient(object):
         elif method == 'SETUP2':
             method = 'SETUP'
             url = self.url = self.ip
+            print('=' * WIDTH, flush=True)
+            print(f'RollingBuffer: {url}', flush=True)
+            print('=' * WIDTH, flush=True)
         else:
             url = self.url
+            if method == 'SETUP':
+                print('=' * WIDTH, flush=True)
+                print(f'RollingBuffer: {self.url}', flush=True)
+                print('=' * WIDTH, flush=True)
 
         headers['CSeq'] = self.cseq
         ser_headers = self.serialize_headers(headers)
@@ -78,7 +86,7 @@ class RtspClient(object):
 
     def print(self, req):
         resp = req.response
-        #return resp
+        return resp
         headers = self.serialize_headers(resp.headers)
         print('=' * WIDTH, flush=True)
         print('Request: ' + req.request, end='', flush=True)
@@ -96,6 +104,9 @@ def find_free_port():
 def main(args):
     global needs_position
 
+    headers = {'CSeq': '', 'User-Agent': UA}
+    host = socket.gethostbyname(socket.gethostname())
+
     params = f'action=getCatchUpUrl&extInfoID={args.broadcast}&channelID={args.channel}&service={args.quality}&mode=1'
     resp = urllib.request.urlopen(f'http://www-60.svc.imagenio.telefonica.net:2001/appserver/mvtv.do?{params}')
     data = json.loads(resp.read())
@@ -104,17 +115,12 @@ def main(args):
         print(f'error: {data["resultText"]}')
         return
 
-    url = data['resultData']['url']
-    print('=' * WIDTH, flush=True)
-    print('=' * WIDTH, flush=True)
-    print(f'RollingBuffer: {url}', flush=True)
-    uri = urllib.parse.urlparse(url)
-    headers = {'CSeq': '', 'User-Agent': UA}
-
-    host = socket.gethostbyname(socket.gethostname())
     stream = f'udp://@{host}:{args.client_port}'
-    print(f'Stream: {stream}', flush=True)
     print('=' * 134, flush=True)
+    print(f'Stream: {stream}', flush=True)
+
+    url = data['resultData']['url']
+    uri = urllib.parse.urlparse(url)
 
     with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
         s.connect((uri.hostname, uri.port))
