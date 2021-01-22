@@ -103,7 +103,7 @@ async def handle_rtp(request, channel_id, channel_key, url):
         if request.ip in _lastprogram.keys():
             _lastprogram.pop(request.ip, None)
 
-        log.info(f'Redirecting to {UDPXY + url}')
+        log.info(f'Redirect: {UDPXY + url}')
         return response.redirect(UDPXY + url)
 
     # Flussonic catchup style url
@@ -153,12 +153,14 @@ async def handle_rtp(request, channel_id, channel_key, url):
 
 
         async def udp_streaming(response):
-            log.info(f'Stream: @{host}:{client_port}')
-            stream = await asyncio_dgram.bind((host, client_port))
-            while True:
-                data, remote_addr = await stream.recv()
-                await response.write(data)
-            await cleanup_proc(request, 'after udp_streaming')
+            try:
+                log.info(f'Stream: @{host}:{client_port}')
+                stream = await asyncio_dgram.bind((host, client_port))
+                while True:
+                    data, remote_addr = await stream.recv()
+                    await response.write(data)
+            finally:
+                await cleanup_proc(request, 'after udp_streaming')
 
         return response.stream(udp_streaming, content_type=MIME)
 
@@ -170,13 +172,14 @@ async def handle_rtp(request, channel_id, channel_key, url):
 
 async def cleanup_proc(request, message):
     if request.ip in _proc.keys() and _proc[request.ip].pid:
-        log.info(f'_proc[{request.ip}].send_signal() {message}')
-        #try:
-        _proc[request.ip].send_signal(signal.SIGINT)
-        #except Exception as ex:
-        #    log.info(f'_proc[{request.ip}].send_signal() EXCEPTED with {repr(ex)}')
-        _proc.pop(request.ip, None)
+        #log.debug(f'_proc[{request.ip}].send_signal() {message}')
+        try:
+            _proc[request.ip].send_signal(signal.SIGINT)
+            _proc.pop(request.ip, None)
+        except Exception as ex:
+            log.info(f'_proc[{request.ip}].send_signal() {repr(ex)}')
+
 
 
 if __name__ == '__main__':
-    app.run(host=SANIC_HOST, port=SANIC_PORT, workers=1, debug=True, access_log=False)
+    app.run(host=SANIC_HOST, port=int(SANIC_PORT), workers=1, debug=True, access_log=False)

@@ -30,7 +30,7 @@ class RtspClient(object):
         resp = self.sock.recv(4096).decode()
         if not ' 200 OK' in resp:
             version, status = resp.rstrip().split('\n')[0].split(' ', 1)
-            print(f'Response: {version} {status}')
+            #print(f'Response: {version} {status}')
             return Response(version, status, {}, '')
 
         head, body = resp.split('\r\n\r\n')
@@ -59,16 +59,13 @@ class RtspClient(object):
             url = '*'
         elif method == 'SETUP2':
             method = 'SETUP'
-            url = self.url = self.ip
-            print('=' * WIDTH, flush=True)
+            self.url, self.ip = self.ip, self.url
+            url = self.url
             print(f'RollingBuffer: {url}', flush=True)
-            print('=' * WIDTH, flush=True)
         else:
             url = self.url
             if method == 'SETUP':
-                print('=' * WIDTH, flush=True)
-                print(f'RollingBuffer: {self.url}', flush=True)
-                print('=' * WIDTH, flush=True)
+                print(f'RollingBuffer: {url}', flush=True)
 
         headers['CSeq'] = self.cseq
         ser_headers = self.serialize_headers(headers)
@@ -86,13 +83,13 @@ class RtspClient(object):
 
     def print(self, req):
         resp = req.response
-        #return resp
-        headers = self.serialize_headers(resp.headers)
-        print('=' * WIDTH, flush=True)
-        print('Request: ' + req.request.split('\m')[0], end='', flush=True)
-        print(f'Response: {resp.version} {resp.status}\n{headers}', flush=True)
-        if resp.body:
-            print(f'\n{resp.body}', flush=True)
+        #headers = self.serialize_headers(resp.headers)
+        #print('-' * WIDTH, flush=True)
+        #print('Request: ' + req.request.split('\m')[0], end='', flush=True)
+        #print(f'Response: {resp.version} {resp.status}\n{headers}', flush=True)
+        #if resp.body:
+        #    print(f'\n{resp.body.rstrip()}', flush=True)
+        #print('-' * WIDTH, flush=True)
         return resp
 
 def find_free_port():
@@ -103,80 +100,86 @@ def find_free_port():
 
 def main(args):
     global needs_position
+    client = session = None
+    try:
+        headers = {'CSeq': '', 'User-Agent': UA}
+        host = socket.gethostbyname(socket.gethostname())
 
-    headers = {'CSeq': '', 'User-Agent': UA}
-    host = socket.gethostbyname(socket.gethostname())
+        params = f'action=getCatchUpUrl&extInfoID={args.broadcast}&channelID={args.channel}&service=hd&mode=1'
+        resp = urllib.request.urlopen(f'http://www-60.svc.imagenio.telefonica.net:2001/appserver/mvtv.do?{params}')
+        data = json.loads(resp.read())
 
-    params = f'action=getCatchUpUrl&extInfoID={args.broadcast}&channelID={args.channel}&service={args.quality}&mode=1'
-    resp = urllib.request.urlopen(f'http://www-60.svc.imagenio.telefonica.net:2001/appserver/mvtv.do?{params}')
-    data = json.loads(resp.read())
+        if data['resultCode'] != 0:
+            print(f'error: {data["resultText"]}')
+            return
 
-    if data['resultCode'] != 0:
-        print(f'error: {data["resultText"]}')
-        return
+        url = data['resultData']['url']
+        uri = urllib.parse.urlparse(url)
 
-    stream = f'udp://@{host}:{args.client_port}'
-    print('=' * 134, flush=True)
-    print(f'Stream: {stream}', flush=True)
+        with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
+            client = session = None
 
-    url = data['resultData']['url']
-    uri = urllib.parse.urlparse(url)
+            s.connect((uri.hostname, uri.port))
+            s.settimeout(60)
 
-    with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
-        s.connect((uri.hostname, uri.port))
-        s.settimeout(60)
+            client = RtspClient(s, url)
+            client.print(client.send_request('OPTIONS', headers))
 
-        client = RtspClient(s, url)
-        client.print(client.send_request('OPTIONS', headers))
+            describe = headers.copy()
+            describe['Accept'] = 'application/sdp'
+            client.print(client.send_request('DESCRIBE', describe))
 
-        describe = headers.copy()
-        describe['Accept'] = 'application/sdp'
-        client.print(client.send_request('DESCRIBE', describe))
+            setup = headers.copy()
+            setup.update({'Transport': f'MP2T/H2221/UDP;unicast;client_port={args.client_port}'})
+            r = client.print(client.send_request('SETUP', setup))
+            if r.status != '200 OK':
+                needs_position = True
+                print(f'Response: {r.version} {r.status}')
+                r = client.print(client.send_request('SETUP2', setup))
+                if r.status != '200 OK':
+                    print(f'{repr(r)}')
+                    return
+            session = {'User-Agent': UA, 'Session': r.headers['Session'].split(';')[0], 'CSeq': ''}
 
-        setup = headers.copy()
-        setup.update({'Transport': f'MP2T/H2221/UDP;unicast;client_port={args.client_port}'})
-        r = client.print(client.send_request('SETUP', setup))
-        if r.status != '200 OK':
-            needs_position = True
-            r = client.print(client.send_request('SETUP2', setup))
+            play = headers.copy()
+            play = {'CSeq': '', 'Session': session['Session'], 'User-Agent': UA}
+            play['Range'] = f'npt={args.start[0]}-end'
+            play.update({'Scale': '1.000', 'x-playNow': '', 'x-noFlush': ''})
+            client.print(client.send_request('PLAY', play))
 
-        play = headers.copy()
-        play = {'CSeq': '', 'Session': '', 'User-Agent': UA}
-        play['Session'] = r.headers['Session'].split(';')[0]
-        play['Range'] = 'npt={0}-end'.format(*args.start)
-        play.update({'Scale': '1.000', 'x-playNow': '', 'x-noFlush': ''})
-        client.print(client.send_request('PLAY', play))
+            get_parameter = session.copy()
+            if needs_position:
+                get_parameter.update({'Content-type': 'text/parameters', 'Content-length': 10})
 
-        session = {'User-Agent': UA, 'Session': play['Session'], 'CSeq': ''}
-        get_parameter = session.copy()
-        if needs_position:
-            get_parameter.update({'Content-type': 'text/parameters', 'Content-length': 10})
-
-        try:
             while True:
                 time.sleep(30)
                 client.print(client.send_request('GET_PARAMETER', get_parameter))
-        except Exception as ex:
-            print(f'Rtsp session EXCEPTED with {repr(ex)}')
-        finally:
-            client.print(client.send_request('TEARDOWN', session))
-            return
+    except KeyboardInterrupt:
+        pass
+    except Exception as ex:
+        print(f'Died: {repr(ex)}')
+    finally:
+        if client and session:
+            print(f'Teardown: {session} {vars(args)}')
+            r = client.print(client.send_request('TEARDOWN', session))
+            if r.status != '200 OK':
+                print(f'{repr(r)}')
 
 if __name__ == '__main__':
-    services = {'sd': 1, 'hd': 2}
-    parser = argparse.ArgumentParser('Stream content from the Movistar U7D service.')
-    parser.add_argument('channel', help='channel id')
-    parser.add_argument('broadcast', help='broadcast id')
-    parser.add_argument('--client_port', help='client udp port')
-    parser.add_argument('--dumpfile', '-f', help='dump file path', default='test2.ts')
-    parser.add_argument('--duration', '-t', default=[0], type=int, help='duration in seconds')
-    parser.add_argument('--quality', '-q', choices=services, nargs=1, default=['hd'], help='stream quality')
-    parser.add_argument('--start', '-s', metavar='seconds', nargs=1, default=[0], type=int, help='stream start offset')
-    args = parser.parse_args()
-    if args.client_port is not None:
-        args.client_port = int(args.client_port)
-    elif not args.client_port:
-        args.client_port = find_free_port()
-    args.quality = services.get(*args.quality)
-    main(args)
-
+    try:
+        parser = argparse.ArgumentParser('Stream content from the Movistar U7D service.')
+        parser.add_argument('channel', help='channel id')
+        parser.add_argument('broadcast', help='broadcast id')
+        parser.add_argument('--client_port', help='client udp port')
+        #parser.add_argument('--dumpfile', '-f', help='dump file path', default='test2.ts')
+        parser.add_argument('--start', '-s', metavar='seconds', nargs=1, default=[0], type=int, help='stream start offset')
+        args = parser.parse_args()
+        if args.client_port is not None:
+            args.client_port = int(args.client_port)
+        elif not args.client_port:
+            args.client_port = find_free_port()
+        main(args)
+    except KeyboardInterrupt:
+        pass
+    except Exception as ex:
+        print(f'Died: {repr(ex)}')
