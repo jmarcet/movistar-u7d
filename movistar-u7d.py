@@ -108,8 +108,6 @@ async def handle_rtp(request, channel_id, channel_key, url):
 
     # Flussonic catchup style url
     elif url.startswith('video-'):
-        await cleanup_proc(request, 'on vod')
-
         start = url.split('-')[1]
         duration = url.split('-')[2].split('.')[0]
         last_event = None
@@ -144,23 +142,17 @@ async def handle_rtp(request, channel_id, channel_key, url):
 
         log.info(f'Exec: /app/u7d.py {channel_id} {program_id} --start {offset} --client_port {client_port}')
 
+        await cleanup_proc(request, 'on calling u7d.py')
+        #1await asyncio.sleep(0.1)
         _proc[request.ip] = await asyncio.create_subprocess_exec('/app/u7d.py', channel_id, program_id,
-                                                                 '--start', offset, '--client_port', client_port)
-
-        #log.info(str({'path': request.path, 'url': url,
-        #              'channel_id': channel_id, 'channel_key': channel_key,
-        #              'start': start, 'offset': offset, 'duration': duration}))
-
+                                                                 '-s', offset, '-p', client_port)
 
         async def udp_streaming(response):
-            try:
-                log.info(f'Stream: @{host}:{client_port}')
-                stream = await asyncio_dgram.bind((host, client_port))
-                while True:
-                    data, remote_addr = await stream.recv()
-                    await response.write(data)
-            finally:
-                await cleanup_proc(request, 'after udp_streaming')
+            log.info(f'Stream: @{host}:{client_port}')
+            stream = await asyncio_dgram.bind((host, client_port))
+            while True:
+                data, remote_addr = await stream.recv()
+                await response.write(data)
 
         return response.stream(udp_streaming, content_type=MIME)
 

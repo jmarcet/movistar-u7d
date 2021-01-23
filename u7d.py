@@ -13,9 +13,9 @@ from contextlib import closing
 from collections import namedtuple
 
 Request = namedtuple('Request', ['request', 'response'])
-Response = namedtuple('Response', ['version', 'status', 'headers', 'body'])
+Response = namedtuple('Response', ['version', 'status', 'url', 'headers', 'body'])
 UA = 'MICA-IP-STB'
-WIDTH = 134
+#WIDTH = 134
 
 needs_position = False
 
@@ -30,8 +30,8 @@ class RtspClient(object):
         resp = self.sock.recv(4096).decode()
         if not ' 200 OK' in resp:
             version, status = resp.rstrip().split('\n')[0].split(' ', 1)
-            #print(f'Response: {version} {status}')
-            return Response(version, status, {}, '')
+            #print(f'Response: {version} {status}', flush=True)
+            return Response(version, status, self.url, {}, '')
 
         head, body = resp.split('\r\n\r\n')
         version, status = head.split('\r\n')[0].rstrip().split(' ', 1)
@@ -48,7 +48,7 @@ class RtspClient(object):
         else:
             body = ''
 
-        return Response(version, status, headers, body)
+        return Response(version, status, self.url, headers, body)
 
     def serialize_headers(self, headers):
         return '\r\n'.join(map(lambda x: '{0}: {1}'.format(*x), headers.items()))
@@ -61,11 +61,8 @@ class RtspClient(object):
             method = 'SETUP'
             self.url, self.ip = self.ip, self.url
             url = self.url
-            print(f'RollingBuffer: {url}', flush=True)
         else:
             url = self.url
-            if method == 'SETUP':
-                print(f'RollingBuffer: {url}', flush=True)
 
         headers['CSeq'] = self.cseq
         ser_headers = self.serialize_headers(headers)
@@ -83,6 +80,12 @@ class RtspClient(object):
 
     def print(self, req):
         resp = req.response
+        _req = req.request.split('\r\n')[0].split(' ')
+        _off = 90 - len(_req[0])
+        _req_l = _req[0] + ' ' + _req[1][:_off]
+        _req_r = ' ' * (100 - len(_req_l) - len(_req[2]))
+        print(f'Req: {_req_l}{_req_r}{_req[2]}', end=' ', flush=True)
+        print(f'Resp: {resp.version} {resp.status}', flush=True)
         #headers = self.serialize_headers(resp.headers)
         #print('-' * WIDTH, flush=True)
         #print('Request: ' + req.request.split('\m')[0], end='', flush=True)
@@ -132,21 +135,21 @@ def main(args):
             setup = headers.copy()
             setup.update({'Transport': f'MP2T/H2221/UDP;unicast;client_port={args.client_port}'})
             r = client.print(client.send_request('SETUP', setup))
+            #print(f'Response: {r.version} {r.url[:100]} {r.status}', flush=True)
             if r.status != '200 OK':
                 needs_position = True
-                print(f'Response: {r.version} {r.status}')
                 r = client.print(client.send_request('SETUP2', setup))
                 if r.status != '200 OK':
-                    print(f'{repr(r)}')
+                    print(f'{repr(r)}', flush=True)
                     return
-            session = {'User-Agent': UA, 'Session': r.headers['Session'].split(';')[0], 'CSeq': ''}
 
             play = headers.copy()
-            play = {'CSeq': '', 'Session': session['Session'], 'User-Agent': UA}
+            play = {'CSeq': '', 'Session': r.headers['Session'].split(';')[0], 'User-Agent': UA}
             play['Range'] = f'npt={args.start[0]}-end'
             play.update({'Scale': '1.000', 'x-playNow': '', 'x-noFlush': ''})
             client.print(client.send_request('PLAY', play))
 
+            session = {'User-Agent': UA, 'Session': play['Session'], 'CSeq': ''}
             get_parameter = session.copy()
             if needs_position:
                 get_parameter.update({'Content-type': 'text/parameters', 'Content-length': 10})
@@ -157,20 +160,22 @@ def main(args):
     except KeyboardInterrupt:
         pass
     except Exception as ex:
-        print(f'Died: {repr(ex)}')
+        print(f'Died: /app/u7d.py {args.channel} {args.broadcast} -s {args.start[0]} -p {args.client_port} {repr(ex)}', flush=True)
     finally:
         if client and session:
-            print(f'Teardown: {session} {vars(args)}')
+            _session = session['Session']
+            print(f'Tear: /app/u7d.py {args.channel} {args.broadcast} -s {args.start[0]} -p {args.client_port} Session({_session})',
+                  flush=True)
             r = client.print(client.send_request('TEARDOWN', session))
             if r.status != '200 OK':
-                print(f'{repr(r)}')
+                print(f'{repr(r)}', flush=True)
 
 if __name__ == '__main__':
     try:
         parser = argparse.ArgumentParser('Stream content from the Movistar U7D service.')
         parser.add_argument('channel', help='channel id')
         parser.add_argument('broadcast', help='broadcast id')
-        parser.add_argument('--client_port', help='client udp port')
+        parser.add_argument('--client_port', '-p', help='client udp port')
         #parser.add_argument('--dumpfile', '-f', help='dump file path', default='test2.ts')
         parser.add_argument('--start', '-s', metavar='seconds', nargs=1, default=[0], type=int, help='stream start offset')
         args = parser.parse_args()
@@ -182,4 +187,4 @@ if __name__ == '__main__':
     except KeyboardInterrupt:
         pass
     except Exception as ex:
-        print(f'Died: {repr(ex)}')
+        print(f'Died: /app/u7d.py {args.channel} {args.broadcast} -s {args.start[0]} -p {args.client_port} {repr(ex)}', flush=True)
