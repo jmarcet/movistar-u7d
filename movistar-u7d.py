@@ -52,7 +52,7 @@ async def notify_server_start(app, loop):
 @app.listener('after_server_stop')
 async def notify_server_stop(app, loop):
     log.debug(f'after_server_stop killing u7d.py')
-    p = await asyncio.create_subprocess_exec('/usr/bin/pkill', '-INT', '-f', '/app/u7d.py .+ --client_port')
+    p = await asyncio.create_subprocess_exec('/usr/bin/pkill', '-INT', '-f', '/app/u7d.py .+ -p ')
     await p.wait()
 
 @app.get('/reload_epg')
