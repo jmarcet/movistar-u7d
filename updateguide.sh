@@ -5,3 +5,5 @@
 rm -fr /opt/xmltv/.xmltv/cache
 /usr/bin/docker exec -it movistar_u7d /app/tv_grab_es_movistartv --m3u /home/MovistarTV.m3u
 /usr/bin/docker exec -it movistar_u7d /app/tv_grab_es_movistartv --tvheadend /home/MovistarTV.m3u --output /home/guide.xml
+
+curl http://10.137.70.3:8888/reload_epg

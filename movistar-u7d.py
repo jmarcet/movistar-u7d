@@ -23,6 +23,7 @@ SANIC_HOST = os.environ.get('SANIC_HOST') or '127.0.0.1'
 SANIC_PORT = os.environ.get('SANIC_PORT') or '8888'
 UDPXY = os.environ.get('UDPXY') or 'http://192.168.137.1:4022/rtp/'
 
+CACHED_TIME = 7 * 24 * 60 * 60
 MIME = 'video/MP2T'
 GUIDE = os.path.join(HOME, 'guide.xml')
 CHANNELS = os.path.join(HOME, 'MovistarTV.m3u')
@@ -41,6 +42,7 @@ app = Sanic('Movistar_u7d')
 app.config.update({'KEEP_ALIVE': False})
 
 _epgdata = {}
+_epgdata['data'] = {}
 _lastprogram = {}
 _proc = {}
 
@@ -64,16 +66,42 @@ async def handle_reload_epg(request):
 
 def handle_reload_epg_task():
     global _epgdata
-    epg_cache = '/home/.xmltv/cache/epg.json'
-    epgs = glob.glob('/home/epg.*.json')
-    if os.path.exists(epg_cache) and os.stat(epg_cache).st_size > 1024:
-        epgs.append(epg_cache)
+    epg_cache = '/home/epg.cache.json'
+    epg_data = '/home/.xmltv/cache/epg.json'
+    if os.path.exists(epg_cache) and os.stat(epg_cache).st_size > 100:
+        log.info('Loading EPG cache')
+        epgs = [ epg_cache ]
+    else:
+        log.info('Loading logrotate EPG backups')
+        epgs = glob.glob('/home/epg.*.json')
+    if os.path.exists(epg_data) and os.stat(epg_data).st_size > 100:
+        log.info('Loading fresh EPG data')
+        epgs.append(epg_data)
+    deadline = int(time.time()) - CACHED_TIME
+    expired = 0
     for epg in epgs:
-        day_epg = json.loads(open(epg).read())
-        if _epgdata:
-            _epgdata = {**_epgdata, **day_epg}
-        else:
-            _epgdata = day_epg
+        with open(epg) as f:
+            day_epg = json.loads(f.read())
+        channels = day_epg['data'].keys()
+        for channel in channels:
+            if not channel in _epgdata['data']:
+                _epgdata['data'][channel] = {}
+            for timestamp in day_epg['data'][channel]:
+                if int(day_epg['data'][channel][timestamp]['end']) > deadline:
+                    _epgdata['data'][channel][timestamp] = day_epg['data'][channel][timestamp]
+                else:
+                    expired += 1
+        nr_epg = 0
+        for chan in channels:
+            nr_epg += len(day_epg['data'][chan].keys())
+        log.debug(f'EPG entries {epg}: {nr_epg}')
+    log.debug('Total Channels=' + str(len(_epgdata['data'])))
+    nr_epg = 0
+    for chan in _epgdata['data'].keys():
+        nr_epg += len(_epgdata['data'][chan].keys())
+    log.debug(f'EPG entries Total: {nr_epg} Expired: {expired}')
+    with open(epg_cache, 'w') as f:
+        f.write(json.dumps(_epgdata))
     log.info('EPG: Updated')
 
 @app.get('/channels.m3u')
@@ -114,14 +142,14 @@ async def handle_rtp(request, channel_id, channel_key, url):
         offset = '0'
         program_id = None
 
-        if 'data' in _epgdata and channel_key in _epgdata['data'] and start in _epgdata['data'][channel_key]:
+        if channel_key in _epgdata['data'] and start in _epgdata['data'][channel_key]:
             program_id = str(_epgdata['data'][channel_key][start]['pid'])
             _lastprogram[request.ip] = (channel_id, program_id, start)
         elif request.ip in _lastprogram.keys():
             new_start = start
             channel_id, program_id, start = _lastprogram[request.ip]
             offset = str(int(new_start) - int(start))
-        elif 'data' in _epgdata and channel_key in _epgdata['data']:
+        elif channel_key in _epgdata['data']:
             for event in sorted(_epgdata['data'][channel_key].keys()):
                 if int(event) > int(start):
                     break
