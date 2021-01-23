@@ -24,6 +24,8 @@ SANIC_PORT = os.environ.get('SANIC_PORT') or '8888'
 UDPXY = os.environ.get('UDPXY') or 'http://192.168.137.1:4022/rtp/'
 
 CACHED_TIME = 7 * 24 * 60 * 60
+EPG_CHANNELS = [ '1', '3', '4', '5', '6', '717', '477', '4911', '934', '3186', '884', '844', '3443', '1221', '3325', '744', 
+                '2843', '657', '3603', '663', '935', '2863', '3184', '2', '578', '745', '743', '582', '597' ]
 MIME = 'video/MP2T'
 GUIDE = os.path.join(HOME, 'guide.xml')
 CHANNELS = os.path.join(HOME, 'MovistarTV.m3u')
@@ -82,7 +84,7 @@ def handle_reload_epg_task():
     for epg in epgs:
         with open(epg) as f:
             day_epg = json.loads(f.read())
-        channels = day_epg['data'].keys()
+        channels = [ channel for channel in day_epg['data'].keys() if channel in EPG_CHANNELS ]
         for channel in channels:
             if not channel in _epgdata['data']:
                 _epgdata['data'][channel] = {}
