@@ -14,6 +14,7 @@ import sys
 import time
 
 from contextlib import closing
+from expiringdict import ExpiringDict
 from sanic import Sanic, response
 from sanic.log import logger
 
@@ -47,6 +48,7 @@ _epgdata = {}
 _epgdata['data'] = {}
 _lastprogram = {}
 _proc = {}
+_reqs = ExpiringDict(max_len=100, max_age_seconds=5)
 
 
 @app.listener('after_server_start')
@@ -70,6 +72,7 @@ def handle_reload_epg_task():
     global _epgdata
     epg_cache = '/home/epg.cache.json'
     epg_data = '/home/.xmltv/cache/epg.json'
+
     if os.path.exists(epg_cache) and os.stat(epg_cache).st_size > 100:
         log.info('Loading EPG cache')
         epgs = [ epg_cache ]
@@ -79,6 +82,7 @@ def handle_reload_epg_task():
     if os.path.exists(epg_data) and os.stat(epg_data).st_size > 100:
         log.info('Loading fresh EPG data')
         epgs.append(epg_data)
+
     deadline = int(time.time()) - CACHED_TIME
     expired = 0
     for epg in epgs:
@@ -97,11 +101,13 @@ def handle_reload_epg_task():
         for chan in channels:
             nr_epg += len(day_epg['data'][chan].keys())
         log.debug(f'EPG entries {epg}: {nr_epg}')
+
     log.debug('Total Channels=' + str(len(_epgdata['data'])))
     nr_epg = 0
     for chan in _epgdata['data'].keys():
         nr_epg += len(_epgdata['data'][chan].keys())
     log.debug(f'EPG entries Total: {nr_epg} Expired: {expired}')
+
     with open(epg_cache, 'w') as f:
         f.write(json.dumps(_epgdata))
     log.info('EPG: Updated')
@@ -122,10 +128,9 @@ async def handle_guide(request):
 @app.get('/rtp/<channel_id>/<channel_key>/<url>')
 async def handle_rtp(request, channel_id, channel_key, url):
     log.info(f'Request: {request.method} {request.raw_url.decode()}')
-    global _lastprogram, _proc
+    global _lastprogram, _proc, _reqs
 
-    if request.ip:
-        log.info(f'Client: {request.ip}')
+    log.info(f'Client: {request.ip}')
 
     # Nromal IPTV Channel
     if url.startswith('239'):
@@ -164,19 +169,25 @@ async def handle_rtp(request, channel_id, channel_key, url):
         if not program_id:
             return response.json({'status': 'channel_id={channel_id} program_id={program_id} not found'}, 404)
 
+        req_id = f'{request.ip}:{channel_id}:{program_id}:{offset}'
+        if req_id in _reqs:
+            client_port = _reqs[req_id]
+            log.info(f'Reusing: /app/u7d.py {channel_id} {program_id} -s {offset} -p {client_port}')
+        else:
+            await cleanup_proc(request, 'on calling u7d.py')
+
+            with closing(socket.socket(socket.AF_INET, socket.SOCK_DGRAM)) as s:
+                s.bind(('', 0))
+                s.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+                client_port = str(s.getsockname()[1])
+
+            log.info(f'Starting: /app/u7d.py {channel_id} {program_id} -s {offset} -p {client_port}')
+
+            _proc[request.ip] = await asyncio.create_subprocess_exec('/app/u7d.py', channel_id, program_id,
+                                                                     '-s', offset, '-p', client_port)
+        _reqs[req_id] = client_port
+
         host = socket.gethostbyname(socket.gethostname())
-        with closing(socket.socket(socket.AF_INET, socket.SOCK_DGRAM)) as s:
-            s.bind(('', 0))
-            s.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
-            client_port = str(s.getsockname()[1])
-
-        log.info(f'Exec: /app/u7d.py {channel_id} {program_id} --start {offset} --client_port {client_port}')
-
-        await cleanup_proc(request, 'on calling u7d.py')
-        #1await asyncio.sleep(0.1)
-        _proc[request.ip] = await asyncio.create_subprocess_exec('/app/u7d.py', channel_id, program_id,
-                                                                 '-s', offset, '-p', client_port)
-
         async def udp_streaming(response):
             log.info(f'Stream: @{host}:{client_port}')
             stream = await asyncio_dgram.bind((host, client_port))

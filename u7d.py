@@ -15,7 +15,7 @@ from collections import namedtuple
 Request = namedtuple('Request', ['request', 'response'])
 Response = namedtuple('Response', ['version', 'status', 'url', 'headers', 'body'])
 UA = 'MICA-IP-STB'
-#WIDTH = 134
+WIDTH = 134
 
 needs_position = False
 
@@ -119,56 +119,50 @@ def main(args):
         url = data['resultData']['url']
         uri = urllib.parse.urlparse(url)
 
-        with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
-            client = session = None
+        s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+        client = session = None
 
-            s.connect((uri.hostname, uri.port))
-            s.settimeout(60)
+        s.connect((uri.hostname, uri.port))
+        s.settimeout(60)
 
-            client = RtspClient(s, url)
-            client.print(client.send_request('OPTIONS', headers))
+        client = RtspClient(s, url)
+        client.print(client.send_request('OPTIONS', headers))
 
-            describe = headers.copy()
-            describe['Accept'] = 'application/sdp'
-            client.print(client.send_request('DESCRIBE', describe))
+        describe = headers.copy()
+        describe['Accept'] = 'application/sdp'
+        client.print(client.send_request('DESCRIBE', describe))
 
-            setup = headers.copy()
-            setup.update({'Transport': f'MP2T/H2221/UDP;unicast;client_port={args.client_port}'})
-            r = client.print(client.send_request('SETUP', setup))
-            #print(f'Response: {r.version} {r.url[:100]} {r.status}', flush=True)
+        setup = headers.copy()
+        setup.update({'Transport': f'MP2T/H2221/UDP;unicast;client_port={args.client_port}'})
+        r = client.print(client.send_request('SETUP', setup))
+        #print(f'Response: {r.version} {r.url[:100]} {r.status}', flush=True)
+        if r.status != '200 OK':
+            needs_position = True
+            r = client.print(client.send_request('SETUP2', setup))
             if r.status != '200 OK':
-                needs_position = True
-                r = client.print(client.send_request('SETUP2', setup))
-                if r.status != '200 OK':
-                    print(f'{repr(r)}', flush=True)
-                    return
+                print(f'{repr(r)}', flush=True)
+                return
 
-            play = headers.copy()
-            play = {'CSeq': '', 'Session': r.headers['Session'].split(';')[0], 'User-Agent': UA}
-            play['Range'] = f'npt={args.start[0]}-end'
-            play.update({'Scale': '1.000', 'x-playNow': '', 'x-noFlush': ''})
-            client.print(client.send_request('PLAY', play))
+        play = headers.copy()
+        play = {'CSeq': '', 'Session': r.headers['Session'].split(';')[0], 'User-Agent': UA}
+        play['Range'] = f'npt={args.start[0]}-end'
+        play.update({'Scale': '1.000', 'x-playNow': '', 'x-noFlush': ''})
+        client.print(client.send_request('PLAY', play))
 
-            session = {'User-Agent': UA, 'Session': play['Session'], 'CSeq': ''}
-            get_parameter = session.copy()
-            if needs_position:
-                get_parameter.update({'Content-type': 'text/parameters', 'Content-length': 10})
+        session = {'User-Agent': UA, 'Session': play['Session'], 'CSeq': ''}
+        get_parameter = session.copy()
+        if needs_position:
+            get_parameter.update({'Content-type': 'text/parameters', 'Content-length': 10})
 
-            while True:
-                time.sleep(30)
-                client.print(client.send_request('GET_PARAMETER', get_parameter))
-    except KeyboardInterrupt:
-        pass
-    except Exception as ex:
-        print(f'Died: /app/u7d.py {args.channel} {args.broadcast} -s {args.start[0]} -p {args.client_port} {repr(ex)}', flush=True)
+        while True:
+            time.sleep(30)
+            client.print(client.send_request('GET_PARAMETER', get_parameter))
     finally:
         if client and session:
-            _session = session['Session']
-            print(f'Tear: /app/u7d.py {args.channel} {args.broadcast} -s {args.start[0]} -p {args.client_port} Session({_session})',
-                  flush=True)
             r = client.print(client.send_request('TEARDOWN', session))
             if r.status != '200 OK':
                 print(f'{repr(r)}', flush=True)
+            print('-' * WIDTH, flush=True)
 
 if __name__ == '__main__':
     try:

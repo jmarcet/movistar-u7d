@@ -1,4 +1,5 @@
 aiohttp
 asyncio_dgram
+expiringdict
 pgrep
 sanic
