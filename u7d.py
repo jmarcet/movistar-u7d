@@ -78,14 +78,21 @@ class RtspClient(object):
 
         return Request(req, resp)
 
-    def print(self, req):
+    def print(self, req, killed=None):
         resp = req.response
         _req = req.request.split('\r\n')[0].split(' ')
         _off = 90 - len(_req[0])
+        if killed:
+            tmp = _req[1].split('/')
+            _req[1] = str(tmp[0]) + '://' + str(tmp[2])
+            _req[1] += f' /app/u7d.py {killed.channel} {killed.broadcast} -s {killed.start[0]} -p {killed.client_port}'
+            print('-' * WIDTH, flush=True)
         _req_l = _req[0] + ' ' + _req[1][:_off]
         _req_r = ' ' * (100 - len(_req_l) - len(_req[2]))
         print(f'Req: {_req_l}{_req_r}{_req[2]}', end=' ', flush=True)
         print(f'Resp: {resp.version} {resp.status}', flush=True)
+        if killed:
+            print('-' * WIDTH, flush=True)
         #headers = self.serialize_headers(resp.headers)
         #print('-' * WIDTH, flush=True)
         #print('Request: ' + req.request.split('\m')[0], end='', flush=True)
@@ -159,10 +166,9 @@ def main(args):
             client.print(client.send_request('GET_PARAMETER', get_parameter))
     finally:
         if client and session:
-            r = client.print(client.send_request('TEARDOWN', session))
+            r = client.print(client.send_request('TEARDOWN', session), killed=args)
             if r.status != '200 OK':
                 print(f'{repr(r)}', flush=True)
-            print('-' * WIDTH, flush=True)
 
 if __name__ == '__main__':
     try:
