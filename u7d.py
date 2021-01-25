@@ -76,6 +76,9 @@ class RtspClient(object):
         self.sock.send(req.encode())
         resp = self.read_message()
 
+        if resp.status != '200 OK' and 'SETUP' not in method:                                                                         
+            raise ValueError(f'{method} {repr(resp)}')                                                                                
+
         return Request(req, resp)
 
     def print(self, req, killed=None):
@@ -110,11 +113,16 @@ def find_free_port():
 
 def main(args):
     global needs_position
-    client = session = None
-    try:
-        headers = {'CSeq': '', 'User-Agent': UA}
-        host = socket.gethostbyname(socket.gethostname())
 
+    client = s = None
+    headers = {'CSeq': '', 'User-Agent': UA}
+
+    setup = session = play = describe = headers.copy()
+    describe['Accept'] = 'application/sdp'
+    setup['Transport'] = f'MP2T/H2221/UDP;unicast;client_port={args.client_port}'
+
+    try:
+        host = socket.gethostbyname(socket.gethostname())
         params = f'action=getCatchUpUrl&extInfoID={args.broadcast}&channelID={args.channel}&service=hd&mode=1'
         resp = urllib.request.urlopen(f'http://www-60.svc.imagenio.telefonica.net:2001/appserver/mvtv.do?{params}')
         data = json.loads(resp.read())
@@ -127,22 +135,14 @@ def main(args):
         uri = urllib.parse.urlparse(url)
 
         s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-        client = session = None
-
         s.connect((uri.hostname, uri.port))
         s.settimeout(60)
 
         client = RtspClient(s, url)
         client.print(client.send_request('OPTIONS', headers))
-
-        describe = headers.copy()
-        describe['Accept'] = 'application/sdp'
         client.print(client.send_request('DESCRIBE', describe))
 
-        setup = headers.copy()
-        setup.update({'Transport': f'MP2T/H2221/UDP;unicast;client_port={args.client_port}'})
         r = client.print(client.send_request('SETUP', setup))
-        #print(f'Response: {r.version} {r.url[:100]} {r.status}', flush=True)
         if r.status != '200 OK':
             needs_position = True
             r = client.print(client.send_request('SETUP2', setup))
@@ -150,25 +150,24 @@ def main(args):
                 print(f'{repr(r)}', flush=True)
                 return
 
-        play = headers.copy()
-        play = {'CSeq': '', 'Session': r.headers['Session'].split(';')[0], 'User-Agent': UA}
         play['Range'] = f'npt={args.start[0]}-end'
         play.update({'Scale': '1.000', 'x-playNow': '', 'x-noFlush': ''})
-        client.print(client.send_request('PLAY', play))
+        play['Session'] = session['Session'] = r.headers['Session'].split(';')[0]
 
-        session = {'User-Agent': UA, 'Session': play['Session'], 'CSeq': ''}
         get_parameter = session.copy()
         if needs_position:
             get_parameter.update({'Content-type': 'text/parameters', 'Content-length': 10})
 
+        client.print(client.send_request('PLAY', play))
         while True:
             time.sleep(30)
             client.print(client.send_request('GET_PARAMETER', get_parameter))
+
     finally:
-        if client and session:
+        if client and 'Session' in session:
             r = client.print(client.send_request('TEARDOWN', session), killed=args)
-            if r.status != '200 OK':
-                print(f'{repr(r)}', flush=True)
+        if s:
+            s.close()
 
 if __name__ == '__main__':
     try:
