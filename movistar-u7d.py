@@ -151,20 +151,31 @@ async def handle_rtp(request, channel_id, channel_key, url):
 
         if channel_key in _epgdata['data'] and start in _epgdata['data'][channel_key]:
             program_id = str(_epgdata['data'][channel_key][start]['pid'])
+            end = str(_epgdata['data'][channel_key][start]['end'])
+            duration = str(int(end) - int(start))
             _lastprogram[request.ip] = (channel_id, program_id, start)
+            log.info(f'Found: channel={channel_key} start={start} end={end} duration={duration}')
         elif request.ip in _lastprogram.keys():
             new_start = start
             channel_id, program_id, start = _lastprogram[request.ip]
+            end = str(_epgdata['data'][channel_key][start]['end'])
+            duration = str(int(end) - int(start))
             offset = str(int(new_start) - int(start))
+            log.info(f'Found: channel={channel_key} start={start} offset={offset} end={end} duration={duration}')
         elif channel_key in _epgdata['data']:
             for event in sorted(_epgdata['data'][channel_key].keys()):
                 if int(event) > int(start):
                     break
                 last_event = event
             if last_event:
-                offset = str(int(start) - int(last_event))
-                program_id = str(_epgdata['data'][channel_key][last_event]['pid'])
-                _lastprogram[request.ip] = (channel_id, program_id, last_event)
+                new_start = start
+                start = last_event
+                offset = str(int(new_start) - int(start))
+                program_id = str(_epgdata['data'][channel_key][start]['pid'])
+                end = str(_epgdata['data'][channel_key][start]['end'])
+                duration = str(int(end) - int(start))
+                _lastprogram[request.ip] = (channel_id, program_id, start)
+                log.info(f'Guessed: channel={channel_key} start={start} offset={offset} end={end} duration={duration}')
 
         if not program_id:
             return response.json({'status': 'channel_id={channel_id} program_id={program_id} not found'}, 404)
