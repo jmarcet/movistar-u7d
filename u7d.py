@@ -136,7 +136,7 @@ def main(args):
 
         s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
         s.connect((uri.hostname, uri.port))
-        s.settimeout(60)
+        s.settimeout(10)
 
         client = RtspClient(s, url)
         client.print(client.send_request('OPTIONS', headers))
