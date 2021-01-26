@@ -185,6 +185,14 @@ async def handle_rtp(request, channel_id, channel_key, url):
 
             _proc[request.ip] = await asyncio.create_subprocess_exec('/app/u7d.py', channel_id, program_id,
                                                                      '-s', offset, '-p', client_port)
+        try:
+            r = await asyncio.wait_for(_proc[request.ip].wait(), 0.3)
+            msg = f'Not available: /app/u7d.py {channel_id} {program_id} -s {offset} -p {client_port}'
+            log.debug(msg)
+            return response.json({'status': msg}, 404)
+        except asyncio.exceptions.TimeoutError:
+            pass
+
         _reqs[req_id] = client_port
 
         host = socket.gethostbyname(socket.gethostname())
