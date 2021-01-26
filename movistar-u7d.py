@@ -46,7 +46,6 @@ app.config.update({'KEEP_ALIVE': False})
 
 _epgdata = {}
 _epgdata['data'] = {}
-_lastprogram = {}
 _proc = {}
 _reqs = ExpiringDict(max_len=100, max_age_seconds=5)
 
@@ -128,15 +127,13 @@ async def handle_guide(request):
 @app.get('/rtp/<channel_id>/<channel_key>/<url>')
 async def handle_rtp(request, channel_id, channel_key, url):
     log.info(f'Request: {request.method} {request.raw_url.decode()}')
-    global _lastprogram, _proc, _reqs
+    global _proc, _reqs
 
     log.info(f'Client: {request.ip}')
 
     # Nromal IPTV Channel
     if url.startswith('239'):
         await cleanup_proc(request, 'on channel change')
-        if request.ip in _lastprogram.keys():
-            _lastprogram.pop(request.ip, None)
 
         log.info(f'Redirect: {UDPXY + url}')
         return response.redirect(UDPXY + url)
@@ -149,42 +146,25 @@ async def handle_rtp(request, channel_id, channel_key, url):
         offset = '0'
         program_id = None
 
-        if channel_key in _epgdata['data'] and start in _epgdata['data'][channel_key]:
-            program_id = str(_epgdata['data'][channel_key][start]['pid'])
-            end = str(_epgdata['data'][channel_key][start]['end'])
-            duration = str(int(end) - int(start))
-            _lastprogram[request.ip] = (channel_id, program_id, start)
-            log.info(f'Found: channel={channel_key} start={start} end={end} duration={duration}')
-        elif request.ip in _lastprogram.keys():
-            new_start = start
-            channel_id, program_id, start = _lastprogram[request.ip]
-            end = str(_epgdata['data'][channel_key][start]['end'])
-            duration = str(int(end) - int(start))
-            offset = str(int(new_start) - int(start))
-            if offset.startswith('-') or int(offset) >= int(duration):
-                if offset.startswith('-'):
-                    log.info(f'Found negative offset {offset}')
-                else:
-                    log.info(f'Offset {offset} exceded program duration {duration}')
-                program_id = None
-                start = new_start
-            else:
-                log.info(f'Found: channel {channel_key} start {start} offset {offset} end {end} duration {duration}')
-
-        if not program_id and channel_key in _epgdata['data']:
-            for event in sorted(_epgdata['data'][channel_key].keys()):
-                if int(event) > int(start):
-                    break
-                last_event = event
-            if last_event:
-                new_start = start
-                start = last_event
-                offset = str(int(new_start) - int(start))
+        if channel_key in _epgdata['data']:
+            if start in _epgdata['data'][channel_key]:
                 program_id = str(_epgdata['data'][channel_key][start]['pid'])
                 end = str(_epgdata['data'][channel_key][start]['end'])
                 duration = str(int(end) - int(start))
-                _lastprogram[request.ip] = (channel_id, program_id, start)
-                log.info(f'Guessed: channel {channel_key} start {start} offset {offset} end {end} duration {duration}')
+                log.info(f'Found: channel={channel_key} start={start} end={end} duration={duration}')
+            else:
+                for event in sorted(_epgdata['data'][channel_key].keys()):
+                    if int(event) > int(start):
+                        break
+                    last_event = event
+                if last_event:
+                    new_start = start
+                    start = last_event
+                    offset = str(int(new_start) - int(start))
+                    program_id = str(_epgdata['data'][channel_key][start]['pid'])
+                    end = str(_epgdata['data'][channel_key][start]['end'])
+                    duration = str(int(end) - int(start))
+                    log.info(f'Guessed: channel {channel_key} start {start} offset {offset} end {end} duration {duration}')
 
         if not program_id:
             return response.json({'status': 'channel_id {channel_id} program_id {program_id} not found'}, 404)
@@ -219,8 +199,6 @@ async def handle_rtp(request, channel_id, channel_key, url):
 
     # Not recognized url
     else:
-        if request.ip in _lastprogram.keys():
-            _lastprogram.pop(request.ip, None)
         return response.json({'status': 'URL not understood'}, 404)
 
 async def cleanup_proc(request, message):
