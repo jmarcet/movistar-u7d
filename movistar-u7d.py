@@ -100,13 +100,13 @@ def handle_reload_epg_task():
         nr_epg = 0
         for chan in channels:
             nr_epg += len(day_epg['data'][chan].keys())
-        log.debug(f'EPG entries {epg}: {nr_epg}')
+        log.info(f'EPG entries {epg}: {nr_epg}')
 
-    log.debug('Total Channels=' + str(len(_epgdata['data'])))
+    log.info('Total Channels=' + str(len(_epgdata['data'])))
     nr_epg = 0
     for chan in _epgdata['data'].keys():
         nr_epg += len(_epgdata['data'][chan].keys())
-    log.debug(f'EPG entries Total: {nr_epg} Expired: {expired}')
+    log.info(f'EPG entries Total: {nr_epg} Expired: {expired}')
 
     with open(epg_cache, 'w') as f:
         f.write(json.dumps(_epgdata))
