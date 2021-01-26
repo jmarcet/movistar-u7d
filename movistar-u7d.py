@@ -161,8 +161,17 @@ async def handle_rtp(request, channel_id, channel_key, url):
             end = str(_epgdata['data'][channel_key][start]['end'])
             duration = str(int(end) - int(start))
             offset = str(int(new_start) - int(start))
-            log.info(f'Found: channel={channel_key} start={start} offset={offset} end={end} duration={duration}')
-        elif channel_key in _epgdata['data']:
+            if offset.startswith('-') or int(offset) >= int(duration):
+                if offset.startswith('-'):
+                    log.info(f'Found negative offset {offset}')
+                else:
+                    log.info(f'Offset {offset} exceded program duration {duration}')
+                program_id = None
+                start = new_start
+            else:
+                log.info(f'Found: channel {channel_key} start {start} offset {offset} end {end} duration {duration}')
+
+        if not program_id and channel_key in _epgdata['data']:
             for event in sorted(_epgdata['data'][channel_key].keys()):
                 if int(event) > int(start):
                     break
@@ -175,10 +184,10 @@ async def handle_rtp(request, channel_id, channel_key, url):
                 end = str(_epgdata['data'][channel_key][start]['end'])
                 duration = str(int(end) - int(start))
                 _lastprogram[request.ip] = (channel_id, program_id, start)
-                log.info(f'Guessed: channel={channel_key} start={start} offset={offset} end={end} duration={duration}')
+                log.info(f'Guessed: channel {channel_key} start {start} offset {offset} end {end} duration {duration}')
 
         if not program_id:
-            return response.json({'status': 'channel_id={channel_id} program_id={program_id} not found'}, 404)
+            return response.json({'status': 'channel_id {channel_id} program_id {program_id} not found'}, 404)
 
         req_id = f'{request.ip}:{channel_id}:{program_id}:{offset}'
         if req_id in _reqs:
