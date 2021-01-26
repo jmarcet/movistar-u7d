@@ -70,7 +70,7 @@ default_demarcation = demarcations['Galicia']
 
 app_dir = os.path.join(os.environ.get('HOME'), '.xmltv')
 use_multithread = True
-cache_exp = 7  # Días
+cache_exp = 0
 
 sanic = '192.168.137.1:8888'
 
