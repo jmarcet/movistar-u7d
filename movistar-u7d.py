@@ -44,13 +44,6 @@ async def notify_server_stop(app, loop):
     p = await asyncio.create_subprocess_exec('/usr/bin/pkill', '-INT', '-f', '/app/u7d.py .+ -p ')
     await p.wait()
 
-@app.get('/reload_epg')
-async def handle_reload_epg(request):
-    loop = asyncio.get_running_loop()
-    with concurrent.futures.ProcessPoolExecutor() as pool:
-        await loop.run_in_executor(pool, handle_reload_epg_task)
-    return response.json({'status': 'EPG Updated'}, 200)
-
 @app.get('/channels.m3u')
 @app.get('/MovistarTV.m3u')
 async def handle_channels(request):
@@ -63,6 +56,13 @@ async def handle_guide(request):
     if not os.path.exists(GUIDE):
         return response.json({}, 404)
     return await response.file(GUIDE)
+
+@app.get('/reload_epg')
+async def handle_reload_epg(request):
+    loop = asyncio.get_running_loop()
+    with concurrent.futures.ProcessPoolExecutor() as pool:
+        await loop.run_in_executor(pool, handle_reload_epg_task)
+    return response.json({'status': 'EPG Updated'}, 200)
 
 @app.get('/rtp/<channel_id>/<channel_key>/<url>')
 async def handle_rtp(request, channel_id, channel_key, url):
