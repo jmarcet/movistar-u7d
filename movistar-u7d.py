@@ -61,53 +61,6 @@ async def handle_reload_epg(request):
         await loop.run_in_executor(pool, handle_reload_epg_task)
     return response.json({'status': 'EPG Updated'}, 200)
 
-def handle_reload_epg_task():
-    global _epgdata
-    epg_cache = '/home/epg.cache.json'
-    epg_data = '/home/.xmltv/cache/epg.json'
-
-    if os.path.exists(epg_cache) and os.stat(epg_cache).st_size > 100:
-        log.info('Loading EPG cache')
-        epgs = [ epg_cache ]
-    else:
-        log.info('Loading logrotate EPG backups')
-        epgs = glob.glob('/home/epg.*.json')
-    if os.path.exists(epg_data) and os.stat(epg_data).st_size > 100:
-        log.info('Loading fresh EPG data')
-        epgs.append(epg_data)
-
-    deadline = int(time.time()) - CACHED_TIME
-    expired = 0
-    for epg in epgs:
-        try:
-            with open(epg) as f:
-                day_epg = json.loads(f.read())
-        except json.decoder.JSONDecodeError:
-            continue
-        channels = [ channel for channel in day_epg['data'].keys() if channel in EPG_CHANNELS ]
-        for channel in channels:
-            if not channel in _epgdata['data']:
-                _epgdata['data'][channel] = {}
-            for timestamp in day_epg['data'][channel]:
-                if int(day_epg['data'][channel][timestamp]['end']) > deadline:
-                    _epgdata['data'][channel][timestamp] = day_epg['data'][channel][timestamp]
-                else:
-                    expired += 1
-        nr_epg = 0
-        for chan in channels:
-            nr_epg += len(day_epg['data'][chan].keys())
-        log.info(f'EPG entries {epg}: {nr_epg}')
-
-    log.info('Total Channels=' + str(len(_epgdata['data'])))
-    nr_epg = 0
-    for chan in _epgdata['data'].keys():
-        nr_epg += len(_epgdata['data'][chan].keys())
-    log.info(f'EPG entries Total: {nr_epg} Expired: {expired}')
-
-    with open(epg_cache, 'w') as f:
-        f.write(json.dumps(_epgdata))
-    log.info('EPG: Updated')
-
 @app.get('/channels.m3u')
 @app.get('/MovistarTV.m3u')
 async def handle_channels(request):
@@ -196,6 +149,53 @@ async def handle_rtp(request, channel_id, channel_key, url):
 
     else:
         return response.json({'status': 'URL not understood'}, 404)
+
+def handle_reload_epg_task():
+    global _epgdata
+    epg_cache = '/home/epg.cache.json'
+    epg_data = '/home/.xmltv/cache/epg.json'
+
+    if os.path.exists(epg_cache) and os.stat(epg_cache).st_size > 100:
+        log.info('Loading EPG cache')
+        epgs = [ epg_cache ]
+    else:
+        log.info('Loading logrotate EPG backups')
+        epgs = glob.glob('/home/epg.*.json')
+    if os.path.exists(epg_data) and os.stat(epg_data).st_size > 100:
+        log.info('Loading fresh EPG data')
+        epgs.append(epg_data)
+
+    deadline = int(time.time()) - CACHED_TIME
+    expired = 0
+    for epg in epgs:
+        try:
+            with open(epg) as f:
+                day_epg = json.loads(f.read())
+        except json.decoder.JSONDecodeError:
+            continue
+        channels = [ channel for channel in day_epg['data'].keys() if channel in EPG_CHANNELS ]
+        for channel in channels:
+            if not channel in _epgdata['data']:
+                _epgdata['data'][channel] = {}
+            for timestamp in day_epg['data'][channel]:
+                if int(day_epg['data'][channel][timestamp]['end']) > deadline:
+                    _epgdata['data'][channel][timestamp] = day_epg['data'][channel][timestamp]
+                else:
+                    expired += 1
+        nr_epg = 0
+        for chan in channels:
+            nr_epg += len(day_epg['data'][chan].keys())
+        log.info(f'EPG entries {epg}: {nr_epg}')
+
+    log.info('Total Channels=' + str(len(_epgdata['data'])))
+    nr_epg = 0
+    for chan in _epgdata['data'].keys():
+        nr_epg += len(_epgdata['data'][chan].keys())
+    log.info(f'EPG entries Total: {nr_epg} Expired: {expired}')
+
+    with open(epg_cache, 'w') as f:
+        f.write(json.dumps(_epgdata))
+    log.info('EPG: Updated')
 
 
 if __name__ == '__main__':
