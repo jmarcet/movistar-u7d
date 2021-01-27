@@ -1,6 +1,5 @@
 #!/usr/bin/env python3
 
-import aiohttp
 import asyncio
 import asyncio_dgram
 import concurrent.futures
@@ -10,12 +9,10 @@ import logging
 import os
 import signal
 import socket
-import sys
 import time
 
 from contextlib import closing
 from sanic import Sanic, response
-from sanic.log import logger
 
 
 HOME = os.environ.get('HOME') or '/home/'
