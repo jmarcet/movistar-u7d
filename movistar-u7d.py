@@ -85,8 +85,11 @@ def handle_reload_epg_task():
     deadline = int(time.time()) - CACHED_TIME
     expired = 0
     for epg in epgs:
-        with open(epg) as f:
-            day_epg = json.loads(f.read())
+        try:
+            with open(epg) as f:
+                day_epg = json.loads(f.read())
+        except json.decoder.JSONDecodeError:
+            continue
         channels = [ channel for channel in day_epg['data'].keys() if channel in EPG_CHANNELS ]
         for channel in channels:
             if not channel in _epgdata['data']:
