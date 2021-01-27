@@ -5,7 +5,6 @@ import asyncio_dgram
 import concurrent.futures
 import glob
 import json
-import logging
 import os
 import signal
 import socket
@@ -13,6 +12,7 @@ import time
 
 from contextlib import closing
 from sanic import Sanic, response
+from sanic.log import logger as log
 
 
 HOME = os.environ.get('HOME') or '/home/'
@@ -26,16 +26,6 @@ EPG_CHANNELS = [ '1', '3', '4', '5', '6', '717', '477', '4911', '934', '3186', '
 MIME = 'video/MP2T'
 GUIDE = os.path.join(HOME, 'guide.xml')
 CHANNELS = os.path.join(HOME, 'MovistarTV.m3u')
-
-logging_format = "%(process)d-%(levelname)s "
-logging_format += "%(module)s::%(funcName)s():l%(lineno)d: "
-logging_format += "%(message)s"
-
-logging.basicConfig(
-    format=logging_format,
-    level=logging.DEBUG
-)
-log = logging.getLogger()
 
 app = Sanic('Movistar_u7d')
 app.config.update({'KEEP_ALIVE': False})
