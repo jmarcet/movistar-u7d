@@ -14,7 +14,6 @@ import sys
 import time
 
 from contextlib import closing
-from expiringdict import ExpiringDict
 from sanic import Sanic, response
 from sanic.log import logger
 
@@ -46,8 +45,6 @@ app.config.update({'KEEP_ALIVE': False})
 
 _epgdata = {}
 _epgdata['data'] = {}
-_proc = {}
-_reqs = ExpiringDict(max_len=100, max_age_seconds=5)
 
 
 @app.listener('after_server_start')
@@ -130,24 +127,17 @@ async def handle_guide(request):
 @app.get('/rtp/<channel_id>/<channel_key>/<url>')
 async def handle_rtp(request, channel_id, channel_key, url):
     log.info(f'Request: {request.method} {request.raw_url.decode()}')
-    global _proc, _reqs
-
     log.info(f'Client: {request.ip}')
 
-    # Nromal IPTV Channel
     if url.startswith('239'):
-        await cleanup_proc(request, 'on channel change')
-
         log.info(f'Redirect: {UDPXY + url}')
         return response.redirect(UDPXY + url)
 
-    # Flussonic catchup style url
     elif url.startswith('video-'):
         start = url.split('-')[1]
         duration = url.split('-')[2].split('.')[0]
-        last_event = None
+        last_event = program_id = u7d = None
         offset = '0'
-        program_id = None
 
         if channel_key in _epgdata['data']:
             if start in _epgdata['data'][channel_key]:
@@ -172,55 +162,43 @@ async def handle_rtp(request, channel_id, channel_key, url):
         if not program_id:
             return response.json({'status': 'channel_id {channel_id} program_id {program_id} not found'}, 404)
 
-        req_id = f'{request.ip}:{channel_id}:{program_id}:{offset}'
-        if req_id in _reqs:
-            client_port = _reqs[req_id]
-            log.info(f'Reusing: /app/u7d.py {channel_id} {program_id} -s {offset} -p {client_port}')
-        else:
-            await cleanup_proc(request, 'on calling u7d.py')
-
-            with closing(socket.socket(socket.AF_INET, socket.SOCK_DGRAM)) as s:
-                s.bind(('', 0))
-                s.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
-                client_port = str(s.getsockname()[1])
-
-            log.info(f'Starting: /app/u7d.py {channel_id} {program_id} -s {offset} -p {client_port}')
-
-            _proc[request.ip] = await asyncio.create_subprocess_exec('/app/u7d.py', channel_id, program_id,
-                                                                     '-s', offset, '-p', client_port)
+        with closing(socket.socket(socket.AF_INET, socket.SOCK_DGRAM)) as s:
+            s.bind(('', 0))
+            s.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+            client_port = str(s.getsockname()[1])
+        log.info(f'Starting: /app/u7d.py {channel_id} {program_id} -s {offset} -p {client_port}')
+        u7d = await asyncio.create_subprocess_exec('/app/u7d.py', channel_id, program_id,
+                                                                 '-s', offset, '-p', client_port)
         try:
-            r = await asyncio.wait_for(_proc[request.ip].wait(), 0.3)
+            r = await asyncio.wait_for(u7d.wait(), 0.3)
             msg = f'Not available: /app/u7d.py {channel_id} {program_id} -s {offset} -p {client_port}'
             log.debug(msg)
             return response.json({'status': msg}, 404)
         except asyncio.exceptions.TimeoutError:
             pass
 
-        _reqs[req_id] = client_port
-
         host = socket.gethostbyname(socket.gethostname())
         async def udp_streaming(response):
             log.info(f'Stream: @{host}:{client_port}')
-            stream = await asyncio_dgram.bind((host, client_port))
-            while True:
-                data, remote_addr = await stream.recv()
-                await response.write(data)
+            try:
+                stream = await asyncio_dgram.bind((host, client_port))
+                while True:
+                    data, remote_addr = await stream.recv()
+                    await response.write(data)
+                log.debug('Stream loop ended')
+            except Exception as ex:
+                msg = f'Stream loop excepted: {repr(ex)}'
+                log.debug(msg)
+                return response.json({'status': msg}, 500)
+            finally:
+                log.debug('Finally')
+                if u7d.pid:
+                    u7d.send_signal(signal.SIGINT)
 
         return response.stream(udp_streaming, content_type=MIME)
 
-    # Not recognized url
     else:
         return response.json({'status': 'URL not understood'}, 404)
-
-async def cleanup_proc(request, message):
-    if request.ip in _proc.keys() and _proc[request.ip].pid:
-        #log.debug(f'_proc[{request.ip}].send_signal() {message}')
-        try:
-            _proc[request.ip].send_signal(signal.SIGINT)
-            _proc.pop(request.ip, None)
-        except Exception as ex:
-            log.info(f'_proc[{request.ip}].send_signal() {repr(ex)}')
-
 
 
 if __name__ == '__main__':
