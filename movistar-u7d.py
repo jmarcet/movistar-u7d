@@ -117,8 +117,8 @@ async def handle_rtp(request, channel_id, channel_key, url):
         except asyncio.exceptions.TimeoutError:
             pass
 
-        host = socket.gethostbyname(socket.gethostname())
         async def udp_streaming(response):
+            host = socket.gethostbyname(socket.gethostname())
             log.info(f'Stream: @{host}:{client_port}')
             try:
                 stream = await asyncio_dgram.bind((host, client_port))
