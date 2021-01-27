@@ -89,13 +89,10 @@ class RtspClient(object):
             tmp = _req[1].split('/')
             _req[1] = str(tmp[0]) + '://' + str(tmp[2])
             _req[1] += f' /app/u7d.py {killed.channel} {killed.broadcast} -s {killed.start[0]} -p {killed.client_port}'
-            print('-' * WIDTH, flush=True)
         _req_l = _req[0] + ' ' + _req[1][:_off]
         _req_r = ' ' * (100 - len(_req_l) - len(_req[2]))
         print(f'Req: {_req_l}{_req_r}{_req[2]}', end=' ', flush=True)
         print(f'Resp: {resp.version} {resp.status}', flush=True)
-        if killed:
-            print('-' * WIDTH, flush=True)
         #headers = self.serialize_headers(resp.headers)
         #print('-' * WIDTH, flush=True)
         #print('Request: ' + req.request.split('\m')[0], end='', flush=True)
