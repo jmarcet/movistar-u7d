@@ -1,10 +1,8 @@
 #!/usr/bin/env python3
 
+import aiohttp
 import asyncio
 import asyncio_dgram
-import concurrent.futures
-import glob
-import json
 import os
 import signal
 import socket
@@ -17,30 +15,23 @@ from sanic.log import logger as log
 
 HOME = os.environ.get('HOME') or '/home/'
 SANIC_HOST = os.environ.get('SANIC_HOST') or '127.0.0.1'
-SANIC_PORT = os.environ.get('SANIC_PORT') or '8888'
+SANIC_PORT = int(os.environ.get('SANIC_PORT')) or 8888
+SANIC_EPG_HOST = os.environ.get('SANIC_EPG_HOST') or '127.0.0.1'
+SANIC_EPG_PORT = os.environ.get('SANIC_EPG_PORT') or 8889
 UDPXY = os.environ.get('UDPXY') or 'http://192.168.137.1:4022/rtp/'
 
-CACHED_TIME = 7 * 24 * 60 * 60
-EPG_CHANNELS = [ '1', '3', '4', '5', '6', '717', '477', '4911', '934', '3186', '884', '844', '3443', '1221', '3325', '744', 
-                '2843', '657', '3603', '663', '935', '2863', '3184', '2', '578', '745', '743', '582', '597' ]
 MIME = 'video/MP2T'
 GUIDE = os.path.join(HOME, 'guide.xml')
 CHANNELS = os.path.join(HOME, 'MovistarTV.m3u')
+SESSION = None
 
 app = Sanic('Movistar_u7d')
 app.config.update({'KEEP_ALIVE': False})
 
-_epgdata = {}
-_epgdata['data'] = {}
-
-
-@app.listener('after_server_start')
-async def notify_server_start(app, loop):
-    handle_reload_epg_task()
 
 @app.listener('after_server_stop')
 async def notify_server_stop(app, loop):
-    log.debug(f'after_server_stop killing u7d.py')
+    log.debug('after_server_stop killing u7d.py')
     p = await asyncio.create_subprocess_exec('/usr/bin/pkill', '-INT', '-f', '/app/u7d.py .+ -p ')
     await p.wait()
 
@@ -57,13 +48,6 @@ async def handle_guide(request):
         return response.json({}, 404)
     return await response.file(GUIDE)
 
-@app.get('/reload_epg')
-async def handle_reload_epg(request):
-    loop = asyncio.get_running_loop()
-    with concurrent.futures.ProcessPoolExecutor() as pool:
-        await loop.run_in_executor(pool, handle_reload_epg_task)
-    return response.json({'status': 'EPG Updated'}, 200)
-
 @app.get('/rtp/<channel_id>/<channel_key>/<url>')
 async def handle_rtp(request, channel_id, channel_key, url):
     log.info(f'Request: {request.method} {request.raw_url.decode()}')
@@ -74,33 +58,23 @@ async def handle_rtp(request, channel_id, channel_key, url):
         return response.redirect(UDPXY + url)
 
     elif url.startswith('video-'):
-        start = url.split('-')[1]
-        duration = url.split('-')[2].split('.')[0]
-        last_event = program_id = u7d = None
-        offset = '0'
-
-        if channel_key in _epgdata['data']:
-            if start in _epgdata['data'][channel_key]:
-                program_id = str(_epgdata['data'][channel_key][start]['pid'])
-                end = str(_epgdata['data'][channel_key][start]['end'])
-                duration = str(int(end) - int(start))
-                log.info(f'Found: channel={channel_key} start={start} end={end} duration={duration}')
-            else:
-                for event in sorted(_epgdata['data'][channel_key].keys()):
-                    if int(event) > int(start):
-                        break
-                    last_event = event
-                if last_event:
-                    new_start = start
-                    start = last_event
-                    offset = str(int(new_start) - int(start))
-                    program_id = str(_epgdata['data'][channel_key][start]['pid'])
-                    end = str(_epgdata['data'][channel_key][start]['end'])
-                    duration = str(int(end) - int(start))
-                    log.info(f'Guessed: channel {channel_key} start {start} offset {offset} end {end} duration {duration}')
+        global SESSION
+        if not SESSION:
+            SESSION = aiohttp.ClientSession()
+        try:
+            epg_url = f'http://{SANIC_EPG_HOST}:{SANIC_EPG_PORT}/get_program_id/{channel_id}/{channel_key}/{url}'
+            async with SESSION.get(epg_url, timeout=aiohttp.ClientTimeout(connect=2)) as r:
+                if r.status != 200:
+                    return response.json({'status': f'{url} not found'}, 404)
+                r = await r.json()
+                channel_id = r['channel_id']
+                program_id = r['program_id']
+                offset = r['offset']
+        except Exception as ex:
+            log.debug(f"aiohttp.ClientSession().get('{epg_url}') {repr(ex)}")
 
         if not program_id:
-            return response.json({'status': 'channel_id {channel_id} program_id {program_id} not found'}, 404)
+            return response.json({'status': f'{channel_id}/{channel_key}/{url} not found'}, 404)
 
         with closing(socket.socket(socket.AF_INET, socket.SOCK_DGRAM)) as s:
             s.bind(('', 0))
@@ -119,7 +93,7 @@ async def handle_rtp(request, channel_id, channel_key, url):
 
         async def udp_streaming(response):
             host = socket.gethostbyname(socket.gethostname())
-            log.info(f'Stream: @{host}:{client_port}')
+            log.info(f'Stream: {channel_id}/{channel_key}/{url} => @{host}:{client_port}')
             try:
                 stream = await asyncio_dgram.bind((host, client_port))
                 while True:
@@ -131,7 +105,6 @@ async def handle_rtp(request, channel_id, channel_key, url):
                 log.debug(msg)
                 return response.json({'status': msg}, 500)
             finally:
-                log.debug('Finally')
                 if u7d.pid:
                     u7d.send_signal(signal.SIGINT)
 
@@ -140,53 +113,6 @@ async def handle_rtp(request, channel_id, channel_key, url):
     else:
         return response.json({'status': 'URL not understood'}, 404)
 
-def handle_reload_epg_task():
-    global _epgdata
-    epg_cache = '/home/epg.cache.json'
-    epg_data = '/home/.xmltv/cache/epg.json'
-
-    if os.path.exists(epg_cache) and os.stat(epg_cache).st_size > 100:
-        log.info('Loading EPG cache')
-        epgs = [ epg_cache ]
-    else:
-        log.info('Loading logrotate EPG backups')
-        epgs = glob.glob('/home/epg.*.json')
-    if os.path.exists(epg_data) and os.stat(epg_data).st_size > 100:
-        log.info('Loading fresh EPG data')
-        epgs.append(epg_data)
-
-    deadline = int(time.time()) - CACHED_TIME
-    expired = 0
-    for epg in epgs:
-        try:
-            with open(epg) as f:
-                day_epg = json.loads(f.read())
-        except json.decoder.JSONDecodeError:
-            continue
-        channels = [ channel for channel in day_epg['data'].keys() if channel in EPG_CHANNELS ]
-        for channel in channels:
-            if not channel in _epgdata['data']:
-                _epgdata['data'][channel] = {}
-            for timestamp in day_epg['data'][channel]:
-                if int(day_epg['data'][channel][timestamp]['end']) > deadline:
-                    _epgdata['data'][channel][timestamp] = day_epg['data'][channel][timestamp]
-                else:
-                    expired += 1
-        nr_epg = 0
-        for chan in channels:
-            nr_epg += len(day_epg['data'][chan].keys())
-        log.info(f'EPG entries {epg}: {nr_epg}')
-
-    log.info('Total Channels=' + str(len(_epgdata['data'])))
-    nr_epg = 0
-    for chan in _epgdata['data'].keys():
-        nr_epg += len(_epgdata['data'][chan].keys())
-    log.info(f'EPG entries Total: {nr_epg} Expired: {expired}')
-
-    with open(epg_cache, 'w') as f:
-        f.write(json.dumps(_epgdata))
-    log.info('EPG: Updated')
-
 
 if __name__ == '__main__':
-    app.run(host=SANIC_HOST, port=int(SANIC_PORT), workers=1, debug=True, access_log=False)
+    app.run(host=SANIC_HOST, port=SANIC_PORT, workers=3, debug=True, access_log=False)
