@@ -12,7 +12,7 @@ echo "nameserver 172.26.23.3" > /etc/resolv.conf
 echo "nameserver 127.0.0.1" >> /etc/resolv.conf
 echo "172.26.22.23 www-60.svc.imagenio.telefonica.net" >> /etc/hosts
 
-nice -n -19 ionice -c 1 -n 0 /app/movistar-epg.py &
-nice -n -19 ionice -c 1 -n 0 /app/movistar-u7d.py &
+( while (true); do /app/movistar-epg.py; sleep 1; done ) &
+( while (true); do /app/movistar-u7d.py; sleep 1; done ) &
 
 tail -f /dev/null

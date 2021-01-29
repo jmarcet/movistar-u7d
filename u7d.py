@@ -87,8 +87,8 @@ class RtspClient(object):
         _off = 90 - len(_req[0])
         if killed:
             tmp = _req[1].split('/')
-            _req[1] = str(tmp[0]) + '://' + str(tmp[2])
-            _req[1] += f' /app/u7d.py {killed.channel} {killed.broadcast} -s {killed.start[0]} -p {killed.client_port}'
+            _req[1] = str(tmp[0]) + '://' + str(tmp[2])[:26]
+            _req[1] += f' [{killed.client_ip}] {killed.channel} {killed.broadcast} -s {killed.start[0]} -p {killed.client_port}'
         _req_l = _req[0] + ' ' + _req[1][:_off]
         _req_r = ' ' * (100 - len(_req_l) - len(_req[2]))
         print(f'Req: {_req_l}{_req_r}{_req[2]}', end=' ', flush=True)
@@ -118,59 +118,60 @@ def main(args):
     describe['Accept'] = 'application/sdp'
     setup['Transport'] = f'MP2T/H2221/UDP;unicast;client_port={args.client_port}'
 
-    try:
-        host = socket.gethostbyname(socket.gethostname())
-        params = f'action=getCatchUpUrl&extInfoID={args.broadcast}&channelID={args.channel}&service=hd&mode=1'
-        resp = urllib.request.urlopen(f'http://www-60.svc.imagenio.telefonica.net:2001/appserver/mvtv.do?{params}')
-        data = json.loads(resp.read())
+    host = socket.gethostbyname(socket.gethostname())
+    params = f'action=getCatchUpUrl&extInfoID={args.broadcast}&channelID={args.channel}&service=hd&mode=1'
+    resp = urllib.request.urlopen(f'http://www-60.svc.imagenio.telefonica.net:2001/appserver/mvtv.do?{params}')
+    data = json.loads(resp.read())
 
-        if data['resultCode'] != 0:
-            print(f'error: {data["resultText"]}')
-            return
+    if data['resultCode'] != 0:
+        print(f'error: {data["resultText"]}')
+        return
 
-        url = data['resultData']['url']
-        uri = urllib.parse.urlparse(url)
+    url = data['resultData']['url']
+    uri = urllib.parse.urlparse(url)
 
-        s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-        s.connect((uri.hostname, uri.port))
-        s.settimeout(10)
+    with closing(socket.socket(socket.AF_INET, socket.SOCK_STREAM)) as s:
+        try:
+            s.connect((uri.hostname, uri.port))
+            s.settimeout(10)
 
-        client = RtspClient(s, url)
-        client.print(client.send_request('OPTIONS', headers))
-        client.print(client.send_request('DESCRIBE', describe))
+            client = RtspClient(s, url)
+            client.print(client.send_request('OPTIONS', headers))
+            client.print(client.send_request('DESCRIBE', describe))
 
-        r = client.print(client.send_request('SETUP', setup))
-        if r.status != '200 OK':
-            needs_position = True
-            r = client.print(client.send_request('SETUP2', setup))
+            r = client.print(client.send_request('SETUP', setup))
             if r.status != '200 OK':
-                print(f'{repr(r)}', flush=True)
-                return
+                needs_position = True
+                r = client.print(client.send_request('SETUP2', setup))
+                if r.status != '200 OK':
+                    print(f'{repr(r)}', flush=True)
+                    return
 
-        play['Range'] = f'npt={args.start[0]}-end'
-        play.update({'Scale': '1.000', 'x-playNow': '', 'x-noFlush': ''})
-        play['Session'] = session['Session'] = r.headers['Session'].split(';')[0]
+            play['Range'] = f'npt={args.start[0]}-end'
+            play.update({'Scale': '1.000', 'x-playNow': '', 'x-noFlush': ''})
+            play['Session'] = session['Session'] = r.headers['Session'].split(';')[0]
 
-        get_parameter = session.copy()
-        if needs_position:
-            get_parameter.update({'Content-type': 'text/parameters', 'Content-length': 10})
+            get_parameter = session.copy()
+            if needs_position:
+                get_parameter.update({'Content-type': 'text/parameters', 'Content-length': 10})
 
-        client.print(client.send_request('PLAY', play))
-        while True:
-            time.sleep(30)
-            client.print(client.send_request('GET_PARAMETER', get_parameter))
+            client.print(client.send_request('PLAY', play))
+            while True:
+                time.sleep(30)
+                client.print(client.send_request('GET_PARAMETER', get_parameter))
 
-    finally:
-        if client and 'Session' in session:
-            r = client.print(client.send_request('TEARDOWN', session), killed=args)
-        if s:
-            s.close()
+        except Exception as ex:
+            print(f'[{repr(ex)}] {args.channel} {args.broadcast} -s {args.start[0]} -p {args.client_port} -i {args.client_ip}')
+        finally:
+            if client and 'Session' in session:
+                r = client.print(client.send_request('TEARDOWN', session), killed=args)
 
 if __name__ == '__main__':
     try:
         parser = argparse.ArgumentParser('Stream content from the Movistar U7D service.')
         parser.add_argument('channel', help='channel id')
         parser.add_argument('broadcast', help='broadcast id')
+        parser.add_argument('--client_ip', '-i', help='client ip address')
         parser.add_argument('--client_port', '-p', help='client udp port')
         #parser.add_argument('--dumpfile', '-f', help='dump file path', default='test2.ts')
         parser.add_argument('--start', '-s', metavar='seconds', nargs=1, default=[0], type=int, help='stream start offset')

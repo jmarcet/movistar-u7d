@@ -120,4 +120,4 @@ def handle_reload_epg_task():
 
 
 if __name__ == '__main__':
-    app.run(host=SANIC_EPG_HOST, port=SANIC_EPG_PORT, workers=1, debug=False, access_log=False)
+    app.run(host=SANIC_EPG_HOST, port=SANIC_EPG_PORT, access_log=False, auto_reload=True, debug=False, workers=1)
