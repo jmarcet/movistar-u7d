@@ -46,7 +46,7 @@ async def handle_get_program_id(request, channel_id, channel_key, url):
 
     if channel_key in _epgdata['data']:
         log.debug(f'Found channel {channel_key}')
-        if start in _epgdata['data'][channel_key]:
+        if start in _epgdata['data'][channel_key].keys():
             program_id = str(_epgdata['data'][channel_key][start]['pid'])
             end = str(_epgdata['data'][channel_key][start]['end'])
             duration = str(int(end) - int(start))
