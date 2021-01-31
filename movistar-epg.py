@@ -18,9 +18,10 @@ SANIC_EPG_PORT = int(os.environ.get('SANIC_EPG_PORT')) or 8889
 CACHED_TIME = 7 * 24 * 60 * 60
 EPG_CHANNELS = [ '1', '3', '4', '5', '6', '717', '477', '4911', '934', '3186', '884', '844', '3443', '1221', '3325', '744', 
                 '2843', '657', '3603', '663', '935', '2863', '3184', '2', '578', '745', '743', '582', '597' ]
+YEAR_SECONDS = 365 * 24 * 60 * 60
 
 app = Sanic('Movistar_epg')
-app.config.update({'KEEP_ALIVE_TIMEOUT': 300})
+app.config.update({'KEEP_ALIVE_TIMEOUT': YEAR_SECONDS})
 
 _epgdata = {}
 _epgdata['data'] = {}

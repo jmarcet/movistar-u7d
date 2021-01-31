@@ -20,10 +20,11 @@ SANIC_EPG_HOST = os.environ.get('SANIC_EPG_HOST') or '127.0.0.1'
 SANIC_EPG_PORT = int(os.environ.get('SANIC_EPG_PORT')) or 8889
 UDPXY = os.environ.get('UDPXY') or 'http://192.168.137.1:4022/rtp/'
 
-MIME = 'video/MP2T'
 GUIDE = os.path.join(HOME, 'guide.xml')
 CHANNELS = os.path.join(HOME, 'MovistarTV.m3u')
+MIME = 'video/MP2T'
 SESSION = None
+YEAR_SECONDS = 365 * 24 * 60 * 60
 
 app = Sanic('Movistar_u7d')
 app.config.update({'KEEP_ALIVE': False})
@@ -59,12 +60,13 @@ async def handle_rtp(request, channel_id, channel_key, url):
     elif url.startswith('video-'):
         global SESSION
         if not SESSION:
-            SESSION = aiohttp.ClientSession()
+            conn = aiohttp.TCPConnector(keepalive_timeout=YEAR_SECONDS, limit_per_host=1)
+            SESSION = aiohttp.ClientSession(connector=conn)
 
         try:
             program_id = None
             epg_url = f'http://{SANIC_EPG_HOST}:{SANIC_EPG_PORT}/get_program_id/{channel_id}/{channel_key}/{url}'
-            async with SESSION.get(epg_url, timeout=aiohttp.ClientTimeout(connect=2)) as r:
+            async with SESSION.get(epg_url) as r:
                 if r.status != 200:
                     return response.json({'status': f'{url} not found'}, 404)
                 r = await r.json()
