@@ -97,13 +97,10 @@ async def handle_rtp(request, channel_id, channel_key, url):
             host = socket.gethostbyname(socket.gethostname())
             log.info(f'Stream: {channel_id}/{channel_key}/{url} => @{host}:{client_port} [{request.ip}]')
             try:
-                with closing(socket.socket(socket.AF_INET, socket.SOCK_DGRAM)) as sock:
-                    sock.bind((host, int(client_port)))
-                    sock.settimeout(5)
-                    with closing(await asyncio_dgram.from_socket(sock)) as stream:
-                        while True:
-                            data, remote_addr = await stream.recv()
-                            await response.write(data)
+                with closing(await asyncio_dgram.bind((host, int(client_port)))) as stream:
+                    while True:
+                        data, remote_addr = await stream.recv()
+                        await response.write(data)
                 log.info(f'Stream loop ended [{request.ip}]')
             except Exception as ex:
                 msg = f'Stream loop excepted: {repr(ex)}'
