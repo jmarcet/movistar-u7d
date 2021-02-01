@@ -102,12 +102,12 @@ def handle_reload_epg_task():
                 clean_channel_epg = {}
                 new_timestamp = int(sorted(day_epg['data'][channel].keys())[0])
                 for timestamp in sorted(_epgdata['data'][channel].keys()):
-                    if not _epgdata['data'][channel][timestamp]['end'] < new_timestamp:
+                    if not _epgdata['data'][channel][timestamp]['start'] < new_timestamp:
                         break
                     clean_channel_epg[timestamp] = _epgdata['data'][channel][timestamp]
                 _epgdata['data'][channel] = clean_channel_epg
             for timestamp in day_epg['data'][channel].keys():
-                if day_epg['data'][channel][timestamp]['end'] > deadline:
+                if day_epg['data'][channel][timestamp]['start'] > deadline:
                     _epgdata['data'][channel][timestamp] = day_epg['data'][channel][timestamp]
                 else:
                     expired += 1
