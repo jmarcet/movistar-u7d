@@ -902,9 +902,6 @@ class XMLTV:
         logger.info('Generando la guía XMLTV: descargando info extendida')
         root = ElTr.Element('tv', {
                 'date': datetime.now().strftime('%Y%m%d%H%M%S'),
-                'source_info_url': 'https://github.com/MovistarTV/tv_grab_es_movistartv',
-                'source_info_name': 'Grabber for Movistar TV Multicast EPG',
-                'generator_info_name': 'tv_grab_es_movistartv',
                 'generator_info_url': 'http://wiki.xmltv.org/index.php/XMLTVFormat'})
         tz = abs(time.timezone / 3600) + time.localtime().tm_isdst
         services = self.__get_client_channels()
