@@ -1,11 +1,7 @@
-#!/usr/bin/env python
-# -*- coding: utf8 -*-
-#
-# Author: _WiLloW_
-# Source: https://github.com/MovistarTV/tv_grab_es_movistartv
+#!/usr/bin/env python3
 #
 # Basado en movistartv2xmltv by ese:
-# https://github.com/ese/movistartv2xmltv
+# Source: https://github.com/MovistarTV/tv_grab_es_movistartv
 #
 # Obtener la Lista de Canales y Programación de Movistar TV
 # https://www.adslzone.net/postt359916.html
@@ -38,13 +34,13 @@ import struct
 import sys
 import time
 import traceback
-import urllib2
+import requests
 import xml.etree.cElementTree as ElTr
-from HTMLParser import HTMLParser
-from Queue import Queue
+from queue import Queue
 from datetime import datetime, timedelta
 from logging.handlers import RotatingFileHandler
 from threading import Thread
+from xml.sax.saxutils import unescape
 
 demarcations = {
     'Andalucia': 15,
@@ -418,7 +414,7 @@ class MovistarTV:
         # noinspection PyBroadException
         try:
             logger.info('Descargando configuración del cliente')
-            return json.loads(self.__get_service_data('getClientProfile'))['resultData']
+            return self.__get_service_data('getClientProfile')['resultData']
         except:
             logger.error('Usando la configuración de cliente por defecto: %i|ALL|1' % default_demarcation)
             return {
@@ -431,7 +427,7 @@ class MovistarTV:
         # noinspection PyBroadException
         try:
             logger.info('Descargando pefil del servicio')
-            return json.loads(self.__get_service_data('getPlatformProfile'))['resultData']
+            return self.__get_service_data('getPlatformProfile')['resultData']
         except:
             logger.error('Usando el pefil del servicio por defecto')
             return {
@@ -444,7 +440,7 @@ class MovistarTV:
         # noinspection PyBroadException
         try:
             logger.info('Descargando parámetros de configuración')
-            return json.loads(self.__get_service_data('getConfigurationParams'))['resultData']
+            return self.__get_service_data('getConfigurationParams')['resultData']
         except:
             logger.error('Usando los parámetros de configuración por defecto')
             return {
@@ -457,9 +453,9 @@ class MovistarTV:
     def __get_genres(self, tv_wholesaler):
         try:
             logger.info('Descargando mapa de géneros')
-            return json.loads(self.__get_service_data('getEpgSubGenres&tvWholesaler=%s' % tv_wholesaler))['resultData']
+            return self.__get_service_data(f'getEpgSubGenres&tvWholesaler={tv_wholesaler}')['resultData']
         except Exception as ex:
-            logger.error('Mapa de géneros no encontrado: %s' % str(ex.args))
+            logger.error('Mapa de géneros no encontrado: %s' % repr(ex))
             return None
 
     def get_epg_extended_info(self, pid, channel_id):
@@ -468,7 +464,7 @@ class MovistarTV:
             data = cache.load_epg_extended_info(pid)
             if not data:
                 logger.debug('Descargando info extendida: %s' % pid)
-                data = json.loads(self.__get_service_data('epgInfov2&productID=%s&channelID=%s&extra=1' % (pid, channel_id)))['resultData']
+                data = self.__get_service_data(f'epgInfov2&productID={pid}&channelID={channel_id}&extra=1')['resultData']
                 cache.save_epg_extended_info(data)
             return data
         except:
@@ -503,8 +499,7 @@ class MovistarTV:
 
     @staticmethod
     def __update_end_points(data):
-        if cmp(cache.load_end_points(), data):
-            cache.save_end_points(data)
+        cache.save_end_points(data)
         return data
 
     def get_service_config(self):
@@ -550,27 +545,28 @@ class MovistarTV:
             __attempts = 4
             while __attempts > 0:
                 try:
-                    req = urllib2.Request('%s/appserver/mvtv.do?action=%s' % (ep, action))
+                    headers = {}
                     if self.__cookie:
                         for ck in self.__cookie.split('; '):
                             if '=' in ck:
-                                req.add_header('Cookie', self.__cookie)
-                    response = urllib2.urlopen(req, timeout=15)
-                    content = response.read().decode(response.headers.getparam('charset') or 'utf-8')
-                    response.close()
-                    if response.getcode() == 200:
-                        new_cookie = response.headers.dict['set-cookie'] \
-                            if 'set-cookie' in response.headers.dict else None
+                                headers['Cookie'] = self.__cookie
+                    url = f'{ep}/appserver/mvtv.do?action={action}'
+                    response = requests.get(url, headers=headers)
+                    content = response.json()
+                    if response.status_code == 200:
+                        new_cookie = response.headers['set-cookie'] \
+                            if 'set-cookie' in response.headers else None
                         if new_cookie and not self.__cookie:
                             self.__cookie = new_cookie
                             cache.save_cookie(self.__cookie)
                         elif new_cookie and new_cookie != self.__cookie:
                             cache.save_cookie(new_cookie)
                         return content
-                    raise urllib2.HTTPError
-                except (urllib2.HTTPError, socket.timeout, urllib2.URLError):
+                    raise ValueError(f'{repr(response)}')
+                except Exception as ex:
+                    logger.debug(f'{repr(ex)}')
                     __attempts -= 1
-                    logger.warn('Timeout: %s, reintentos: %s' % (ep, __attempts))
+                    logger.warning('Timeout: %s, reintentos: %s' % (ep, __attempts))
                     continue
 
 
@@ -583,18 +579,19 @@ class MulticastIPTV:
     @staticmethod
     def __parse_chunk(data):
         try:
+            #logger.debug('__parse_chunk data=%s type=%s' % (str(data), type(data)))
             chunk = {
                 "end": struct.unpack('B', data[:1])[0],
                 "size": struct.unpack('>HB', data[1:4])[0],
                 "filetype": struct.unpack('B', data[4:5])[0],
                 "fileid": struct.unpack('>H', data[5:7])[0] & 0x0fff,
-                "chunk_number": struct.unpack('>H', data[8:10])[0] / 0x10,
+                "chunk_number": struct.unpack('>H', data[8:10])[0] >> 4,
                 "chunk_total": struct.unpack('B', data[10:11])[0],
-                "data": data[12:]
+                "data": data[12:].decode(encoding='latin1')
             }
             return chunk
         except Exception as ex:
-            raise MulticastError('get_chunk: error al analizar los datos %s' % str(ex.args))
+            raise MulticastError('get_chunk: error al analizar los datos %s' % repr(ex))
 
     def __get_xml_files(self, mc_grp, mc_port):
         try:
@@ -633,8 +630,8 @@ class MulticastIPTV:
                     loop = False
             sock.close()
             return _files
-        except Exception, ex:
-            logger.error('Error al descargar los archivos XML: %s' % str(ex.args))
+        except Exception as ex:
+            logger.error('Error al descargar los archivos XML: %s' % repr(ex))
 
     @staticmethod
     def __get_channels(xml_channels):
@@ -656,7 +653,7 @@ class MulticastIPTV:
                 if i[2][4].tag == '{urn:dvb:ipisdns:2006}ReplacementService':
                     channel_list[channel_id]['replacement'] = i[2][4][0].attrib['ServiceName']
             except (KeyError, IndexError) as ex:
-                logger.debug('El canal %s no tiene la estructura correcta: %s' % (channel_id, str(ex.args)))
+                logger.debug('El canal %s no tiene la estructura correcta: %s' % (channel_id, repr(ex)))
         logger.info('Canales: %i' % len(channel_list))
         return channel_list
 
@@ -678,7 +675,7 @@ class MulticastIPTV:
                         service_id = service[0].attrib['ServiceName']
                         package_list[package_name]['services'][service_id] = service[1].text
             except (KeyError, ElTr.ParseError) as ex:
-                logger.error('El paquete %s no tiene la estructura correcta: %s' % (package_name, str(ex.args)))
+                logger.error('El paquete %s no tiene la estructura correcta: %s' % (package_name, repr(ex)))
         logger.info('Paquetes: %i' % len(package_list))
         return package_list
 
@@ -804,11 +801,12 @@ class MulticastIPTV:
 
     @staticmethod
     def __decode_string(string):
-        return ''.join(chr(ord(char) ^ 0x15) for char in string)
+        return ''.join(chr(char ^ 0x15) for char in string).encode('latin1').decode()
 
     @staticmethod
     def __parse_bin_epg_header(data):
         # noinspection PyBroadException
+        data = data.encode('latin1')
         try:
             body = struct.unpack('B', data[6:7])[0] + 7
             return {
@@ -819,12 +817,12 @@ class MulticastIPTV:
                 'data': data[body:]
             }
         except Exception as ex:
-            logger.error('Error al procesar la cabecera: %s' % str(ex.args))
+            logger.error('Error al procesar la cabecera: %s' % repr(ex))
 
     @staticmethod
     def __sanitize(text):
         try:
-            return HTMLParser().unescape(unicode(text, 'utf-8'))
+            return unescape(text)
         except TypeError:
             return text
 
@@ -864,7 +862,7 @@ class MulticastIPTV:
                 epg_dt = epg_dt[struct.unpack('B', epg_dt[cut + 3:cut + 4])[0] + cut + 4:]
             return programs
         except Exception as ex:
-            logger.error('Error al procesar la guía: %s' % str(ex.args))
+            logger.error('Error al procesar la guía: %s' % repr(ex))
 
     def __merge_dicts(self, dict1, dict2, path=None):
         path = [] if path is None else path
@@ -1146,13 +1144,13 @@ def create_args_parser():
 
 def show_description():
     logger.info('Terminado: descripción del grabber')
-    print 'Spain (MovistarTV)'
+    print('Spain (MovistarTV)')
     sys.exit(0)
 
 
 def show_capabilities():
     logger.info('Terminado: capabilities del grabber')
-    print 'baseline cache'
+    print('baseline cache')
     sys.exit(0)
 
 
@@ -1216,7 +1214,7 @@ try:
     else:
         if args.channels:
             export_channels(args.channels)
-        print ElTr.tostring(epg_x.getroot(), encoding='UTF-8', method="xml")
+        print(ElTr.tostring(epg_x.getroot(), encoding='UTF-8', method="xml"))
 
     # Muestra la duración del script y el número de canales y días de EPG descargados
     total = (int(datetime.now().strftime('%s')) - int(time_start.strftime('%s'))) / 60
@@ -1229,6 +1227,6 @@ try:
     sys.exit(0)
 
 except Exception as e:
-    logger.critical('%s\n%s' % (e.message, traceback.format_exc()))
-    print u'Excepción:\n\n\t %s\n\nTraceback:\n\n\t%s' % (e.message, traceback.format_exc())
+    logger.critical('%s\n%s' % (repr(e), traceback.format_exc()))
+    print(u'Excepción:\n\n\t %s\n\nTraceback:\n\n\t%s' % (repr(e), traceback.format_exc()))
     sys.exit(1)
