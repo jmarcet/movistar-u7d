@@ -165,7 +165,7 @@ def main(args):
                   flush=True)
         finally:
             if client and 'Session' in session:
-                r = client.print(client.send_request('TEARDOWN', session), killed=args)
+                client.print(client.send_request('TEARDOWN', session), killed=args)
 
 if __name__ == '__main__':
     try:
