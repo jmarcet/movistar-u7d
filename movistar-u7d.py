@@ -39,12 +39,14 @@ async def notify_server_stop(app, loop):
 @app.get('/channels.m3u')
 @app.get('/MovistarTV.m3u')
 async def handle_channels(request):
+    log.info(f'Request: [{request.ip}] {request.method} {request.url}')
     if not os.path.exists(CHANNELS):
         return response.json({}, 404)
     return await response.file(CHANNELS)
 
 @app.get('/guide.xml')
 async def handle_guide(request):
+    log.info(f'Request: [{request.ip}] {request.method} {request.url}')
     if not os.path.exists(GUIDE):
         return response.json({}, 404)
     return await response.file(GUIDE)
