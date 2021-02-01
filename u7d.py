@@ -124,7 +124,7 @@ def main(args):
     data = json.loads(resp.read())
 
     if data['resultCode'] != 0:
-        print(f'error: {data["resultText"]}')
+        print(f'Error: [{args.client_ip}] {repr(data)} {args.channel} {args.broadcast} -s {args.start[0]}', flush=True)
         return
 
     url = data['resultData']['url']
@@ -161,7 +161,8 @@ def main(args):
                 client.print(client.send_request('GET_PARAMETER', get_parameter))
 
         except Exception as ex:
-            print(f'[{repr(ex)}] {args.channel} {args.broadcast} -s {args.start[0]} -p {args.client_port} -i {args.client_ip}')
+            print(f'[{repr(ex)}] [{args.client_ip}] {args.channel} {args.broadcast} -s {args.start[0]} -p {args.client_port}',
+                  flush=True)
         finally:
             if client and 'Session' in session:
                 r = client.print(client.send_request('TEARDOWN', session), killed=args)
