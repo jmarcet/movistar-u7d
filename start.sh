@@ -11,6 +11,7 @@ fi
 echo "nameserver 172.26.23.3" > /etc/resolv.conf
 echo "nameserver 127.0.0.1" >> /etc/resolv.conf
 echo "172.26.22.23 www-60.svc.imagenio.telefonica.net" >> /etc/hosts
+echo "172.26.83.49 html5-static.svc.imagenio.telefonica.net" >> /etc/hosts
 
 ( while (true); do /app/movistar-epg.py; sleep 1; done ) &
 ( while (true); do /app/movistar-u7d.py; sleep 1; done ) &

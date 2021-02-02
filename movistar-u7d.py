@@ -24,6 +24,7 @@ GUIDE = os.path.join(HOME, 'guide.xml')
 CHANNELS = os.path.join(HOME, 'MovistarTV.m3u')
 MIME = 'video/MP2T'
 SESSION = None
+SESSION_LOGOS = None
 YEAR_SECONDS = 365 * 24 * 60 * 60
 
 app = Sanic('Movistar_u7d')
@@ -50,6 +51,31 @@ async def handle_guide(request):
     if not os.path.exists(GUIDE):
         return response.json({}, 404)
     return await response.file(GUIDE)
+
+@app.get('/Covers/<path>/<cover>')
+@app.get('/Logos/<logo>')
+async def handle_logos(request, cover=None, logo=None, path=None):
+    log.info(f'Request: [{request.ip}] {request.method} {request.url}')
+    global SESSION_LOGOS
+    if not SESSION_LOGOS:
+        headers = {'User-Agent': 'MICA-IP-STB'}
+        SESSION_LOGOS = aiohttp.ClientSession(headers=headers)
+
+    if logo:
+        orig_url = f'http://html5-static.svc.imagenio.telefonica.net/appclientv/nux/incoming/epg/channelLogo/{logo}'
+        log.info(f'Logo: {orig_url}')
+    elif path and cover:
+        orig_url = f'http://html5-static.svc.imagenio.telefonica.net/appclientv/nux/incoming/epg/covers/programmeImages/portrait/290x429/{path}/{cover}'
+        log.info(f'Cover: {orig_url}')
+    else:
+        return response.json({'status': f'{request.url} not found'}, 404)
+
+    async with SESSION_LOGOS.get(orig_url) as r:
+        if r.status == 200:
+            logo_data = await r.read()
+            return response.raw(logo_data)
+        else:
+            return response.json({'status': f'{orig_url} not found'}, 404)
 
 @app.get('/rtp/<channel_id>/<channel_key>/<url>')
 async def handle_rtp(request, channel_id, channel_key, url):
