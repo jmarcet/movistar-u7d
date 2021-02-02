@@ -1047,8 +1047,7 @@ class XMLTV:
         return services
 
     def __generate_m3u(self):
-        m3u = '#EXTM3U url-tvg="http://%s/guide.xml" catchup="flussonic" catchup-days=8\n' % sanic
-        m3u += '#EXTVLCOPT:http-user-agent=MICA-IP-STB\n'
+        m3u = '#EXTM3U name="MovistarTV" catchup="flussonic" catchup-days=8 dlna_extras=mpeg_ps_pal type=ts url-tvg="http://%s/guide.xml"\n' % sanic
         services = self.__get_client_channels()
         channels = sorted(services, key=lambda key: int(services[key]))
         first = channels[0]
@@ -1072,7 +1071,7 @@ class XMLTV:
                     channel_key = self.__channels[self.__channels[channel_id]['replacement']]['id']
                 m3u += '#EXTINF:-1 tvg-chnum="%s" ' % channel_number
                 m3u += 'tvg-id="%s.movistar.tv" group-title="%s" ' % (channel_id, channel_tag)
-                m3u += 'tvg-logo="%s",%s\n' % (channel_logo, channel_name)
+                m3u += 'logo="%s",%s\n' % (channel_logo, channel_name)
                 m3u += 'http://%s/rtp/%s/%s/%s:%s\n' % (sanic, channel_id, channel_key, channel_ip, channel_port)
         return m3u
 
