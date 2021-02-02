@@ -1047,7 +1047,7 @@ class XMLTV:
         return services
 
     def __generate_m3u(self):
-        m3u = '#EXTM3U url-tvg="http://%s/guide.xml" catchup="flussonic" catchup-days=7\n' % sanic
+        m3u = '#EXTM3U url-tvg="http://%s/guide.xml" catchup="flussonic" catchup-days=8\n' % sanic
         m3u += '#EXTVLCOPT:http-user-agent=MICA-IP-STB\n'
         services = self.__get_client_channels()
         channels = sorted(services, key=lambda key: int(services[key]))
