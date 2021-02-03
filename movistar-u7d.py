@@ -31,6 +31,13 @@ app = Sanic('Movistar_u7d')
 app.config.update({'KEEP_ALIVE': False})
 
 
+@app.listener('after_server_start')
+async def notify_server_start(app, loop):
+    log.debug('after_server_start')
+    global SESSION
+    conn = aiohttp.TCPConnector(keepalive_timeout=YEAR_SECONDS, limit_per_host=1)
+    SESSION = aiohttp.ClientSession(connector=conn)
+
 @app.listener('after_server_stop')
 async def notify_server_stop(app, loop):
     log.debug('after_server_stop killing u7d.py')
@@ -86,11 +93,6 @@ async def handle_rtp(request, channel_id, channel_key, url):
         return response.redirect(UDPXY + url)
 
     elif url.startswith('video-'):
-        global SESSION
-        if not SESSION:
-            conn = aiohttp.TCPConnector(keepalive_timeout=YEAR_SECONDS, limit_per_host=1)
-            SESSION = aiohttp.ClientSession(connector=conn)
-
         try:
             program_id = None
             epg_url = f'http://{SANIC_EPG_HOST}:{SANIC_EPG_PORT}/get_program_id/{channel_id}/{channel_key}/{url}'
