@@ -123,7 +123,7 @@ def handle_reload_epg_task():
     log.info(f'EPG entries Total: {nr_epg} Expired: {expired}')
 
     with open(epg_cache, 'w') as f:
-        f.write(json.dumps(_epgdata))
+        json.dump(_epgdata, f, ensure_ascii=False, indent=4)
 
     log.info('EPG Updated')
 
