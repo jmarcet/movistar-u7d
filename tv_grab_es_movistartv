@@ -329,7 +329,7 @@ class Cache:
     def __save(cfile, data, expire_in=719):  # Horas
         try:
             with open('%s/cache/%s' % (app_dir, cfile), 'w') as fp:
-                json.dump({'data': data, 'expire': time.time() - 900 + expire_in * 3600}, fp, indent=4)
+                json.dump({'data': data, 'expire': time.time() - 900 + expire_in * 3600}, fp, ensure_ascii=False, indent=4)
             logger.debug("Cache: %s guardado" % cfile)
         except IOError:
             logger.error('Caché: No se puede escribir en disco')
@@ -646,9 +646,9 @@ class MulticastIPTV:
                     'id': channel_id,
                     'address': i[0][0].attrib['Address'],
                     'port': i[0][0].attrib['Port'],
-                    'name': i[2][0].text,
-                    'shortname': i[2][1].text,
-                    'genre': i[2][3][0].text,
+                    'name': i[2][0].text.encode('latin1').decode(),
+                    'shortname': i[2][1].text.encode('latin1').decode(),
+                    'genre': i[2][3][0].text.encode('latin1').decode(),
                     'logo_uri': i[1].attrib['logoURI'] if 'logoURI' in i[1].attrib else 'MAY_1/imSer/4146.jpg'}
                 if i[2][4].tag == '{urn:dvb:ipisdns:2006}ReplacementService':
                     channel_list[channel_id]['replacement'] = i[2][4][0].attrib['ServiceName']
@@ -801,7 +801,7 @@ class MulticastIPTV:
 
     @staticmethod
     def __decode_string(string):
-        return ''.join(chr(char ^ 0x15) for char in string).encode('latin1').decode()
+        return (''.join(chr(char ^ 0x15) for char in string)).encode('latin1').decode()
 
     @staticmethod
     def __parse_bin_epg_header(data):
@@ -1061,7 +1061,7 @@ class XMLTV:
                 channel_key = channel_id
                 channel_ip = self.__channels[channel_id]['address']
                 channel_port = str(self.__channels[channel_id]['port'])
-                channel_tag = self.__channels[channel_id]['genre'].encode('latin1').decode()
+                channel_tag = self.__channels[channel_id]['genre']
                 channel_number = services[channel_id]
                 if channel_number == '0':
                     channel_number = '999'
