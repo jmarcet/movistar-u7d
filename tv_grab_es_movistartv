@@ -840,6 +840,12 @@ class MulticastIPTV:
                 serie = re.findall(r'(.*)\sT\d*/?\d+.*', full_title, re.U)
                 season = struct.unpack('B', epg_dt[title_end + 11:title_end + 12])[0]
                 is_serie = bool(episode)
+                if is_serie and serie:
+                    serie = serie[0]
+                elif is_serie:
+                    serie = full_title
+                else:
+                    serie = ''
                 pr_title_end = None
                 programs[start] = {
                     'pid': struct.unpack('>I', epg_dt[:4])[0],
@@ -852,7 +858,7 @@ class MulticastIPTV:
                     'serie_id': struct.unpack('>H', epg_dt[title_end + 5:title_end + 7])[0],
                     'episode': episode,
                     'year': str(struct.unpack('>H', epg_dt[title_end + 9:title_end + 11])[0]),
-                    'serie': serie[0] if serie else full_title,
+                    'serie': serie,
                     'season': season,
                     'is_serie': is_serie
                 }
