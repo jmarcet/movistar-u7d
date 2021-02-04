@@ -80,8 +80,9 @@ def handle_reload_epg_task():
         log.info('Loading EPG cache')
         epgs = [ epg_cache ]
     else:
-        log.info('Loading logrotate EPG backups')
         epgs = glob.glob('/home/epg.*.json')
+        if epgs:
+            log.info('Loading logrotate EPG backups')
     if os.path.exists(epg_data) and os.stat(epg_data).st_size > 100:
         log.info('Loading fresh EPG data')
         epgs.append(epg_data)
