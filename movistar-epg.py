@@ -71,6 +71,19 @@ async def handle_get_program_id(request, channel_id, channel_key, url):
     else:
         return response.json({'status': f'{channel_id}/{channel_key}/{url} not found'}, 404)
 
+@app.get('/get_program_name/<channel_key>/<program_id>')
+async def handle_get_program_name(request, channel_key, program_id):
+    if channel_key in _epgdata['data']:
+        for timestamp in _epgdata['data'][channel_key].keys():
+            entry = _epgdata['data'][channel_key][timestamp]
+            if int(program_id) == entry['pid']:
+                return response.json({'status': 'OK',
+                                      'full_title': entry['full_title'],
+                                      'is_serie': entry['is_serie'],
+                                      'serie': entry['serie']
+                                      }, ensure_ascii=False)
+    return response.json({'status': f'{channel_key}/{program_id} not found'}, 404)
+
 def handle_reload_epg_task():
     global _epgdata
     epg_cache = '/home/epg.cache.json'

@@ -18,6 +18,10 @@ Response = namedtuple('Response', ['version', 'status', 'url', 'headers', 'body'
 UA = 'MICA-IP-STB'
 WIDTH = 134
 
+SANIC_EPG_HOST = os.environ.get('SANIC_EPG_HOST') or '127.0.0.1'
+SANIC_EPG_PORT = int(os.environ.get('SANIC_EPG_PORT')) or 8889
+STORAGE = os.environ.get('U7D_DIR') or '/tmp'
+
 needs_position = False
 
 class RtspClient(object):
@@ -167,13 +171,30 @@ def main(args):
                 thread = threading.Thread(target=keep_alive)
                 thread.daemon = True
 
+                url = f'http://{SANIC_EPG_HOST}:{SANIC_EPG_PORT}/get_program_name/{args.channel}/{args.broadcast}'
+                resp = urllib.request.urlopen(url)
+                if resp.status == 200:
+                    data = json.loads(resp.read())
+                    print(f'Identified as {repr(data)}', flush=True)
+
+                    if data['is_serie']:
+                        path = os.path.join(STORAGE, data['serie'])
+                        filename = os.path.join(path, data['full_title'] + '.ts')
+                        if not os.path.exists(path):
+                            print(f'Creating recording subdir {path}', flush=True)
+                            os.mkdir(path)
+                    else:
+                        filename = os.path.join(STORAGE, data['full_title'] + '.ts')
+                else:
+                    filename = f'{STORAGE}/{args.channel}-{args.broadcast}.ts'
+
                 command = ['socat']
                 command.append('-u')
                 command.append(f'UDP4-LISTEN:{args.client_port},fork')
-                command.append(f'OPEN:/storage/timeshift/u7d/{args.channel}-{args.broadcast}.ts,creat,trunc')
+                command.append(f'OPEN:"{filename}",creat,trunc')
 
                 thread.start()
-                print(f'Recording {args.channel} {args.broadcast} with {command}')
+                print(f'Recording {args.channel} {args.broadcast} with {command}', flush=True)
                 subprocess.call(command)
             else:
                 keep_alive()
