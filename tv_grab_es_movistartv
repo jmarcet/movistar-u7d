@@ -835,6 +835,11 @@ class MulticastIPTV:
                 start = struct.unpack('>I', epg_dt[4:8])[0]
                 duration = struct.unpack('>H', epg_dt[8:10])[0]
                 title_end = struct.unpack('B', epg_dt[31:32])[0] + 32
+                episode = struct.unpack('B', epg_dt[title_end + 8:title_end + 9])[0]
+                full_title = self.__sanitize(self.__decode_string(epg_dt[32:title_end]))
+                serie = re.findall(r'(.*)\sT\d*/?\d+.*', full_title, re.U)
+                season = struct.unpack('B', epg_dt[title_end + 11:title_end + 12])[0]
+                is_serie = bool(episode)
                 pr_title_end = None
                 programs[start] = {
                     'pid': struct.unpack('>I', epg_dt[:4])[0],
@@ -843,21 +848,22 @@ class MulticastIPTV:
                     'end': start + duration,
                     'genre': '{:02X}'.format(struct.unpack('B', epg_dt[20:21])[0]),
                     'age_rating': struct.unpack('B', epg_dt[24:25])[0],
-                    'full_title': self.__sanitize(self.__decode_string(epg_dt[32:title_end])),
-                    'is_serie': True if struct.unpack('B', epg_dt[title_end:title_end + 1])[0] == 0xF1 else False
+                    'full_title': full_title,
+                    'serie_id': struct.unpack('>H', epg_dt[title_end + 5:title_end + 7])[0],
+                    'episode': episode,
+                    'year': str(struct.unpack('>H', epg_dt[title_end + 9:title_end + 11])[0]),
+                    'serie': serie[0] if serie else full_title,
+                    'season': season,
+                    'is_serie': is_serie
                 }
-                if programs[start]['is_serie']:
-                    pr_title = programs[start]['full_title'].split(' - ')
-                    pr_title_end = struct.unpack('B', epg_dt[title_end + 12:title_end + 13])[0] + title_end + 13
-                    if len(pr_title) == 2:
-                        programs[start]['episode_title'] = self.__sanitize(pr_title[1])
-                    programs[start].update({
-                        'serie_id': struct.unpack('>H', epg_dt[title_end + 5:title_end + 7])[0],
-                        'episode': struct.unpack('B', epg_dt[title_end + 8:title_end + 9])[0],
-                        'year': str(struct.unpack('>H', epg_dt[title_end + 9:title_end + 11])[0]),
-                        'season': struct.unpack('B', epg_dt[title_end + 11:title_end + 12])[0],
-                        'serie': self.__sanitize(self.__decode_string(epg_dt[title_end + 13:pr_title_end]))
-                    })
+                if is_serie and not season:
+                    sn = re.findall(r'.*\sT(\d*/?\d+).*', programs[start]['full_title'], re.U)
+                    if sn:
+                        programs[start]['season'] = int(sn[0].replace('/', ''))
+                pr_title = programs[start]['full_title'].split(' - ')
+                pr_title_end = struct.unpack('B', epg_dt[title_end + 12:title_end + 13])[0] + title_end + 13
+                if len(pr_title) == 2:
+                    programs[start]['episode_title'] = self.__sanitize(pr_title[1])
                 cut = pr_title_end if pr_title_end else title_end
                 epg_dt = epg_dt[struct.unpack('B', epg_dt[cut + 3:cut + 4])[0] + cut + 4:]
             return programs
@@ -943,14 +949,9 @@ class XMLTV:
 
     @staticmethod
     def __get_series_data(program, ext_info):
-        episode = int(program['episode'])
-        season = int(program['season'])
-        title = re.findall(r'(.*)\sT\d*/?\d+.*', program['full_title'], re.U)
-        title = title[0] if title else program['full_title']
+        episode = program['episode']
+        season = program['season']
         desc = ext_info['description'] if ext_info else u'Año: %s' % program['year']
-        if season == 0:
-            sn = re.findall(r'.*\sT(\d*/?\d+).*', program['full_title'], re.U)
-            season = int(sn[0].replace('/', '')) if sn else season
         if 'episode_title' in program:
             stitle = '%ix%02d %s' % (season, episode, program['episode_title'])
         else:
@@ -959,7 +960,7 @@ class XMLTV:
                 if ext_info and 'originalTitle' in ext_info else 'Episodio %i' % episode
             )
         return {
-            'title': title,
+            'title': program['serie'],
             'sub-title': stitle,
             'season': season if season > 0 else '',
             'episode': episode,
