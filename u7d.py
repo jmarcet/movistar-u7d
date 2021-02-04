@@ -5,6 +5,7 @@ import urllib.parse
 import subprocess
 import argparse
 import socket
+import threading
 import json
 import time
 import os
@@ -156,9 +157,26 @@ def main(args):
                 get_parameter.update({'Content-type': 'text/parameters', 'Content-length': 10})
 
             client.print(client.send_request('PLAY', play))
-            while True:
-                time.sleep(30)
-                client.print(client.send_request('GET_PARAMETER', get_parameter))
+
+            def keep_alive():
+                while True:
+                    time.sleep(30)
+                    client.print(client.send_request('GET_PARAMETER', get_parameter))
+
+            if args.write_to_file:
+                thread = threading.Thread(target=keep_alive)
+                thread.daemon = True
+
+                command = ['socat']
+                command.append('-u')
+                command.append(f'UDP4-LISTEN:{args.client_port},fork')
+                command.append(f'OPEN:/storage/timeshift/u7d/{args.channel}-{args.broadcast}.ts,creat,trunc')
+
+                thread.start()
+                print(f'Recording {args.channel} {args.broadcast} with {command}')
+                subprocess.call(command)
+            else:
+                keep_alive()
 
         except Exception as ex:
             print(f'[{repr(ex)}] [{args.client_ip}] {args.channel} {args.broadcast} -s {args.start[0]} -p {args.client_port}',
@@ -174,7 +192,7 @@ if __name__ == '__main__':
         parser.add_argument('broadcast', help='broadcast id')
         parser.add_argument('--client_ip', '-i', help='client ip address')
         parser.add_argument('--client_port', '-p', help='client udp port')
-        #parser.add_argument('--dumpfile', '-f', help='dump file path', default='test2.ts')
+        parser.add_argument('--write_to_file', '-w', help='dump file path', action='store_true')
         parser.add_argument('--start', '-s', metavar='seconds', nargs=1, default=[0], type=int, help='stream start offset')
         args = parser.parse_args()
         if args.client_port is not None:
