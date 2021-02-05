@@ -1211,16 +1211,20 @@ try:
     # Genera el árbol XMLTV de los paquetes contratados
     epg_x = xmltv.generate_xml(epg)
 
+    _saved = None
+    xml = epg_x.getroot()
+    ElTr.indent(xml)
     if args.filename:
         logger.info('Guardando la guía XMLTV: %s' % args.filename)
-        epg_x.write(args.filename, encoding='unicode', xml_declaration=True)
+        _saved = sys.stdout
+        sys.stdout = open(args.filename, 'w')
     else:
         if args.channels:
             export_channels(args.channels)
-        print("<?xml version='1.0' encoding='UTF-8'?>", flush=True)
-        xml = epg_x.getroot()
-        ElTr.indent(xml)
-        ElTr.dump(xml)
+    print("<?xml version='1.0' encoding='UTF-8'?>", flush=True)
+    ElTr.dump(xml)
+    if _saved:
+        sys.stdout = _saved
 
     # Muestra la duración del script y el número de canales y días de EPG descargados
     total = (int(datetime.now().strftime('%s')) - int(time_start.strftime('%s'))) / 60
