@@ -1,3 +1,3 @@
 aiohttp
 asyncio_dgram
-sanic
+git+https://github.com/Tronic/sanic
