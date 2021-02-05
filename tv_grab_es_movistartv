@@ -35,7 +35,7 @@ import sys
 import time
 import traceback
 import requests
-import xml.etree.cElementTree as ElTr
+import xml.etree.ElementTree as ElTr
 from queue import Queue
 from datetime import datetime, timedelta
 from logging.handlers import RotatingFileHandler
@@ -915,7 +915,7 @@ class XMLTV:
         root = ElTr.Element('tv', {
                 'date': datetime.now().strftime('%Y%m%d%H%M%S'),
                 'generator_info_url': 'http://wiki.xmltv.org/index.php/XMLTVFormat'})
-        tz = abs(time.timezone / 3600) + time.localtime().tm_isdst
+        tz = int(abs(time.timezone / 3600)) + time.localtime().tm_isdst
         services = self.__get_client_channels()
         for channel_id in sorted(services, key=lambda key: int(services[key])):
             if channel_id in self.__channels:
@@ -1217,7 +1217,9 @@ try:
     else:
         if args.channels:
             export_channels(args.channels)
-        print(ElTr.tostring(epg_x.getroot(), encoding='unicode', method='xml', xml_declaration=True))
+        print("<?xml version='1.0' encoding='UTF-8'?>", flush=True)
+        #ElTr.indent(xml)
+        ElTr.dump(xml)
 
     # Muestra la duración del script y el número de canales y días de EPG descargados
     total = (int(datetime.now().strftime('%s')) - int(time_start.strftime('%s'))) / 60
