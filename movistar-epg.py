@@ -16,8 +16,8 @@ SANIC_EPG_HOST = os.environ.get('SANIC_EPG_HOST') or '127.0.0.1'
 SANIC_EPG_PORT = int(os.environ.get('SANIC_EPG_PORT')) or 8889
 
 CACHED_TIME = 7 * 24 * 60 * 60
-EPG_CHANNELS = [ '1', '3', '4', '5', '6', '717', '477', '4911', '934', '3186', '884', '844', '3443', '1221', '3325', '744', 
-                '2843', '657', '3603', '663', '935', '2863', '3184', '2', '578', '745', '743', '582', '597' ]
+EPG_CHANNELS = ['1', '3', '4', '5', '6', '717', '477', '4911', '934', '3186', '884', '844', '3443', '1221', '3325', '744', 
+                '2843', '657', '3603', '663', '935', '2863', '3184', '2', '578', '745', '743', '582', '597']
 YEAR_SECONDS = 365 * 24 * 60 * 60
 
 app = Sanic('Movistar_epg')
@@ -91,7 +91,7 @@ def handle_reload_epg_task():
 
     if os.path.exists(epg_cache) and os.stat(epg_cache).st_size > 100:
         log.info('Loading EPG cache')
-        epgs = [ epg_cache ]
+        epgs = [epg_cache]
     else:
         epgs = glob.glob('/home/epg.*.json')
         if epgs:
@@ -108,9 +108,9 @@ def handle_reload_epg_task():
                 day_epg = json.loads(f.read())
         except json.decoder.JSONDecodeError:
             continue
-        channels = [ channel for channel in day_epg['data'].keys() if channel in EPG_CHANNELS ]
+        channels = [channel for channel in day_epg['data'].keys() if channel in EPG_CHANNELS]
         for channel in channels:
-            if not channel in _epgdata['data']:
+            if channel not in _epgdata['data']:
                 _epgdata['data'][channel] = {}
             else:
                 clean_channel_epg = {}
