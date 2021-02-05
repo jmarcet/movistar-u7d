@@ -34,7 +34,7 @@ import struct
 import sys
 import time
 import traceback
-import requests
+import httpx
 import xml.etree.ElementTree as ElTr
 from queue import Queue
 from datetime import datetime, timedelta
@@ -551,7 +551,7 @@ class MovistarTV:
                             if '=' in ck:
                                 headers['Cookie'] = self.__cookie
                     url = f'{ep}/appserver/mvtv.do?action={action}'
-                    response = requests.get(url, headers=headers)
+                    response = httpx.get(url, headers=headers)
                     content = response.json()
                     if response.status_code == 200:
                         new_cookie = response.headers['set-cookie'] \
