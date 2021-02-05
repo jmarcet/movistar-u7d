@@ -1,7 +1,7 @@
-FROM alpine:3.12
+FROM python:3.9-alpine
 
 RUN apk update \
-    && apk add bash build-base git htop netcat-openbsd python3 python3-dev py3-pip py3-psutil py3-wheel tcpdump vim xmltv
+    && apk add bash build-base git htop netcat-openbsd tcpdump vim xmltv
 
 ENV HOME="/home"
 ENV PYTHONPATH=/app
