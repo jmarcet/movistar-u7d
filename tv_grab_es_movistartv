@@ -1218,7 +1218,8 @@ try:
         if args.channels:
             export_channels(args.channels)
         print("<?xml version='1.0' encoding='UTF-8'?>", flush=True)
-        #ElTr.indent(xml)
+        xml = epg_x.getroot()
+        ElTr.indent(xml)
         ElTr.dump(xml)
 
     # Muestra la duración del script y el número de canales y días de EPG descargados
