@@ -1017,7 +1017,7 @@ class XMLTV:
                 if ext_info and 'originalTitle' in ext_info else 'Episodio %i' % episode
             )
         return {
-            'title': program['serie'],
+            'title': program['serie'] if 'serie' in program else program['full_title'],
             'sub-title': stitle,
             'season': season if season > 0 else '',
             'episode': episode,
