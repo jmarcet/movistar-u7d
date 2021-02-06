@@ -130,8 +130,8 @@ async def handle_rtp(request, channel_id, channel_key, url):
         host = socket.gethostbyname(socket.gethostname())
         log.info(f'Stream: {channel_id}/{channel_key}/{url} => @{host}:{client_port} [{request.ip}]')
         try:
+            resp = await request.respond()
             with closing(await asyncio_dgram.bind((host, int(client_port)))) as stream:
-                resp = await request.respond()
                 while True:
                     data, remote_addr = await stream.recv()
                     if not data:
