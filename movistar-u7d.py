@@ -33,14 +33,14 @@ app.config.update({'KEEP_ALIVE': False})
 
 @app.listener('after_server_start')
 async def notify_server_start(app, loop):
-    log.debug('after_server_start')
+    log.info('after_server_start')
     global SESSION
     conn = aiohttp.TCPConnector(keepalive_timeout=YEAR_SECONDS, limit_per_host=1)
     SESSION = aiohttp.ClientSession(connector=conn)
 
 @app.listener('after_server_stop')
 async def notify_server_stop(app, loop):
-    log.debug('after_server_stop killing u7d.py')
+    log.info('after_server_stop killing u7d.py')
     p = await asyncio.create_subprocess_exec('/usr/bin/pkill', '-INT', '-f', '/app/u7d.py .+ -p ')
     await p.wait()
 
@@ -106,7 +106,7 @@ async def handle_rtp(request, channel_id, channel_key, url):
                 program_id = r['program_id']
                 offset = r['offset']
         except Exception as ex:
-            log.debug(f"aiohttp.ClientSession().get('{epg_url}') {repr(ex)} [{request.ip}]")
+            log.error(f"aiohttp.ClientSession().get('{epg_url}') {repr(ex)} [{request.ip}]")
 
         if not program_id:
             return response.json({'status': f'{channel_id}/{channel_key}/{url} not found'}, 404)
