@@ -24,6 +24,7 @@ STORAGE = os.environ.get('U7D_DIR') or '/tmp'
 
 needs_position = False
 
+
 class RtspClient(object):
     def __init__(self, sock, url):
         self.sock = sock
@@ -33,7 +34,7 @@ class RtspClient(object):
 
     def read_message(self):
         resp = self.sock.recv(4096).decode()
-        if not ' 200 OK' in resp:
+        if ' 200 OK' not in resp:
             version, status = resp.rstrip().split('\n')[0].split(' ', 1)
             #print(f'Response: {version} {status}', flush=True)
             return Response(version, status, self.url, {}, '')
@@ -47,7 +48,6 @@ class RtspClient(object):
             headers[key] = value
 
         if 'Content-Length' in headers.keys():
-            length = headers['Content-Length']
             if 'a=control:rtsp:' in body:
                 self.ip = body.split('\n')[-1].split(':', 1)[1].strip()
         else:
@@ -81,8 +81,8 @@ class RtspClient(object):
         self.sock.send(req.encode())
         resp = self.read_message()
 
-        if resp.status != '200 OK' and 'SETUP' not in method:                                                                         
-            raise ValueError(f'{method} {repr(resp)}')                                                                                
+        if resp.status != '200 OK' and 'SETUP' not in method:
+            raise ValueError(f'{method} {repr(resp)}')
 
         return Request(req, resp)
 
@@ -98,20 +98,22 @@ class RtspClient(object):
         _req_r = ' ' * (100 - len(_req_l) - len(_req[2]))
         print(f'Req: {_req_l}{_req_r}{_req[2]}', end=' ', flush=True)
         print(f'Resp: {resp.version} {resp.status}', flush=True)
-        #headers = self.serialize_headers(resp.headers)
-        #print('-' * WIDTH, flush=True)
-        #print('Request: ' + req.request.split('\m')[0], end='', flush=True)
-        #print(f'Response: {resp.version} {resp.status}\n{headers}', flush=True)
-        #if resp.body:
-        #    print(f'\n{resp.body.rstrip()}', flush=True)
-        #print('-' * WIDTH, flush=True)
+        # headers = self.serialize_headers(resp.headers)
+        # print('-' * WIDTH, flush=True)
+        # print('Request: ' + req.request.split('\m')[0], end='', flush=True)
+        # print(f'Response: {resp.version} {resp.status}\n{headers}', flush=True)
+        # if resp.body:
+        #     print(f'\n{resp.body.rstrip()}', flush=True)
+        # print('-' * WIDTH, flush=True)
         return resp
+
 
 def find_free_port():
     with closing(socket.socket(socket.AF_INET, socket.SOCK_DGRAM)) as s:
         s.bind(('', 0))
         s.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
         return s.getsockname()[1]
+
 
 def main(args):
     global needs_position
@@ -205,6 +207,7 @@ def main(args):
         finally:
             if client and 'Session' in session:
                 client.print(client.send_request('TEARDOWN', session), killed=args)
+
 
 if __name__ == '__main__':
     try:
