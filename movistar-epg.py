@@ -38,6 +38,23 @@ async def handle_reload_epg(request):
         await loop.run_in_executor(pool, handle_reload_epg_task)
     return response.json({'status': 'EPG Updated'}, 200)
 
+@app.get('/get_next_program/<channel_key>/<program_id>')
+async def handle_get_next_program(request, channel_key, program_id):
+    log.info(f'Searching: EPG next /{channel_key}/{program_id}')
+    if channel_key in _epgdata['data']:
+        found = False
+        events = _epgdata['data'][channel_key]
+        for event in sorted(_epgdata['data'][channel_key].keys()):
+            if found:
+                log.info(f'Found: EPG next /{channel_key}/{program_id}')
+                return response.json({'status': 'OK',
+                                      'program_id': _epgdata['data'][channel_key][event]['pid'],
+                                      'duration': _epgdata['data'][channel_key][event]['duration']}, 200)
+            elif _epgdata['data'][channel_key][event]['pid'] == int(program_id):
+                found = True
+                continue
+    return response.json({'status': f'{channel_key}/{program_id} not found'}, 404)
+
 @app.get('/get_program_id/<channel_id>/<channel_key>/<url>')
 async def handle_get_program_id(request, channel_id, channel_key, url):
     start = url.split('-')[1]
