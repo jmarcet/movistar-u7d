@@ -66,7 +66,10 @@ default_demarcation = demarcations['Galicia']
 
 app_dir = os.path.join(os.environ.get('HOME'), '.xmltv')
 use_multithread = True
-cache_exp = 0
+CACHED_TIME = 7 * 24 * 60 * 60
+EPG_CHANNELS = ['1', '2', '3', '4','5', '6', '477', '578', '582', '597', '657', '663', '717', '743', '744', '745',
+                '844', '884', '934', '935', '1221', '2843', '2863', '3184', '3186', '3325', '3443', '3603', '4911' ]
+
 
 sanic = '192.168.137.1:8888'
 
@@ -304,10 +307,9 @@ class Cache:
 
     @staticmethod
     def __clean():
-        t = time.time() - (cache_exp + 2) * 86400
         for f in os.listdir('%s/cache/programs' % app_dir):
             fp = '%s/cache/programs/%s' % (app_dir, f)
-            if os.path.isfile(fp) and os.stat(fp).st_mtime < t:
+            if os.path.isfile(fp) and os.stat(fp).st_mtime < deadline:
                 os.remove(fp)
                 logger.debug('Caché: %s caducado' % f)
 
@@ -316,21 +318,17 @@ class Cache:
         try:
             with open('%s/cache/%s' % (app_dir, cfile), 'r') as fp:
                 content = json.load(fp)
-            if time_start < datetime.fromtimestamp(content['expire']):
-                logger.debug("Caché: %s cargado" % cfile)
                 return content['data']
-            else:
-                logger.debug("Caché: %s caducado" % cfile)
-                return None
         except IOError:
             return None
 
     @staticmethod
-    def __save(cfile, data, expire_in=719):  # Horas
+    def __save(cfile, data):
         try:
             with open('%s/cache/%s' % (app_dir, cfile), 'w') as fp:
-                json.dump({'data': data, 'expire': time.time() - 900 + expire_in * 3600}, fp, ensure_ascii=False, indent=4)
-            logger.debug("Cache: %s guardado" % cfile)
+                json.dump({'data': data}, fp, ensure_ascii=False, indent=4)
+            if not cfile.startswith('programs'):
+                logger.debug("Cache: %s guardado" % cfile)
         except IOError:
             logger.error('Caché: No se puede escribir en disco')
 
@@ -364,7 +362,7 @@ class Cache:
 
     def save_epg_extended_info(self, data):
         self.__programs[data['productID']] = data
-        self.__save('programs/%s.json' % data['productID'], data, expire_in=2160)  # 3 meses
+        self.__save('programs/%s.json' % data['productID'], data)
 
     def load_config(self):
         data = self.__load('config.json')
@@ -373,7 +371,7 @@ class Cache:
         return data
 
     def save_config(self, data):
-        self.__save('config.json', data, expire_in=cache_exp * 24)
+        self.__save('config.json', data)
 
     def load_service_provider_data(self):
         data = self.__load('provider.json')
@@ -382,7 +380,7 @@ class Cache:
         return data
 
     def save_service_provider_data(self, data):
-        self.__save('provider.json', data, expire_in=cache_exp * 24)
+        self.__save('provider.json', data)
 
     def load_epg_data(self):
         data = self.__load('epg_metadata.json')
@@ -391,7 +389,7 @@ class Cache:
         return data
 
     def save_epg_data(self, data):
-        self.__save('epg_metadata.json', data, expire_in=cache_exp * 24)
+        self.__save('epg_metadata.json', data)
 
     def load_epg(self):
         data = self.__load('epg.json')
@@ -400,7 +398,7 @@ class Cache:
         return data
 
     def save_epg(self, data):
-        self.__save('epg.json', data, expire_in=cache_exp * 24)
+        self.__save('epg.json', data)
 
 
 class MovistarTV:
@@ -415,7 +413,8 @@ class MovistarTV:
         try:
             logger.info('Descargando configuración del cliente')
             return self.__get_service_data('getClientProfile')['resultData']
-        except:
+        except Exception as ex:
+            logger.error(f'{repr(ex)}')
             logger.error('Usando la configuración de cliente por defecto: %i|ALL|1' % default_demarcation)
             return {
                 'tvPackages': 'ALL',
@@ -428,7 +427,8 @@ class MovistarTV:
         try:
             logger.info('Descargando pefil del servicio')
             return self.__get_service_data('getPlatformProfile')['resultData']
-        except:
+        except Exception as ex:
+            logger.error(f'{repr(ex)}')
             logger.error('Usando el pefil del servicio por defecto')
             return {
                 'RES_BASE_URI': 'http://www-60.svc.imagenio.telefonica.net:2001/appclientv/nux/',
@@ -441,7 +441,8 @@ class MovistarTV:
         try:
             logger.info('Descargando parámetros de configuración')
             return self.__get_service_data('getConfigurationParams')['resultData']
-        except:
+        except Exception as ex:
+            logger.error(f'{repr(ex)}')
             logger.error('Usando los parámetros de configuración por defecto')
             return {
                 'tvChannelLogoPath': 'incoming/epg/channelLogo/',
@@ -459,16 +460,22 @@ class MovistarTV:
             return None
 
     def get_epg_extended_info(self, pid, channel_id):
-        # noinspection PyBroadException
         try:
+            #logger.debug('Descargando info extendida: %s' % pid)
             data = cache.load_epg_extended_info(pid)
+        except Exception as ex:
+            logger.error(f'{repr(ex)}')
+            pass
+        try:
             if not data:
-                logger.debug('Descargando info extendida: %s' % pid)
+                #logger.debug('Descargando info extendida: %s' % pid)
+                print('.', flush=True, end='')
                 data = self.__get_service_data(f'epgInfov2&productID={pid}&channelID={channel_id}&extra=1')['resultData']
                 cache.save_epg_extended_info(data)
             return data
-        except:
-            logger.error('Información extendida no encontrada: %s' % pid)
+        except Exception as ex:
+            logger.error(f'{repr(ex)}')
+            logger.error('Información extendida no encontrada: %s %s' % (pid, repr(ex)))
             return None
 
     @staticmethod
@@ -579,7 +586,6 @@ class MulticastIPTV:
     @staticmethod
     def __parse_chunk(data):
         try:
-            #logger.debug('__parse_chunk data=%s type=%s' % (str(data), type(data)))
             chunk = {
                 "end": struct.unpack('B', data[:1])[0],
                 "size": struct.unpack('>HB', data[1:4])[0],
@@ -624,11 +630,13 @@ class MulticastIPTV:
                 # Discard last 4bytes binary footer?
                 xmldata += body[:-4]
                 _files[str(chunk["filetype"]) + "_" + str(chunk["fileid"])] = xmldata
-                logger.debug('XML: %s_%s' % (chunk["filetype"], chunk["fileid"]))
+                #logger.debug('XML: %s_%s' % (chunk["filetype"], chunk["fileid"]))
+                print('.', flush=True, end='')
                 max_files -= 1
                 if str(chunk["filetype"]) + "_" + str(chunk["fileid"]) == first_file or max_files == 0:
                     loop = False
             sock.close()
+            print('', flush=True)
             return _files
         except Exception as ex:
             logger.error('Error al descargar los archivos XML: %s' % repr(ex))
@@ -709,7 +717,6 @@ class MulticastIPTV:
         return config['demarcation']
 
     def __get_service_provider_ip(self):
-        # noinspection PyBroadException
         try:
             logger.info('Buscando el Proveedor de Servicios de %s' % self.__get_demarcation_name())
             data = cache.load_service_provider_data()
@@ -725,7 +732,7 @@ class MulticastIPTV:
                 cache.save_service_provider_data(data)
             logger.info('Proveedor de Servicios de %s: %s' % (self.__get_demarcation_name(), data['mcast_grp']))
             return data
-        except:
+        except Exception as ex:
             logger.error('Usando el Proveedor de Servicios por defecto: 239.0.2.150')
             return {
                 'mcast_grp': '239.0.2.150',
@@ -749,7 +756,6 @@ class MulticastIPTV:
         queue = Queue()
         threads = 16
         day = -1
-        # noinspection PyUnusedLocal
         self.__epg = [{} for r in range(0, len(self.__xml_data['segments']))]
         logger.info('Multithread: %s descargas simultáneas' % threads)
         for n in range(threads):
@@ -766,16 +772,60 @@ class MulticastIPTV:
             })
         queue.join()
 
+    @staticmethod
+    def _drop_encrypted_channels(epg):
+        if not epg:
+            return None
+        channels = [channel for channel in epg.keys() if channel in EPG_CHANNELS]
+        logger.info(f'Conservando {len(channels)} canales en abierto de un total de {len(epg.keys())} canales')
+        clean_channels = {}
+        for channel in channels:
+            clean_channels[channel] = epg[channel]
+        return clean_channels
+
     def get_epg(self):
-        data = cache.load_epg()
-        if data:
-            logger.debug('Canales con EPG: %s' % len(data))
-            return data
+        cached_epg = self._drop_encrypted_channels(cache.load_epg())
         if use_multithread:
             self.__get_bin_epg_threaded()
         else:
             self.__get_bin_epg()
-        return self.__parse_bin_epg()
+        new_epg = self._drop_encrypted_channels(self.__parse_bin_epg())
+
+        if not cached_epg:
+            logger.info('Sin caché de EPG guardada')
+            return new_epg
+
+        expired = 0
+        for channel in new_epg.keys():
+            if channel not in cached_epg:
+                cached_epg[channel] = {}
+            else:
+                clean_channel_epg = {}
+                new_timestamp = int(sorted(new_epg[channel].keys())[0])
+                for timestamp in sorted(cached_epg[channel].keys()):
+                    if not cached_epg[channel][timestamp]['start'] < new_timestamp:
+                        break
+                    # here we force cast to int since cache gives us str
+                    # and fresh epg has ints
+                    clean_channel_epg[int(timestamp)] = cached_epg[channel][timestamp]
+                cached_epg[channel] = clean_channel_epg
+            for timestamp in new_epg[channel].keys():
+                if new_epg[channel][timestamp]['start'] > deadline:
+                    cached_epg[channel][timestamp] = new_epg[channel][timestamp]
+                else:
+                    expired += 1
+        nr_epg = 0
+        for channel in new_epg.keys():
+            nr_epg += len(new_epg[channel].keys())
+
+        logger.info('Canales con EPG: %s' % len(cached_epg.keys()))
+        nr_epg = 0
+        for channel in cached_epg.keys():
+            nr_epg += len(cached_epg[channel].keys())
+        logger.info(f'Entradas en el EPG: Total: {nr_epg} Caducados: {expired}')
+
+        cache.save_epg(cached_epg)
+        return cached_epg
 
     def __get_epg_data(self, mcast_grp, mcast_port):
         data = cache.load_epg_data()
@@ -805,7 +855,6 @@ class MulticastIPTV:
 
     @staticmethod
     def __parse_bin_epg_header(data):
-        # noinspection PyBroadException
         data = data.encode('latin1')
         try:
             body = struct.unpack('B', data[6:7])[0] + 7
@@ -828,7 +877,6 @@ class MulticastIPTV:
 
     def __parse_bin_epg_body(self, data):
         epg_dt = data[:-4]
-        # noinspection PyBroadException
         try:
             programs = {}
             while epg_dt:
@@ -929,10 +977,13 @@ class XMLTV:
             if channel_id in self.__channels:
                 chid = self.__channels[channel_id]['replacement'] \
                     if 'replacement' in self.__channels[channel_id] else channel_id
+                if chid not in EPG_CHANNELS:
+                    logger.info(f'XML: Saltando canal encriptado {chid}')
+                    continue
                 if chid in parsed_epg:
                     for program in sorted(parsed_epg[chid].keys()):
-                        if parsed_epg[chid][program]['end'] > time.time() - 7200:
-                            root.append(self.__build_programme_tag(channel_id, parsed_epg[chid][program], tz))
+                        root.append(self.__build_programme_tag(channel_id, parsed_epg[chid][program], tz))
+        print('', flush=True)
         return ElTr.ElementTree(root)
 
     @staticmethod
@@ -1063,8 +1114,6 @@ class XMLTV:
         for channel_id in channels:
             if channel_id in self.__channels:
                 channel_name = self.__channels[channel_id]['name']
-                if channel_name == 'FDF' or channel_id == '4809': #Barça TV HD
-                    continue
                 channel_key = channel_id
                 channel_ip = self.__channels[channel_id]['address']
                 channel_port = str(self.__channels[channel_id]['port'])
@@ -1072,10 +1121,12 @@ class XMLTV:
                 channel_number = services[channel_id]
                 if channel_number == '0':
                     channel_number = '999'
-                channel_quality = 'HDTV' if 'HD' in channel_name else 'SDTV'
                 channel_logo = '%s%s' % (f'http://{sanic}/Logos/', self.__channels[channel_id]['logo_uri'])
                 if 'replacement' in self.__channels[channel_id]:
                     channel_key = self.__channels[self.__channels[channel_id]['replacement']]['id']
+                if channel_key not in EPG_CHANNELS:
+                    logger.info(f'M3U: Saltando canal encriptado {channel_name} {channel_id} {channel_key}')
+                    continue
                 m3u += '#EXTINF:-1 tvg-chnum="%s" ' % channel_number
                 m3u += 'tvg-id="%s.movistar.tv" group-title="%s" ' % (channel_id, channel_tag)
                 m3u += 'logo="%s",%s\n' % (channel_logo, channel_name)
@@ -1114,7 +1165,7 @@ def create_args_parser():
     now = datetime.now()
     desc = 'Grab Movistar TV EPG guide via Multicast from %s to %s' % (
         (now - timedelta(hours=2)).strftime('%d/%m/%Y'),
-        (now + timedelta(days=4)).strftime('%d/%m/%Y'))
+        (now + timedelta(days=6)).strftime('%d/%m/%Y'))
     parser = argparse.ArgumentParser(description=desc)
     parser.add_argument('--description',
                         help="Show 'Spain (MovistarTV)'",
@@ -1169,7 +1220,8 @@ def export_channels(m3u_file):
 
 
 # Guarda el timestamp de inicio
-time_start = datetime.now()
+time_start = int(time.time())
+deadline = time_start - CACHED_TIME
 
 # Crea el logger
 logger = create_logger(sys.argv)
@@ -1226,13 +1278,12 @@ try:
     if _saved:
         sys.stdout = _saved
 
-    # Muestra la duración del script y el número de canales y días de EPG descargados
-    total = (int(datetime.now().strftime('%s')) - int(time_start.strftime('%s'))) / 60
+    total = (int(time.time()) - time_start) / 60
     logger.info('EPG de %i canales y %i días %s' % (
         len(epg),
         len(xdata['segments']),
         'descargada en %i minutos' % total if total != 0 else
-        'generada en %i segundos' % (int(datetime.now().strftime('%s')) - int(time_start.strftime('%s')))))
+        'generada en %i segundos' % (int(time.time()) - time_start)))
 
     sys.exit(0)
 
