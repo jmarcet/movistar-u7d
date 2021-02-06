@@ -1,14 +1,14 @@
 #!/usr/bin/env python3
 
-import urllib.request
-import urllib.parse
-import subprocess
 import argparse
-import socket
-import threading
+import httpx
 import json
+import socket
+import subprocess
+import threading
 import time
 import os
+import urllib.parse
 
 from contextlib import closing
 from collections import namedtuple
@@ -93,7 +93,7 @@ class RtspClient(object):
         if killed:
             tmp = _req[1].split('/')
             _req[1] = str(tmp[0]) + '://' + str(tmp[2])[:26]
-            _req[1] += f' [{killed.client_ip}] {killed.channel} {killed.broadcast} -s {killed.start[0]} -p {killed.client_port}'
+            _req[1] += f' [{killed.client_ip}] {killed.channel} {killed.broadcast} -s {killed.start} -p {killed.client_port}'
         _req_l = _req[0] + ' ' + _req[1][:_off]
         _req_r = ' ' * (100 - len(_req_l) - len(_req[2]))
         print(f'Req: {_req_l}{_req_r}{_req[2]}', end=' ', flush=True)
@@ -127,11 +127,11 @@ def main(args):
 
     host = socket.gethostbyname(socket.gethostname())
     params = f'action=getCatchUpUrl&extInfoID={args.broadcast}&channelID={args.channel}&service=hd&mode=1'
-    resp = urllib.request.urlopen(f'http://www-60.svc.imagenio.telefonica.net:2001/appserver/mvtv.do?{params}')
-    data = json.loads(resp.read())
+    resp = httpx.get(f'http://www-60.svc.imagenio.telefonica.net:2001/appserver/mvtv.do?{params}', headers={'User-Agent': UA})
+    data = resp.json()
 
     if data['resultCode'] != 0:
-        print(f'Error: [{args.client_ip}] {repr(data)} {args.channel} {args.broadcast} -s {args.start[0]}', flush=True)
+        print(f'Error: [{args.client_ip}] {repr(data)} {args.channel} {args.broadcast} -s {args.start}', flush=True)
         return
 
     url = data['resultData']['url']
@@ -154,7 +154,7 @@ def main(args):
                     print(f'{repr(r)}', flush=True)
                     return
 
-            play['Range'] = f'npt={args.start[0]}-end'
+            play['Range'] = f'npt={args.start}-end'
             play.update({'Scale': '1.000', 'x-playNow': '', 'x-noFlush': ''})
             play['Session'] = session['Session'] = r.headers['Session'].split(';')[0]
 
@@ -174,9 +174,9 @@ def main(args):
                 thread.daemon = True
 
                 url = f'http://{SANIC_EPG_HOST}:{SANIC_EPG_PORT}/get_program_name/{args.channel}/{args.broadcast}'
-                resp = urllib.request.urlopen(url)
-                if resp.status == 200:
-                    data = json.loads(resp.read())
+                resp = httpx.get(url)
+                if resp.status_code == 200:
+                    data = resp.json()
                     print(f'Identified as {repr(data)}', flush=True)
 
                     if data['is_serie']:
@@ -202,7 +202,7 @@ def main(args):
                 keep_alive()
 
         except Exception as ex:
-            print(f'[{repr(ex)}] [{args.client_ip}] {args.channel} {args.broadcast} -s {args.start[0]} -p {args.client_port}',
+            print(f'[{repr(ex)}] [{args.client_ip}] {args.channel} {args.broadcast} -s {args.start} -p {args.client_port}',
                   flush=True)
         finally:
             if client and 'Session' in session:
@@ -217,14 +217,12 @@ if __name__ == '__main__':
         parser.add_argument('--client_ip', '-i', help='client ip address')
         parser.add_argument('--client_port', '-p', help='client udp port')
         parser.add_argument('--write_to_file', '-w', help='dump file path', action='store_true')
-        parser.add_argument('--start', '-s', metavar='seconds', nargs=1, default=[0], type=int, help='stream start offset')
+        parser.add_argument('--start', '-s', help='stream start offset')
         args = parser.parse_args()
-        if args.client_port is not None:
-            args.client_port = int(args.client_port)
-        elif not args.client_port:
+        if args.client_port is None:
             args.client_port = find_free_port()
         main(args)
     except KeyboardInterrupt:
         pass
     except Exception as ex:
-        print(f'Died: /app/u7d.py {args.channel} {args.broadcast} -s {args.start[0]} -p {args.client_port} {repr(ex)}', flush=True)
+        print(f'Died: /app/u7d.py {args.channel} {args.broadcast} -s {args.start} -p {args.client_port} {repr(ex)}', flush=True)
