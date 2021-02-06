@@ -127,31 +127,34 @@ async def handle_rtp(request, channel_id, channel_key, url):
         except asyncio.exceptions.TimeoutError:
             pass
 
-        async def udp_streaming(response):
-            host = socket.gethostbyname(socket.gethostname())
-            log.info(f'Stream: {channel_id}/{channel_key}/{url} => @{host}:{client_port} [{request.ip}]')
+        host = socket.gethostbyname(socket.gethostname())
+        log.info(f'Stream: {channel_id}/{channel_key}/{url} => @{host}:{client_port} [{request.ip}]')
+        try:
+            with closing(await asyncio_dgram.bind((host, int(client_port)))) as stream:
+                resp = await request.respond()
+                while True:
+                    data, remote_addr = await stream.recv()
+                    if not data:
+                        log.info(f'Stream loop ended [{request.ip}]')
+                        await resp.send('', True)
+                        break
+                    await resp.send(data, False)
+        except Exception as ex:
+            msg = f'Stream loop excepted: {repr(ex)}'
+            log.error(msg)
+            return response.json({'status': msg}, 500)
+        finally:
+            log.debug(f'Finally {u7d_msg}')
             try:
-                with closing(await asyncio_dgram.bind((host, int(client_port)))) as stream:
-                    while True:
-                        data, remote_addr = await stream.recv()
-                        await response.write(data)
-                log.info(f'Stream loop ended [{request.ip}]')
-            except Exception as ex:
-                msg = f'Stream loop excepted: {repr(ex)}'
-                log.debug(msg)
-                return response.json({'status': msg}, 500)
-            finally:
-                log.debug(f'Finally {u7d_msg}')
-                try:
-                    u7d.send_signal(signal.SIGINT)
-                except ProcessLookupError:
-                    pass
+                u7d.send_signal(signal.SIGINT)
+            except ProcessLookupError:
+                pass
 
-        return response.stream(udp_streaming, content_type=MIME)
+        return resp
 
     else:
         return response.json({'status': 'URL not understood'}, 404)
 
 
 if __name__ == '__main__':
-    app.run(host=SANIC_HOST, port=SANIC_PORT, access_log=False, auto_reload=True, debug=True, workers=3)
+    app.run(host=SANIC_HOST, port=SANIC_PORT, access_log=False, auto_reload=True, debug=False, workers=3)
