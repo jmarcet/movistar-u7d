@@ -125,10 +125,17 @@ async def handle_rtp(request, channel_id, url):
             s.bind(('', 0))
             s.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
             client_port = str(s.getsockname()[1])
-        u7d_msg = f'/app/u7d.py {channel_id} {program_id} -s {offset} -p {client_port} [{request.ip}]'
-        log.info(f'Starting: {u7d_msg}')
-        u7d = await asyncio.create_subprocess_exec('/app/u7d.py', channel_id, program_id,
-                                       '-s', offset, '-p', client_port, '-i', request.ip)
+        cmd = ('/app/u7d.py', channel_id, program_id,
+               '-s', offset, '-p', client_port, '-i', request.ip)
+        u7d_msg = ' '.join(cmd[:-1]) + f' [{request.ip}]'
+        if request.query_args and request.query_args[0][0] == 'record':
+            if time := request.query_args[0][1] if request.query_args[0][1].isnumeric() else '0':
+                cmd += ('-t', time)
+            cmd += ('-w', )
+            log.info(f"Recording: [{time if time else ''}] {u7d_msg}")
+        else:
+            log.info(f'Starting: {u7d_msg}')
+        u7d = await asyncio.create_subprocess_exec(*cmd)
         try:
             r = await asyncio.wait_for(u7d.wait(), 0.3)
             msg = f'NOT AVAILABLE: {u7d_msg}'
@@ -136,6 +143,12 @@ async def handle_rtp(request, channel_id, url):
             return response.json({'status': msg}, 404)
         except asyncio.exceptions.TimeoutError:
             pass
+        if request.query_args and request.query_args[0][0] == 'record':
+            return response.json({'status': 'OK',
+                                  'channel_id': channel_id,
+                                  'program_id': program_id,
+                                  'offset': offset,
+                                  'time': time})
 
         host = socket.gethostbyname(socket.gethostname())
         log.info(f'Stream: {channel_id}/{url} => @{host}:{client_port} [{request.ip}]')
