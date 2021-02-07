@@ -774,7 +774,7 @@ class MulticastIPTV:
         queue.join()
 
     @staticmethod
-    def _drop_encrypted_channels(epg):
+    def __drop_encrypted_channels(epg):
         if not epg:
             return None
         channels = [channel for channel in epg.keys() if channel in EPG_CHANNELS]
@@ -785,12 +785,12 @@ class MulticastIPTV:
         return clean_channels
 
     def get_epg(self):
-        cached_epg = self._drop_encrypted_channels(cache.load_epg())
+        cached_epg = self.__drop_encrypted_channels(cache.load_epg())
         if use_multithread:
             self.__get_bin_epg_threaded()
         else:
             self.__get_bin_epg()
-        new_epg = self._drop_encrypted_channels(self.__parse_bin_epg())
+        new_epg = self.__drop_encrypted_channels(self.__parse_bin_epg())
 
         if not cached_epg:
             logger.info('Sin caché de EPG guardada')
