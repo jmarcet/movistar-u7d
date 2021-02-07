@@ -85,7 +85,7 @@ async def handle_get_program_id(request, channel_id, url):
                     program_id = str(_epgdata[channel_key][start]['pid'])
                     end = str(_epgdata[channel_key][start]['end'])
                     duration = str(int(end) - int(start))
-                    log.info(f'Guessed: EPG channel {channel_id} program {program_id} start {start} offset {offset} duration {duration}')
+                    log.info(f'Guessed: EPG channel {channel_id}/{channel_key} program {program_id} start {start} offset {offset} duration {duration}')
 
     if program_id:
         return response.json({'status': 'OK', 'channel_id': channel_id, 'program_id': program_id, 'offset': offset})
