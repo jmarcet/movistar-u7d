@@ -8,6 +8,7 @@ import subprocess
 import threading
 import time
 import os
+import sys
 import urllib.parse
 
 from contextlib import closing
@@ -154,7 +155,10 @@ def main(args):
                     print(f'{repr(r)}', flush=True)
                     return
 
-            play['Range'] = f'npt={args.start}-end'
+            if args.duration:
+                play['Range'] = f'npt={args.start}-{str(int(args.start) + int(args.duration))}'
+            else:
+                play['Range'] = f'npt={args.start}-end'
             play.update({'Scale': '1.000', 'x-playNow': '', 'x-noFlush': ''})
             play['Session'] = session['Session'] = r.headers['Session'].split(';')[0]
 
@@ -173,22 +177,26 @@ def main(args):
                 thread = threading.Thread(target=keep_alive)
                 thread.daemon = True
 
-                url = f'http://{SANIC_EPG_HOST}:{SANIC_EPG_PORT}/get_program_name/{args.channel}/{args.broadcast}'
+                url = f'http://{SANIC_EPG_HOST}:{SANIC_EPG_PORT}/get_program_name/{args.channel_key}/{args.broadcast}'
                 resp = httpx.get(url)
                 if resp.status_code == 200:
                     data = resp.json()
                     print(f'Identified as {repr(data)}', flush=True)
 
+                    keepcharacters = (' ','.','_')
+                    title = "".join(c for c in data['full_title'].replace('/','_') if c.isalnum() or c in keepcharacters).rstrip()
                     if data['is_serie']:
                         path = os.path.join(STORAGE, data['serie'])
-                        filename = os.path.join(path, data['full_title'] + '.ts')
+                        filename = os.path.join(path, title + '.ts')
                         if not os.path.exists(path):
                             print(f'Creating recording subdir {path}', flush=True)
                             os.mkdir(path)
                     else:
-                        filename = os.path.join(STORAGE, data['full_title'] + '.ts')
+                        filename = os.path.join(STORAGE, title + '.ts')
                 else:
-                    filename = f'{STORAGE}/{args.channel}-{args.broadcast}.ts'
+                    #filename = f'{STORAGE}/{args.channel}-{args.broadcast}.ts'
+                    log.error(f'{resp}')
+                    return
 
                 command = ['socat']
                 command.append('-u')
@@ -214,13 +222,18 @@ if __name__ == '__main__':
         parser = argparse.ArgumentParser('Stream content from the Movistar U7D service.')
         parser.add_argument('channel', help='channel id')
         parser.add_argument('broadcast', help='broadcast id')
+        parser.add_argument('--channel_key', '-k', help='channel key')
         parser.add_argument('--client_ip', '-i', help='client ip address')
         parser.add_argument('--client_port', '-p', help='client udp port')
+        parser.add_argument('--duration', '-d', help='show duration in seconds')
         parser.add_argument('--write_to_file', '-w', help='dump file path', action='store_true')
         parser.add_argument('--start', '-s', help='stream start offset')
         args = parser.parse_args()
         if args.client_port is None:
             args.client_port = find_free_port()
+        if args.write_to_file and not args.channel_key:
+            print(f'Need to also provide the channel_key')
+            sys.exit(1)
         main(args)
     except KeyboardInterrupt:
         pass
