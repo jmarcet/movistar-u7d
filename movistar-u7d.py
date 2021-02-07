@@ -74,10 +74,8 @@ async def handle_logos(request, cover=None, logo=None, path=None):
 
     if logo:
         orig_url = f'http://html5-static.svc.imagenio.telefonica.net/appclientv/nux/incoming/epg/channelLogo/{logo}'
-        log.info(f'Logo: {orig_url}')
     elif path and cover:
         orig_url = f'http://html5-static.svc.imagenio.telefonica.net/appclientv/nux/incoming/epg/covers/programmeImages/portrait/290x429/{path}/{cover}'
-        log.info(f'Cover: {orig_url}')
     else:
         return response.json({'status': f'{request.url} not found'}, 404)
 
