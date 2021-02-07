@@ -24,7 +24,6 @@ app = Sanic('Movistar_epg')
 app.config.update({'KEEP_ALIVE_TIMEOUT': YEAR_SECONDS})
 
 _epgdata = {}
-_epgdata['data'] = {}
 
 
 @app.listener('after_server_start')
@@ -41,16 +40,16 @@ async def handle_reload_epg(request):
 @app.get('/get_next_program/<channel_key>/<program_id>')
 async def handle_get_next_program(request, channel_key, program_id):
     log.info(f'Searching: EPG next /{channel_key}/{program_id}')
-    if channel_key in _epgdata['data']:
+    if channel_key in _epgdata:
         found = False
-        events = _epgdata['data'][channel_key]
-        for event in sorted(_epgdata['data'][channel_key].keys()):
+        events = _epgdata[channel_key]
+        for event in sorted(_epgdata[channel_key].keys()):
             if found:
                 log.info(f'Found: EPG next /{channel_key}/{program_id}')
                 return response.json({'status': 'OK',
-                                      'program_id': _epgdata['data'][channel_key][event]['pid'],
-                                      'duration': _epgdata['data'][channel_key][event]['duration']}, 200)
-            elif _epgdata['data'][channel_key][event]['pid'] == int(program_id):
+                                      'program_id': _epgdata[channel_key][event]['pid'],
+                                      'duration': _epgdata[channel_key][event]['duration']}, 200)
+            elif _epgdata[channel_key][event]['pid'] == int(program_id):
                 found = True
                 continue
     return response.json({'status': f'{channel_key}/{program_id} not found'}, 404)
@@ -63,14 +62,14 @@ async def handle_get_program_id(request, channel_id, channel_key, url):
     offset = '0'
 
     log.info(f'Searching: EPG /{channel_id}/{channel_key}/{url}')
-    if channel_key in _epgdata['data']:
-        if start in _epgdata['data'][channel_key].keys():
-            program_id = str(_epgdata['data'][channel_key][start]['pid'])
-            end = str(_epgdata['data'][channel_key][start]['end'])
+    if channel_key in _epgdata:
+        if start in _epgdata[channel_key].keys():
+            program_id = str(_epgdata[channel_key][start]['pid'])
+            end = str(_epgdata[channel_key][start]['end'])
             duration = str(int(end) - int(start))
             log.info(f'Found: EPG channel {channel_id} program {program_id} start {start} duration {duration}')
         else:
-            for event in sorted(_epgdata['data'][channel_key].keys()):
+            for event in sorted(_epgdata[channel_key].keys()):
                 if int(event) > int(start):
                     break
                 last_event = event
@@ -78,8 +77,8 @@ async def handle_get_program_id(request, channel_id, channel_key, url):
                 new_start = start
                 start = last_event
                 offset = str(int(new_start) - int(start))
-                program_id = str(_epgdata['data'][channel_key][start]['pid'])
-                end = str(_epgdata['data'][channel_key][start]['end'])
+                program_id = str(_epgdata[channel_key][start]['pid'])
+                end = str(_epgdata[channel_key][start]['end'])
                 duration = str(int(end) - int(start))
                 log.info(f'Guessed: EPG channel {channel_id} program {program_id} start {start} offset {offset} duration {duration}')
 
@@ -90,9 +89,9 @@ async def handle_get_program_id(request, channel_id, channel_key, url):
 
 @app.get('/get_program_name/<channel_key>/<program_id>')
 async def handle_get_program_name(request, channel_key, program_id):
-    if channel_key in _epgdata['data']:
-        for timestamp in _epgdata['data'][channel_key].keys():
-            entry = _epgdata['data'][channel_key][timestamp]
+    if channel_key in _epgdata:
+        for timestamp in _epgdata[channel_key].keys():
+            entry = _epgdata[channel_key][timestamp]
             if int(program_id) == entry['pid']:
                 return response.json({'status': 'OK',
                                       'full_title': entry['full_title'],
@@ -122,39 +121,39 @@ def handle_reload_epg_task():
     for epg in epgs:
         try:
             with open(epg) as f:
-                day_epg = json.loads(f.read())
+                day_epg = json.loads(f.read())['data']
         except json.decoder.JSONDecodeError:
             continue
-        channels = [channel for channel in day_epg['data'].keys() if channel in EPG_CHANNELS]
+        channels = [channel for channel in day_epg.keys() if channel in EPG_CHANNELS]
         for channel in channels:
-            if channel not in _epgdata['data']:
-                _epgdata['data'][channel] = {}
+            if channel not in _epgdata:
+                _epgdata[channel] = {}
             else:
                 clean_channel_epg = {}
-                new_timestamp = int(sorted(day_epg['data'][channel].keys())[0])
-                for timestamp in sorted(_epgdata['data'][channel].keys()):
-                    if not _epgdata['data'][channel][timestamp]['start'] < new_timestamp:
+                new_timestamp = int(sorted(day_epg[channel].keys())[0])
+                for timestamp in sorted(_epgdata[channel].keys()):
+                    if not _epgdata[channel][timestamp]['start'] < new_timestamp:
                         break
-                    clean_channel_epg[timestamp] = _epgdata['data'][channel][timestamp]
-                _epgdata['data'][channel] = clean_channel_epg
-            for timestamp in day_epg['data'][channel].keys():
-                if day_epg['data'][channel][timestamp]['start'] > deadline:
-                    _epgdata['data'][channel][timestamp] = day_epg['data'][channel][timestamp]
+                    clean_channel_epg[timestamp] = _epgdata[channel][timestamp]
+                _epgdata[channel] = clean_channel_epg
+            for timestamp in day_epg[channel].keys():
+                if day_epg[channel][timestamp]['start'] > deadline:
+                    _epgdata[channel][timestamp] = day_epg[channel][timestamp]
                 else:
                     expired += 1
         nr_epg = 0
         for channel in channels:
-            nr_epg += len(day_epg['data'][channel].keys())
+            nr_epg += len(day_epg[channel].keys())
         log.info(f'EPG entries {epg}: {nr_epg}')
 
-    log.info('Total Channels: ' + str(len(_epgdata['data'])))
+    log.info('Total Channels: ' + str(len(_epgdata)))
     nr_epg = 0
-    for channel in _epgdata['data'].keys():
-        nr_epg += len(_epgdata['data'][channel].keys())
+    for channel in _epgdata.keys():
+        nr_epg += len(_epgdata[channel].keys())
     log.info(f'EPG entries Total: {nr_epg} Expired: {expired}')
 
     with open(epg_cache, 'w') as f:
-        json.dump(_epgdata, f, ensure_ascii=False, indent=4)
+        json.dump({'data': _epgdata}, f, ensure_ascii=False, indent=4)
 
     log.info('EPG Updated')
 
