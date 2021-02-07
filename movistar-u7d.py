@@ -21,7 +21,9 @@ UDPXY = os.environ.get('UDPXY') or 'http://192.168.137.1:4022/rtp/'
 
 GUIDE = os.path.join(HOME, 'guide.xml')
 CHANNELS = os.path.join(HOME, 'MovistarTV.m3u')
+IMAGENIO_URL = 'http://html5-static.svc.imagenio.telefonica.net/appclientv/nux/incoming/epg'
 MIME = 'video/MP2T'
+SANIC_EPG_URL = f'http://{SANIC_EPG_HOST}:{SANIC_EPG_PORT}'
 SESSION = None
 SESSION_LOGOS = None
 YEAR_SECONDS = 365 * 24 * 60 * 60
@@ -58,8 +60,10 @@ async def handle_channels(request):
 @app.get('/guide.xml')
 async def handle_guide(request):
     log.info(f'Request: [{request.ip}] {request.method} {request.url}')
+    await SESSION.get(f'{SANIC_EPG_URL}/reload_epg')
     if not os.path.exists(GUIDE):
         return response.json({}, 404)
+    log.info(f'Returning: [{request.ip}] {request.method} {request.url}')
     return await response.file(GUIDE)
 
 
@@ -73,9 +77,9 @@ async def handle_logos(request, cover=None, logo=None, path=None):
         SESSION_LOGOS = aiohttp.ClientSession(headers=headers)
 
     if logo:
-        orig_url = f'http://html5-static.svc.imagenio.telefonica.net/appclientv/nux/incoming/epg/channelLogo/{logo}'
+        orig_url = f'{IMAGENIO_URL}/channelLogo/{logo}'
     elif path and cover:
-        orig_url = f'http://html5-static.svc.imagenio.telefonica.net/appclientv/nux/incoming/epg/covers/programmeImages/portrait/290x429/{path}/{cover}'
+        orig_url = f'{IMAGENIO_URL}/covers/programmeImages/portrait/290x429/{path}/{cover}'
     else:
         return response.json({'status': f'{request.url} not found'}, 404)
 
@@ -101,7 +105,7 @@ async def handle_rtp(request, channel_id, url):
     elif url.startswith('video-'):
         try:
             program_id = None
-            epg_url = f'http://{SANIC_EPG_HOST}:{SANIC_EPG_PORT}/get_program_id/{channel_id}/{url}'
+            epg_url = f'{SANIC_EPG_URL}/get_program_id/{channel_id}/{url}'
             async with SESSION.get(epg_url) as r:
                 if r.status != 200:
                     return response.json({'status': f'{url} not found'}, 404)
