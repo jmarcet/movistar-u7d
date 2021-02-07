@@ -88,8 +88,10 @@ async def handle_logos(request, cover=None, logo=None, path=None):
             logo_data = await r.read()
             headers = {}
             headers.setdefault("Content-Disposition", f'attachment; filename="{logo}"')
-            return response.HTTPResponse(body=logo_data, status=200,
-                                        headers=headers, content_type='image/jpeg')
+            return response.HTTPResponse(body=logo_data,
+                                         content_type='image/jpeg',
+                                         headers=headers,
+                                         status=200)
         else:
             return response.json({'status': f'{orig_url} not found'}, 404)
 

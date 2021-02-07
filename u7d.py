@@ -12,14 +12,17 @@ import urllib.parse
 from contextlib import closing
 from collections import namedtuple
 
-Request = namedtuple('Request', ['request', 'response'])
-Response = namedtuple('Response', ['version', 'status', 'url', 'headers', 'body'])
-UA = 'MICA-IP-STB'
-#WIDTH = 134
 
 SANIC_EPG_HOST = os.environ.get('SANIC_EPG_HOST') or '127.0.0.1'
 SANIC_EPG_PORT = int(os.environ.get('SANIC_EPG_PORT')) or 8889
 STORAGE = os.environ.get('U7D_DIR') or '/tmp'
+
+MVTV_URL = 'http://www-60.svc.imagenio.telefonica.net:2001/appserver/mvtv.do'
+SANIC_EPG_URL = f'http://{SANIC_EPG_HOST}:{SANIC_EPG_PORT}'
+Request = namedtuple('Request', ['request', 'response'])
+Response = namedtuple('Response', ['version', 'status', 'url', 'headers', 'body'])
+UA = 'MICA-IP-STB'
+#WIDTH = 134
 
 needs_position = False
 
@@ -90,8 +93,10 @@ class RtspClient(object):
         _off = 90 - len(_req[0])
         if killed:
             tmp = _req[1].split('/')
-            _req[1] = str(tmp[0]) + '://' + str(tmp[2])[:26]
-            _req[1] += f' [{killed.client_ip}] {killed.channel} {killed.broadcast} -s {killed.start} -p {killed.client_port}'
+            _req[1] = str(tmp[0]) + '://' + str(tmp[2])[:26] + ' '
+            _req[1] += (f'[{killed.client_ip}] '
+                        f'{killed.channel} {killed.broadcast} '
+                        f'-s {killed.start} -p {killed.client_port}')
         _req_l = _req[0] + ' ' + _req[1][:_off]
         _req_r = ' ' * (100 - len(_req_l) - len(_req[2]))
         print(f'Req: {_req_l}{_req_r}{_req[2]}', end=' ', flush=True)
@@ -115,7 +120,8 @@ def find_free_port():
 
 def safe_filename(filename):
     keepcharacters = (' ', '.', '_')
-    return "".join(c for c in filename.replace('/', '_') if c.isalnum() or c in keepcharacters).rstrip()
+    return "".join(c for c in filename.replace('/', '_') \
+                     if c.isalnum() or c in keepcharacters).rstrip()
 
 
 def main(args):
@@ -128,12 +134,17 @@ def main(args):
     describe['Accept'] = 'application/sdp'
     setup['Transport'] = f'MP2T/H2221/UDP;unicast;client_port={args.client_port}'
 
-    params = f'action=getCatchUpUrl&extInfoID={args.broadcast}&channelID={args.channel}&service=hd&mode=1'
-    resp = httpx.get(f'http://www-60.svc.imagenio.telefonica.net:2001/appserver/mvtv.do?{params}', headers={'User-Agent': UA})
+    params = (f'action=getCatchUpUrl'
+              f'&extInfoID={args.broadcast}'
+              f'&channelID={args.channel}'
+              f'&service=hd&mode=1')
+    resp = httpx.get(f'{MVTV_URL}?{params}', headers={'User-Agent': UA})
     data = resp.json()
 
     if data['resultCode'] != 0:
-        print(f'Error: [{args.client_ip}] {repr(data)} {args.channel} {args.broadcast} -s {args.start}', flush=True)
+        print(f'Error: [{args.client_ip}] {repr(data)} '
+              f'{args.channel} {args.broadcast} '
+              f'-s {args.start}', flush=True)
         return
 
     url = data['resultData']['url']
@@ -162,12 +173,13 @@ def main(args):
 
             get_parameter = session.copy()
             if needs_position:
-                get_parameter.update({'Content-type': 'text/parameters', 'Content-length': 10})
+                get_parameter.update({'Content-type': 'text/parameters',
+                                      'Content-length': 10})
 
             client.print(client.send_request('PLAY', play))
 
             if args.write_to_file:
-                url = f'http://{SANIC_EPG_HOST}:{SANIC_EPG_PORT}/get_program_name/{args.channel}/{args.broadcast}'
+                url = f'{SANIC_EPG_URL}/get_program_name/{args.channel}/{args.broadcast}'
                 resp = httpx.get(url)
 
                 if resp.status_code == 200:
@@ -202,13 +214,16 @@ def main(args):
                     pos += 30
                     if pos >= args.time:
                         proc.terminate()
-                        print(f'Finished recording {args.time}s {args.channel} {args.broadcast} with {command}', flush=True)
+                        print(f'Finished recording {args.time}s '
+                              f'{args.channel} {args.broadcast} '
+                              f'with {command}', flush=True)
                         break
                 client.print(client.send_request('GET_PARAMETER', get_parameter))
 
         except Exception as ex:
-            print(f'[{repr(ex)}] [{args.client_ip}] {args.channel} {args.broadcast} -s {args.start} -p {args.client_port}',
-                  flush=True)
+            print(f'[{repr(ex)}] [{args.client_ip}] '
+                  f'{args.channel} {args.broadcast} '
+                  f'-s {args.start} -p {args.client_port}', flush=True)
         finally:
             if client and 'Session' in session:
                 client.print(client.send_request('TEARDOWN', session), killed=args)
@@ -231,4 +246,5 @@ if __name__ == '__main__':
     except KeyboardInterrupt:
         pass
     except Exception as ex:
-        print(f'Died: /app/u7d.py {args.channel} {args.broadcast} -s {args.start} -p {args.client_port} {repr(ex)}', flush=True)
+        print(f'Died: /app/u7d.py {args.channel} {args.broadcast} '
+              f'-s {args.start} -p {args.client_port} {repr(ex)}', flush=True)
