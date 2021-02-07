@@ -2,13 +2,11 @@
 
 import argparse
 import httpx
-import json
 import socket
 import subprocess
 import threading
 import time
 import os
-import sys
 import urllib.parse
 
 from contextlib import closing
@@ -126,7 +124,6 @@ def main(args):
     describe['Accept'] = 'application/sdp'
     setup['Transport'] = f'MP2T/H2221/UDP;unicast;client_port={args.client_port}'
 
-    host = socket.gethostbyname(socket.gethostname())
     params = f'action=getCatchUpUrl&extInfoID={args.broadcast}&channelID={args.channel}&service=hd&mode=1'
     resp = httpx.get(f'http://www-60.svc.imagenio.telefonica.net:2001/appserver/mvtv.do?{params}', headers={'User-Agent': UA})
     data = resp.json()
@@ -183,8 +180,9 @@ def main(args):
                     data = resp.json()
                     print(f'Identified as {repr(data)}', flush=True)
 
-                    keepcharacters = (' ','.','_')
-                    title = "".join(c for c in data['full_title'].replace('/','_') if c.isalnum() or c in keepcharacters).rstrip()
+                    keepcharacters = (' ', '.', '_')
+                    title = "".join(c for c in data['full_title'].replace('/', '_')
+                                    if c.isalnum() or c in keepcharacters).rstrip()
                     if data['is_serie']:
                         path = os.path.join(STORAGE, data['serie'])
                         filename = os.path.join(path, title + '.ts')
@@ -194,9 +192,7 @@ def main(args):
                     else:
                         filename = os.path.join(STORAGE, title + '.ts')
                 else:
-                    #filename = f'{STORAGE}/{args.channel}-{args.broadcast}.ts'
-                    log.error(f'{resp}')
-                    return
+                    filename = f'{STORAGE}/{args.channel}-{args.broadcast}.ts'
 
                 command = ['socat']
                 command.append('-u')

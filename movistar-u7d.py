@@ -6,7 +6,6 @@ import asyncio_dgram
 import os
 import signal
 import socket
-import time
 
 from contextlib import closing
 from sanic import Sanic, response
@@ -38,11 +37,14 @@ async def notify_server_start(app, loop):
     conn = aiohttp.TCPConnector(keepalive_timeout=YEAR_SECONDS, limit_per_host=1)
     SESSION = aiohttp.ClientSession(connector=conn)
 
+
 @app.listener('after_server_stop')
 async def notify_server_stop(app, loop):
     log.info('after_server_stop killing u7d.py')
-    p = await asyncio.create_subprocess_exec('/usr/bin/pkill', '-INT', '-f', '/app/u7d.py .+ -p ')
+    p = await asyncio.create_subprocess_exec('/usr/bin/pkill', '-INT',
+                                             '-f', '/app/u7d.py .+ -p ')
     await p.wait()
+
 
 @app.get('/channels.m3u')
 @app.get('/MovistarTV.m3u')
@@ -52,12 +54,14 @@ async def handle_channels(request):
         return response.json({}, 404)
     return await response.file(CHANNELS)
 
+
 @app.get('/guide.xml')
 async def handle_guide(request):
     log.info(f'Request: [{request.ip}] {request.method} {request.url}')
     if not os.path.exists(GUIDE):
         return response.json({}, 404)
     return await response.file(GUIDE)
+
 
 @app.get('/Covers/<path>/<cover>')
 @app.get('/Logos/<logo>')
@@ -82,9 +86,11 @@ async def handle_logos(request, cover=None, logo=None, path=None):
             logo_data = await r.read()
             headers = {}
             headers.setdefault("Content-Disposition", f'attachment; filename="{logo}"')
-            return response.HTTPResponse(body=logo_data, status=200, headers=headers, content_type='image/jpeg')
+            return response.HTTPResponse(body=logo_data, status=200,
+                                        headers=headers, content_type='image/jpeg')
         else:
             return response.json({'status': f'{orig_url} not found'}, 404)
+
 
 @app.get('/rtp/<channel_id>/<url>')
 async def handle_rtp(request, channel_id, url):
@@ -117,8 +123,8 @@ async def handle_rtp(request, channel_id, url):
             client_port = str(s.getsockname()[1])
         u7d_msg = f'/app/u7d.py {channel_id} {program_id} -s {offset} -p {client_port} [{request.ip}]'
         log.info(f'Starting: {u7d_msg}')
-        u7d = await asyncio.create_subprocess_exec('/app/u7d.py', channel_id, program_id, '-s', offset,
-                                                   '-p', client_port, '-i', request.ip)
+        u7d = await asyncio.create_subprocess_exec('/app/u7d.py', channel_id, program_id,
+                                       '-s', offset, '-p', client_port, '-i', request.ip)
         try:
             r = await asyncio.wait_for(u7d.wait(), 0.3)
             msg = f'NOT AVAILABLE: {u7d_msg}'
@@ -157,4 +163,5 @@ async def handle_rtp(request, channel_id, url):
 
 
 if __name__ == '__main__':
-    app.run(host=SANIC_HOST, port=SANIC_PORT, access_log=False, auto_reload=True, debug=False, workers=3)
+    app.run(host=SANIC_HOST, port=SANIC_PORT,
+            access_log=False, auto_reload=True, debug=False, workers=3)

@@ -16,8 +16,9 @@ SANIC_EPG_HOST = os.environ.get('SANIC_EPG_HOST') or '127.0.0.1'
 SANIC_EPG_PORT = int(os.environ.get('SANIC_EPG_PORT')) or 8889
 
 CACHED_TIME = 7 * 24 * 60 * 60
-EPG_CHANNELS = ['1', '2', '3', '4','5', '6', '477', '578', '582', '597', '657', '663', '717', '743', '744', '745',
-                '844', '884', '934', '935', '1221', '2843', '2863', '3184', '3186', '3325', '3443', '3603', '4911' ]
+EPG_CHANNELS = ['1', '2', '3', '4','5', '6', '477', '578', '582', '597', '657',
+                '663', '717', '743', '744', '745', '844', '884', '934', '935',
+                '1221', '2843', '2863', '3184', '3186', '3325', '3443', '3603', '4911']
 YEAR_SECONDS = 365 * 24 * 60 * 60
 
 app = Sanic('Movistar_epg')
@@ -31,12 +32,14 @@ _channels = {}
 async def notify_server_start(app, loop):
     handle_reload_epg_task()
 
+
 @app.get('/reload_epg')
 async def handle_reload_epg(request):
     loop = asyncio.get_running_loop()
     with concurrent.futures.ProcessPoolExecutor() as pool:
         await loop.run_in_executor(pool, handle_reload_epg_task)
     return response.json({'status': 'EPG Updated'}, 200)
+
 
 @app.get('/get_next_program/<channel_id>/<program_id>')
 async def handle_get_next_program(request, channel_id, program_id):
@@ -56,6 +59,7 @@ async def handle_get_next_program(request, channel_id, program_id):
                     found = True
                     continue
     return response.json({'status': f'{channel_id}/{program_id} not found'}, 404)
+
 
 @app.get('/get_program_id/<channel_id>/<url>')
 async def handle_get_program_id(request, channel_id, url):
@@ -92,6 +96,7 @@ async def handle_get_program_id(request, channel_id, url):
     else:
         return response.json({'status': f'{channel_id}/{url} not found'}, 404)
 
+
 @app.get('/get_program_name/<channel_id>/<program_id>')
 async def handle_get_program_name(request, channel_id, program_id):
     if channel_id in _channels:
@@ -106,6 +111,7 @@ async def handle_get_program_name(request, channel_id, program_id):
                                       }, ensure_ascii=False)
     return response.json({'status': f'{channel_id}/{program_id} not found'}, 404)
 
+
 def handle_reload_epg_task():
     global _channels, _epgdata
     epg_cache = '/home/epg.cache.json'
@@ -117,7 +123,7 @@ def handle_reload_epg_task():
             _channels = json.loads(f.read())['data']['channels']
         log.info('Loaded Channels metadata')
     except Exception as ex:
-        log.error(f'Failed to load Channels metadata {repr(ex)}')
+        log.error(f'handle_reload_epg_task {repr(ex)}')
         raise
 
     if os.path.exists(epg_cache) and os.stat(epg_cache).st_size > 100:
@@ -174,4 +180,5 @@ def handle_reload_epg_task():
 
 
 if __name__ == '__main__':
-    app.run(host=SANIC_EPG_HOST, port=SANIC_EPG_PORT, access_log=False, auto_reload=True, debug=False, workers=1)
+    app.run(host=SANIC_EPG_HOST, port=SANIC_EPG_PORT,
+            access_log=False, auto_reload=True, debug=False, workers=1)
