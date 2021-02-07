@@ -198,11 +198,11 @@ def main(args):
 
             while True:
                 time.sleep(30)
-                if args.write_to_file and args.duration:
+                if args.write_to_file and args.time:
                     pos += 30
-                    if pos >= args.duration:
+                    if pos >= args.time:
                         proc.terminate()
-                        print(f'Finished recording {args.channel} {args.broadcast} with {command}', flush=True)
+                        print(f'Finished recording {args.time}s {args.channel} {args.broadcast} with {command}', flush=True)
                         break
                 client.print(client.send_request('GET_PARAMETER', get_parameter))
 
@@ -221,9 +221,9 @@ if __name__ == '__main__':
         parser.add_argument('broadcast', help='broadcast id')
         parser.add_argument('--client_ip', '-i', help='client ip address')
         parser.add_argument('--client_port', '-p', help='client udp port')
-        parser.add_argument('--duration', '-d', help='show duration in seconds', type=int)
-        parser.add_argument('--write_to_file', '-w', help='dump file path', action='store_true')
         parser.add_argument('--start', '-s', help='stream start offset', type=int)
+        parser.add_argument('--time', '-t', help='recording time in seconds', type=int)
+        parser.add_argument('--write_to_file', '-w', help='record to disk', action='store_true')
         args = parser.parse_args()
         if not args.client_port:
             args.client_port = find_free_port()
