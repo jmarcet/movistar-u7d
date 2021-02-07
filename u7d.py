@@ -22,7 +22,7 @@ SANIC_EPG_URL = f'http://{SANIC_EPG_HOST}:{SANIC_EPG_PORT}'
 Request = namedtuple('Request', ['request', 'response'])
 Response = namedtuple('Response', ['version', 'status', 'url', 'headers', 'body'])
 UA = 'MICA-IP-STB'
-#WIDTH = 134
+# WIDTH = 134
 
 needs_position = False
 
@@ -95,8 +95,10 @@ class RtspClient(object):
             tmp = _req[1].split('/')
             _req[1] = str(tmp[0]) + '://' + str(tmp[2])[:26] + ' '
             _req[1] += (f'[{killed.client_ip}] '
-                        f'{killed.channel} {killed.broadcast} '
-                        f'-s {killed.start} -p {killed.client_port}')
+                        f'{killed.channel} '
+                        f'{killed.broadcast} '
+                        f'-s {killed.start} '
+                        f'-p {killed.client_port}')
         _req_l = _req[0] + ' ' + _req[1][:_off]
         _req_r = ' ' * (100 - len(_req_l) - len(_req[2]))
         print(f'Req: {_req_l}{_req_r}{_req[2]}', end=' ', flush=True)
@@ -120,8 +122,8 @@ def find_free_port():
 
 def safe_filename(filename):
     keepcharacters = (' ', '.', '_')
-    return "".join(c for c in filename.replace('/', '_') \
-                     if c.isalnum() or c in keepcharacters).rstrip()
+    return "".join(c for c in filename.replace('/', '_')
+                   if c.isalnum() or c in keepcharacters).rstrip()
 
 
 def main(args):
@@ -206,7 +208,8 @@ def main(args):
                 pos = 0
                 proc = multiprocessing.Process(target=subprocess.call, args=(command, ))
                 proc.start()
-                print(f'Recording {args.channel} {args.broadcast} with {command}', flush=True)
+                print(f'Recording {args.channel} {args.broadcast} '
+                      f'with {command}', flush=True)
 
             while True:
                 time.sleep(30)
@@ -214,16 +217,21 @@ def main(args):
                     pos += 30
                     if pos >= args.time:
                         proc.terminate()
-                        print(f'Finished recording {args.time}s '
-                              f'{args.channel} {args.broadcast} '
+                        print(f'Finished recording '
+                              f'{args.time}s '
+                              f'{args.channel} '
+                              f'{args.broadcast} '
                               f'with {command}', flush=True)
                         break
                 client.print(client.send_request('GET_PARAMETER', get_parameter))
 
         except Exception as ex:
-            print(f'[{repr(ex)}] [{args.client_ip}] '
-                  f'{args.channel} {args.broadcast} '
-                  f'-s {args.start} -p {args.client_port}', flush=True)
+            print(f'[{repr(ex)}] '
+                  f'[{args.client_ip}] '
+                  f'{args.channel} '
+                  f'{args.broadcast} '
+                  f'-s {args.start} '
+                  f'-p {args.client_port}', flush=True)
         finally:
             if client and 'Session' in session:
                 client.print(client.send_request('TEARDOWN', session), killed=args)
@@ -238,7 +246,7 @@ if __name__ == '__main__':
         parser.add_argument('--client_port', '-p', help='client udp port')
         parser.add_argument('--start', '-s', help='stream start offset', type=int)
         parser.add_argument('--time', '-t', help='recording time in seconds', type=int)
-        parser.add_argument('--write_to_file', '-w', help='record to disk', action='store_true')
+        parser.add_argument('--write_to_file', '-w', help='record', action='store_true')
         args = parser.parse_args()
         if not args.client_port:
             args.client_port = find_free_port()

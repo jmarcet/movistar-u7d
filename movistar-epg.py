@@ -2,10 +2,8 @@
 
 import asyncio
 import concurrent.futures
-import glob
 import json
 import os
-import time
 
 from sanic import Sanic, response
 from sanic.log import logger as log
@@ -41,16 +39,17 @@ async def handle_reload_epg(request):
 async def handle_get_next_program(request, channel_id, program_id):
     log.info(f'Searching: EPG next /{channel_id}/{program_id}')
     if channel_id in _channels:
-        channel_key = _channels[channel_id]['replacement'] if 'replacement' in _channels[channel_id] else channel_id
+        channel_key = _channels[channel_id]['replacement'] \
+            if 'replacement' in _channels[channel_id] else channel_id
         if channel_key in _epgdata:
             found = False
-            events = _epgdata[channel_key]
             for event in sorted(_epgdata[channel_key].keys()):
+                _epg = _epgdata[channel_key[event]]
                 if found:
                     log.info(f'Found: EPG next /{channel_key}/{program_id}')
                     return response.json({'status': 'OK',
-                                          'program_id': _epgdata[channel_key][event]['pid'],
-                                          'duration': _epgdata[channel_key][event]['duration']}, 200)
+                                          'program_id': _epg['pid'],
+                                          'duration': _epg['duration']}, 200)
                 elif _epgdata[channel_key][event]['pid'] == int(program_id):
                     found = True
                     continue
@@ -66,13 +65,18 @@ async def handle_get_program_id(request, channel_id, url):
 
     log.info(f'Searching: EPG /{channel_id}/{url}')
     if channel_id in _channels:
-        channel_key = _channels[channel_id]['replacement'] if 'replacement' in _channels[channel_id] else channel_id
+        channel_key = _channels[channel_id]['replacement'] \
+            if 'replacement' in _channels[channel_id] else channel_id
         if channel_key in _epgdata:
             if start in _epgdata[channel_key].keys():
                 program_id = str(_epgdata[channel_key][start]['pid'])
                 end = str(_epgdata[channel_key][start]['end'])
                 duration = str(int(end) - int(start))
-                log.info(f'Found: EPG channel {channel_id} program {program_id} start {start} duration {duration}')
+                log.info(f'Found: EPG channel '
+                         f'{channel_id}/{channel_key} '
+                         f'program {program_id} '
+                         f'start {start} '
+                         f'duration {duration}')
             else:
                 for event in sorted(_epgdata[channel_key].keys()):
                     if int(event) > int(start):
@@ -93,7 +97,10 @@ async def handle_get_program_id(request, channel_id, url):
                              f'duration {duration}')
 
     if program_id:
-        return response.json({'status': 'OK', 'channel_id': channel_id, 'program_id': program_id, 'offset': offset})
+        return response.json({'status': 'OK',
+                              'channel_id': channel_id,
+                              'program_id': program_id,
+                              'offset': offset})
     else:
         return response.json({'status': f'{channel_id}/{url} not found'}, 404)
 
@@ -101,14 +108,15 @@ async def handle_get_program_id(request, channel_id, url):
 @app.get('/get_program_name/<channel_id>/<program_id>')
 async def handle_get_program_name(request, channel_id, program_id):
     if channel_id in _channels:
-        channel_key = _channels[channel_id]['replacement'] if 'replacement' in _channels[channel_id] else channel_id
+        channel_key = _channels[channel_id]['replacement'] \
+            if 'replacement' in _channels[channel_id] else channel_id
         for timestamp in _epgdata[channel_key].keys():
-            entry = _epgdata[channel_key][timestamp]
-            if int(program_id) == entry['pid']:
+            _epg = _epgdata[channel_key][timestamp]
+            if int(program_id) == _epg['pid']:
                 return response.json({'status': 'OK',
-                                      'full_title': entry['full_title'],
-                                      'is_serie': entry['is_serie'],
-                                      'serie': entry['serie']
+                                      'full_title': _epg['full_title'],
+                                      'is_serie': _epg['is_serie'],
+                                      'serie': _epg['serie']
                                       }, ensure_ascii=False)
     return response.json({'status': f'{channel_id}/{program_id} not found'}, 404)
 

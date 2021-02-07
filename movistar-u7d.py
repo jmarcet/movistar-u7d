@@ -21,7 +21,8 @@ UDPXY = os.environ.get('UDPXY') or 'http://192.168.137.1:4022/rtp/'
 
 GUIDE = os.path.join(HOME, 'guide.xml')
 CHANNELS = os.path.join(HOME, 'MovistarTV.m3u')
-IMAGENIO_URL = 'http://html5-static.svc.imagenio.telefonica.net/appclientv/nux/incoming/epg'
+IMAGENIO_URL = ('http://html5-static.svc.imagenio.telefonica.net'
+                '/appclientv/nux/incoming/epg')
 MIME = 'video/MP2T'
 SANIC_EPG_URL = f'http://{SANIC_EPG_HOST}:{SANIC_EPG_PORT}'
 SESSION = None
@@ -79,7 +80,8 @@ async def handle_logos(request, cover=None, logo=None, path=None):
     if logo:
         orig_url = f'{IMAGENIO_URL}/channelLogo/{logo}'
     elif path and cover:
-        orig_url = f'{IMAGENIO_URL}/covers/programmeImages/portrait/290x429/{path}/{cover}'
+        orig_url = (f'{IMAGENIO_URL}/covers/programmeImages'
+                    f'/portrait/290x429/{path}/{cover}')
     else:
         return response.json({'status': f'{request.url} not found'}, 404)
 
@@ -87,7 +89,8 @@ async def handle_logos(request, cover=None, logo=None, path=None):
         if r.status == 200:
             logo_data = await r.read()
             headers = {}
-            headers.setdefault("Content-Disposition", f'attachment; filename="{logo}"')
+            headers.setdefault('Content-Disposition',
+                               f'attachment; filename="{logo}"')
             return response.HTTPResponse(body=logo_data,
                                          content_type='image/jpeg',
                                          headers=headers,
@@ -98,7 +101,8 @@ async def handle_logos(request, cover=None, logo=None, path=None):
 
 @app.get('/rtp/<channel_id>/<url>')
 async def handle_rtp(request, channel_id, url):
-    log.info(f'Request: {request.method} {request.raw_url.decode()} [{request.ip}]')
+    log.info(f'Request: {request.method} '
+             f'{request.raw_url.decode()} [{request.ip}]')
 
     if url.startswith('239'):
         log.info(f'Redirect: {UDPXY + url}')
@@ -116,7 +120,8 @@ async def handle_rtp(request, channel_id, url):
                 program_id = r['program_id']
                 offset = r['offset']
         except Exception as ex:
-            log.error(f"aiohttp.ClientSession().get('{epg_url}') {repr(ex)} [{request.ip}]")
+            log.error(f"aiohttp.ClientSession().get('{epg_url}') "
+                      f'{repr(ex)} [{request.ip}]')
 
         if not program_id:
             return response.json({'status': f'{channel_id}/{url} not found'}, 404)
@@ -125,16 +130,20 @@ async def handle_rtp(request, channel_id, url):
             s.bind(('', 0))
             s.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
             client_port = str(s.getsockname()[1])
+
         cmd = ('/app/u7d.py', channel_id, program_id,
                '-s', offset, '-p', client_port, '-i', request.ip)
         u7d_msg = ' '.join(cmd[:-1]) + f' [{request.ip}]'
+
         if request.query_args and request.query_args[0][0] == 'record':
-            if time := request.query_args[0][1] if request.query_args[0][1].isnumeric() else '0':
+            if time := request.query_args[0][1] \
+                    if request.query_args[0][1].isnumeric() else '0':
                 cmd += ('-t', time)
             cmd += ('-w', )
             log.info(f"Recording: [{time if time else ''}] {u7d_msg}")
         else:
             log.info(f'Starting: {u7d_msg}')
+
         u7d = await asyncio.create_subprocess_exec(*cmd)
         try:
             r = await asyncio.wait_for(u7d.wait(), 0.3)
@@ -143,6 +152,7 @@ async def handle_rtp(request, channel_id, url):
             return response.json({'status': msg}, 404)
         except asyncio.exceptions.TimeoutError:
             pass
+
         if request.query_args and request.query_args[0][0] == 'record':
             return response.json({'status': 'OK',
                                   'channel_id': channel_id,
@@ -151,10 +161,12 @@ async def handle_rtp(request, channel_id, url):
                                   'time': time})
 
         host = socket.gethostbyname(socket.gethostname())
-        log.info(f'Stream: {channel_id}/{url} => @{host}:{client_port} [{request.ip}]')
+        log.info(f'Stream: {channel_id}/{url} '
+                 f'=> @{host}:{client_port} [{request.ip}]')
         try:
             resp = await request.respond()
-            with closing(await asyncio_dgram.bind((host, int(client_port)))) as stream:
+            with closing(await asyncio_dgram.bind(
+                        (host, int(client_port)))) as stream:
                 while True:
                     data, remote_addr = await stream.recv()
                     if not data:
@@ -162,6 +174,7 @@ async def handle_rtp(request, channel_id, url):
                         await resp.send('', True)
                         break
                     await resp.send(data, False)
+
         except RuntimeError:
             return response.empty()
         except Exception as ex:
