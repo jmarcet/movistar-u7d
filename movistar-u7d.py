@@ -145,6 +145,8 @@ async def handle_rtp(request, channel_id, url):
                         await resp.send('', True)
                         break
                     await resp.send(data, False)
+        except RuntimeError:
+            return response.empty()
         except Exception as ex:
             msg = f'Stream loop excepted: {repr(ex)}'
             log.error(msg)

@@ -123,7 +123,7 @@ def handle_reload_epg_task():
             _channels = json.loads(f.read())['data']['channels']
         log.info('Loaded Channels metadata')
     except Exception as ex:
-        log.error(f'handle_reload_epg_task {repr(ex)}')
+        log.error(f'Failed to load Channels metadata {repr(ex)}')
         raise
 
     if os.path.exists(epg_cache) and os.stat(epg_cache).st_size > 100:
