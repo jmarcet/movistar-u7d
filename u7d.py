@@ -2,9 +2,9 @@
 
 import argparse
 import httpx
+import multiprocessing
 import socket
 import subprocess
-import threading
 import time
 import os
 import urllib.parse
@@ -15,7 +15,7 @@ from collections import namedtuple
 Request = namedtuple('Request', ['request', 'response'])
 Response = namedtuple('Response', ['version', 'status', 'url', 'headers', 'body'])
 UA = 'MICA-IP-STB'
-WIDTH = 134
+#WIDTH = 134
 
 SANIC_EPG_HOST = os.environ.get('SANIC_EPG_HOST') or '127.0.0.1'
 SANIC_EPG_PORT = int(os.environ.get('SANIC_EPG_PORT')) or 8889
@@ -35,7 +35,6 @@ class RtspClient(object):
         resp = self.sock.recv(4096).decode()
         if ' 200 OK' not in resp:
             version, status = resp.rstrip().split('\n')[0].split(' ', 1)
-            #print(f'Response: {version} {status}', flush=True)
             return Response(version, status, self.url, {}, '')
 
         head, body = resp.split('\r\n\r\n')
@@ -114,6 +113,11 @@ def find_free_port():
         return s.getsockname()[1]
 
 
+def safe_filename(filename):
+    keepcharacters = (' ', '.', '_')
+    return "".join(c for c in filename.replace('/', '_') if c.isalnum() or c in keepcharacters).rstrip()
+
+
 def main(args):
     global needs_position
 
@@ -152,10 +156,7 @@ def main(args):
                     print(f'{repr(r)}', flush=True)
                     return
 
-            if args.duration:
-                play['Range'] = f'npt={args.start}-{str(int(args.start) + int(args.duration))}'
-            else:
-                play['Range'] = f'npt={args.start}-end'
+            play['Range'] = f'npt={args.start}-end'
             play.update({'Scale': '1.000', 'x-playNow': '', 'x-noFlush': ''})
             play['Session'] = session['Session'] = r.headers['Session'].split(';')[0]
 
@@ -165,26 +166,17 @@ def main(args):
 
             client.print(client.send_request('PLAY', play))
 
-            def keep_alive():
-                while True:
-                    time.sleep(30)
-                    client.print(client.send_request('GET_PARAMETER', get_parameter))
-
             if args.write_to_file:
-                thread = threading.Thread(target=keep_alive)
-                thread.daemon = True
-
-                url = f'http://{SANIC_EPG_HOST}:{SANIC_EPG_PORT}/get_program_name/{args.channel_id}/{args.broadcast}'
+                url = f'http://{SANIC_EPG_HOST}:{SANIC_EPG_PORT}/get_program_name/{args.channel}/{args.broadcast}'
                 resp = httpx.get(url)
+
                 if resp.status_code == 200:
                     data = resp.json()
                     print(f'Identified as {repr(data)}', flush=True)
 
-                    keepcharacters = (' ', '.', '_')
-                    title = "".join(c for c in data['full_title'].replace('/', '_')
-                                    if c.isalnum() or c in keepcharacters).rstrip()
+                    title = safe_filename(data['full_title'])
                     if data['is_serie']:
-                        path = os.path.join(STORAGE, data['serie'])
+                        path = os.path.join(STORAGE, safe_filename(data['serie']))
                         filename = os.path.join(path, title + '.ts')
                         if not os.path.exists(path):
                             print(f'Creating recording subdir {path}', flush=True)
@@ -199,11 +191,20 @@ def main(args):
                 command.append(f'UDP4-LISTEN:{args.client_port},fork')
                 command.append(f'OPEN:"{filename}",creat,trunc')
 
-                thread.start()
+                pos = 0
+                proc = multiprocessing.Process(target=subprocess.call, args=(command, ))
+                proc.start()
                 print(f'Recording {args.channel} {args.broadcast} with {command}', flush=True)
-                subprocess.call(command)
-            else:
-                keep_alive()
+
+            while True:
+                time.sleep(30)
+                if args.write_to_file and args.duration:
+                    pos += 30
+                    if pos >= args.duration:
+                        proc.terminate()
+                        print(f'Finished recording {args.channel} {args.broadcast} with {command}', flush=True)
+                        break
+                client.print(client.send_request('GET_PARAMETER', get_parameter))
 
         except Exception as ex:
             print(f'[{repr(ex)}] [{args.client_ip}] {args.channel} {args.broadcast} -s {args.start} -p {args.client_port}',
@@ -220,11 +221,11 @@ if __name__ == '__main__':
         parser.add_argument('broadcast', help='broadcast id')
         parser.add_argument('--client_ip', '-i', help='client ip address')
         parser.add_argument('--client_port', '-p', help='client udp port')
-        parser.add_argument('--duration', '-d', help='show duration in seconds')
+        parser.add_argument('--duration', '-d', help='show duration in seconds', type=int)
         parser.add_argument('--write_to_file', '-w', help='dump file path', action='store_true')
-        parser.add_argument('--start', '-s', help='stream start offset')
+        parser.add_argument('--start', '-s', help='stream start offset', type=int)
         args = parser.parse_args()
-        if args.client_port is None:
+        if not args.client_port:
             args.client_port = find_free_port()
         main(args)
     except KeyboardInterrupt:
