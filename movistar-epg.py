@@ -24,6 +24,7 @@ app = Sanic('Movistar_epg')
 app.config.update({'KEEP_ALIVE_TIMEOUT': YEAR_SECONDS})
 
 _epgdata = {}
+_channels = {}
 
 
 @app.listener('after_server_start')
@@ -37,59 +38,64 @@ async def handle_reload_epg(request):
         await loop.run_in_executor(pool, handle_reload_epg_task)
     return response.json({'status': 'EPG Updated'}, 200)
 
-@app.get('/get_next_program/<channel_key>/<program_id>')
-async def handle_get_next_program(request, channel_key, program_id):
-    log.info(f'Searching: EPG next /{channel_key}/{program_id}')
-    if channel_key in _epgdata:
-        found = False
-        events = _epgdata[channel_key]
-        for event in sorted(_epgdata[channel_key].keys()):
-            if found:
-                log.info(f'Found: EPG next /{channel_key}/{program_id}')
-                return response.json({'status': 'OK',
-                                      'program_id': _epgdata[channel_key][event]['pid'],
-                                      'duration': _epgdata[channel_key][event]['duration']}, 200)
-            elif _epgdata[channel_key][event]['pid'] == int(program_id):
-                found = True
-                continue
-    return response.json({'status': f'{channel_key}/{program_id} not found'}, 404)
+@app.get('/get_next_program/<channel_id>/<program_id>')
+async def handle_get_next_program(request, channel_id, program_id):
+    log.info(f'Searching: EPG next /{channel_id}/{program_id}')
+    if channel_id in _channels:
+        channel_key = _channels[channel_id]['replacement'] if 'replacement' in _channels[channel_id] else channel_id
+        if channel_key in _epgdata:
+            found = False
+            events = _epgdata[channel_key]
+            for event in sorted(_epgdata[channel_key].keys()):
+                if found:
+                    log.info(f'Found: EPG next /{channel_key}/{program_id}')
+                    return response.json({'status': 'OK',
+                                          'program_id': _epgdata[channel_key][event]['pid'],
+                                          'duration': _epgdata[channel_key][event]['duration']}, 200)
+                elif _epgdata[channel_key][event]['pid'] == int(program_id):
+                    found = True
+                    continue
+    return response.json({'status': f'{channel_id}/{program_id} not found'}, 404)
 
-@app.get('/get_program_id/<channel_id>/<channel_key>/<url>')
-async def handle_get_program_id(request, channel_id, channel_key, url):
+@app.get('/get_program_id/<channel_id>/<url>')
+async def handle_get_program_id(request, channel_id, url):
     start = url.split('-')[1]
     duration = url.split('-')[2].split('.')[0]
     last_event = program_id = None
     offset = '0'
 
-    log.info(f'Searching: EPG /{channel_id}/{channel_key}/{url}')
-    if channel_key in _epgdata:
-        if start in _epgdata[channel_key].keys():
-            program_id = str(_epgdata[channel_key][start]['pid'])
-            end = str(_epgdata[channel_key][start]['end'])
-            duration = str(int(end) - int(start))
-            log.info(f'Found: EPG channel {channel_id} program {program_id} start {start} duration {duration}')
-        else:
-            for event in sorted(_epgdata[channel_key].keys()):
-                if int(event) > int(start):
-                    break
-                last_event = event
-            if last_event:
-                new_start = start
-                start = last_event
-                offset = str(int(new_start) - int(start))
+    log.info(f'Searching: EPG /{channel_id}/{url}')
+    if channel_id in _channels:
+        channel_key = _channels[channel_id]['replacement'] if 'replacement' in _channels[channel_id] else channel_id
+        if channel_key in _epgdata:
+            if start in _epgdata[channel_key].keys():
                 program_id = str(_epgdata[channel_key][start]['pid'])
                 end = str(_epgdata[channel_key][start]['end'])
                 duration = str(int(end) - int(start))
-                log.info(f'Guessed: EPG channel {channel_id} program {program_id} start {start} offset {offset} duration {duration}')
+                log.info(f'Found: EPG channel {channel_id} program {program_id} start {start} duration {duration}')
+            else:
+                for event in sorted(_epgdata[channel_key].keys()):
+                    if int(event) > int(start):
+                        break
+                    last_event = event
+                if last_event:
+                    new_start = start
+                    start = last_event
+                    offset = str(int(new_start) - int(start))
+                    program_id = str(_epgdata[channel_key][start]['pid'])
+                    end = str(_epgdata[channel_key][start]['end'])
+                    duration = str(int(end) - int(start))
+                    log.info(f'Guessed: EPG channel {channel_id} program {program_id} start {start} offset {offset} duration {duration}')
 
     if program_id:
         return response.json({'status': 'OK', 'channel_id': channel_id, 'program_id': program_id, 'offset': offset})
     else:
-        return response.json({'status': f'{channel_id}/{channel_key}/{url} not found'}, 404)
+        return response.json({'status': f'{channel_id}/{url} not found'}, 404)
 
-@app.get('/get_program_name/<channel_key>/<program_id>')
-async def handle_get_program_name(request, channel_key, program_id):
-    if channel_key in _epgdata:
+@app.get('/get_program_name/<channel_id>/<program_id>')
+async def handle_get_program_name(request, channel_id, program_id):
+    if channel_id in _channels:
+        channel_key = _channels[channel_id]['replacement'] if 'replacement' in _channels[channel_id] else channel_id
         for timestamp in _epgdata[channel_key].keys():
             entry = _epgdata[channel_key][timestamp]
             if int(program_id) == entry['pid']:
@@ -98,12 +104,21 @@ async def handle_get_program_name(request, channel_key, program_id):
                                       'is_serie': entry['is_serie'],
                                       'serie': entry['serie']
                                       }, ensure_ascii=False)
-    return response.json({'status': f'{channel_key}/{program_id} not found'}, 404)
+    return response.json({'status': f'{channel_id}/{program_id} not found'}, 404)
 
 def handle_reload_epg_task():
-    global _epgdata
+    global _channels, _epgdata
     epg_cache = '/home/epg.cache.json'
     epg_data = '/home/.xmltv/cache/epg.json'
+    epg_metadata = '/home/.xmltv/cache/epg_metadata.json'
+
+    try:
+        with open(epg_metadata) as f:
+            _channels = json.loads(f.read())['data']['channels']
+        log.info('Loaded Channels metadata')
+    except Exception as ex:
+        log.error(f'Failed to load Channels metadata {repr(ex)}')
+        raise
 
     if os.path.exists(epg_cache) and os.stat(epg_cache).st_size > 100:
         log.info('Loading EPG cache')

@@ -86,8 +86,8 @@ async def handle_logos(request, cover=None, logo=None, path=None):
         else:
             return response.json({'status': f'{orig_url} not found'}, 404)
 
-@app.get('/rtp/<channel_id>/<channel_key>/<url>')
-async def handle_rtp(request, channel_id, channel_key, url):
+@app.get('/rtp/<channel_id>/<url>')
+async def handle_rtp(request, channel_id, url):
     log.info(f'Request: {request.method} {request.raw_url.decode()} [{request.ip}]')
 
     if url.startswith('239'):
@@ -97,7 +97,7 @@ async def handle_rtp(request, channel_id, channel_key, url):
     elif url.startswith('video-'):
         try:
             program_id = None
-            epg_url = f'http://{SANIC_EPG_HOST}:{SANIC_EPG_PORT}/get_program_id/{channel_id}/{channel_key}/{url}'
+            epg_url = f'http://{SANIC_EPG_HOST}:{SANIC_EPG_PORT}/get_program_id/{channel_id}/{url}'
             async with SESSION.get(epg_url) as r:
                 if r.status != 200:
                     return response.json({'status': f'{url} not found'}, 404)
@@ -109,7 +109,7 @@ async def handle_rtp(request, channel_id, channel_key, url):
             log.error(f"aiohttp.ClientSession().get('{epg_url}') {repr(ex)} [{request.ip}]")
 
         if not program_id:
-            return response.json({'status': f'{channel_id}/{channel_key}/{url} not found'}, 404)
+            return response.json({'status': f'{channel_id}/{url} not found'}, 404)
 
         with closing(socket.socket(socket.AF_INET, socket.SOCK_DGRAM)) as s:
             s.bind(('', 0))
@@ -128,7 +128,7 @@ async def handle_rtp(request, channel_id, channel_key, url):
             pass
 
         host = socket.gethostbyname(socket.gethostname())
-        log.info(f'Stream: {channel_id}/{channel_key}/{url} => @{host}:{client_port} [{request.ip}]')
+        log.info(f'Stream: {channel_id}/{url} => @{host}:{client_port} [{request.ip}]')
         try:
             resp = await request.respond()
             with closing(await asyncio_dgram.bind((host, int(client_port)))) as stream:

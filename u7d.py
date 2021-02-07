@@ -177,7 +177,7 @@ def main(args):
                 thread = threading.Thread(target=keep_alive)
                 thread.daemon = True
 
-                url = f'http://{SANIC_EPG_HOST}:{SANIC_EPG_PORT}/get_program_name/{args.channel_key}/{args.broadcast}'
+                url = f'http://{SANIC_EPG_HOST}:{SANIC_EPG_PORT}/get_program_name/{args.channel_id}/{args.broadcast}'
                 resp = httpx.get(url)
                 if resp.status_code == 200:
                     data = resp.json()
@@ -222,7 +222,6 @@ if __name__ == '__main__':
         parser = argparse.ArgumentParser('Stream content from the Movistar U7D service.')
         parser.add_argument('channel', help='channel id')
         parser.add_argument('broadcast', help='broadcast id')
-        parser.add_argument('--channel_key', '-k', help='channel key')
         parser.add_argument('--client_ip', '-i', help='client ip address')
         parser.add_argument('--client_port', '-p', help='client udp port')
         parser.add_argument('--duration', '-d', help='show duration in seconds')
@@ -231,9 +230,6 @@ if __name__ == '__main__':
         args = parser.parse_args()
         if args.client_port is None:
             args.client_port = find_free_port()
-        if args.write_to_file and not args.channel_key:
-            print(f'Need to also provide the channel_key')
-            sys.exit(1)
         main(args)
     except KeyboardInterrupt:
         pass
