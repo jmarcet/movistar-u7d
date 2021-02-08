@@ -8,7 +8,7 @@ import signal
 import socket
 
 from contextlib import closing
-from sanic import Sanic, response
+from sanic import Sanic, exceptions, response
 from sanic.log import logger as log
 
 
@@ -167,6 +167,8 @@ async def handle_rtp(request, channel_id, url):
                     data, remote_addr = await stream.recv()
                     await resp.send(data, False)
 
+        except exceptions.ServerError:
+            return response.empty()
         finally:
             log.debug(f'Finally {u7d_msg}')
             try:
