@@ -3,6 +3,7 @@
 import argparse
 import httpx
 import multiprocessing
+import signal
 import socket
 import subprocess
 import time
@@ -182,8 +183,8 @@ def main(args):
             client.print(client.send_request('PLAY', play))
 
             if args.write_to_file:
-                url = f'{SANIC_EPG_URL}/get_program_name/{args.channel}/{args.broadcast}'
-                resp = httpx.get(url)
+                epg_url = f'{SANIC_EPG_URL}/get_program_name/{args.channel}/{args.broadcast}'
+                resp = httpx.get(epg_url)
 
                 if resp.status_code == 200:
                     data = resp.json()
@@ -216,20 +217,46 @@ def main(args):
                 print(f'Recording {args.time}s {args.channel} {args.broadcast} '
                       f'@ {filename}', flush=True)
 
+            if args.time:
+                def _handle_timeout(signum, frame):
+                    raise TimeoutError()
+
+                signal.signal(signal.SIGALRM, _handle_timeout)
+                signal.alarm(args.time + 60)
+
             while True:
                 time.sleep(30)
-                if args.write_to_file:
-                    pos += 30
-                    if pos >= args.time:
-                        proc.terminate()
-                        print(f'Finished recording '
-                              f'{args.time}s '
-                              f'{args.channel} '
-                              f'{args.broadcast} '
-                              f'@ {filename}', flush=True)
-                        break
                 client.print(client.send_request('GET_PARAMETER', get_parameter))
 
+        except TimeoutError:
+            if args.write_to_file:
+                proc.terminate()
+                print(f'Finished recording '
+                      f'{args.time}s '
+                      f'{args.channel} '
+                      f'{args.broadcast} '
+                      f'@ {filename}', flush=True)
+            else:
+                print('Show is ending...', flush=True)
+                client.print(client.send_request('TEARDOWN', session), killed=args)
+                client = None
+                epg_url = f'{SANIC_EPG_URL}/get_next_program/{args.channel}/{args.broadcast}'
+                resp = httpx.get(epg_url)
+                if resp.status_code == 200:
+                    with closing(socket.socket(socket.AF_INET, socket.SOCK_DGRAM)) as sock:
+                        host = socket.gethostbyname(socket.gethostname())
+                        sock.connect((host, args.client_port))
+                        null_ts = b'\x47' * 188
+                        sock.send(null_ts)
+                        sock.close()
+                    data = resp.json()
+                    next_program = data['program_id']
+                    args.start = '60'
+                    args.broadcast = next_program
+                    args.time = data['duration'] - 60
+                    return main(args)
+                else:
+                    print(f'{repr(resp.json())}')
         except Exception as ex:
             print(f'[{repr(ex)}] '
                   f'[{args.client_ip}] '
@@ -248,7 +275,7 @@ if __name__ == '__main__':
         parser.add_argument('channel', help='channel id')
         parser.add_argument('broadcast', help='broadcast id')
         parser.add_argument('--client_ip', '-i', help='client ip address')
-        parser.add_argument('--client_port', '-p', help='client udp port')
+        parser.add_argument('--client_port', '-p', help='client udp port', type=int)
         parser.add_argument('--start', '-s', help='stream start offset', type=int)
         parser.add_argument('--time', '-t', help='recording time in seconds', type=int)
         parser.add_argument('--write_to_file', '-w', help='record', action='store_true')
