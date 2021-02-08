@@ -63,7 +63,7 @@ async def handle_get_program_id(request, channel_id, url):
     last_event = program_id = None
     offset = '0'
 
-    log.info(f'Searching: EPG /{channel_id}/{url}')
+    log.debug(f'Searching: EPG /{channel_id}/{url}')
     if channel_id in _channels:
         channel_key = _channels[channel_id]['replacement'] \
             if 'replacement' in _channels[channel_id] else channel_id
@@ -72,11 +72,11 @@ async def handle_get_program_id(request, channel_id, url):
                 program_id = str(_epgdata[channel_key][start]['pid'])
                 end = str(_epgdata[channel_key][start]['end'])
                 duration = str(int(end) - int(start))
-                log.info(f'Found: EPG channel '
-                         f'{channel_id}/{channel_key} '
-                         f'program {program_id} '
-                         f'start {start} '
-                         f'duration {duration}')
+                log.debug(f'Found: EPG channel '
+                          f'{channel_id}/{channel_key} '
+                          f'program {program_id} '
+                          f'start {start} '
+                          f'duration {duration}')
             else:
                 for event in sorted(_epgdata[channel_key]):
                     if int(event) > int(start):
@@ -89,12 +89,12 @@ async def handle_get_program_id(request, channel_id, url):
                     program_id = str(_epgdata[channel_key][start]['pid'])
                     end = str(_epgdata[channel_key][start]['end'])
                     duration = str(int(end) - int(start))
-                    log.info(f'Guessed: EPG channel '
-                             f'{channel_id}/{channel_key} '
-                             f'program {program_id} '
-                             f'start {start} '
-                             f'offset {offset} '
-                             f'duration {duration}')
+                    log.debug(f'Guessed: EPG channel '
+                              f'{channel_id}/{channel_key} '
+                              f'program {program_id} '
+                              f'start {start} '
+                              f'offset {offset} '
+                              f'duration {duration}')
 
     if program_id:
         return response.json({'status': 'OK',

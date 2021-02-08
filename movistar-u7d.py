@@ -71,7 +71,7 @@ async def handle_guide(request):
 @app.get('/Covers/<path>/<cover>')
 @app.get('/Logos/<logo>')
 async def handle_logos(request, cover=None, logo=None, path=None):
-    log.info(f'Request: [{request.ip}] {request.method} {request.url}')
+    log.debug(f'Request: [{request.ip}] {request.method} {request.url}')
     global SESSION_LOGOS
     if not SESSION_LOGOS:
         headers = {'User-Agent': 'MICA-IP-STB'}
@@ -101,8 +101,8 @@ async def handle_logos(request, cover=None, logo=None, path=None):
 
 @app.get('/rtp/<channel_id>/<url>')
 async def handle_rtp(request, channel_id, url):
-    log.info(f'Request: {request.method} '
-             f'{request.raw_url.decode()} [{request.ip}]')
+    log.debug(f'Request: {request.method} '
+              f'{request.raw_url.decode()} [{request.ip}]')
 
     if url.startswith('239'):
         log.info(f'Redirect: {UDPXY + url}')
@@ -161,8 +161,8 @@ async def handle_rtp(request, channel_id, url):
                                   'time': time})
 
         host = socket.gethostbyname(socket.gethostname())
-        log.info(f'Stream: {channel_id}/{url} '
-                 f'=> @{host}:{client_port} [{request.ip}]')
+        log.debug(f'Stream: {channel_id}/{url} '
+                  f'=> @{host}:{client_port} [{request.ip}]')
         try:
             resp = await request.respond()
             with closing(await asyncio_dgram.bind(
