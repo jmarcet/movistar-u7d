@@ -31,6 +31,7 @@ YEAR_SECONDS = 365 * 24 * 60 * 60
 
 app = Sanic('Movistar_u7d')
 app.config.update({'KEEP_ALIVE': False})
+host = socket.gethostbyname(socket.gethostname())
 
 
 @app.listener('after_server_start')
@@ -101,11 +102,10 @@ async def handle_logos(request, cover=None, logo=None, path=None):
 
 @app.get('/rtp/<channel_id>/<url>')
 async def handle_rtp(request, channel_id, url):
-    log.debug(f'Request: {request.method} '
-              f'{request.raw_url.decode()} [{request.ip}]')
+    log.info(f'Request: {request.method} {request.raw_url.decode()} [{request.ip}]')
 
     if url.startswith('239'):
-        log.info(f'Redirect: {UDPXY + url}')
+        log.info(f'Redirect: {UDPXY}{url}')
         return response.redirect(UDPXY + url)
 
     elif url.startswith('video-'):
@@ -133,16 +133,14 @@ async def handle_rtp(request, channel_id, url):
 
         cmd = ('/app/u7d.py', channel_id, program_id,
                '-s', offset, '-p', client_port, '-i', request.ip)
-        u7d_msg = ' '.join(cmd[:-1]) + f' [{request.ip}]'
+        u7d_msg = ' '.join(cmd[1:-2]) + f' [{request.ip}]'
 
-        if request.query_args and request.query_args[0][0] == 'record':
+        if record := request.query_args and request.query_args[0][0] == 'record':
             if time := request.query_args[0][1] \
                     if request.query_args[0][1].isnumeric() else '0':
                 cmd += ('-t', time)
             cmd += ('-w', )
             log.info(f"Recording: [{time if time else ''}] {u7d_msg}")
-        else:
-            log.info(f'Starting: {u7d_msg}')
 
         u7d = await asyncio.create_subprocess_exec(*cmd)
         try:
@@ -153,34 +151,22 @@ async def handle_rtp(request, channel_id, url):
         except asyncio.exceptions.TimeoutError:
             pass
 
-        if request.query_args and request.query_args[0][0] == 'record':
+        if record:
             return response.json({'status': 'OK',
                                   'channel_id': channel_id,
                                   'program_id': program_id,
                                   'offset': offset,
                                   'time': time})
 
-        host = socket.gethostbyname(socket.gethostname())
-        log.debug(f'Stream: {channel_id}/{url} '
-                  f'=> @{host}:{client_port} [{request.ip}]')
+        log.info(f'Starting: {u7d_msg}')
         try:
             resp = await request.respond()
             with closing(await asyncio_dgram.bind(
                         (host, int(client_port)))) as stream:
                 while True:
                     data, remote_addr = await stream.recv()
-                    if not data:
-                        log.info(f'Stream loop ended [{request.ip}]')
-                        await resp.send('', True)
-                        break
                     await resp.send(data, False)
 
-        except RuntimeError:
-            return response.empty()
-        except Exception as ex:
-            msg = f'Stream loop excepted: {repr(ex)}'
-            log.error(msg)
-            return response.json({'status': msg}, 500)
         finally:
             log.debug(f'Finally {u7d_msg}')
             try:
