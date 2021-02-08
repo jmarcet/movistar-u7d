@@ -189,6 +189,8 @@ def main(args):
                     data = resp.json()
                     print(f'Identified as {repr(data)}', flush=True)
 
+                    if not args.time:
+                        args.time = int(data['duration']) - args.start
                     title = safe_filename(data['full_title'])
                     if data['is_serie']:
                         path = os.path.join(STORAGE, safe_filename(data['serie']))
@@ -198,8 +200,10 @@ def main(args):
                             os.mkdir(path)
                     else:
                         filename = os.path.join(STORAGE, title + '.ts')
-                else:
+                elif args.time:
                     filename = f'{STORAGE}/{args.channel}-{args.broadcast}.ts'
+                else:
+                    raise ValueError('Recording time unknown')
 
                 command = ['socat']
                 command.append('-u')
@@ -209,12 +213,12 @@ def main(args):
                 pos = 0
                 proc = multiprocessing.Process(target=subprocess.call, args=(command, ))
                 proc.start()
-                print(f'Recording {args.channel} {args.broadcast} '
-                      f'with {command}', flush=True)
+                print(f'Recording {args.time}s {args.channel} {args.broadcast} '
+                      f'@ {filename}', flush=True)
 
             while True:
                 time.sleep(30)
-                if args.write_to_file and args.time:
+                if args.write_to_file:
                     pos += 30
                     if pos >= args.time:
                         proc.terminate()
@@ -222,7 +226,7 @@ def main(args):
                               f'{args.time}s '
                               f'{args.channel} '
                               f'{args.broadcast} '
-                              f'with {command}', flush=True)
+                              f'@ {filename}', flush=True)
                         break
                 client.print(client.send_request('GET_PARAMETER', get_parameter))
 

@@ -115,6 +115,7 @@ async def handle_get_program_name(request, channel_id, program_id):
             if int(program_id) == _epg['pid']:
                 return response.json({'status': 'OK',
                                       'full_title': _epg['full_title'],
+                                      'duration': _epg['duration'],
                                       'is_serie': _epg['is_serie'],
                                       'serie': _epg['serie']
                                       }, ensure_ascii=False)
