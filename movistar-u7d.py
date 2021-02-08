@@ -53,7 +53,7 @@ async def notify_server_stop(app, loop):
 @app.get('/channels.m3u')
 @app.get('/MovistarTV.m3u')
 async def handle_channels(request):
-    log.info(f'Request: [{request.ip}] {request.method} {request.url}')
+    log.info(f'Request: {request.method} {request.url} [{request.ip}]')
     if not os.path.exists(CHANNELS):
         return response.json({}, 404)
     return await response.file(CHANNELS)
@@ -61,18 +61,18 @@ async def handle_channels(request):
 
 @app.get('/guide.xml')
 async def handle_guide(request):
-    log.info(f'Request: [{request.ip}] {request.method} {request.url}')
+    log.info(f'Request: {request.method} {request.url} [{request.ip}]')
     await SESSION.get(f'{SANIC_EPG_URL}/reload_epg')
     if not os.path.exists(GUIDE):
         return response.json({}, 404)
-    log.info(f'Returning: [{request.ip}] {request.method} {request.url}')
+    log.info(f'Returning: {request.method} {request.url} [{request.ip}]')
     return await response.file(GUIDE)
 
 
 @app.get('/Covers/<path>/<cover>')
 @app.get('/Logos/<logo>')
 async def handle_logos(request, cover=None, logo=None, path=None):
-    log.debug(f'Request: [{request.ip}] {request.method} {request.url}')
+    log.debug(f'Request: {request.method} {request.url} [{request.ip}]')
     global SESSION_LOGOS
     if not SESSION_LOGOS:
         headers = {'User-Agent': 'MICA-IP-STB'}
