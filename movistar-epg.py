@@ -43,7 +43,7 @@ async def handle_get_next_program(request, channel_id, program_id):
             if 'replacement' in _channels[channel_id] else channel_id
         if channel_key in _epgdata:
             found = False
-            for event in sorted(_epgdata[channel_key].keys()):
+            for event in sorted(_epgdata[channel_key]):
                 _epg = _epgdata[channel_key[event]]
                 if found:
                     log.info(f'Found: EPG next /{channel_key}/{program_id}')
@@ -68,7 +68,7 @@ async def handle_get_program_id(request, channel_id, url):
         channel_key = _channels[channel_id]['replacement'] \
             if 'replacement' in _channels[channel_id] else channel_id
         if channel_key in _epgdata:
-            if start in _epgdata[channel_key].keys():
+            if start in _epgdata[channel_key]:
                 program_id = str(_epgdata[channel_key][start]['pid'])
                 end = str(_epgdata[channel_key][start]['end'])
                 duration = str(int(end) - int(start))
@@ -78,7 +78,7 @@ async def handle_get_program_id(request, channel_id, url):
                          f'start {start} '
                          f'duration {duration}')
             else:
-                for event in sorted(_epgdata[channel_key].keys()):
+                for event in sorted(_epgdata[channel_key]):
                     if int(event) > int(start):
                         break
                     last_event = event
@@ -110,8 +110,8 @@ async def handle_get_program_name(request, channel_id, program_id):
     if channel_id in _channels:
         channel_key = _channels[channel_id]['replacement'] \
             if 'replacement' in _channels[channel_id] else channel_id
-        for timestamp in _epgdata[channel_key].keys():
-            _epg = _epgdata[channel_key][timestamp]
+        for event in sorted(_epgdata[channel_key]):
+            _epg = _epgdata[channel_key][event]
             if int(program_id) == _epg['pid']:
                 return response.json({'status': 'OK',
                                       'full_title': _epg['full_title'],
@@ -144,8 +144,8 @@ def handle_reload_epg_task():
 
     log.info(f'Total Channels: {len(_epgdata)}')
     nr_epg = 0
-    for channel in _epgdata.keys():
-        nr_epg += len(_epgdata[channel].keys())
+    for channel in _epgdata:
+        nr_epg += len(_epgdata[channel])
     log.info(f'Total EPG entries: {nr_epg}')
     log.info('EPG Updated')
 

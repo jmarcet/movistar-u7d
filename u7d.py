@@ -48,7 +48,7 @@ class RtspClient(object):
             key, value = line.split(': ', 1)
             headers[key] = value
 
-        if 'Content-Length' in headers.keys():
+        if 'Content-Length' in headers:
             if 'a=control:rtsp:' in body:
                 self.ip = body.split('\n')[-1].split(':', 1)[1].strip()
         else:

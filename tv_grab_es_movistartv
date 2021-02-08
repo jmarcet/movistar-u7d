@@ -491,14 +491,14 @@ class MovistarTV:
         if last_used:
             self.__end_points_down.append(last_used)
             logger.error('End Point %s desactivado' % last_used)
-        for ep in sorted(eps.keys()):
+        for ep in sorted(eps):
             if eps[ep] not in self.__end_points_down:
                 return eps[ep]
         return None
 
     def get_first_end_point(self):
         eps = self.__get_end_points()
-        for ep in sorted(eps.keys()):
+        for ep in sorted(eps):
             return eps[ep]
 
     def get_random_end_point(self):
@@ -742,7 +742,7 @@ class MulticastIPTV:
 
     def __get_bin_epg(self):
         self.__epg = []
-        for key in sorted(self.__xml_data['segments'].keys()):
+        for key in sorted(self.__xml_data['segments']):
             logger.info('Descargando %s' % key)
             self.__epg.append(self.__get_xml_files(
                 self.__xml_data['segments'][key]['Address'],
@@ -763,7 +763,7 @@ class MulticastIPTV:
             process = MulticastEPGFetcher(queue)
             process.setDaemon(True)
             process.start()
-        for key in sorted(self.__xml_data['segments'].keys()):
+        for key in sorted(self.__xml_data['segments']):
             day += 1
             queue.put({
                 'mcast_grp': self.__xml_data['segments'][key]['Address'],
@@ -777,8 +777,8 @@ class MulticastIPTV:
     def __drop_encrypted_channels(epg):
         if not epg:
             return None
-        channels = [channel for channel in epg.keys() if channel in EPG_CHANNELS]
-        logger.info(f'Conservando {len(channels)} canales en abierto de un total de {len(epg.keys())} canales')
+        channels = [channel for channel in epg if channel in EPG_CHANNELS]
+        logger.info(f'Conservando {len(channels)} canales en abierto de un total de {len(epg)} canales')
         clean_channels = {}
         for channel in channels:
             clean_channels[channel] = epg[channel]
@@ -797,32 +797,32 @@ class MulticastIPTV:
             return new_epg
 
         expired = 0
-        for channel in new_epg.keys():
+        for channel in new_epg:
             if channel not in cached_epg:
                 cached_epg[channel] = {}
             else:
                 clean_channel_epg = {}
-                new_timestamp = int(sorted(new_epg[channel].keys())[0])
-                for timestamp in sorted(cached_epg[channel].keys()):
+                new_timestamp = int(sorted(new_epg[channel])[0])
+                for timestamp in sorted(cached_epg[channel]):
                     if not cached_epg[channel][timestamp]['start'] < new_timestamp:
                         break
                     # here we force cast to int since cache gives us str
                     # and fresh epg has ints
                     clean_channel_epg[int(timestamp)] = cached_epg[channel][timestamp]
                 cached_epg[channel] = clean_channel_epg
-            for timestamp in new_epg[channel].keys():
+            for timestamp in new_epg[channel]:
                 if new_epg[channel][timestamp]['start'] > deadline:
                     cached_epg[channel][timestamp] = new_epg[channel][timestamp]
                 else:
                     expired += 1
         nr_epg = 0
-        for channel in new_epg.keys():
-            nr_epg += len(new_epg[channel].keys())
+        for channel in new_epg:
+            nr_epg += len(new_epg[channel])
 
-        logger.info('Canales con EPG: %s' % len(cached_epg.keys()))
+        logger.info('Canales con EPG: %s' % len(cached_epg))
         nr_epg = 0
-        for channel in cached_epg.keys():
-            nr_epg += len(cached_epg[channel].keys())
+        for channel in cached_epg:
+            nr_epg += len(cached_epg[channel])
         logger.info(f'Entradas en el EPG: Total: {nr_epg} Caducados: {expired}')
 
         cache.save_epg(cached_epg)
@@ -943,7 +943,7 @@ class MulticastIPTV:
         merged_epg = {}
         for epg_day in self.__epg:
             programs = {}
-            for ch_id in epg_day.keys():
+            for ch_id in epg_day:
                 if epg_day[ch_id] and 'replacement' not in epg_day[ch_id]:
                     head = self.__parse_bin_epg_header(epg_day[ch_id])
                     programs[str(head['service_id'])] = self.__parse_bin_epg_body(head['data'])
@@ -982,7 +982,7 @@ class XMLTV:
                     logger.info(f'XML: Saltando canal encriptado {chid}')
                     continue
                 if chid in parsed_epg:
-                    for program in sorted(parsed_epg[chid].keys()):
+                    for program in sorted(parsed_epg[chid]):
                         root.append(self.__build_programme_tag(channel_id, parsed_epg[chid][program], tz))
         print('', flush=True)
         return ElTr.ElementTree(root)
@@ -1100,7 +1100,7 @@ class XMLTV:
 
     def __get_client_channels(self):
         services = {}
-        for package in config['tvPackages'].split('|') if config['tvPackages'] != 'ALL' else self.__packages.keys():
+        for package in config['tvPackages'].split('|') if config['tvPackages'] != 'ALL' else self.__packages:
             if package in self.__packages:
                 services.update(self.__packages[package]['services'])
         return services
