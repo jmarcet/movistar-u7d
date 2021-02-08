@@ -44,11 +44,12 @@ async def handle_get_next_program(request, channel_id, program_id):
         if channel_key in _epgdata:
             found = False
             for event in sorted(_epgdata[channel_key]):
-                _epg = _epgdata[channel_key[event]]
+                _epg = _epgdata[channel_key][event]
                 if found:
-                    log.info(f'Found: EPG next /{channel_key}/{program_id}')
+                    log.info(f'Found: EPG next /{channel_key}/' + str(_epg['pid']))
                     return response.json({'status': 'OK',
                                           'program_id': _epg['pid'],
+                                          'start': _epg['start'],
                                           'duration': _epg['duration']}, 200)
                 elif _epgdata[channel_key][event]['pid'] == int(program_id):
                     found = True
