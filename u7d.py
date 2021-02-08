@@ -89,6 +89,7 @@ class RtspClient(object):
 
     def print(self, req, killed=None):
         resp = req.response
+        return resp
         _req = req.request.split('\r\n')[0].split(' ')
         _off = 90 - len(_req[0])
         if killed:
