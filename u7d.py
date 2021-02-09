@@ -222,7 +222,7 @@ def main(args):
                     raise TimeoutError()
 
                 signal.signal(signal.SIGALRM, _handle_timeout)
-                signal.alarm(args.time + 60)
+                signal.alarm(args.time)
 
             while True:
                 time.sleep(30)
@@ -237,26 +237,7 @@ def main(args):
                       f'{args.broadcast} '
                       f'@ {filename}', flush=True)
             else:
-                print('Show is ending...', flush=True)
-                client.print(client.send_request('TEARDOWN', session), killed=args)
-                client = None
-                epg_url = f'{SANIC_EPG_URL}/get_next_program/{args.channel}/{args.broadcast}'
-                resp = httpx.get(epg_url)
-                if resp.status_code == 200:
-                    with closing(socket.socket(socket.AF_INET, socket.SOCK_DGRAM)) as sock:
-                        host = socket.gethostbyname(socket.gethostname())
-                        sock.connect((host, args.client_port))
-                        null_ts = b'\x47' * 188
-                        sock.send(null_ts)
-                        sock.close()
-                    data = resp.json()
-                    next_program = data['program_id']
-                    args.start = '60'
-                    args.broadcast = next_program
-                    args.time = data['duration'] - 60
-                    return main(args)
-                else:
-                    print(f'{repr(resp.json())}')
+                raise
         except Exception as ex:
             print(f'[{repr(ex)}] '
                   f'[{args.client_ip}] '

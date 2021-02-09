@@ -141,13 +141,11 @@ async def handle_rtp(request, channel_id, url):
                 cmd += ('-t', record_time)
             cmd += ('-w', )
             log.info(f"Recording: [{record_time if record_time else ''}] {u7d_msg}")
-        else:
-            cmd += ('-t', remaining)
         u7d_msg = ' '.join(cmd[1:]) + f' [{request.ip}]'
         cmd += ('-i', request.ip)
         u7d = await asyncio.create_subprocess_exec(*cmd)
         try:
-            r = await asyncio.wait_for(u7d.wait(), 0.3)
+            r = await asyncio.wait_for(u7d.wait(), 0.4)
             msg = f'NOT AVAILABLE: {u7d_msg}'
             log.info(msg)
             return response.json({'status': msg}, 404)
@@ -167,19 +165,23 @@ async def handle_rtp(request, channel_id, url):
             with closing(await asyncio_dgram.bind(
                         (host, int(client_port)))) as stream:
                 while True:
-                    data, remote_addr = await stream.recv()
+                    data, remote_addr = await asyncio.wait_for(stream.recv(), 0.5)
                     await resp.send(data, False)
+            return resp
+        
+        except Exception as ex:
+            log.warning(f'{repr(ex)}')
 
-        except exceptions.ServerError:
-            return response.empty()
         finally:
-            log.debug(f'Finally {u7d_msg}')
+            log.info(f'Finally {u7d_msg}')
             try:
                 u7d.send_signal(signal.SIGINT)
             except ProcessLookupError:
                 pass
-
-        return resp
+            try:
+                await resp.send(b'', True)
+            except:
+                pass
 
     else:
         return response.json({'status': 'URL not understood'}, 404)
