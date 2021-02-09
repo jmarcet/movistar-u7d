@@ -37,7 +37,7 @@ async def handle_reload_epg(request):
 
 @app.get('/get_next_program/<channel_id>/<program_id>')
 async def handle_get_next_program(request, channel_id, program_id):
-    log.info(f'Searching: EPG next /{channel_id}/{program_id}')
+    log.info(f'Searching EPG next: /{channel_id}/{program_id}')
     if channel_id in _channels:
         channel_key = _channels[channel_id]['replacement'] \
             if 'replacement' in _channels[channel_id] else channel_id
@@ -46,7 +46,7 @@ async def handle_get_next_program(request, channel_id, program_id):
             for event in sorted(_epgdata[channel_key]):
                 _epg = _epgdata[channel_key][event]
                 if found:
-                    log.info(f'Found: EPG next /{channel_id}/' + str(_epg['pid']))
+                    log.info(f'Found EPG next: /{channel_id}/' + str(_epg['pid']))
                     return response.json({'status': 'OK',
                                           'program_id': _epg['pid'],
                                           'start': _epg['start'],
@@ -64,7 +64,7 @@ async def handle_get_program_id(request, channel_id, url):
     last_event = program_id = None
     offset = '0'
 
-    log.debug(f'Searching: EPG /{channel_id}/{url}')
+    log.debug(f'Searching EPG: /{channel_id}/{url}')
     if channel_id in _channels:
         channel_key = _channels[channel_id]['replacement'] \
             if 'replacement' in _channels[channel_id] else channel_id
@@ -73,11 +73,13 @@ async def handle_get_program_id(request, channel_id, url):
                 program_id = str(_epgdata[channel_key][start]['pid'])
                 end = str(_epgdata[channel_key][start]['end'])
                 duration = str(int(end) - int(start))
-                log.debug(f'Found: EPG channel '
+                full_title = _epgdata[channel_key][start]['full_title']
+                log.debug(f'Found EPG: '
+                          f'"{full_title}" '
                           f'{channel_id}/{channel_key} '
-                          f'program {program_id} '
-                          f'start {start} '
-                          f'duration {duration}')
+                          f'{program_id} '
+                          f'{start} '
+                          f'-t {duration}')
             else:
                 for event in sorted(_epgdata[channel_key]):
                     if int(event) > int(start):
@@ -90,12 +92,14 @@ async def handle_get_program_id(request, channel_id, url):
                     program_id = str(_epgdata[channel_key][start]['pid'])
                     end = str(_epgdata[channel_key][start]['end'])
                     duration = str(int(end) - int(start))
-                    log.debug(f'Guessed: EPG channel '
+                    full_title = _epgdata[channel_key][start]['full_title']
+                    log.debug(f'Guessed EPG: '
+                              f'"{full_title}" '
                               f'{channel_id}/{channel_key} '
-                              f'program {program_id} '
-                              f'start {start} '
-                              f'offset {offset} '
-                              f'duration {duration}')
+                              f'{program_id} '
+                              f'{start} '
+                              f'-s {offset} '
+                              f'-t {duration}')
 
     if program_id:
         return response.json({'status': 'OK',
