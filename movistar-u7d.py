@@ -146,15 +146,21 @@ async def handle_rtp(request, channel_id, url):
             record_time = request.query_args[0][1] \
                 if request.query_args[0][1].isnumeric() else remaining
             cmd += ('-t', record_time, '-w')
-            log.info(f"[{request.ip}] Record: [{record_time if record_time else ''}] {u7d_msg}")
+            log.info(f'[{request.ip}] '
+                     'Record: '
+                     f'[{record_time}]s '
+                     '{u7d_msg}')
         cmd += ('-i', request.ip)
         u7d = await asyncio.create_subprocess_exec(*cmd)
         try:
             proc = await asyncio.wait_for(u7d.wait(), 0.4)
             msg = (await proc.stdout.readline()).decode().rstrip()
-            status = int(''.join(filter(str.isdigit, msg.split("resultCode': ")[1].split()[0])))
+            status = int(''.join(filter(str.isdigit,
+                                        msg.split("resultCode': ")[1].split()[0])))
             log.info(f'NOT_AVAILABLE: {msg} {u7d_msg}')
-            return response.json({'status': 'NOT_AVAILABLE', 'msg': msg, 'cmd': u7d_msg}, status)
+            return response.json({'status': 'NOT_AVAILABLE',
+                                  'msg': msg,
+                                  'cmd': u7d_msg}, status)
         except asyncio.exceptions.TimeoutError:
             pass
 

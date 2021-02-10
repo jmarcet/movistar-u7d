@@ -146,8 +146,11 @@ def main(args):
     data = resp.json()
 
     if data['resultCode'] != 0:
-        print(f"{'[' + args.client_ip + '] ' if args.client_ip else ''}Error: {data} "
-              f'{args.channel} {args.broadcast} ', flush=True)
+        print(f"{'[' + args.client_ip + '] ' if args.client_ip else ''}"
+              f'Error: {data} '
+              f'{args.channel} '
+              f'{args.broadcast}',
+              flush=True)
         return
 
     url = data['resultData']['url']
@@ -202,7 +205,8 @@ def main(args):
                     else:
                         filename = os.path.join(STORAGE, title + '.ts')
                 elif args.time:
-                    filename = os.path.join(STORAGE, f'{args.channel}-{args.broadcast}.ts')
+                    filename = os.path.join(STORAGE,
+                                            f'{args.channel}-{args.broadcast}.ts')
                 else:
                     raise ValueError('Recording time unknown')
 
