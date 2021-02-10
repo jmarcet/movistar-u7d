@@ -37,7 +37,7 @@ async def handle_reload_epg(request):
 
 @app.get('/get_next_program/<channel_id>/<program_id>')
 async def handle_get_next_program(request, channel_id, program_id):
-    log.info(f'Searching EPG next: /{channel_id}/{program_id}')
+    log.info(f'Searching next EPG: /{channel_id}/{program_id}')
     if channel_id in _channels:
         channel_key = _channels[channel_id]['replacement'] \
             if 'replacement' in _channels[channel_id] else channel_id
@@ -46,7 +46,7 @@ async def handle_get_next_program(request, channel_id, program_id):
             for event in sorted(_epgdata[channel_key]):
                 _epg = _epgdata[channel_key][event]
                 if found:
-                    log.info(f'Found EPG next: /{channel_id}/' + str(_epg['pid']))
+                    log.info(f'Found next EPG: /{channel_id}/' + str(_epg['pid']))
                     return response.json({'status': 'OK',
                                           'program_id': _epg['pid'],
                                           'start': _epg['start'],

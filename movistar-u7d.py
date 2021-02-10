@@ -120,8 +120,9 @@ async def handle_rtp(request, channel_id, url):
                 program_id = r['program_id']
                 offset = r['offset']
         except Exception as ex:
-            log.error(f"aiohttp.ClientSession().get('{epg_url}') "
-                      f'{repr(ex)} [{request.ip}]')
+            log.error(f"aiohttp.ClientSession().get('{epg_url}')",
+                      f'{repr(ex)}',
+                      f'[{request.ip}]')
 
         if not program_id:
             return response.json({'status': f'{channel_id}/{url} not found'}, 404)
@@ -159,8 +160,7 @@ async def handle_rtp(request, channel_id, url):
                                   'time': record_time})
         try:
             resp = await request.respond()
-            with closing(await asyncio_dgram.bind(
-                        (host, int(client_port)))) as stream:
+            with closing(await asyncio_dgram.bind((host, int(client_port)))) as stream:
                 log.info(f'start: {u7d_msg}')
                 while True:
                     data, remote_addr = await asyncio.wait_for(stream.recv(), 0.5)
@@ -178,7 +178,7 @@ async def handle_rtp(request, channel_id, url):
                 pass
             try:
                 await resp.send(b'', True)
-            except:
+            except Exception:
                 pass
 
     else:

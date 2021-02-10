@@ -220,11 +220,11 @@ def main(args):
                 signal.signal(signal.SIGALRM, _handle_timeout)
                 signal.alarm(args.time)
 
-            print('Recording: ' if args.write_to_file else 'Started: ',
-                  f'{args.channel} ',
-                  f'{args.broadcast} ',
-                  f'[{args.time}s] '
-                  f'@ {filename}' if args.write_to_file else '',
+            print('Recording:' if args.write_to_file else 'Started:',
+                  f'{args.channel}',
+                  f'{args.broadcast}',
+                  f'[{args.time}s]'
+                  f'@ "{filename}"' if args.write_to_file else '',
                   f'[{args.client_ip}]' if args.client_ip else '', flush=True)
 
             while True:
@@ -236,11 +236,11 @@ def main(args):
                 proc.terminate()
                 if proc.is_alive():
                     subprocess.call(['pkill', '-f', f"{' '.join(command[:3])}"])
-            print('Finished: ' if isinstance(ex, TimeoutError) else f'{repr(ex)} ',
-                  f'{args.channel} ',
-                  f'{args.broadcast} ',
-                  f'[{args.time}s] ',
-                  f'@ {filename}' if args.write_to_file else '',
+            print('Finished:' if isinstance(ex, TimeoutError) else f'{repr(ex)}',
+                  f'{args.channel}',
+                  f'{args.broadcast}',
+                  f'[{args.time}s]',
+                  f'@ "{filename}"' if args.write_to_file else '',
                   f'[{args.client_ip}]' if args.client_ip else '', flush=True)
         finally:
             if client and 'Session' in session:
