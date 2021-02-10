@@ -284,7 +284,10 @@ class MulticastEPGFetcher(Thread):
     def run(self):
         while True:
             mcast = self.queue.get()
-            iptv.get_day(mcast['mcast_grp'], mcast['mcast_port'], mcast['source'], mcast['day'])
+            iptv.get_day(mcast['mcast_grp'],
+                         mcast['mcast_port'],
+                         mcast['source'],
+                         mcast['day'])
             self.queue.task_done()
 
 
@@ -416,7 +419,8 @@ class MovistarTV:
             return self.__get_service_data('getClientProfile')['resultData']
         except Exception as ex:
             logger.error(f'{repr(ex)}')
-            logger.error('Usando la configuración de cliente por defecto: %i|ALL|1' % default_demarcation)
+            logger.error('Usando la configuración de cliente por defecto: %i|ALL|1'
+                         % default_demarcation)
             return {
                 'tvPackages': 'ALL',
                 'demarcation': str(default_demarcation),
@@ -432,7 +436,8 @@ class MovistarTV:
             logger.error(f'{repr(ex)}')
             logger.error('Usando el pefil del servicio por defecto')
             return {
-                'RES_BASE_URI': 'http://www-60.svc.imagenio.telefonica.net:2001/appclientv/nux/',
+                'RES_BASE_URI': 'http://www-60.svc.imagenio.telefonica.net:2001'
+                                '/appclientv/nux/',
                 'dvbConfig': {'dvbEntryPoint': '239.0.2.129:3937'},
                 'endPoints': end_points
             }
@@ -455,7 +460,8 @@ class MovistarTV:
     def __get_genres(self, tv_wholesaler):
         try:
             logger.info('Descargando mapa de géneros')
-            return self.__get_service_data(f'getEpgSubGenres&tvWholesaler={tv_wholesaler}')['resultData']
+            return self.__get_service_data('getEpgSubGenres&tvWholesaler='
+                                           f'{tv_wholesaler}')['resultData']
         except Exception as ex:
             logger.error('Mapa de géneros no encontrado: %s' % repr(ex))
             return None
@@ -471,7 +477,9 @@ class MovistarTV:
             if not data:
                 #logger.debug('Descargando info extendida: %s' % pid)
                 print('.', flush=True, end='')
-                data = self.__get_service_data(f'epgInfov2&productID={pid}&channelID={channel_id}&extra=1')['resultData']
+                data = self.__get_service_data(f'epgInfov2&productID={pid}'
+                                               f'&channelID={channel_id}'
+                                               f'&extra=1')['resultData']
                 cache.save_epg_extended_info(data)
             return data
         except Exception as ex:
@@ -529,8 +537,11 @@ class MovistarTV:
             'end_points': self.__update_end_points(platform['endPoints']),
             'mcast_grp': dvb_entry_point[0],
             'mcast_port': int(dvb_entry_point[1]),
-            'tvChannelLogoPath': '%s%s' % (platform['RES_BASE_URI'], params['tvChannelLogoPath']),
-            'tvCoversPath': '%s%s%s290x429/' % (platform['RES_BASE_URI'], params['tvCoversPath'], params['portraitSubPath']),
+            'tvChannelLogoPath': '%s%s' % (platform['RES_BASE_URI'],
+                                           params['tvChannelLogoPath']),
+            'tvCoversPath': '%s%s%s290x429/' % (platform['RES_BASE_URI'],
+                                                params['tvCoversPath'],
+                                                params['portraitSubPath']),
             'tvCoversLandscapePath': '%s%s%s%s' % (
                 platform['RES_BASE_URI'],
                 params['tvCoversPath'],
@@ -631,10 +642,11 @@ class MulticastIPTV:
                 # Discard last 4bytes binary footer?
                 xmldata += body[:-4]
                 _files[str(chunk["filetype"]) + "_" + str(chunk["fileid"])] = xmldata
-                #logger.debug('XML: %s_%s' % (chunk["filetype"], chunk["fileid"]))
+                # logger.debug('XML: %s_%s' % (chunk["filetype"], chunk["fileid"]))
                 print('.', flush=True, end='')
                 max_files -= 1
-                if str(chunk["filetype"]) + "_" + str(chunk["fileid"]) == first_file or max_files == 0:
+                if str(chunk["filetype"]) + "_" + str(chunk["fileid"]) == first_file \
+                        or max_files == 0:
                     loop = False
             sock.close()
             print('', flush=True)
@@ -658,11 +670,14 @@ class MulticastIPTV:
                     'name': i[2][0].text.encode('latin1').decode(),
                     'shortname': i[2][1].text.encode('latin1').decode(),
                     'genre': i[2][3][0].text.encode('latin1').decode(),
-                    'logo_uri': i[1].attrib['logoURI'] if 'logoURI' in i[1].attrib else 'MAY_1/imSer/4146.jpg'}
+                    'logo_uri': i[1].attrib['logoURI'] if 'logoURI' in i[1].attrib \
+                                                          else 'MAY_1/imSer/4146.jpg'}
                 if i[2][4].tag == '{urn:dvb:ipisdns:2006}ReplacementService':
-                    channel_list[channel_id]['replacement'] = i[2][4][0].attrib['ServiceName']
+                    channel_list[channel_id]['replacement'] = \
+                        i[2][4][0].attrib['ServiceName']
             except (KeyError, IndexError) as ex:
-                logger.debug('El canal %s no tiene la estructura correcta: %s' % (channel_id, repr(ex)))
+                logger.debug('El canal %s no tiene la estructura correcta: %s'
+                             % (channel_id, repr(ex)))
         logger.info('Canales: %i' % len(channel_list))
         return channel_list
 
@@ -682,9 +697,11 @@ class MulticastIPTV:
                 for service in package:
                     if not service.tag == '{urn:dvb:ipisdns:2006}PackageName':
                         service_id = service[0].attrib['ServiceName']
-                        package_list[package_name]['services'][service_id] = service[1].text
+                        package_list[package_name]['services'][service_id] = \
+                            service[1].text
             except (KeyError, ElTr.ParseError) as ex:
-                logger.error('El paquete %s no tiene la estructura correcta: %s' % (package_name, repr(ex)))
+                logger.error('El paquete %s no tiene la estructura correcta: %s'
+                             % (package_name, repr(ex)))
         logger.info('Paquetes: %i' % len(package_list))
         return package_list
 
@@ -704,7 +721,8 @@ class MulticastIPTV:
                     'Segments': {}}
                 for segment in segments[0]:
                     segment_id = segment.attrib['ID']
-                    segment_list[source]['Segments'][segment_id] = segment.attrib['Version']
+                    segment_list[source]['Segments'][segment_id] = \
+                        segment.attrib['Version']
             except KeyError:
                 logger.error('El segment %s no tiene la estructura correcta' % source)
         logger.info('Días de EPG: %i' % len(segment_list))
@@ -719,10 +737,12 @@ class MulticastIPTV:
 
     def __get_service_provider_ip(self):
         try:
-            logger.info('Buscando el Proveedor de Servicios de %s' % self.__get_demarcation_name())
+            logger.info('Buscando el Proveedor de Servicios de %s'
+                        % self.__get_demarcation_name())
             data = cache.load_service_provider_data()
             if not data:
-                xml = self.__get_xml_files(config['mcast_grp'], config['mcast_port'])['1_0']
+                xml = self.__get_xml_files(config['mcast_grp'],
+                                           config['mcast_port'])['1_0']
                 result = re.findall(
                     'DEM_' + str(config['demarcation']) +
                     '\..*?Address=\"(.*?)\".*?\s*Port=\"(.*?)\".*?', xml, re.DOTALL)[0]
@@ -731,9 +751,10 @@ class MulticastIPTV:
                     'mcast_port': result[1]
                 }
                 cache.save_service_provider_data(data)
-            logger.info('Proveedor de Servicios de %s: %s' % (self.__get_demarcation_name(), data['mcast_grp']))
+            logger.info('Proveedor de Servicios de %s: %s'
+                        % (self.__get_demarcation_name(), data['mcast_grp']))
             return data
-        except Exception as ex:
+        except Exception:
             logger.error('Usando el Proveedor de Servicios por defecto: 239.0.2.150')
             return {
                 'mcast_grp': '239.0.2.150',
@@ -778,7 +799,8 @@ class MulticastIPTV:
         if not epg:
             return None
         channels = [channel for channel in epg if channel in EPG_CHANNELS]
-        logger.info(f'Conservando {len(channels)} canales en abierto de un total de {len(epg)} canales')
+        logger.info(f'Conservando {len(channels)} canales en abierto '
+                    f'de un total de {len(epg)} canales')
         clean_channels = {}
         for channel in channels:
             clean_channels[channel] = epg[channel]
@@ -902,23 +924,30 @@ class MulticastIPTV:
                     'genre': '{:02X}'.format(struct.unpack('B', epg_dt[20:21])[0]),
                     'age_rating': struct.unpack('B', epg_dt[24:25])[0],
                     'full_title': full_title,
-                    'serie_id': struct.unpack('>H', epg_dt[title_end + 5:title_end + 7])[0],
+                    'serie_id':
+                        struct.unpack('>H', epg_dt[title_end + 5:title_end + 7])[0],
                     'episode': episode,
-                    'year': str(struct.unpack('>H', epg_dt[title_end + 9:title_end + 11])[0]),
+                    'year':
+                        str(struct.unpack('>H', epg_dt[title_end + 9:title_end + 11])[0]),
                     'serie': serie,
                     'season': season,
                     'is_serie': is_serie
                 }
                 if is_serie and not season:
-                    sn = re.findall(r'.*\sT(\d*/?\d+).*', programs[start]['full_title'], re.U)
+                    sn = re.findall(r'.*\sT(\d*/?\d+).*',
+                                    programs[start]['full_title'], re.U)
                     if sn:
                         programs[start]['season'] = int(sn[0].replace('/', ''))
                 pr_title = programs[start]['full_title'].split(' - ')
-                pr_title_end = struct.unpack('B', epg_dt[title_end + 12:title_end + 13])[0] + title_end + 13
+                pr_title_end = \
+                    struct.unpack('B',
+                                  epg_dt[title_end + 12:title_end + 13])[0] \
+                    + title_end + 13
                 if len(pr_title) == 2:
                     programs[start]['episode_title'] = self.__sanitize(pr_title[1])
                 cut = pr_title_end if pr_title_end else title_end
-                epg_dt = epg_dt[struct.unpack('B', epg_dt[cut + 3:cut + 4])[0] + cut + 4:]
+                epg_dt \
+                    = epg_dt[struct.unpack('B', epg_dt[cut + 3:cut + 4])[0] + cut + 4:]
             return programs
         except Exception as ex:
             logger.error('Error al procesar la guía: %s' % repr(ex))
@@ -944,7 +973,8 @@ class MulticastIPTV:
             for ch_id in epg_day:
                 if epg_day[ch_id] and 'replacement' not in epg_day[ch_id]:
                     head = self.__parse_bin_epg_header(epg_day[ch_id])
-                    programs[str(head['service_id'])] = self.__parse_bin_epg_body(head['data'])
+                    programs[str(head['service_id'])] \
+                        = self.__parse_bin_epg_body(head['data'])
             self.__merge_dicts(merged_epg, programs)
         logger.debug('Canales con EPG: %s' % len(merged_epg))
         cache.save_epg(merged_epg)
@@ -966,7 +996,8 @@ class XMLTV:
         services = self.__get_client_channels()
         for channel_id in sorted(services, key=lambda key: int(services[key])):
             if channel_id in self.__channels:
-                tag_channel = ElTr.Element('channel', {'id': '%s.movistar.tv' % channel_id})
+                tag_channel = ElTr.Element('channel',
+                                           {'id': '%s.movistar.tv' % channel_id})
                 tag_dname = ElTr.SubElement(tag_channel, 'display-name')
                 tag_dname.text = self.__channels[channel_id]['name']
                 root.append(tag_channel)
@@ -981,7 +1012,9 @@ class XMLTV:
                     continue
                 if chid in parsed_epg:
                     for program in sorted(parsed_epg[chid]):
-                        root.append(self.__build_programme_tag(channel_id, parsed_epg[chid][program], tz))
+                        root.append(self.__build_programme_tag(channel_id,
+                                                               parsed_epg[chid][program],
+                                                               tz))
         print('', flush=True)
         return ElTr.ElementTree(root)
 
@@ -996,8 +1029,13 @@ class XMLTV:
     def __get_key_and_subkey(code, genres):
         if not genres:
             return None
-        genre = next(genre for genre in genres if genre['id'].upper() == (code[0] if code[0] == '0' else ('%s%s' % (code[0], '0')).upper()))
-        subgenre = None if code[1] == '0' else next(subgenre for subgenre in genre['subgenres'] if subgenre['id'].upper() == (code[1].upper() if code[0] == '0' else ('%s%s' % (code[0], code[1])).upper()))
+        genre = next(genre for genre in genres if genre['id'].upper() == (code[0]
+                     if code[0] == '0' else ('%s%s' % (code[0], '0')).upper()))
+        subgenre = None \
+            if code[1] == '0' else next(subgenre for subgenre in genre['subgenres']
+                                        if subgenre['id'].upper() == (code[1].upper()
+                                        if code[0] == '0'
+                                        else ('%s%s' % (code[0], code[1])).upper()))
         return {
             'key': genre['name'],
             'sub-key': subgenre['name'] if subgenre else None
@@ -1045,9 +1083,12 @@ class XMLTV:
             tag_desc.text = tsse['desc']
             tag_date = ElTr.SubElement(tag_programme, 'date')
             tag_date.text = program['year']
-            tag_episode_num = ElTr.SubElement(tag_programme, 'episode-num', {'system': 'xmltv_ns'})
+            tag_episode_num = ElTr.SubElement(tag_programme,
+                                              'episode-num',
+                                              {'system': 'xmltv_ns'})
             tag_episode_num.text = '%s.%i.' % (
-                '%i' % (tsse['season'] - 1) if tsse['season'] else '', tsse['episode'] - 1)
+                '%i' % (tsse['season'] - 1)
+                if tsse['season'] else '', tsse['episode'] - 1)
         # Películas y otros
         elif ext_info:
             if 'Movie' in gens['genre'] and 'productionDate' in ext_info:
@@ -1063,12 +1104,14 @@ class XMLTV:
             if ('mainActors' or 'directors') in ext_info:
                 tag_credits = ElTr.SubElement(tag_programme, 'credits')
                 if 'directors' in ext_info:
-                    length = len(ext_info['directors']) if len(ext_info['directors']) <= max_credits else max_credits
+                    length = len(ext_info['directors']) \
+                        if len(ext_info['directors']) <= max_credits else max_credits
                     for director in ext_info['directors'][:length]:
                         tag_director = ElTr.SubElement(tag_credits, 'director')
                         tag_director.text = director.strip()
                 if 'mainActors' in ext_info:
-                    length = len(ext_info['mainActors']) if len(ext_info['mainActors']) <= max_credits else max_credits
+                    length = len(ext_info['mainActors']) \
+                        if len(ext_info['mainActors']) <= max_credits else max_credits
                     for actor in ext_info['mainActors'][:length]:
                         tag_actor = ElTr.SubElement(tag_credits, 'actor')
                         tag_actor.text = actor.strip()
@@ -1098,13 +1141,15 @@ class XMLTV:
 
     def __get_client_channels(self):
         services = {}
-        for package in config['tvPackages'].split('|') if config['tvPackages'] != 'ALL' else self.__packages:
+        for package in config['tvPackages'].split('|') \
+                if config['tvPackages'] != 'ALL' else self.__packages:
             if package in self.__packages:
                 services.update(self.__packages[package]['services'])
         return services
 
     def __generate_m3u(self):
-        m3u = '#EXTM3U name="MovistarTV" catchup="flussonic" catchup-days=8 dlna_extras=mpeg_ps_pal type=ts url-tvg="http://%s/guide.xml"\n' % sanic
+        m3u = ('#EXTM3U name="MovistarTV" catchup="flussonic" catchup-days=8',
+               'dlna_extras=mpeg_ps_pal type=ts url-tvg="http://%s/guide.xml"\n' % sanic)
         services = self.__get_client_channels()
         channels = sorted(services, key=lambda key: int(services[key]))
         first = channels[0]
@@ -1120,16 +1165,23 @@ class XMLTV:
                 channel_number = services[channel_id]
                 if channel_number == '0':
                     channel_number = '999'
-                channel_logo = '%s%s' % (f'http://{sanic}/Logos/', self.__channels[channel_id]['logo_uri'])
+                channel_logo = '%s%s' % (f'http://{sanic}/Logos/',
+                                         self.__channels[channel_id]['logo_uri'])
                 if 'replacement' in self.__channels[channel_id]:
-                    channel_key = self.__channels[self.__channels[channel_id]['replacement']]['id']
+                    channel_key = \
+                        self.__channels[self.__channels[channel_id]['replacement']]['id']
                 if channel_key not in EPG_CHANNELS:
-                    logger.info(f'M3U: Saltando canal encriptado {channel_name} {channel_id} {channel_key}')
+                    logger.info('M3U: Saltando canal encriptado',
+                                f'{channel_name}',
+                                f'{channel_id}',
+                                f'{channel_key}')
                     continue
                 m3u += '#EXTINF:-1 tvg-chnum="%s" ' % channel_number
-                m3u += 'tvg-id="%s.movistar.tv" group-title="%s" ' % (channel_id, channel_tag)
+                m3u += 'tvg-id="%s.movistar.tv" group-title="%s" ' \
+                    % (channel_id, channel_tag)
                 m3u += 'logo="%s",%s\n' % (channel_logo, channel_name)
-                m3u += 'http://%s/rtp/%s/%s:%s\n' % (sanic, channel_id, channel_ip, channel_port)
+                m3u += 'http://%s/rtp/%s/%s:%s\n' \
+                    % (sanic, channel_id, channel_ip, channel_port)
         return m3u
 
     @staticmethod
@@ -1146,8 +1198,14 @@ def create_logger(argv):
     if not os.path.isdir(app_dir):
         os.mkdir(app_dir)
     log_path = '%s/%s' % (app_dir, log_file)
-    handler = RotatingFileHandler(log_path, mode='a', maxBytes=log_size*1048576, backupCount=2, encoding=None, delay=0)
-    formatter = logging.Formatter('[%(asctime)s] [%(levelname)s] %(message)s', '%d/%m/%Y %H:%M:%S')
+    handler = RotatingFileHandler(log_path,
+                                  mode='a',
+                                  maxBytes=log_size*1048576,
+                                  backupCount=2,
+                                  encoding=None,
+                                  delay=0)
+    formatter = logging.Formatter('[%(asctime)s] [%(levelname)s] %(message)s',
+                                  '%d/%m/%Y %H:%M:%S')
     handler.setFormatter(formatter)
     handler.setLevel(log_level)
     logger_h = logging.getLogger('movistartv.epg.xmltv')
@@ -1173,7 +1231,8 @@ def create_args_parser():
                         help='Show xmltv capabilities',
                         action='store_true')
     parser.add_argument('--output',
-                        help='Redirect the xmltv output to the specified file. Otherwise output goes to stdout.',
+                        help='Redirect the xmltv output to the specified file. '
+                             'Otherwise output goes to stdout.',
                         action='store',
                         dest='filename',
                         default='')
@@ -1183,8 +1242,9 @@ def create_args_parser():
                         dest='output',
                         default='')
     parser.add_argument('--tvheadend',
-                        help="Grab EPG and dump channels in m3u format to CHANNELS file (use this argument in "
-                             "TVHeadend grabber's configuration page to update both: the EPG guide and the "
+                        help="Grab EPG and dump channels in m3u format to CHANNELS "
+                             "file (use this argument in TVHeadend grabber's "
+                             "configuration page to update both: the EPG guide and the "
                              "m3u channel list)",
                         action='store',
                         dest='channels',
@@ -1245,7 +1305,8 @@ try:
     mtv = MovistarTV()
     config = mtv.get_service_config()
 
-    # Busca el Proveedor de Servicios y descarga los archivos XML: canales, paquetes y segments
+    # Busca el Proveedor de Servicios y descarga los archivos XML:
+    # canales, paquetes y segments
     iptv = MulticastIPTV()
     xdata = iptv.get_service_provider_data()
 
@@ -1288,5 +1349,6 @@ try:
 
 except Exception as e:
     logger.critical('%s\n%s' % (repr(e), traceback.format_exc()))
-    print(u'Excepción:\n\n\t %s\n\nTraceback:\n\n\t%s' % (repr(e), traceback.format_exc()))
+    print(u'Excepción:\n\n\t %s\n\nTraceback:\n\n\t%s'
+          % (repr(e), traceback.format_exc()))
     sys.exit(1)
