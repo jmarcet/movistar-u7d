@@ -10,14 +10,16 @@ import socket
 from contextlib import closing
 from sanic import Sanic, response
 from sanic.log import logger as log
+from sanic.log import LOGGING_CONFIG_DEFAULTS
+from urllib.parse import urljoin
 
 
-HOME = os.environ.get('HOME') or '/home/'
+HOME = os.environ.get('HOME') or '/home'
 SANIC_HOST = os.environ.get('SANIC_HOST') or '127.0.0.1'
 SANIC_PORT = int(os.environ.get('SANIC_PORT')) or 8888
 SANIC_EPG_HOST = os.environ.get('SANIC_EPG_HOST') or '127.0.0.1'
 SANIC_EPG_PORT = int(os.environ.get('SANIC_EPG_PORT')) or 8889
-UDPXY = os.environ.get('UDPXY') or 'http://192.168.137.1:4022/rtp/'
+UDPXY = os.environ.get('UDPXY') or 'http://192.168.137.1:4022/rtp'
 
 GUIDE = os.path.join(HOME, 'guide.xml')
 CHANNELS = os.path.join(HOME, 'MovistarTV.m3u')
@@ -29,7 +31,11 @@ SESSION = None
 SESSION_LOGOS = None
 YEAR_SECONDS = 365 * 24 * 60 * 60
 
-app = Sanic('Movistar_u7d')
+LOG_SETTINGS = LOGGING_CONFIG_DEFAULTS
+LOG_SETTINGS['formatters']['generic']['datefmt'] = \
+    LOG_SETTINGS['formatters']['access']['datefmt'] = '[%Y-%m-%d %H:%M:%S]'
+
+app = Sanic('Movistar_u7d', log_config=LOG_SETTINGS)
 app.config.update({'KEEP_ALIVE': False})
 host = socket.gethostbyname(socket.gethostname())
 
@@ -105,8 +111,8 @@ async def handle_rtp(request, channel_id, url):
     log.info(f'[{request.ip}] Req: {request.method} {request.raw_url.decode()}')
 
     if url.startswith('239'):
-        log.info(f'Redirect: {UDPXY}{url}')
-        return response.redirect(UDPXY + url)
+        log.info(f'Redirect: {urljoin(UDPXY, url)}')
+        return response.redirect(urljoin(UDPXY, url))
 
     elif url.startswith('video-'):
         try:
@@ -160,7 +166,7 @@ async def handle_rtp(request, channel_id, url):
         try:
             resp = await request.respond()
             with closing(await asyncio_dgram.bind((host, int(client_port)))) as stream:
-                log.info(f'[{request.ip}] start: {u7d_msg}')
+                log.info(f'[{request.ip}] Start: {u7d_msg}')
                 while True:
                     data, remote_addr = await asyncio.wait_for(stream.recv(), 0.5)
                     await resp.send(data, False)
@@ -170,7 +176,7 @@ async def handle_rtp(request, channel_id, url):
             log.warning(f'[{request.ip}] {repr(ex)}')
 
         finally:
-            log.info(f'[{request.ip}] end: {u7d_msg}')
+            log.info(f'[{request.ip}] End: {u7d_msg}')
             try:
                 u7d.send_signal(signal.SIGINT)
             except ProcessLookupError:

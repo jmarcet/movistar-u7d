@@ -7,6 +7,7 @@ import os
 
 from sanic import Sanic, response
 from sanic.log import logger as log
+from sanic.log import LOGGING_CONFIG_DEFAULTS
 
 
 HOME = os.environ.get('HOME') or '/home/'
@@ -14,6 +15,10 @@ SANIC_EPG_HOST = os.environ.get('SANIC_EPG_HOST') or '127.0.0.1'
 SANIC_EPG_PORT = int(os.environ.get('SANIC_EPG_PORT')) or 8889
 
 YEAR_SECONDS = 365 * 24 * 60 * 60
+
+LOG_SETTINGS = LOGGING_CONFIG_DEFAULTS
+LOG_SETTINGS['formatters']['generic']['datefmt'] = \
+    LOG_SETTINGS['formatters']['access']['datefmt'] = '[%Y-%m-%d %H:%M:%S]'
 
 app = Sanic('Movistar_epg')
 app.config.update({'KEEP_ALIVE_TIMEOUT': YEAR_SECONDS})
@@ -88,8 +93,11 @@ async def handle_get_program_id(request, channel_id, url):
                     end = str(_epgdata[channel_key][start]['end'])
                     duration = str(int(end) - int(start))
                     full_title = _epgdata[channel_key][start]['full_title']
-            log.info(f'"{full_title}" {channel_id}/{channel_key} {program_id} '
-                     f'{start} [{offset}/{duration}]')
+            log.info(f'"{full_title}" '
+                     f'{channel_id}/{channel_key} '
+                     f'{program_id} '
+                     f'{start} '
+                     f'[{offset}/{duration}]')
 
     if program_id:
         return response.json({'status': 'OK',
