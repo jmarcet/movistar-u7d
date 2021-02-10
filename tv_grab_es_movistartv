@@ -815,9 +815,6 @@ class MulticastIPTV:
                     cached_epg[channel][timestamp] = new_epg[channel][timestamp]
                 else:
                     expired += 1
-        nr_epg = 0
-        for channel in new_epg:
-            nr_epg += len(new_epg[channel])
 
         logger.info('Canales con EPG: %s' % len(cached_epg))
         nr_epg = 0
@@ -829,20 +826,21 @@ class MulticastIPTV:
         return cached_epg
 
     def __get_epg_data(self, mcast_grp, mcast_port):
+        xml = self.__get_xml_files(mcast_grp, mcast_port)
         data = cache.load_epg_data()
         if data:
             logger.info('Canales: %i' % len(data['channels']))
             logger.info('Paquetes: %i' % len(data['packages']))
-            logger.info('Días de EPG: %i' % len(data['segments']))
+            # logger.info('Días de EPG: %i' % len(data['segments']))
             self.__xml_data = data
         else:
-            logger.info('Descargando canales, paquetes e índices')
-            xml = self.__get_xml_files(mcast_grp, mcast_port)
+            logger.info('Descargando canales y paquetes')
             self.__xml_data = {
                 'channels': self.__get_channels(xml['2_0']),
-                'packages': self.__get_packages(xml['5_0']),
-                'segments': self.__get_segments(xml['6_0'])}
-            cache.save_epg_data(self.__xml_data)
+                'packages': self.__get_packages(xml['5_0'])}
+        logger.info('Descargando índices')
+        self.__xml_data['segments'] = self.__get_segments(xml['6_0'])
+        cache.save_epg_data(self.__xml_data)
 
     def get_service_provider_data(self):
         if not self.__xml_data:
