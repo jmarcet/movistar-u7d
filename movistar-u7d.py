@@ -102,7 +102,7 @@ async def handle_logos(request, cover=None, logo=None, path=None):
 
 @app.get('/rtp/<channel_id>/<url>')
 async def handle_rtp(request, channel_id, url):
-    log.info(f'Request: {request.method} {request.raw_url.decode()} [{request.ip}]')
+    log.info(f'Req: {request.method} {request.raw_url.decode()} [{request.ip}]')
 
     if url.startswith('239'):
         log.info(f'Redirect: {UDPXY}{url}')
@@ -141,12 +141,13 @@ async def handle_rtp(request, channel_id, url):
                 cmd += ('-t', record_time)
             cmd += ('-w', )
             log.info(f"Recording: [{record_time if record_time else ''}] {u7d_msg}")
-        u7d_msg = ' '.join(cmd[1:]) + f' [{request.ip}]'
+        u7d_msg = '%s %s [%s/%d]' % (channel_id, program_id, offset, duration)
+        u7d_msg += f' [{request.ip}]'
         cmd += ('-i', request.ip)
         u7d = await asyncio.create_subprocess_exec(*cmd)
         try:
             r = await asyncio.wait_for(u7d.wait(), 0.4)
-            msg = f'NOT AVAILABLE: {u7d_msg}'
+            msg = f'NOT_AVAILABLE: {u7d_msg}'
             log.info(msg)
             return response.json({'status': msg}, 404)
         except asyncio.exceptions.TimeoutError:
@@ -159,11 +160,11 @@ async def handle_rtp(request, channel_id, url):
                                   'offset': offset,
                                   'time': record_time})
 
-        log.info(f'Starting: {u7d_msg}')
         try:
             resp = await request.respond()
             with closing(await asyncio_dgram.bind(
                         (host, int(client_port)))) as stream:
+                log.info(f'start: {u7d_msg}')
                 while True:
                     data, remote_addr = await asyncio.wait_for(stream.recv(), 0.5)
                     await resp.send(data, False)
@@ -173,7 +174,7 @@ async def handle_rtp(request, channel_id, url):
             log.warning(f'{repr(ex)}')
 
         finally:
-            log.info(f'Finally {u7d_msg}')
+            log.info(f'end: {u7d_msg}')
             try:
                 u7d.send_signal(signal.SIGINT)
             except ProcessLookupError:

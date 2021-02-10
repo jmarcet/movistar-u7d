@@ -74,12 +74,7 @@ async def handle_get_program_id(request, channel_id, url):
                 end = str(_epgdata[channel_key][start]['end'])
                 duration = str(int(end) - int(start))
                 full_title = _epgdata[channel_key][start]['full_title']
-                log.debug(f'Found EPG: '
-                          f'"{full_title}" '
-                          f'{channel_id}/{channel_key} '
-                          f'{program_id} '
-                          f'{start} '
-                          f'-t {duration}')
+                offset = '0'
             else:
                 for event in sorted(_epgdata[channel_key]):
                     if int(event) > int(start):
@@ -93,13 +88,8 @@ async def handle_get_program_id(request, channel_id, url):
                     end = str(_epgdata[channel_key][start]['end'])
                     duration = str(int(end) - int(start))
                     full_title = _epgdata[channel_key][start]['full_title']
-                    log.debug(f'Guessed EPG: '
-                              f'"{full_title}" '
-                              f'{channel_id}/{channel_key} '
-                              f'{program_id} '
-                              f'{start} '
-                              f'-s {offset} '
-                              f'-t {duration}')
+            log.info(f'"{full_title}" {channel_id}/{channel_key} {program_id} '
+                     f'{start} [{offset}/{duration}]')
 
     if program_id:
         return response.json({'status': 'OK',
