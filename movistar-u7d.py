@@ -8,7 +8,7 @@ import signal
 import socket
 
 from contextlib import closing
-from sanic import Sanic, exceptions, response
+from sanic import Sanic, response
 from sanic.log import logger as log
 
 
@@ -166,7 +166,7 @@ async def handle_rtp(request, channel_id, url):
                     data, remote_addr = await asyncio.wait_for(stream.recv(), 0.5)
                     await resp.send(data, False)
             return resp
-        
+
         except Exception as ex:
             log.warning(f'{repr(ex)}')
 
