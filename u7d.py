@@ -188,7 +188,7 @@ def main(args):
 
                 if resp.status_code == 200:
                     data = resp.json()
-                    print(f'Identified as {repr(data)}', flush=True)
+                    print(f'{repr(data)}', flush=True)
 
                     if not args.time:
                         args.time = int(data['duration']) - args.start
@@ -208,43 +208,40 @@ def main(args):
 
                 command = ['socat']
                 command.append('-u')
-                command.append(f'UDP4-LISTEN:{args.client_port},fork')
+                command.append(f'UDP4-LISTEN:{args.client_port}')
                 command.append(f'OPEN:"{filename}",creat,trunc')
 
-                pos = 0
                 proc = multiprocessing.Process(target=subprocess.call, args=(command, ))
                 proc.start()
-                print(f'Recording {args.time}s {args.channel} {args.broadcast} '
-                      f'@ {filename}', flush=True)
 
             if args.time:
                 def _handle_timeout(signum, frame):
                     raise TimeoutError()
-
                 signal.signal(signal.SIGALRM, _handle_timeout)
                 signal.alarm(args.time)
+
+            print('Recording: ' if args.write_to_file else 'Started: ',
+                  f'{args.channel} ',
+                  f'{args.broadcast} ',
+                  f'[{args.time}s] '
+                  f'@ {filename}' if args.write_to_file else '',
+                  f'[{args.client_ip}]' if args.client_ip else '', flush=True)
 
             while True:
                 time.sleep(30)
                 client.print(client.send_request('GET_PARAMETER', get_parameter))
 
-        except TimeoutError:
-            if args.write_to_file:
-                proc.terminate()
-                print(f'Finished recording '
-                      f'{args.time}s '
-                      f'{args.channel} '
-                      f'{args.broadcast} '
-                      f'@ {filename}', flush=True)
-            else:
-                raise
         except Exception as ex:
-            print(f'[{repr(ex)}] '
-                  f'[{args.client_ip}] '
-                  f'{args.channel} '
-                  f'{args.broadcast} '
-                  f'-s {args.start} '
-                  f'-p {args.client_port}', flush=True)
+            if args.write_to_file and proc and proc.is_alive():
+                proc.terminate()
+                if proc.is_alive():
+                    subprocess.call(['pkill', '-f', f"{' '.join(command[:3])}"])
+            print('Finished: ' if isinstance(ex, TimeoutError) else f'{repr(ex)} ',
+                  f'{args.channel} ',
+                  f'{args.broadcast} ',
+                  f'[{args.time}s] ',
+                  f'@ {filename}' if args.write_to_file else '',
+                  f'[{args.client_ip}]' if args.client_ip else '', flush=True)
         finally:
             if client and 'Session' in session:
                 client.print(client.send_request('TEARDOWN', session), killed=args)
