@@ -220,12 +220,13 @@ def main(args):
                 signal.signal(signal.SIGALRM, _handle_timeout)
                 signal.alarm(args.time)
 
-            print('Recording:' if args.write_to_file else 'Started:',
-                  f'{args.channel}',
-                  f'{args.broadcast}',
-                  f'[{args.time}s]'
-                  f'@ "{filename}"' if args.write_to_file else '',
-                  f'[{args.client_ip}]' if args.client_ip else '', flush=True)
+            if args.write_to_file:
+                print('Recording:',
+                      f'{args.channel}',
+                      f'{args.broadcast}',
+                      f'[{args.time}s]'
+                      f'@"{filename}"',
+                      f'[{args.client_ip}]' if args.client_ip else '', flush=True)
 
             while True:
                 time.sleep(30)
@@ -240,7 +241,7 @@ def main(args):
                   f'{args.channel}',
                   f'{args.broadcast}',
                   f'[{args.time}s]',
-                  f'@ "{filename}"' if args.write_to_file else '',
+                  f'@"{filename}"' if args.write_to_file else '',
                   f'[{args.client_ip}]' if args.client_ip else '', flush=True)
         finally:
             if client and 'Session' in session:
