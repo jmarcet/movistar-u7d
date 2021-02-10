@@ -203,7 +203,7 @@ def main(args):
                     else:
                         filename = os.path.join(STORAGE, title + '.ts')
                 elif args.time:
-                    filename = f'{STORAGE}/{args.channel}-{args.broadcast}.ts'
+                    filename = os.path.join(STORAGE, f'{args.channel}-{args.broadcast}.ts')
                 else:
                     raise ValueError('Recording time unknown')
 
