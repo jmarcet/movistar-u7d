@@ -261,6 +261,8 @@ if __name__ == '__main__':
         parser.add_argument('--time', '-t', help='recording time in seconds', type=int)
         parser.add_argument('--write_to_file', '-w', help='record', action='store_true')
         args = parser.parse_args()
+        if not args.start:
+            args.start = 0
         if not args.client_port:
             args.client_port = find_free_port()
         main(args)
