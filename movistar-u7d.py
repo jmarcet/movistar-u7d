@@ -134,15 +134,13 @@ async def handle_rtp(request, channel_id, url):
         cmd = ('/app/u7d.py', channel_id, program_id, '-s', offset, '-p', client_port)
         duration = int(url.split('-')[2].split('.')[0])
         remaining = str(duration - int(offset))
-
-        if record := request.query_args and request.query_args[0][0] == 'record':
-            if record_time := request.query_args[0][1] \
-                    if request.query_args[0][1].isnumeric() else remaining:
-                cmd += ('-t', record_time)
-            cmd += ('-w', )
-            log.info(f"Recording: [{record_time if record_time else ''}] {u7d_msg}")
         u7d_msg = '%s %s [%s/%d]' % (channel_id, program_id, offset, duration)
         u7d_msg += f' [{request.ip}]'
+        if record := request.query_args and request.query_args[0][0] == 'record':
+            record_time = request.query_args[0][1] \
+                if request.query_args[0][1].isnumeric() else remaining
+            cmd += ('-t', record_time, '-w')
+            log.info(f"Recording: [{record_time if record_time else ''}] {u7d_msg}")
         cmd += ('-i', request.ip)
         u7d = await asyncio.create_subprocess_exec(*cmd)
         try:
@@ -159,7 +157,6 @@ async def handle_rtp(request, channel_id, url):
                                   'program_id': program_id,
                                   'offset': offset,
                                   'time': record_time})
-
         try:
             resp = await request.respond()
             with closing(await asyncio_dgram.bind(
