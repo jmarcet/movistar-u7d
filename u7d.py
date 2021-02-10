@@ -146,7 +146,7 @@ def main(args):
     data = resp.json()
 
     if data['resultCode'] != 0:
-        print(f'Error: [{args.client_ip}] {repr(data)} '
+        print(f'[{args.client_ip}] Error: {repr(data)} '
               f'{args.channel} {args.broadcast} '
               f'-s {args.start}', flush=True)
         return
@@ -223,27 +223,29 @@ def main(args):
 
             if args.write_to_file:
                 print('Recording:',
+                      f'[{args.client_ip}]' if args.client_ip else '',
                       f'{args.channel}',
                       f'{args.broadcast}',
                       f'[{args.time}s]'
-                      f'@"{filename}"',
-                      f'[{args.client_ip}]' if args.client_ip else '', flush=True)
+                      f'@"{filename}"', flush=True)
 
             while True:
                 time.sleep(30)
                 client.print(client.send_request('GET_PARAMETER', get_parameter))
 
+        except KeyboardInterrupt:
+            pass
         except Exception as ex:
             if args.write_to_file and proc and proc.is_alive():
                 proc.terminate()
                 if proc.is_alive():
                     subprocess.call(['pkill', '-f', f"{' '.join(command[:3])}"])
-            print('Finished:' if isinstance(ex, TimeoutError) else f'{repr(ex)}',
+            print(f'[{args.client_ip}]' if args.client_ip else '',
+                  'Finished:' if isinstance(ex, TimeoutError) else f'{repr(ex)}',
                   f'{args.channel}',
                   f'{args.broadcast}',
                   f'[{args.time}s]',
-                  f'@"{filename}"' if args.write_to_file else '',
-                  f'[{args.client_ip}]' if args.client_ip else '', flush=True)
+                  f'@"{filename}"' if args.write_to_file else '', flush=True)
         finally:
             if client and 'Session' in session:
                 client.print(client.send_request('TEARDOWN', session), killed=args)
@@ -260,13 +262,16 @@ if __name__ == '__main__':
         parser.add_argument('--time', '-t', help='recording time in seconds', type=int)
         parser.add_argument('--write_to_file', '-w', help='record', action='store_true')
         args = parser.parse_args()
-        if not args.start:
-            args.start = 0
         if not args.client_port:
             args.client_port = find_free_port()
+        if not args.start:
+            args.start = 0
         main(args)
-    except KeyboardInterrupt:
-        pass
     except Exception as ex:
-        print(f'Died: /app/u7d.py {args.channel} {args.broadcast} '
-              f'-s {args.start} -p {args.client_port} {repr(ex)}', flush=True)
+        print('Died: /app/u7d.py',
+              f'{args.channel}',
+              f'{args.broadcast}',
+              f'-s {args.start}',
+              '-p {args.client_port}',
+              '{repr(ex)}',
+              flush=True)

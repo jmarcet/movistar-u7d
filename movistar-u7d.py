@@ -53,7 +53,7 @@ async def notify_server_stop(app, loop):
 @app.get('/channels.m3u')
 @app.get('/MovistarTV.m3u')
 async def handle_channels(request):
-    log.info(f'Request: {request.method} {request.url} [{request.ip}]')
+    log.info(f'[{request.ip}] Req: {request.method} {request.url}')
     if not os.path.exists(CHANNELS):
         return response.json({}, 404)
     return await response.file(CHANNELS)
@@ -61,18 +61,18 @@ async def handle_channels(request):
 
 @app.get('/guide.xml')
 async def handle_guide(request):
-    log.info(f'Request: {request.method} {request.url} [{request.ip}]')
+    log.info(f'[{request.ip}] Req: {request.method} {request.url}')
     await SESSION.get(f'{SANIC_EPG_URL}/reload_epg')
     if not os.path.exists(GUIDE):
         return response.json({}, 404)
-    log.info(f'Returning: {request.method} {request.url} [{request.ip}]')
+    log.info(f'[{request.ip}] Return: {request.method} {request.url}')
     return await response.file(GUIDE)
 
 
 @app.get('/Covers/<path>/<cover>')
 @app.get('/Logos/<logo>')
 async def handle_logos(request, cover=None, logo=None, path=None):
-    log.debug(f'Request: {request.method} {request.url} [{request.ip}]')
+    log.debug(f'[{request.ip}] Req: {request.method} {request.url}')
     global SESSION_LOGOS
     if not SESSION_LOGOS:
         headers = {'User-Agent': 'MICA-IP-STB'}
@@ -102,7 +102,7 @@ async def handle_logos(request, cover=None, logo=None, path=None):
 
 @app.get('/rtp/<channel_id>/<url>')
 async def handle_rtp(request, channel_id, url):
-    log.info(f'Req: {request.method} {request.raw_url.decode()} [{request.ip}]')
+    log.info(f'[{request.ip}] Req: {request.method} {request.raw_url.decode()}')
 
     if url.startswith('239'):
         log.info(f'Redirect: {UDPXY}{url}')
@@ -120,9 +120,9 @@ async def handle_rtp(request, channel_id, url):
                 program_id = r['program_id']
                 offset = r['offset']
         except Exception as ex:
-            log.error(f"aiohttp.ClientSession().get('{epg_url}')",
-                      f'{repr(ex)}',
-                      f'[{request.ip}]')
+            log.error(f'[{request.ip}]',
+                      f"aiohttp.ClientSession().get('{epg_url}')",
+                      f'{repr(ex)}')
 
         if not program_id:
             return response.json({'status': f'{channel_id}/{url} not found'}, 404)
@@ -136,12 +136,11 @@ async def handle_rtp(request, channel_id, url):
         duration = int(url.split('-')[2].split('.')[0])
         remaining = str(duration - int(offset))
         u7d_msg = '%s %s [%s/%d]' % (channel_id, program_id, offset, duration)
-        u7d_msg += f' [{request.ip}]'
         if record := request.query_args and request.query_args[0][0] == 'record':
             record_time = request.query_args[0][1] \
                 if request.query_args[0][1].isnumeric() else remaining
             cmd += ('-t', record_time, '-w')
-            log.info(f"Recording: [{record_time if record_time else ''}] {u7d_msg}")
+            log.info(f"[{request.ip}] Record: [{record_time if record_time else ''}] {u7d_msg}")
         cmd += ('-i', request.ip)
         u7d = await asyncio.create_subprocess_exec(*cmd)
         try:
@@ -161,30 +160,31 @@ async def handle_rtp(request, channel_id, url):
         try:
             resp = await request.respond()
             with closing(await asyncio_dgram.bind((host, int(client_port)))) as stream:
-                log.info(f'start: {u7d_msg}')
+                log.info(f'[{request.ip}] start: {u7d_msg}')
                 while True:
                     data, remote_addr = await asyncio.wait_for(stream.recv(), 0.5)
                     await resp.send(data, False)
             return resp
 
         except Exception as ex:
-            log.warning(f'{repr(ex)}')
+            log.warning(f'[{request.ip}] {repr(ex)}')
 
         finally:
-            log.info(f'end: {u7d_msg}')
+            log.info(f'[{request.ip}] end: {u7d_msg}')
             try:
                 u7d.send_signal(signal.SIGINT)
             except ProcessLookupError:
                 pass
-            try:
-                await resp.send(b'', True)
-            except Exception:
-                pass
+            await resp.send(b'', True)
 
     else:
         return response.json({'status': 'URL not understood'}, 404)
 
 
 if __name__ == '__main__':
-    app.run(host=SANIC_HOST, port=SANIC_PORT,
-            access_log=False, auto_reload=True, debug=False, workers=3)
+    app.run(host=SANIC_HOST,
+            port=SANIC_PORT,
+            access_log=False,
+            auto_reload=True,
+            debug=False,
+            workers=3)
