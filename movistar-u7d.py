@@ -11,7 +11,6 @@ from contextlib import closing
 from sanic import Sanic, response
 from sanic.log import logger as log
 from sanic.log import LOGGING_CONFIG_DEFAULTS
-from urllib.parse import urljoin
 
 
 HOME = os.environ.get('HOME') or '/home'
@@ -20,6 +19,7 @@ SANIC_PORT = int(os.environ.get('SANIC_PORT')) or 8888
 SANIC_EPG_HOST = os.environ.get('SANIC_EPG_HOST') or '127.0.0.1'
 SANIC_EPG_PORT = int(os.environ.get('SANIC_EPG_PORT')) or 8889
 UDPXY = os.environ.get('UDPXY') or 'http://192.168.137.1:4022/rtp'
+UDPXY = UDPXY[:-1] if UDPXY.endswith('/') else UDPXY
 
 GUIDE = os.path.join(HOME, 'guide.xml')
 CHANNELS = os.path.join(HOME, 'MovistarTV.m3u')
@@ -111,8 +111,8 @@ async def handle_rtp(request, channel_id, url):
     log.info(f'[{request.ip}] Req: {request.method} {request.raw_url.decode()}')
 
     if url.startswith('239'):
-        log.info(f'Redirect: {urljoin(UDPXY, url)}')
-        return response.redirect(urljoin(UDPXY, url))
+        log.info(f'Redirect: {UDPXY}/{url}')
+        return response.redirect(f'{UDPXY}/{url}')
 
     elif url.startswith('video-'):
         try:
@@ -150,10 +150,11 @@ async def handle_rtp(request, channel_id, url):
         cmd += ('-i', request.ip)
         u7d = await asyncio.create_subprocess_exec(*cmd)
         try:
-            r = await asyncio.wait_for(u7d.wait(), 0.4)
-            msg = f'NOT_AVAILABLE: {u7d_msg}'
-            log.info(msg)
-            return response.json({'status': msg}, 404)
+            proc = await asyncio.wait_for(u7d.wait(), 0.4)
+            msg = (await proc.stdout.readline()).decode().rstrip()
+            status = int(''.join(filter(str.isdigit, msg.split("resultCode': ")[1].split()[0])))
+            log.info(f'NOT_AVAILABLE: {msg} {u7d_msg}')
+            return response.json({'status': 'NOT_AVAILABLE', 'msg': msg, 'cmd': u7d_msg}, status)
         except asyncio.exceptions.TimeoutError:
             pass
 
@@ -181,7 +182,10 @@ async def handle_rtp(request, channel_id, url):
                 u7d.send_signal(signal.SIGINT)
             except ProcessLookupError:
                 pass
-            await resp.send(b'', True)
+            try:
+                await resp.send(end_stream=True)
+            except Exception:
+                pass
 
     else:
         return response.json({'status': 'URL not understood'}, 404)

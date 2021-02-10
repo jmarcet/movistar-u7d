@@ -146,9 +146,8 @@ def main(args):
     data = resp.json()
 
     if data['resultCode'] != 0:
-        print(f'[{args.client_ip}] Error: {repr(data)} '
-              f'{args.channel} {args.broadcast} '
-              f'-s {args.start}', flush=True)
+        print(f"{'[' + args.client_ip + '] ' if args.client_ip else ''}Error: {data} "
+              f'{args.channel} {args.broadcast} ', flush=True)
         return
 
     url = data['resultData']['url']
@@ -222,12 +221,12 @@ def main(args):
                 signal.alarm(args.time)
 
             if args.write_to_file:
-                print('Recording:',
-                      f'[{args.client_ip}]' if args.client_ip else '',
+                print(f"{'[' + args.client_ip + '] ' if args.client_ip else ''}"
+                      f'Recording:',
                       f'{args.channel}',
                       f'{args.broadcast}',
-                      f'[{args.time}s]'
-                      f'@"{filename}"', flush=True)
+                      f'[{args.time}s]',
+                      f'"{filename}"', flush=True)
 
             while True:
                 time.sleep(30)
@@ -240,12 +239,12 @@ def main(args):
                 proc.terminate()
                 if proc.is_alive():
                     subprocess.call(['pkill', '-f', f"{' '.join(command[:3])}"])
-            print(f'[{args.client_ip}]' if args.client_ip else '',
-                  'Finished:' if isinstance(ex, TimeoutError) else f'{repr(ex)}',
+            print(f"{'[' + args.client_ip + '] ' if args.client_ip else ''}"
+                  f"{'Finished:' if isinstance(ex, TimeoutError) else repr(ex)} "
                   f'{args.channel}',
                   f'{args.broadcast}',
                   f'[{args.time}s]',
-                  f'@"{filename}"' if args.write_to_file else '', flush=True)
+                  f'"{filename}"' if args.write_to_file else '', flush=True)
         finally:
             if client and 'Session' in session:
                 client.print(client.send_request('TEARDOWN', session), killed=args)
@@ -268,10 +267,10 @@ if __name__ == '__main__':
             args.start = 0
         main(args)
     except Exception as ex:
-        print('Died: /app/u7d.py',
+        print(f"{'[' + args.client_ip + '] ' if args.client_ip else ''}"
+              '{repr(ex)}',
               f'{args.channel}',
               f'{args.broadcast}',
               f'-s {args.start}',
               '-p {args.client_port}',
-              '{repr(ex)}',
-              flush=True)
+              f'"{filename}"' if args.write_to_file else '', flush=True)
