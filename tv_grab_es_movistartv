@@ -799,8 +799,7 @@ class MulticastIPTV:
         if not epg:
             return None
         channels = [channel for channel in epg if channel in EPG_CHANNELS]
-        logger.info(f'Conservando {len(channels)} canales en abierto '
-                    f'de un total de {len(epg)} canales')
+        logger.info(f'Conservando {len(channels)} canales en abierto')
         clean_channels = {}
         for channel in channels:
             clean_channels[channel] = epg[channel]
@@ -892,9 +891,9 @@ class MulticastIPTV:
     @staticmethod
     def __sanitize(text):
         try:
-            return unescape(text)
+            return unescape(text).replace('\n', ' ').replace('\r', ' ').replace('/', ' ')
         except TypeError:
-            return text
+            return text.replace('\n', ' ').replace('\r', ' ').replace('/', ' ')
 
     def __parse_bin_epg_body(self, data):
         epg_dt = data[:-4]
@@ -906,11 +905,12 @@ class MulticastIPTV:
                 title_end = struct.unpack('B', epg_dt[31:32])[0] + 32
                 episode = struct.unpack('B', epg_dt[title_end + 8:title_end + 9])[0]
                 full_title = self.__sanitize(self.__decode_string(epg_dt[32:title_end]))
-                serie = re.findall(r'(.*)\sT\d*/?\d+.*', full_title, re.U)
+                serie = re.findall(r'(.*)(:\s|\sT\d*|Episo)/?\d*.*', full_title, re.U)
                 season = struct.unpack('B', epg_dt[title_end + 11:title_end + 12])[0]
                 is_serie = bool(episode)
-                if is_serie and serie:
-                    serie = serie[0]
+                if serie and serie[0][0]:
+                    is_serie = True
+                    serie = serie[0][0]
                 elif is_serie:
                     serie = full_title
                 else:
