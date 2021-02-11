@@ -1205,7 +1205,7 @@ def create_logger(argv):
                                   encoding=None,
                                   delay=0)
     formatter = logging.Formatter('[%(asctime)s] [%(levelname)s] %(message)s',
-                                  '%d/%m/%Y %H:%M:%S')
+                                  '%Y-%m-%d %H:%M:%S')
     handler.setFormatter(formatter)
     handler.setLevel(log_level)
     logger_h = logging.getLogger('movistartv.epg.xmltv')
