@@ -66,7 +66,7 @@ default_demarcation = demarcations['Galicia']
 
 app_dir = os.path.join(os.environ.get('HOME'), '.xmltv')
 use_multithread = True
-CACHED_TIME = 7 * 24 * 60 * 60
+CACHED_TIME = 8 * 24 * 60 * 60
 EPG_CHANNELS = ['1', '2', '3', '4','5', '6', '477', '578', '582', '597', '657',
                 '663', '717', '743', '744', '745', '844', '884', '934', '935',
                 '1221', '2843', '2863', '3184', '3186', '3325', '3443', '3603', '4911']
@@ -825,17 +825,20 @@ class MulticastIPTV:
                 clean_channel_epg = {}
                 new_timestamp = int(sorted(new_epg[channel])[0])
                 for timestamp in sorted(cached_epg[channel]):
-                    if not cached_epg[channel][timestamp]['start'] < new_timestamp:
+                    timestamp = int(timestamp)
+                    if timestamp < deadline:
+                        expired += 1
+                        logger.debug(f'Expiring {channel} {timestamp}')
+                        continue
+                    elif not timestamp < new_timestamp:
+                        logger.debug(f'Dropping cached events from {timestamp} on channel {channel}')
                         break
-                    # here we force cast to int since cache gives us str
+                    # here we force cast to str since cache gives us str
                     # and fresh epg has ints
-                    clean_channel_epg[int(timestamp)] = cached_epg[channel][timestamp]
+                    clean_channel_epg[timestamp] = cached_epg[channel][str(timestamp)]
                 cached_epg[channel] = clean_channel_epg
             for timestamp in new_epg[channel]:
-                if new_epg[channel][timestamp]['start'] > deadline:
-                    cached_epg[channel][timestamp] = new_epg[channel][timestamp]
-                else:
-                    expired += 1
+                cached_epg[channel][timestamp] = new_epg[channel][timestamp]
 
         logger.info('Canales con EPG: %s' % len(cached_epg))
         nr_epg = 0
