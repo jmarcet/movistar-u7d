@@ -158,6 +158,7 @@ async def handle_rtp(request, channel_id, url):
             status = int(''.join(filter(str.isdigit,
                                         msg.split("resultCode': ")[1].split()[0])))
             log.info(f'NOT_AVAILABLE: {msg} {u7d_msg}')
+            await SESSION.get(f'{SANIC_EPG_URL}/reload_epg')
             return response.json({'status': 'NOT_AVAILABLE',
                                   'msg': msg,
                                   'cmd': u7d_msg}, status)
