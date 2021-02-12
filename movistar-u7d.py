@@ -151,10 +151,10 @@ async def handle_rtp(request, channel_id, url):
                      f'[{record_time}]s '
                      '{u7d_msg}')
         cmd += ('-i', request.ip)
-        u7d = await asyncio.create_subprocess_exec(*cmd)
+        u7d = await asyncio.create_subprocess_exec(*cmd, stdout=asyncio.subprocess.PIPE)
         try:
-            proc = await asyncio.wait_for(u7d.wait(), 0.4)
-            msg = (await proc.stdout.readline()).decode().rstrip()
+            await asyncio.wait_for(u7d.wait(), 0.4)
+            msg = (await u7d.stdout.readline()).decode().rstrip()
             status = int(''.join(filter(str.isdigit,
                                         msg.split("resultCode': ")[1].split()[0])))
             log.info(f'NOT_AVAILABLE: {msg} {u7d_msg}')
