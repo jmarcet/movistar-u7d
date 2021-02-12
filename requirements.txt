@@ -1,4 +1,4 @@
 aiohttp
 asyncio_dgram
 httpx
-#sanic
+git+https://github.com/sanic-org/sanic

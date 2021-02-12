@@ -11,8 +11,6 @@ RUN mkdir /app
 WORKDIR /app
 
 COPY requirements.txt .
-RUN git clone https://github.com/sanic-org/sanic /tmp/sanic && cd /tmp/sanic && \
-    python setup.py bdist_wheel && pip install dist/* && cd /app && rm -fr /tmp/sanic
 RUN pip install -r requirements.txt
 
 COPY . .
