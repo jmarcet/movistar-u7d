@@ -155,13 +155,11 @@ async def handle_rtp(request, channel_id, url):
         try:
             await asyncio.wait_for(u7d.wait(), 0.4)
             msg = (await u7d.stdout.readline()).decode().rstrip()
-            status = int(''.join(filter(str.isdigit,
-                                        msg.split("resultCode': ")[1].split()[0])))
             log.info(f'NOT_AVAILABLE: {msg} {u7d_msg}')
             await SESSION.get(f'{SANIC_EPG_URL}/reload_epg')
             return response.json({'status': 'NOT_AVAILABLE',
                                   'msg': msg,
-                                  'cmd': u7d_msg}, status)
+                                  'cmd': u7d_msg}, 404)
         except asyncio.exceptions.TimeoutError:
             pass
 
