@@ -171,20 +171,25 @@ async def handle_rtp(request, channel_id, url):
 
         log.info(f'[{request.ip}] Start: {u7d_msg}')
         with closing(await asyncio_dgram.bind((host, client_port))) as stream:
+            __timedout = False
             respond = await request.respond()
             try:
                 while True:
                     data, _ = await asyncio.wait_for(stream.recv(), 0.5)
-                    if not data:
-                        break
                     await respond.send(data)
                 return respond
             except Exception as ex:
                 log.warning(f'[{request.ip}] {repr(ex)}')
+                if isinstance(ex, TimeoutError):
+                    __timedout = True
             finally:
                 log.info(f'[{request.ip}] End: {u7d_msg}')
-                u7d.send_signal(signal.SIGINT)
-                await respond.send(end_stream=True)
+                try:
+                    if not __timedout:
+                        u7d.send_signal(signal.SIGINT)
+                    await respond.send(end_stream=True)
+                except Exception as ex:
+                    log.warning(f'[{request.ip}] {repr(ex)}')
 
     else:
         return response.json({'status': 'URL not understood'}, 404)
