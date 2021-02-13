@@ -127,6 +127,7 @@ async def handle_get_program_name(request, channel_id, program_id):
 
 def handle_reload_epg_task():
     global _channels, _epgdata
+    _channels = _epgdata = {}
     epg_data = '/home/.xmltv/cache/epg.json'
     epg_metadata = '/home/.xmltv/cache/epg_metadata.json'
 
