@@ -136,9 +136,9 @@ async def handle_rtp(request, channel_id, url):
         with closing(socket.socket(socket.AF_INET, socket.SOCK_DGRAM)) as s:
             s.bind(('', 0))
             s.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
-            client_port = str(s.getsockname()[1])
+            client_port = s.getsockname()[1]
 
-        cmd = ('/app/u7d.py', channel_id, program_id, '-s', offset, '-p', client_port)
+        cmd = ('/app/u7d.py', channel_id, program_id, '-s', offset, '-p', str(client_port))
         duration = int(url.split('-')[2].split('.')[0])
         remaining = str(duration - int(offset))
         u7d_msg = '%s %s [%s/%d]' % (channel_id, program_id, offset, duration)
@@ -156,7 +156,6 @@ async def handle_rtp(request, channel_id, url):
             await asyncio.wait_for(u7d.wait(), 0.4)
             msg = (await u7d.stdout.readline()).decode().rstrip()
             log.info(f'NOT_AVAILABLE: {msg} {u7d_msg}')
-            await SESSION.get(f'{SANIC_EPG_URL}/reload_epg')
             return response.json({'status': 'NOT_AVAILABLE',
                                   'msg': msg,
                                   'cmd': u7d_msg}, 404)
@@ -169,28 +168,23 @@ async def handle_rtp(request, channel_id, url):
                                   'program_id': program_id,
                                   'offset': offset,
                                   'time': record_time})
-        try:
-            resp = await request.respond()
-            with closing(await asyncio_dgram.bind((host, int(client_port)))) as stream:
-                log.info(f'[{request.ip}] Start: {u7d_msg}')
+
+        log.info(f'[{request.ip}] Start: {u7d_msg}')
+        with closing(await asyncio_dgram.bind((host, client_port))) as stream:
+            respond = await request.respond()
+            try:
                 while True:
-                    data, remote_addr = await asyncio.wait_for(stream.recv(), 0.5)
-                    await resp.send(data, False)
-            return resp
-
-        except Exception as ex:
-            log.warning(f'[{request.ip}] {repr(ex)}')
-
-        finally:
-            log.info(f'[{request.ip}] End: {u7d_msg}')
-            try:
+                    data, _ = await asyncio.wait_for(stream.recv(), 0.5)
+                    if not data:
+                        break
+                    await respond.send(data)
+                return respond
+            except Exception as ex:
+                log.warning(f'[{request.ip}] {repr(ex)}')
+            finally:
+                log.info(f'[{request.ip}] End: {u7d_msg}')
                 u7d.send_signal(signal.SIGINT)
-            except ProcessLookupError:
-                pass
-            try:
-                await resp.send(end_stream=True)
-            except Exception:
-                pass
+                await respond.send(end_stream=True)
 
     else:
         return response.json({'status': 'URL not understood'}, 404)
