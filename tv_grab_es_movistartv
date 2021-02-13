@@ -1048,7 +1048,7 @@ class XMLTV:
     def __get_series_data(program, ext_info):
         episode = program['episode']
         season = program['season']
-        desc = ext_info['description'] if ext_info else u'Año: %s' % program['year']
+        desc = u'Año: %s. %s' % (program['year'], ext_info['description'])
         if 'episode_title' in program:
             stitle = '%ix%02d %s' % (season, episode, program['episode_title'])
         else:
