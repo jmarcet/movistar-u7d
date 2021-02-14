@@ -131,7 +131,7 @@ def safe_filename(filename):
 def main(args):
     global needs_position
 
-    client = s = None
+    client = filename = proc = s = None
     headers = {'CSeq': '', 'User-Agent': UA}
 
     setup = session = play = describe = headers.copy()
@@ -248,7 +248,7 @@ def main(args):
                   f'{args.channel}',
                   f'{args.broadcast}',
                   f'[{args.time}s]',
-                  f'"{filename}"' if args.write_to_file else '', flush=True)
+                  f'"{filename}"' if args.write_to_file and filename else '', flush=True)
         finally:
             if client and 'Session' in session:
                 client.print(client.send_request('TEARDOWN', session), killed=args)
@@ -272,9 +272,9 @@ if __name__ == '__main__':
         main(args)
     except Exception as ex:
         print(f"{'[' + args.client_ip + '] ' if args.client_ip else ''}"
-              '{repr(ex)}',
+              f'{repr(ex)}',
               f'{args.channel}',
               f'{args.broadcast}',
               f'-s {args.start}',
               '-p {args.client_port}',
-              f'"{filename}"' if args.write_to_file else '', flush=True)
+              f'"{filename}"' if args.write_to_file and filename else '', flush=True)
