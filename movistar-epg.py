@@ -1,11 +1,11 @@
 #!/usr/bin/env python3
 
 import asyncio
-import concurrent.futures
 import json
 import os
 
 from sanic import Sanic, response
+from sanic.compat import open_async
 from sanic.log import logger as log
 from sanic.log import LOGGING_CONFIG_DEFAULTS
 
@@ -29,14 +29,45 @@ _epgdata = {}
 
 @app.listener('after_server_start')
 async def notify_server_start(app, loop):
-    handle_reload_epg_task()
+    await handle_reload_epg_task()
 
 
 @app.get('/reload_epg')
 async def handle_reload_epg(request):
-    loop = asyncio.get_running_loop()
-    with concurrent.futures.ProcessPoolExecutor() as pool:
-        await loop.run_in_executor(pool, handle_reload_epg_task)
+    return await handle_reload_epg_task()
+
+
+async def handle_reload_epg_task():
+    global _channels, _epgdata
+    epg_data = '/home/.xmltv/cache/epg.json'
+    epg_metadata = '/home/.xmltv/cache/epg_metadata.json'
+
+    try:
+        async with await open_async(epg_data) as f:
+            epgdata = json.loads(await f.read())['data']
+        _epgdata = epgdata
+        log.info('Loaded fresh EPG data')
+    except Exception as ex:
+        log.error(f'Failed to EPG data {repr(ex)}')
+        if not _epgdata:
+            raise
+
+    try:
+        async with await open_async(epg_metadata) as f:
+            channels = json.loads(await f.read())['data']['channels']
+        _channels = channels
+        log.info('Loaded Channels metadata')
+    except Exception as ex:
+        log.error(f'Failed to load Channels metadata {repr(ex)}')
+        if not _channels:
+            raise
+
+    log.info(f'Total Channels: {len(_epgdata)}')
+    nr_epg = 0
+    for channel in _epgdata:
+        nr_epg += len(_epgdata[channel])
+    log.info(f'Total EPG entries: {nr_epg}')
+    log.info('EPG Updated')
     return response.json({'status': 'EPG Updated'}, 200)
 
 
@@ -123,36 +154,6 @@ async def handle_get_program_name(request, channel_id, program_id):
                                       'serie': _epg['serie']
                                       }, ensure_ascii=False)
     return response.json({'status': f'{channel_id}/{program_id} not found'}, 404)
-
-
-def handle_reload_epg_task():
-    global _channels, _epgdata
-    _channels = _epgdata = {}
-    epg_data = '/home/.xmltv/cache/epg.json'
-    epg_metadata = '/home/.xmltv/cache/epg_metadata.json'
-
-    try:
-        with open(epg_data) as f:
-            _epgdata = json.loads(f.read())['data']
-        log.info('Loaded fresh EPG data')
-    except Exception as ex:
-        log.error(f'Failed to EPG data {repr(ex)}')
-        raise
-
-    try:
-        with open(epg_metadata) as f:
-            _channels = json.loads(f.read())['data']['channels']
-        log.info('Loaded Channels metadata')
-    except Exception as ex:
-        log.error(f'Failed to load Channels metadata {repr(ex)}')
-        raise
-
-    log.info(f'Total Channels: {len(_epgdata)}')
-    nr_epg = 0
-    for channel in _epgdata:
-        nr_epg += len(_epgdata[channel])
-    log.info(f'Total EPG entries: {nr_epg}')
-    log.info('EPG Updated')
 
 
 if __name__ == '__main__':
