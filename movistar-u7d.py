@@ -153,7 +153,7 @@ async def handle_rtp(request, channel_id, url):
         cmd += ('-i', request.ip)
         u7d = await asyncio.create_subprocess_exec(*cmd, stdout=asyncio.subprocess.PIPE)
         try:
-            await asyncio.wait_for(u7d.wait(), 0.4)
+            await asyncio.wait_for(u7d.wait(), 0.5)
             msg = (await u7d.stdout.readline()).decode().rstrip()
             log.info(f'NOT_AVAILABLE: {msg} {u7d_msg}')
             await SESSION.get(f'{SANIC_EPG_URL}/reload_epg')
@@ -172,23 +172,24 @@ async def handle_rtp(request, channel_id, url):
 
         log.info(f'[{request.ip}] Start: {u7d_msg}')
         with closing(await asyncio_dgram.bind((host, client_port))) as stream:
-            __timedout = False
+            timedout = False
             respond = await request.respond()
             try:
+                await respond.send((await asyncio.wait_for(stream.recv(), 1))[0])
                 while True:
-                    data, _ = await asyncio.wait_for(stream.recv(), 0.5)
-                    await respond.send(data)
+                    await respond.send((await asyncio.wait_for(stream.recv(), 0.05))[0])
                 return respond
             except Exception as ex:
                 log.warning(f'[{request.ip}] {repr(ex)}')
                 if isinstance(ex, TimeoutError):
-                    __timedout = True
+                    timedout = True
             finally:
                 log.info(f'[{request.ip}] End: {u7d_msg}')
                 try:
-                    if not __timedout:
+                    if timedout:
+                        await respond.send(end_stream=True)
+                    else:
                         u7d.send_signal(signal.SIGINT)
-                    await respond.send(end_stream=True)
                 except Exception as ex:
                     log.warning(f'[{request.ip}] {repr(ex)}')
 
