@@ -105,16 +105,29 @@ async def handle_logos(request, cover=None, logo=None, path=None):
         else:
             return response.json({'status': f'{orig_url} not found'}, 404)
 
+@app.get('/<channel_id>/rtp')
+async def handle_channel(request, channel_id):
+    try:
+        epg_url = f'{SANIC_EPG_URL}/get_channel_address/{channel_id}'
+        async with SESSION.get(epg_url) as r:
+            if r.status != 200:
+                return response.json({'status': f'{channel_id} not found'}, 404)
+            r = await r.json()
+            channel_id = r['channel_id']
+            address = r['address']
+            port = r['port']
+        log.info(f'[{request.ip}] {request.method} {request.raw_url.decode()} => {UDPXY}/{address}:{port}')
+        return response.redirect(f'{UDPXY}/{address}:{port}')
+    except Exception as ex:
+        log.error(f'[{request.ip}]',
+                  f"aiohttp.ClientSession().get('{epg_url}')",
+                  f'{repr(ex)}')
 
-@app.get('/rtp/<channel_id>/<url>')
-async def handle_rtp(request, channel_id, url):
-    log.info(f'[{request.ip}] Req: {request.method} {request.raw_url.decode()}')
 
-    if url.startswith('239'):
-        log.info(f'Redirect: {UDPXY}/{url}')
-        return response.redirect(f'{UDPXY}/{url}')
-
-    elif url.startswith('video-'):
+@app.get('/<channel_id>/<url>')
+async def handle_flussonic(request, channel_id, url):
+    log.info(f'[{request.ip}] {request.method} {request.raw_url.decode()}')
+    if url.startswith('video-'):
         try:
             program_id = None
             epg_url = f'{SANIC_EPG_URL}/get_program_id/{channel_id}/{url}'
