@@ -93,6 +93,16 @@ async def handle_get_next_program(request, channel_id, program_id):
     return response.json({'status': f'{channel_id}/{program_id} not found'}, 404)
 
 
+@app.get('/get_channel_address/<channel_id>/')
+async def handle_get_channel_address(request, channel_id):
+    log.debug(f'Searching Channel freqsuency: {channel_id}')
+    if channel_id in _channels:
+        return response.json({'status': 'OK',
+                              'channel_id': channel_id,
+                              'address': _channels[channel_id]['address'],
+                              'port': _channels[channel_id]['port']})
+
+
 @app.get('/get_program_id/<channel_id>/<url>')
 async def handle_get_program_id(request, channel_id, url):
     start = url.split('-')[1]
