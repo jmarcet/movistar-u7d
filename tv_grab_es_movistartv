@@ -1158,7 +1158,7 @@ class XMLTV:
         return services
 
     def __generate_m3u(self):
-        m3u = ('#EXTM3U name="MovistarTV" catchup="flussonic" catchup-days=8'
+        m3u = ('#EXTM3U name="MovistarTV" catchup="flussonic" catchup-days=8 '
                'dlna_extras=mpeg_ps_pal type=ts url-tvg="http://%s/guide.xml"\n' % sanic)
         services = self.__get_client_channels()
         channels = sorted(services, key=lambda key: int(services[key]))
