@@ -313,9 +313,16 @@ class Cache:
     def __clean():
         for f in os.listdir('%s/cache/programs' % app_dir):
             fp = '%s/cache/programs/%s' % (app_dir, f)
-            if os.path.isfile(fp) and os.stat(fp).st_mtime < deadline:
-                os.remove(fp)
-                logger.debug('Caché: %s caducado' % f)
+            if os.path.isfile(fp):
+                try:
+                    with open(fp) as fd:
+                        _data = json.loads(fd.read())['data']
+                    _exp_date = int(_data['expDate'] / 1000)
+                    if _exp_date < deadline:
+                        logger.debug(f'Caché: {f} caducado [{time.ctime(_exp_date)}]')
+                        os.remove(fp)
+                except Exception as ex:
+                    logger.error(f'{repr(ex)}')
 
     @staticmethod
     def __load(cfile):
