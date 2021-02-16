@@ -177,7 +177,7 @@ async def handle_rtp(request, channel_id, url):
             try:
                 await respond.send((await asyncio.wait_for(stream.recv(), 1))[0])
                 while True:
-                    await respond.send((await asyncio.wait_for(stream.recv(), 0.05))[0])
+                    await respond.send((await asyncio.wait_for(stream.recv(), 0.25))[0])
                 return respond
             except Exception as ex:
                 log.warning(f'[{request.ip}] {repr(ex)}')
