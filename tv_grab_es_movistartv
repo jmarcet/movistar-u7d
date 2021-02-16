@@ -835,10 +835,10 @@ class MulticastIPTV:
                     timestamp = int(timestamp)
                     if timestamp < deadline:
                         expired += 1
-                        logger.debug(f'Expiring {channel} {timestamp}')
+                        logger.debug(f'[{channel}] Caducando evento de [{time.ctime(timestamp)}]')
                         continue
                     elif not timestamp < new_timestamp:
-                        logger.debug(f'Dropping cached events from {timestamp} on channel {channel}')
+                        logger.debug(f'[{channel}] Limpiando caché desde [{time.ctime(timestamp)}]')
                         break
                     # here we force cast to str since cache gives us str
                     # and fresh epg has ints
@@ -1187,10 +1187,12 @@ class XMLTV:
                                 f'{channel_key}')
                     continue
                 m3u += f'#EXTINF:-1 tvg-chnum="{channel_number}" '
-                m3u += f'tvg-id="{channel_id}.movistar.tv" group-title="{channel_tag}" '
+                m3u += f'tvg-id="{channel_id}.movistar.tv" '
+                m3u += f'group-title="{channel_tag}" '
+                m3u += f'logo="{channel_logo}"'
                 #m3u += f'catchup-source="http://{sanic}/{channel_id}'
-                #m3u += '/video-{timestamp}-{duration}.m3u8" '
-                m3u += f'logo="{channel_logo}",{channel_name}\n'
+                #m3u += '/video-{timestamp}-{duration}.m3u8"'
+                m3u += f',{channel_name}\n'
                 m3u += f'http://{sanic}/{channel_id}/live\n'
         return m3u
 
