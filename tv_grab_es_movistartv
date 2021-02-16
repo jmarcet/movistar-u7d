@@ -1171,7 +1171,7 @@ class XMLTV:
                 channel_key = channel_id
                 channel_ip = self.__channels[channel_id]['address']
                 channel_port = str(self.__channels[channel_id]['port'])
-                channel_tag = self.__channels[channel_id]['genre']
+                channel_tag = 'IPTV - TDT Movistar.es' #self.__channels[channel_id]['genre']
                 channel_number = services[channel_id]
                 if channel_number == '0':
                     channel_number = '999'
