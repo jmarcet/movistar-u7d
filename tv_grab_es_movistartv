@@ -1151,7 +1151,7 @@ class XMLTV:
         return services
 
     def __generate_m3u(self):
-        m3u = ('#EXTM3U name="MovistarTV" catchup="flussonic" catchup-days=8',
+        m3u = ('#EXTM3U name="MovistarTV" catchup="flussonic" catchup-days=8'
                'dlna_extras=mpeg_ps_pal type=ts url-tvg="http://%s/guide.xml"\n' % sanic)
         services = self.__get_client_channels()
         channels = sorted(services, key=lambda key: int(services[key]))
@@ -1174,17 +1174,17 @@ class XMLTV:
                     channel_key = \
                         self.__channels[self.__channels[channel_id]['replacement']]['id']
                 if channel_key not in EPG_CHANNELS:
-                    logger.info('M3U: Saltando canal encriptado',
-                                f'{channel_name}',
-                                f'{channel_id}',
+                    logger.info('M3U: Saltando canal encriptado '
+                                f'{channel_name} '
+                                f'{channel_id} '
                                 f'{channel_key}')
                     continue
-                m3u += '#EXTINF:-1 tvg-chnum="%s" ' % channel_number
-                m3u += 'tvg-id="%s.movistar.tv" group-title="%s" ' \
-                    % (channel_id, channel_tag)
-                m3u += 'logo="%s",%s\n' % (channel_logo, channel_name)
-                m3u += 'http://%s/rtp/%s/%s:%s\n' \
-                    % (sanic, channel_id, channel_ip, channel_port)
+                m3u += f'#EXTINF:-1 tvg-chnum="{channel_number}" '
+                m3u += f'tvg-id="{channel_id}.movistar.tv" group-title="{channel_tag}" '
+                #m3u += f'catchup-source="http://{sanic}/{channel_id}'
+                #m3u += '/video-{timestamp}-{duration}.m3u8" '
+                m3u += f'logo="{channel_logo}",{channel_name}\n'
+                m3u += f'http://{sanic}/{channel_id}/rtp\n'
         return m3u
 
     @staticmethod
