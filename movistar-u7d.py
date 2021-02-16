@@ -105,7 +105,7 @@ async def handle_logos(request, cover=None, logo=None, path=None):
         else:
             return response.json({'status': f'{orig_url} not found'}, 404)
 
-@app.get('/<channel_id>/rtp')
+@app.get('/<channel_id>/live')
 async def handle_channel(request, channel_id):
     try:
         epg_url = f'{SANIC_EPG_URL}/get_channel_address/{channel_id}'
