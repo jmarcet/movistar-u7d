@@ -338,8 +338,7 @@ class Cache:
         try:
             with open('%s/cache/%s' % (app_dir, cfile), 'w') as fp:
                 json.dump({'data': data}, fp, ensure_ascii=False, indent=4)
-            if not cfile.startswith('programs') and not cfile.startswith('appserver'):
-                logger.debug("Cache: %s guardado" % cfile)
+            # logger.debug("Cache: %s guardado" % cfile)
         except IOError:
             logger.error('Caché: No se puede escribir en disco')
 
@@ -569,7 +568,6 @@ class MovistarTV:
                 self.__web_service_down = True
                 return None
             __attempts = 4
-            logger.info('Descargando guía de Movistar TV')
             while __attempts > 0:
                 try:
                     headers = {}
