@@ -22,6 +22,7 @@ MVTV_URL = 'http://www-60.svc.imagenio.telefonica.net:2001/appserver/mvtv.do'
 SANIC_EPG_URL = f'http://{SANIC_EPG_HOST}:{SANIC_EPG_PORT}'
 Request = namedtuple('Request', ['request', 'response'])
 Response = namedtuple('Response', ['version', 'status', 'url', 'headers', 'body'])
+VID_EXT = '.ts'
 UA = 'MICA-IP-STB'
 # WIDTH = 134
 
@@ -198,15 +199,15 @@ def main(args):
                     title = safe_filename(data['full_title'])
                     if data['is_serie']:
                         path = os.path.join(STORAGE, safe_filename(data['serie']))
-                        filename = os.path.join(path, title + '.ts')
+                        filename = os.path.join(path, title + VID_EXT)
                         if not os.path.exists(path):
                             print(f'Creating recording subdir {path}', flush=True)
                             os.mkdir(path)
                     else:
-                        filename = os.path.join(STORAGE, title + '.ts')
+                        filename = os.path.join(STORAGE, title + VID_EXT)
                 elif args.time:
                     filename = os.path.join(STORAGE,
-                                            f'{args.channel}-{args.broadcast}.ts')
+                                            f'{args.channel}-{args.broadcast}{VID_EXT}')
                 else:
                     raise ValueError('Recording time unknown')
 
