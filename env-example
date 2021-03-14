@@ -1,9 +1,14 @@
+# docker-compose
 IPTV_GW=
+U7D_GW=
 MAC_IPTV_U7D=
 MAC_MOVISTAR_U7D=
+
+# movistar-epg.py & movistar-u7d.py
 SANIC_HOST=0.0.0.0
 SANIC_PORT=8888
+SANIC_EPG_HOST=127.0.0.1
+SANIC_EPG_PORT=8889
 U7D_DIR=/home/timeshift/u7d/
-U7D_GW=
 U7D_HOME=/home/xmltv
 UDPXY=http://192.168.1.1:4022/rtp/

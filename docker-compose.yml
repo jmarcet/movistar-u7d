@@ -28,10 +28,11 @@ services:
       - MAC_MOVISTAR_U7D=${MAC_MOVISTAR_U7D}
       - SANIC_HOST=${SANIC_HOST}
       - SANIC_PORT=${SANIC_PORT}
+      - SANIC_EPG_HOST=${SANIC_EPG_HOST}
+      - SANIC_EPG_PORT=${SANIC_EPG_PORT}
       - U7D_GW=${U7D_GW}
       - U7D_DIR=${U7D_DIR}
       - UDPXY=${UDPXY}
-      - UDPXY_VOD=${UDPXY_VOD}
     devices:
       - /dev/dri:/dev/dri
     cpu_shares: 2048
