@@ -39,8 +39,8 @@ async def handle_reload_epg(request):
 
 async def handle_reload_epg_task():
     global _channels, _epgdata
-    epg_data = '/home/.xmltv/cache/epg.json'
-    epg_metadata = '/home/.xmltv/cache/epg_metadata.json'
+    epg_data = os.path.join(HOME, '.xmltv/cache/epg.json')
+    epg_metadata = os.path.join(HOME, '.xmltv/cache/epg_metadata.json')
 
     try:
         async with await open_async(epg_data) as f:

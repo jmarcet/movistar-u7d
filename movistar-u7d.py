@@ -19,7 +19,6 @@ SANIC_PORT = int(os.environ.get('SANIC_PORT')) or 8888
 SANIC_EPG_HOST = os.environ.get('SANIC_EPG_HOST') or '127.0.0.1'
 SANIC_EPG_PORT = int(os.environ.get('SANIC_EPG_PORT')) or 8889
 UDPXY = os.environ.get('UDPXY') or 'http://192.168.137.1:4022/rtp'
-UDPXY = UDPXY[:-1] if UDPXY.endswith('/') else UDPXY
 
 GUIDE = os.path.join(HOME, 'guide.xml')
 CHANNELS = os.path.join(HOME, 'MovistarTV.m3u')
@@ -29,6 +28,7 @@ MIME = 'video/MP2T'
 SANIC_EPG_URL = f'http://{SANIC_EPG_HOST}:{SANIC_EPG_PORT}'
 SESSION = None
 SESSION_LOGOS = None
+UDPXY = UDPXY[:-1] if UDPXY.endswith('/') else UDPXY
 YEAR_SECONDS = 365 * 24 * 60 * 60
 
 LOG_SETTINGS = LOGGING_CONFIG_DEFAULTS
