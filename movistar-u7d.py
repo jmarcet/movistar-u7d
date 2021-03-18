@@ -13,12 +13,12 @@ from sanic.log import logger as log
 from sanic.log import LOGGING_CONFIG_DEFAULTS
 
 
-HOME = os.environ.get('HOME') or '/home'
-SANIC_HOST = os.environ.get('SANIC_HOST') or '127.0.0.1'
-SANIC_PORT = int(os.environ.get('SANIC_PORT')) or 8888
-SANIC_EPG_HOST = os.environ.get('SANIC_EPG_HOST') or '127.0.0.1'
-SANIC_EPG_PORT = int(os.environ.get('SANIC_EPG_PORT')) or 8889
-UDPXY = os.environ.get('UDPXY') or 'http://192.168.137.1:4022/rtp'
+HOME = os.getenv('HOME', '/home')
+SANIC_HOST = os.getenv('SANIC_HOST', '127.0.0.1')
+SANIC_PORT = int(os.getenv('SANIC_PORT', '8888'))
+SANIC_EPG_HOST = os.getenv('SANIC_EPG_HOST', '127.0.0.1')
+SANIC_EPG_PORT = int(os.getenv('SANIC_EPG_PORT', '8889'))
+UDPXY = os.getenv('UDPXY', 'http://192.168.137.1:4022/rtp')
 
 GUIDE = os.path.join(HOME, 'guide.xml')
 CHANNELS = os.path.join(HOME, 'MovistarTV.m3u')

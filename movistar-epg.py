@@ -10,9 +10,9 @@ from sanic.log import logger as log
 from sanic.log import LOGGING_CONFIG_DEFAULTS
 
 
-HOME = os.environ.get('HOME') or '/home/'
-SANIC_EPG_HOST = os.environ.get('SANIC_EPG_HOST') or '127.0.0.1'
-SANIC_EPG_PORT = int(os.environ.get('SANIC_EPG_PORT')) or 8889
+HOME = os.getenv('HOME', '/home/')
+SANIC_EPG_HOST = os.getenv('SANIC_EPG_HOST', '127.0.0.1')
+SANIC_EPG_PORT = int(os.getenv('SANIC_EPG_PORT', '8889'))
 
 YEAR_SECONDS = 365 * 24 * 60 * 60
 
