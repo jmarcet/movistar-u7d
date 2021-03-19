@@ -78,10 +78,22 @@ Sólo queda configurar el cliente. Para eso tenemos las siguientes URLs, donde 1
 Con configurar esas dos cosas debería ser suficiente. Aseguráos de que el TiviMate (o cliente IPTV con catchup Flussonic) guarda al menos 8 días de historial del EPG.
 
 
+Agradecimientos
+---------------
+
+Sin ningún orden en especial:
+
+- [_WiLloW_](https://github.com/MovistarTV): por su [tv_grab_es_movistartv](https://github.com/MovistarTV/tv_grab_es_movistartv), un trabajo increíble que desenmaraña todos los metadatos de MovistarTV.
+
+- [XXLuigiMario](https://github.com/XXLuigiMario): por su [u7d.py](https://github.com/XXLuigiMario/MovistarU7D) que fue, en cierta manera, el punto de partida de todo, aunque le faltase media funcionalidad. Partiendo de él y analizando el tráfico del [addon cerrado](https://sourceforge.net/projects/movistartv/), con todos sus fallos, conseguí entender e implemnetar correctamente la negociación rtsp de la que depende toda reproducción de los últimos 7 días.
+
+- [Sanic Framework](https://sanicframework.org/): hace comodísima la programación de microservicios web.
+
+
 Futuro
 ------
 
-Tenía pensado rescribirlo todo en Golang. Movistar, sin embargo, sigue añadiendo DRM a los canales, no contento con los propios de su plataforma, continúa con la TDT. En mi comunidad autónoma ya no se ven los regionales, así que le quedará poco tiempo de uso a todo esto lamentablemente.
+Tenía pensado reescribirlo todo en Golang. Movistar, sin embargo, sigue añadiendo DRM a los canales, no contento con los propios de su plataforma, continúa con la TDT. En mi comunidad autónoma ya no se ven los regionales, así que le quedará poco tiempo de uso a todo esto lamentablemente.
 
 [Aquí](https://comunidad.movistar.es/t5/Soporte-M-D-Yomvi/Por-favor-no-encripteis-los-canales-de-TDT/m-p/4437418#M107537) podéis ver un intento vano de hacerlos entrar en razón.
 
