@@ -60,14 +60,24 @@ El resultado son dos microservicios escritos en python asíncrono, con [Sanic](h
 
 El resto de ficheros:
 
- - `updateguide.sh`: script de ejemplo para ejecutar desde el host, y de forma recurrente, si el servicio se ejecuta dentro del docker
+ - `updateguide.sh`: script de ejemplo para ejecutar desde el host y de forma recurrente, si el servicio se ejecuta dentro del docker
  - `crontab`: crontab de ejemplo para ejecutar el script anterior, cada 2h, en el minuto 5. La frecuencia es así de alta para enterarse de los cambios de última hora que a veces sufre la programación.
 
 
 Instalación
 -----------
 
-La forma más fácil de hacer funcionar todo es con Docker, docker-compose incluso mejor. Dentro del container queda todo lo necesario salvo el `udpxy`, que debe estar configurado para que pueda acceder a los canales de Movistar, y un `crontab`, es decir, algo que periódicamente llame al script `updateguide.sh` si usamos Docker, o `tv_grab_es_movistartv` directamente de alguna otra forma. También es necesario ejecutar [igmpproxy](https://github.com/pali/igmpproxy) en el host, o el grabber fallará.
+La forma más fácil de hacer funcionar todo es con Docker, docker-compose incluso mejor. Dentro del container queda casi todo lo necesario. En el host necesitamos:
+
+ - [udpxy](http://www.udpxy.com/), que debe estar configurado para que pueda acceder a los canales de Movistar;
+
+```
+udpxy -T -S -a br-lan -p 4022 -m eth0.2 -c 20 -B 7896
+```
+
+ - Un `crontab`, es decir, algo que periódicamente llame al script `updateguide.sh` si usamos Docker, o `tv_grab_es_movistartv` directamente.
+
+ - [igmpproxy](https://github.com/pali/igmpproxy) para que `tv_grab_es_movistartv` funcione correctamente dentro del container.
 
 ```
 $ cat /etc/igmpproxy.conf
@@ -88,7 +98,7 @@ En el caso de querer ejecutarlo todo directamente, pues:
 pip3 install -r requirements.txt
 ```
 
-Y a partir de ahi lanzarlo con algo como `start.sh`, que está pensado para el docker, pero sirve de ejemplo. Sin olvidarnos del contab anterior, la EPG siempre la necesitamos actualizada.
+Y a partir de ahi lanzarlo con algo como `start.sh`, que está pensado para el docker, pero sirve de ejemplo. Sin olvidarnos del crontab anterior, la EPG siempre la necesitamos actualizada.
 
 Cualquier duda o consulta no dudéis en abrir una [incidencia](https://github.com/jmarcet/movistar-u7d/issues) [aquí](https://github.com/jmarcet/movistar-u7d) en Github.
 
@@ -96,7 +106,7 @@ Cualquier duda o consulta no dudéis en abrir una [incidencia](https://github.co
 Uso
 ---
 
-Sólo queda configurar el cliente. Para eso tenemos las siguientes URLs, donde 192.168.1.10 es una ip de ejemplo donde el microservicio `movistar-u7d.py` espera peticiones:
+Sólo queda configurar el cliente. Para eso tenemos las siguientes URLs, donde 192.168.1.10 es la ip donde el microservicio `movistar-u7d.py` espera peticiones:
 
  - Canales: `http://192.168.1.10/channels.m3u` o `http://192.168.1.10/MovistarTV.m3u`
 
@@ -108,7 +118,7 @@ Con configurar esas dos cosas debería ser suficiente. Aseguráos de que el Tivi
 Posibles problemas
 ------------------
 
-A veces se desicroniza la guía entre el cliente (TiviMate) y el proxy, mostrando `Error 404` en todo o en casi todo. La solución pasa por ir a los ajustes del cliente (TiviMate), borrar la EPG y cargarla de nuevo.
+A veces se desincroniza la guía entre el cliente (TiviMate) y el proxy, mostrando `Error 404` en todo o en casi todo. La solución pasa por ir a los ajustes del cliente (TiviMate), borrar la EPG y cargarla de nuevo.
 
 Del mismo modo, a veces hay un mínimo glitch en la guía, no causado en sí por el proxy sino por lo inestable de los metadatos que Movistar envía, a veces incompletos y con cambios frecuentes de última hora. El efecto es que en alguna ocasión pueden quedar huecos sin programación, incluso un día entero. No es habitual, pero tengo que ver aún cómo arreglarlo del todo.
 
