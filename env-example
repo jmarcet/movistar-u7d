@@ -1,8 +1,17 @@
 # docker-compose
-IPTV_GW=
-U7D_GW=
-MAC_IPTV_U7D=
-MAC_MOVISTAR_U7D=
+IPTV_ADDRESS=a.b.c.d # IP_DE_LA_VLAN_2_DE_MOVISTAR< eth0 dentro del container
+IPTV_GW=10.64.0.1
+IPTV_NET=10.64.0.0/12
+
+MAC_IPTV_U7D=aa:bb:cc:dd:ee:02 #mac del eth0 dentro del docker, que corresponde a la subred maclvan *iptv*
+MAC_MOVISTAR_U7D=aa:bb:cc:dd:ee:03 #mac del eth1 dentro del docker, que corresponde al bridge *tvlan*
+
+SUBNET_TVLAN=10.17.0.0/24 # la subred del los U7D_ siguientes
+
+U7D_ADDRESS=10.17.0.3 # IP de la eth1 dentro del container
+U7D_DIR=/storage/u7d
+U7D_GW=10.17.0.1 # GW de la subred de tipo bridge *tvlan*
+U7D_HOME=/opt/xmltv
 
 # movistar-epg.py & movistar-u7d.py
 SANIC_HOST=0.0.0.0

@@ -62,7 +62,20 @@ El resultado son dos microservicios escritos en python asíncrono, con [Sanic](h
 Instalación
 -----------
 
-La forma más fácil de hacer funcionar todo es con Docker, docker-compose incluso mejor. Dentro del container queda todo lo necesario salvo el `udpxy`, que debe estar configurado para que pueda acceder a los canales de Movistar, y un `crontab`, es decir, algo que periódicamente llame al script `updateguide.sh` si usamos Docker, o `tv_grab_es_movistartv` directamente de alguna otra forma.
+La forma más fácil de hacer funcionar todo es con Docker, docker-compose incluso mejor. Dentro del container queda todo lo necesario salvo el `udpxy`, que debe estar configurado para que pueda acceder a los canales de Movistar, y un `crontab`, es decir, algo que periódicamente llame al script `updateguide.sh` si usamos Docker, o `tv_grab_es_movistartv` directamente de alguna otra forma. También es necesario ejecutar [igmpproxy](https://github.com/pali/igmpproxy) en el host, o el grabber fallará.
+
+```
+$ cat /etc/igmpproxy.conf
+quickleave
+
+phyint eth0.2 upstream ratelimit 0 threshold 1
+        altnet 172.0/11
+
+phyint br-tvlan downstream ratelimit 0 threshold 1
+```
+
+Donde `eth0.2` es la VLAN 2 de Movistar, la de IPTV y `br-tvlan` es la subred `tvlan` en el docker-compose.
+
 
 El resto de ficheros:
 

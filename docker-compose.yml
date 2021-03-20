@@ -10,13 +10,13 @@ services:
       - SYS_ADMIN
       - SYS_NICE
     restart: on-failure
-    #networks:
-    #  tvlan:
-    #    ipv4_address: ${U7D_ADDRESS}
-    #  iptv:
-    #    ipv4_address: ${IPTV_ADDRESS}
-    ports:
-      - '8888:8888'
+    networks:
+      tvlan:
+        ipv4_address: ${U7D_ADDRESS}
+      iptv:
+        ipv4_address: ${IPTV_ADDRESS}
+    #ports:
+    #  - '8888:8888'
     volumes:
       - /etc/localtime:/etc/localtime
       - ./:/app
@@ -44,5 +44,22 @@ services:
       interval: 30s
       timeout: 5s
       retries: 3
+
+networks:
+  iptv:
+    driver: macvlan
+    driver_opts:
+      parent: eth0.2
+    ipam:
+      config:
+         - subnet: ${IPTV_NET}
+  tvlan:
+    driver: bridge
+    ipam:
+      driver: default
+      config:
+        - subnet: ${SUBNET_TVLAN}
+    driver_opts:
+      com.docker.network.bridge.name: br-tvlan
 
 # vim: et ci pi sts=2 sw=2 ts=2
