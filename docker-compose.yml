@@ -15,8 +15,8 @@ services:
         ipv4_address: ${U7D_ADDRESS}
       iptv:
         ipv4_address: ${IPTV_ADDRESS}
-    #ports:
-    #  - '8888:8888'
+    ports:
+      - '8888:8888'
     volumes:
       - /etc/localtime:/etc/localtime
       - ./:/app

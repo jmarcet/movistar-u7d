@@ -106,11 +106,11 @@ Cualquier duda o consulta no dudéis en abrir una [incidencia](https://github.co
 Uso
 ---
 
-Sólo queda configurar el cliente. Para eso tenemos las siguientes URLs, donde 192.168.1.10 es la ip donde el microservicio `movistar-u7d.py` espera peticiones:
+Sólo queda configurar el cliente. Para eso tenemos las siguientes URLs, donde 192.168.1.1 es la ip local del host donde tengamos el proxy funcionando. El puerto lo podemos cambiar en el docker-compose.
 
- - Canales: `http://192.168.1.10/channels.m3u` o `http://192.168.1.10/MovistarTV.m3u`
+ - Canales: `http://192.168.1.1:8888/channels.m3u` o `http://192.168.1.1:8888/MovistarTV.m3u`
 
- - Guía de programación (EPG): `http://192.168.1.10/guide.xml`
+ - Guía de programación (EPG): `http://192.168.1.1:8888/guide.xml`
 
 Con configurar esas dos cosas debería ser suficiente. Aseguráos de que el TiviMate (o cliente IPTV con catchup Flussonic) guarda al menos 8 días de historial del EPG.
 
