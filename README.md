@@ -67,7 +67,7 @@ El resto de ficheros:
 Instalación
 -----------
 
-La forma más fácil de hacer funcionar todo es con Docker, docker-compose incluso mejor. Dentro del container queda casi todo lo necesario. En el host necesitamos:
+Tenemos la opción de utilizar docker y docker-compose. Dentro del container queda casi todo lo necesario. En el host necesitamos:
 
  - [udpxy](http://www.udpxy.com/), que debe estar configurado para que pueda acceder a los canales de Movistar;
 
@@ -91,6 +91,29 @@ phyint br-tvlan downstream ratelimit 0 threshold 1
 
 Donde `eth0.2` es la VLAN 2 de Movistar, la de IPTV y `br-tvlan` es la subred `tvlan` en el docker-compose.
 
+Para que el microservicio `movistar-u7d.py` sea accesible desde la lan, tendremos que modificar el firewall de manera que los paquetes que lleguen al puerto 8888 del host sean redirigidos al puerto 8888 de la ip donde escucha `movistar-u7d.py`, en todos los ejemplos U7D_ADDRESS. En OpenWrt bastaría con añadir a `/etc/config/firewall`:
+
+```
+config redirect
+        option name 'DNAT_LAN_TO_DOCKER_MOVISTAR_U7D'
+        option src 'lan'
+        option src_dport '8888'
+        option dest 'tvlan'
+        option dest_ip '10.17.0.3'
+        option dest_port '8888'
+        option proto 'tcp'
+        option target 'DNAT'
+```
+
+que corresponde a:
+
+```
+iptables -A zone_lan_prerouting -p tcp -m tcp --dport 8888 -m comment --comment "!fw3: DNAT_LAN_TO_DOCKER_MOVISTAR_U7D" -j DNAT --to-destination 10.17.0.3:8888
+```
+
+Por desgracia, al tener dos subredes dentro del container, no he conseguido hacerlo funcionar con el mapeado de puertos del propio docker, que haría infinitamente más sencillo este paso.
+
+
 
 En el caso de querer ejecutarlo todo directamente, pues:
 
@@ -106,7 +129,7 @@ Cualquier duda o consulta no dudéis en abrir una [incidencia](https://github.co
 Uso
 ---
 
-Sólo queda configurar el cliente. Para eso tenemos las siguientes URLs, donde 192.168.1.1 es la ip local del host donde tengamos el proxy funcionando. El puerto lo podemos cambiar en el docker-compose.
+Sólo queda configurar el cliente. Para eso tenemos las siguientes URLs, donde 192.168.1.1 es la ip local del host donde tengamos el proxy funcionando.
 
  - Canales: `http://192.168.1.1:8888/channels.m3u` o `http://192.168.1.1:8888/MovistarTV.m3u`
 
