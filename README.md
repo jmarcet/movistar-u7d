@@ -58,6 +58,11 @@ El resultado son dos microservicios escritos en python asíncrono, con [Sanic](h
 
  - `env-example`: fichero fundamental. Contiene las variables de entorno con el que configurar las diferentes partes. Para usarlo con docker, basta con copiarlo a `.env` y hacer los cambios necesarios. La primera parte de estas variables sólo hacen falta para usarlo dentro del container, la segunda mitad en cambio contiene variables necesarias para ejecutarlo de un modo u otro.
 
+El resto de ficheros:
+
+ - `updateguide.sh`: script de ejemplo para ejecutar desde el host, y de forma recurrente, si el servicio se ejecuta dentro del docker
+ - `crontab`: crontab de ejemplo para ejecutar el script anterior, cada 2h, en el minuto 5. La frecuencia es así de alta para enterarse de los cambios de última hora que a veces sufre la programación.
+
 
 Instalación
 -----------
@@ -75,12 +80,6 @@ phyint br-tvlan downstream ratelimit 0 threshold 1
 ```
 
 Donde `eth0.2` es la VLAN 2 de Movistar, la de IPTV y `br-tvlan` es la subred `tvlan` en el docker-compose.
-
-
-El resto de ficheros:
-
- - `updateguide.sh`: script de ejemplo para ejecutar desde el host, y de forma recurrente, si el servicio se ejecuta dentro del docker
- - `crontab`: crontab de ejemplo para ejecutar el script anterior, cada 2h, en el minuto 5. La frecuencia es así de alta para enterarse de los cambios de última hora que a veces sufre la programación.
 
 
 En el caso de querer ejecutarlo todo directamente, pues:
