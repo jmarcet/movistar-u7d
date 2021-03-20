@@ -93,6 +93,14 @@ Sólo queda configurar el cliente. Para eso tenemos las siguientes URLs, donde 1
 Con configurar esas dos cosas debería ser suficiente. Aseguráos de que el TiviMate (o cliente IPTV con catchup Flussonic) guarda al menos 8 días de historial del EPG.
 
 
+Posibles problemas
+------------------
+
+A veces se desicroniza la guía entre el cliente (TiviMate) y el proxy, mostrando `Error 404` en todo o en casi todo. La solución pasa por ir a los ajustes del cliente (TiviMate), borrar la EPG y cargarla de nuevo.
+
+Del mismo modo, a veces hay un mínimo glitch en la guía, no causado en sí por el proxy sino por lo inestable de los metadatos que Movistar envía, a veces incompletos y con cambios frecuentes de última hora. El efecto es que en alguna ocasión pueden quedar huecos sin programación, incluso un día entero. No es habitual, pero tengo que ver aún cómo arreglarlo del todo.
+
+
 Agradecimientos
 ---------------
 
