@@ -6,6 +6,16 @@ Qué es y de dónde nace
 
 Este proyecto nació del descontento de acceder a los canales de TV de Movistar a través de su [app de Movistar](https://play.google.com/store/apps/details?id=es.plus.yomvi), que dicho de forma elegante, está muy por detrás de la competencia.
 
+ - No tiene ningún tipo de integración real con el Android, ni siquiera para la entrada de datos. Intentad usar un mini teclado, veréis lo _cómodo_ que es. Te dan ganas de llamar al soporte y decirles la categoría de software que venden con su producto.
+
+ - Tiene un click molesto cada vez que pulsas un botón en el mando, no se puede deshabilitar.
+
+ - El vídeo es de menor calidad que el que llega por la VLAN de tv, en lugar de a 50HZ es a 25, y se nota.
+
+ - Se congela todo el tiempo, se cuelga.
+
+ - Debido al magnífico DRM, en el siguiente video, el video nunca se ve: [Movistar+_20210320.mp4](https://openwrt.marcet.info/u7d/Movistar%2B_20210320.mp4)
+
 Durante años usé [udpxy](http://www.udpxy.com/) para acceder a los directos desde cualquier cliente IPTV, aunque estuviera conectado por wifi. Con la lista de canales y programación que podías obtener con el fantástico [tv_grab_es_movistartv](https://github.com/MovistarTV/tv_grab_es_movistartv) no hacía falta nada más que un webserver para servirlo todo. Faltaba el acceso a los últimos 7 días.
 
 Para esto, lo mejor que hubo durante mucho tiempo fue un [addon cerrado](https://sourceforge.net/projects/movistartv/) para el magnífico [Kodi](https://kodi.tv/), que funcionaba relativamente bien. Te permite reproducir programas de la parilla de los últimos 7 días; también te permite hacer grabaciones en local o en la nube, que son accesibles después para reproducir.
@@ -27,6 +37,11 @@ Tan contento con él estaba que tenía que poder usar el resto de funcionalidad.
 
 Se me ocurrió que podía hacer algún tipo de proxy entre dicho TiviMate con catchup flussonic y la IPTV de Movistar (de las variantes de catchup que soporta es el que más extendido he encontrado y a la vez es el más sencillo e intuitivo de implementar).
 
+El resultado es algo así (el funcionamiento real es fluido todo el tiempo, el video se llega a atascar en los momentos de mayor tráfico de datos):
+
+ - [TiviMate_Movistar_20210320_U7D-1.mp4](https://openwrt.marcet.info/u7d/TiviMate_Movistar_20210320_U7D-1.mp4)
+
+ - [TiviMate_Movistar_20210320_U7D-2.mp4](https://openwrt.marcet.info/u7d/TiviMate_Movistar_20210320_U7D-2.mp4)
 
 Componentes
 -----------
