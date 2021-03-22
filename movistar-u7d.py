@@ -186,7 +186,7 @@ async def handle_flussonic(request, channel_id, url):
         log.info(f'[{request.ip}] Start: {u7d_msg}')
         with closing(await asyncio_dgram.bind((host, client_port))) as stream:
             timedout = False
-            respond = await request.respond()
+            respond = await request.respond(content_type=MIME)
             try:
                 await respond.send((await asyncio.wait_for(stream.recv(), 1))[0])
                 while True:
