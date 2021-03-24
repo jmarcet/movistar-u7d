@@ -3,8 +3,11 @@ IPTV_ADDRESS=a.b.c.d # IP_DE_LA_VLAN_2_DE_MOVISTAR< eth0 dentro del container
 IPTV_GW=10.64.0.1
 IPTV_NET=10.64.0.0/12
 
-MAC_IPTV_U7D=aa:bb:cc:dd:ee:02 #mac del eth0 dentro del docker, que corresponde a la subred maclvan *iptv*
-MAC_MOVISTAR_U7D=aa:bb:cc:dd:ee:03 #mac del eth1 dentro del docker, que corresponde al bridge *tvlan*
+# Podemos cambiar las MACs de los interfaces de red del container
+# que resulta útil para poder tener historial de datos y gráficas
+# limpias, con un número fijo de dispositivos
+# MAC_IPTV_U7D=aa:bb:cc:dd:ee:02 #mac del eth0 dentro del docker, que corresponde a la subred maclvan *iptv*
+# MAC_MOVISTAR_U7D=aa:bb:cc:dd:ee:03 #mac del eth1 dentro del docker, que corresponde al bridge *tvlan*
 
 SUBNET_TVLAN=10.17.0.0/24 # la subred del los U7D_ siguientes
 

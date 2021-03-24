@@ -22,8 +22,8 @@ services:
       - ${U7D_DIR}:${U7D_DIR}
     environment:
       - IPTV_GW=${IPTV_GW}
-      - MAC_IPTV_U7D=${MAC_IPTV_U7D}
-      - MAC_MOVISTAR_U7D=${MAC_MOVISTAR_U7D}
+#     - MAC_IPTV_U7D=${MAC_IPTV_U7D}
+#     - MAC_MOVISTAR_U7D=${MAC_MOVISTAR_U7D}
       - SANIC_HOST=${SANIC_HOST}
       - SANIC_PORT=${SANIC_PORT}
       - SANIC_EPG_HOST=${SANIC_EPG_HOST}
