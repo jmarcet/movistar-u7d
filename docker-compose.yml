@@ -10,54 +10,55 @@ services:
       - SYS_ADMIN
       - SYS_NICE
     restart: on-failure
-    networks:
-      tvlan:
-        ipv4_address: ${U7D_ADDRESS}
-      iptv:
-        ipv4_address: ${IPTV_ADDRESS}
+    network_mode: host
+    # networks:
+    #   tvlan:
+    #     ipv4_address: ${U7D_ADDRESS}
+    #   iptv:
+    #     ipv4_address: ${IPTV_ADDRESS}
     volumes:
       - /etc/localtime:/etc/localtime
-      - ./:/app
-      - ${U7D_HOME}:/home
-      - ${U7D_DIR}:${U7D_DIR}
+    # - ./:/app
+    # - ${HOME}:/home
+    # - ${U7D_DIR}:${U7D_DIR}
     environment:
-      - IPTV_GW=${IPTV_GW}
-#     - MAC_IPTV_U7D=${MAC_IPTV_U7D}
-#     - MAC_MOVISTAR_U7D=${MAC_MOVISTAR_U7D}
-      - SANIC_HOST=${SANIC_HOST}
-      - SANIC_PORT=${SANIC_PORT}
-      - SANIC_EPG_HOST=${SANIC_EPG_HOST}
-      - SANIC_EPG_PORT=${SANIC_EPG_PORT}
-      - U7D_GW=${U7D_GW}
-      - U7D_DIR=${U7D_DIR}
-      - UDPXY=${UDPXY}
-    devices:
-      - /dev/dri:/dev/dri
-    cpu_shares: 2048
-    cpus: 2
-    mem_limit: 1gb
-    memswap_limit: 1gb
-    healthcheck:
-      test: ping -c 1 -W 1 www-60.svc.imagenio.telefonica.net | grep -q '172.26.22.23' && nc -vz ${SANIC_HOST} 8888
-      interval: 30s
-      timeout: 5s
-      retries: 3
+      - UDPXY=http://192.168.1.1:4022/rtp/
+    # - MAC_IPTV_U7D=${MAC_IPTV_U7D}
+    # - MAC_MOVISTAR_U7D=${MAC_MOVISTAR_U7D}
+    # - SANIC_HOST=${SANIC_HOST}
+    # - SANIC_PORT=${SANIC_PORT}
+    # - SANIC_EPG_HOST=${SANIC_EPG_HOST}
+    # - SANIC_EPG_PORT=${SANIC_EPG_PORT}
+    # - IPTV_GW=${IPTV_GW}
+    # - U7D_GW=${U7D_GW}
+    # - U7D_DIR=${U7D_DIR}
+    # devices:
+    #   - /dev/dri:/dev/dri
+    # cpu_shares: 2048
+    # cpus: 3
+    # mem_limit: 1gb
+    # memswap_limit: 1gb
+    # healthcheck:
+    #   test: ping -c 1 -W 1 www-60.svc.imagenio.telefonica.net | grep -q '172.26.22.23' && nc -vz ${SANIC_HOST} 8888
+    #   interval: 30s
+    #   timeout: 5s
+    #   retries: 3
 
-networks:
-  iptv:
-    driver: macvlan
-    driver_opts:
-      parent: eth0.2
-    ipam:
-      config:
-         - subnet: ${IPTV_NET}
-  tvlan:
-    driver: bridge
-    ipam:
-      driver: default
-      config:
-        - subnet: ${SUBNET_TVLAN}
-    driver_opts:
-      com.docker.network.bridge.name: br-tvlan
+# networks:
+#   iptv:
+#     driver: macvlan
+#     driver_opts:
+#       parent: eth0.2
+#     ipam:
+#       config:
+#          - subnet: ${IPTV_NET}
+#   tvlan:
+#     driver: bridge
+#     ipam:
+#       driver: default
+#       config:
+#         - subnet: ${U7D_NET}
+#     driver_opts:
+#       com.docker.network.bridge.name: br-tvlan
 
 # vim: et ci pi sts=2 sw=2 ts=2

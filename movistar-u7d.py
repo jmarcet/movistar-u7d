@@ -16,6 +16,7 @@ from sanic.log import LOGGING_CONFIG_DEFAULTS
 HOME = os.getenv('HOME', '/home')
 SANIC_HOST = os.getenv('SANIC_HOST', '127.0.0.1')
 SANIC_PORT = int(os.getenv('SANIC_PORT', '8888'))
+SANIC_THREADS = int(os.getenv('SANIC_THREADS', '3'))
 SANIC_EPG_HOST = os.getenv('SANIC_EPG_HOST', '127.0.0.1')
 SANIC_EPG_PORT = int(os.getenv('SANIC_EPG_PORT', '8889'))
 UDPXY = os.getenv('UDPXY', 'http://192.168.137.1:4022/rtp')
@@ -52,7 +53,7 @@ async def notify_server_start(app, loop):
 async def notify_server_stop(app, loop):
     log.info('after_server_stop killing u7d.py')
     p = await asyncio.create_subprocess_exec('/usr/bin/pkill', '-INT',
-                                             '-f', '/app/u7d.py .+ -p ')
+                                             '-f', 'u7d.py .+ -p ')
     await p.wait()
 
 
@@ -216,4 +217,4 @@ if __name__ == '__main__':
             access_log=False,
             auto_reload=True,
             debug=False,
-            workers=3)
+            workers=SANIC_THREADS)

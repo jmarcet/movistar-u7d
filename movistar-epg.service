@@ -1,0 +1,13 @@
+[Unit]
+Description=Movistar U7D - EPG State service
+After=network.target
+
+[Service]
+Type=simple
+# Environment=HOME=/home
+# Environment=SANIC_EPG_HOST=127.0.0.1
+# Environment=SANIC_EPG_PORT=8889
+ExecStart=movistar-epg.py
+
+[Install]
+WantedBy=multi-user.target
