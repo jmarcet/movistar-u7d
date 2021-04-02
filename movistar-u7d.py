@@ -4,6 +4,7 @@ import aiohttp
 import asyncio
 import asyncio_dgram
 import os
+import re
 import signal
 import socket
 
@@ -128,87 +129,88 @@ async def handle_channel(request, channel_id):
 @app.get('/<channel_id>/<url>')
 async def handle_flussonic(request, channel_id, url):
     log.info(f'[{request.ip}] {request.method} {request.raw_url.decode()}')
-    if url.startswith('video-'):
+    x = re.search(r"\w*-?(\d{10})-?(\d+){0,1}\.\w+", url)
+    if not x or not x.groups():
+        return response.json({'status': 'URL not understood'}, 404)
+
+    try:
+        program_id = None
+        epg_url = f'{SANIC_EPG_URL}/get_program_id/{channel_id}/{url}'
+        async with SESSION.get(epg_url) as r:
+            if r.status != 200:
+                return response.json({'status': f'{url} not found'}, 404)
+            r = await r.json()
+            channel_id = r['channel_id']
+            program_id = r['program_id']
+            offset = r['offset']
+    except Exception as ex:
+        log.error(f'[{request.ip}]',
+                  f"aiohttp.ClientSession().get('{epg_url}')",
+                  f'{repr(ex)}')
+
+    if not program_id:
+        return response.json({'status': f'{channel_id}/{url} not found'}, 404)
+
+    with closing(socket.socket(socket.AF_INET, socket.SOCK_DGRAM)) as s:
+        s.bind(('', 0))
+        s.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+        client_port = s.getsockname()[1]
+
+    cmd = ('/app/u7d.py', channel_id, program_id, '-s', offset, '-p', str(client_port))
+    duration = int(x.groups()[1]) if x.groups()[1] else 0
+    remaining = str(duration - int(offset))
+    u7d_msg = '%s %s [%s/%d]' % (channel_id, program_id, offset, duration)
+    if record := request.query_args and request.query_args[0][0] == 'record':
+        record_time = request.query_args[0][1] \
+            if request.query_args[0][1].isnumeric() else remaining
+        cmd += ('-t', record_time, '-w')
+        log.info(f'[{request.ip}] '
+                 'Record: '
+                 f'[{record_time}]s '
+                 '{u7d_msg}')
+    cmd += ('-i', request.ip)
+    u7d = await asyncio.create_subprocess_exec(*cmd, stdout=asyncio.subprocess.PIPE)
+    try:
+        await asyncio.wait_for(u7d.wait(), 0.5)
+        msg = (await u7d.stdout.readline()).decode().rstrip()
+        log.info(f'NOT_AVAILABLE: {msg} {u7d_msg}')
+        await SESSION.get(f'{SANIC_EPG_URL}/reload_epg')
+        return response.json({'status': 'NOT_AVAILABLE',
+                              'msg': msg,
+                              'cmd': u7d_msg}, 404)
+    except asyncio.exceptions.TimeoutError:
+        pass
+
+    if record:
+        return response.json({'status': 'OK',
+                              'channel_id': channel_id,
+                              'program_id': program_id,
+                              'offset': offset,
+                              'time': record_time})
+
+    log.info(f'[{request.ip}] Start: {u7d_msg}')
+    with closing(await asyncio_dgram.bind((host, client_port))) as stream:
+        timedout = False
+        respond = await request.respond(content_type=MIME)
         try:
-            program_id = None
-            epg_url = f'{SANIC_EPG_URL}/get_program_id/{channel_id}/{url}'
-            async with SESSION.get(epg_url) as r:
-                if r.status != 200:
-                    return response.json({'status': f'{url} not found'}, 404)
-                r = await r.json()
-                channel_id = r['channel_id']
-                program_id = r['program_id']
-                offset = r['offset']
+            await respond.send((await asyncio.wait_for(stream.recv(), 1))[0])
+            while True:
+                await respond.send((await asyncio.wait_for(stream.recv(), 0.25))[0])
+            return respond
         except Exception as ex:
-            log.error(f'[{request.ip}]',
-                      f"aiohttp.ClientSession().get('{epg_url}')",
-                      f'{repr(ex)}')
-
-        if not program_id:
-            return response.json({'status': f'{channel_id}/{url} not found'}, 404)
-
-        with closing(socket.socket(socket.AF_INET, socket.SOCK_DGRAM)) as s:
-            s.bind(('', 0))
-            s.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
-            client_port = s.getsockname()[1]
-
-        cmd = ('/app/u7d.py', channel_id, program_id, '-s', offset, '-p', str(client_port))
-        duration = int(url.split('-')[2].split('.')[0])
-        remaining = str(duration - int(offset))
-        u7d_msg = '%s %s [%s/%d]' % (channel_id, program_id, offset, duration)
-        if record := request.query_args and request.query_args[0][0] == 'record':
-            record_time = request.query_args[0][1] \
-                if request.query_args[0][1].isnumeric() else remaining
-            cmd += ('-t', record_time, '-w')
-            log.info(f'[{request.ip}] '
-                     'Record: '
-                     f'[{record_time}]s '
-                     '{u7d_msg}')
-        cmd += ('-i', request.ip)
-        u7d = await asyncio.create_subprocess_exec(*cmd, stdout=asyncio.subprocess.PIPE)
-        try:
-            await asyncio.wait_for(u7d.wait(), 0.5)
-            msg = (await u7d.stdout.readline()).decode().rstrip()
-            log.info(f'NOT_AVAILABLE: {msg} {u7d_msg}')
-            await SESSION.get(f'{SANIC_EPG_URL}/reload_epg')
-            return response.json({'status': 'NOT_AVAILABLE',
-                                  'msg': msg,
-                                  'cmd': u7d_msg}, 404)
-        except asyncio.exceptions.TimeoutError:
-            pass
-
-        if record:
-            return response.json({'status': 'OK',
-                                  'channel_id': channel_id,
-                                  'program_id': program_id,
-                                  'offset': offset,
-                                  'time': record_time})
-
-        log.info(f'[{request.ip}] Start: {u7d_msg}')
-        with closing(await asyncio_dgram.bind((host, client_port))) as stream:
-            timedout = False
-            respond = await request.respond(content_type=MIME)
+            log.warning(f'[{request.ip}] {repr(ex)}')
+            if isinstance(ex, TimeoutError):
+                timedout = True
+        finally:
+            log.info(f'[{request.ip}] End: {u7d_msg}')
             try:
-                await respond.send((await asyncio.wait_for(stream.recv(), 1))[0])
-                while True:
-                    await respond.send((await asyncio.wait_for(stream.recv(), 0.25))[0])
-                return respond
+                if timedout:
+                    await respond.send(end_stream=True)
+                else:
+                    u7d.send_signal(signal.SIGINT)
             except Exception as ex:
                 log.warning(f'[{request.ip}] {repr(ex)}')
-                if isinstance(ex, TimeoutError):
-                    timedout = True
-            finally:
-                log.info(f'[{request.ip}] End: {u7d_msg}')
-                try:
-                    if timedout:
-                        await respond.send(end_stream=True)
-                    else:
-                        u7d.send_signal(signal.SIGINT)
-                except Exception as ex:
-                    log.warning(f'[{request.ip}] {repr(ex)}')
 
-    else:
-        return response.json({'status': 'URL not understood'}, 404)
 
 
 if __name__ == '__main__':

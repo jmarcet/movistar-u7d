@@ -3,6 +3,7 @@
 import asyncio
 import json
 import os
+import re
 
 from sanic import Sanic, response
 from sanic.compat import open_async
@@ -105,8 +106,12 @@ async def handle_get_channel_address(request, channel_id):
 
 @app.get('/get_program_id/<channel_id>/<url>')
 async def handle_get_program_id(request, channel_id, url):
-    start = url.split('-')[1]
-    duration = url.split('-')[2].split('.')[0]
+    x = re.search(r"\w*-?(\d{10})-?(\d+){0,1}\.\w+", url)
+    if not x or not x.groups():
+        return response.json({'status': f'{channel_id}/{url} not found'}, 404)
+
+    start = x.groups()[0]
+    duration = int(x.groups()[1]) if x.groups()[1] else 0
     last_event = program_id = None
     offset = '0'
 
