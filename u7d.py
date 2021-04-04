@@ -14,9 +14,9 @@ from contextlib import closing
 from collections import namedtuple
 
 
-SANIC_EPG_HOST = os.environ.get('SANIC_EPG_HOST') or '127.0.0.1'
-SANIC_EPG_PORT = int(os.environ.get('SANIC_EPG_PORT')) or 8889
-STORAGE = os.environ.get('U7D_DIR') or '/tmp'
+SANIC_EPG_HOST = os.getenv('SANIC_EPG_HOST', '127.0.0.1')
+SANIC_EPG_PORT = int(os.getenv('SANIC_EPG_PORT', '8889'))
+STORAGE = os.getenv('U7D_DIR', '/tmp')
 
 MVTV_URL = 'http://www-60.svc.imagenio.telefonica.net:2001/appserver/mvtv.do'
 SANIC_EPG_URL = f'http://{SANIC_EPG_HOST}:{SANIC_EPG_PORT}'
