@@ -831,7 +831,6 @@ class MulticastIPTV:
                 cached_epg[channel] = {}
             else:
                 clean_channel_epg = {}
-                new_timestamp = int(sorted(new_epg[channel])[0])
                 for timestamp in sorted(cached_epg[channel]):
                     timestamp = int(timestamp)
                     if timestamp < deadline:
@@ -839,10 +838,6 @@ class MulticastIPTV:
                         logger.debug(f'[{channel}] Caducando evento de '
                                      f'[{time.ctime(timestamp)}]')
                         continue
-                    elif not timestamp < new_timestamp:
-                        logger.debug(f'[{channel}] Limpiando caché desde '
-                                     f'[{time.ctime(timestamp)}]')
-                        break
                     # here we force cast to str since cache gives us str
                     # and fresh epg has ints
                     clean_channel_epg[timestamp] = cached_epg[channel][str(timestamp)]
