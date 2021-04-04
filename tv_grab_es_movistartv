@@ -42,6 +42,15 @@ from logging.handlers import RotatingFileHandler
 from threading import Thread
 from xml.sax.saxutils import unescape
 
+CACHED_TIME = 8 * 24 * 60 * 60
+EPG_CHANNELS = ['1', '2', '3', '4','5', '6', '477', '578', '582', '597', '657',
+                '663', '717', '743', '744', '745', '844', '884', '934', '935',
+                '1221', '2843', '2863', '3184', '3186', '3325', '3443', '3603', '4911']
+LAN_IP = os.getenv('LAN_IP', '192.168.1.1')
+SANIC_PORT = int(os.getenv('SANICl_PORT', '8888'))
+sanic = f'{LAN_IP}:{SANIC_PORT}'
+
+
 demarcations = {
     'Andalucia': 15,
     'Aragon': 34,
@@ -66,13 +75,6 @@ default_demarcation = demarcations['Galicia']
 
 app_dir = os.path.join(os.environ.get('HOME'), '.xmltv')
 use_multithread = True
-CACHED_TIME = 8 * 24 * 60 * 60
-EPG_CHANNELS = ['1', '2', '3', '4','5', '6', '477', '578', '582', '597', '657',
-                '663', '717', '743', '744', '745', '844', '884', '934', '935',
-                '1221', '2843', '2863', '3184', '3186', '3325', '3443', '3603', '4911']
-
-
-sanic = '192.168.137.1:8888'
 
 log_file = 'tv_grab_es_movistartv.log'
 log_level = logging.DEBUG
