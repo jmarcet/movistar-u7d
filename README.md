@@ -83,7 +83,7 @@ El resultado son dos microservicios escritos en python asíncrono, con [Sanic](h
 
  - `tv_grab_es_movistartv`: encargado de generar la lista de canales y la programación, así como de guardar una caché de los últimos 8 días de programas, de manera que necesita ser ejecutado de forma recurrente (cada 2h). Esta información es imprescindible para que todo el proceso funcione bien. Tanto TiviMate como cualquier repdoductor con catchup flussonic sólo se preocupan por canal y un timestamp, que define un momento preciso en el tiempo. El proxy es el encargado de encontrar qué programa de la EPG corresponde a ese canal en ese momento y negociar con Movistar la reproducción.
 
- - `env-example`: fichero con variables de entorno. Como mínimo fijaos en `LAN_IP` que será la IP que incluirán tanto la lista de canales como la guía de programación; el resto pueden funcionar son sus valores por defecto. Con docker-compsoe lo copiamos a `.env` y hacemos los cambios necesarios.
+ - `env-example`: fichero con variables de entorno. Como mínimo fijaos en `LAN_IP` que será la IP que incluirán tanto la lista de canales como la guía de programación, y en `UDPXY` que será la url donde tengáis el `udpxy`; el resto pueden funcionar son sus valores por defecto. Con docker-compsoe lo copiamos a `.env` y hacemos los cambios necesarios.
 
 Extras para la EPG:
 
@@ -164,6 +164,8 @@ systemctl start movistar-u7d
  - Sin systemd, tendremos que lanzar directamente los dos `movistar-u7d.py` y `movistar-epg.py`.
 
  - En cualquiera de los casos, no debemos olvidarnos de mantener la EPG acutalizada, usando `updateguide.sh` de forma recurrente.
+
+Tened en cuenta que `tv_grab_es_movistartv` creará la lista de canales y la guía EPG apuntando a las variables de entorno `http://${LAN_IP}:${SANIC_PORT}`
 
 
 Instalación en el propio router con docker-compose
