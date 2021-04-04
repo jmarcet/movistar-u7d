@@ -20,7 +20,7 @@ SANIC_PORT = int(os.getenv('SANIC_PORT', '8888'))
 SANIC_THREADS = int(os.getenv('SANIC_THREADS', '3'))
 SANIC_EPG_HOST = os.getenv('SANIC_EPG_HOST', '127.0.0.1')
 SANIC_EPG_PORT = int(os.getenv('SANIC_EPG_PORT', '8889'))
-UDPXY = os.getenv('UDPXY', 'http://192.168.137.1:4022/rtp')
+UDPXY = os.getenv('UDPXY', 'http://192.168.1.1:4022/rtp')
 
 GUIDE = os.path.join(HOME, 'guide.xml')
 CHANNELS = os.path.join(HOME, 'MovistarTV.m3u')
