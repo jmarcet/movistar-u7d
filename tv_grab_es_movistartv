@@ -474,14 +474,14 @@ class MovistarTV:
 
     def get_epg_extended_info(self, pid, channel_id):
         try:
-            #logger.debug('Descargando info extendida: %s' % pid)
+            # logger.debug('Descargando info extendida: %s' % pid)
             data = cache.load_epg_extended_info(pid)
         except Exception as ex:
             logger.error(f'{repr(ex)}')
             pass
         try:
             if not data:
-                #logger.debug('Descargando info extendida: %s' % pid)
+                # logger.debug('Descargando info extendida: %s' % pid)
                 print('.', flush=True, end='')
                 data = self.__get_service_data(f'epgInfov2&productID={pid}'
                                                f'&channelID={channel_id}'
@@ -834,10 +834,12 @@ class MulticastIPTV:
                     timestamp = int(timestamp)
                     if timestamp < deadline:
                         expired += 1
-                        logger.debug(f'[{channel}] Caducando evento de [{time.ctime(timestamp)}]')
+                        logger.debug(f'[{channel}] Caducando evento de '
+                                     f'[{time.ctime(timestamp)}]')
                         continue
                     elif not timestamp < new_timestamp:
-                        logger.debug(f'[{channel}] Limpiando caché desde [{time.ctime(timestamp)}]')
+                        logger.debug(f'[{channel}] Limpiando caché desde '
+                                     f'[{time.ctime(timestamp)}]')
                         break
                     # here we force cast to str since cache gives us str
                     # and fresh epg has ints
@@ -1158,7 +1160,8 @@ class XMLTV:
 
     def __generate_m3u(self):
         m3u = ('#EXTM3U name="MovistarTV" catchup="flussonic" catchup-days=8 '
-               'dlna_extras=mpeg_ps_pal type=ts url-tvg="http://%s/guide.xml"\n' % sanic)
+               'dlna_extras=mpeg_ps_pal type=ts url-tvg="http://%s/guide.xml"\n'
+               % sanic)
         services = self.__get_client_channels()
         channels = sorted(services, key=lambda key: int(services[key]))
         first = channels[0]
@@ -1168,9 +1171,10 @@ class XMLTV:
             if channel_id in self.__channels:
                 channel_name = self.__channels[channel_id]['name']
                 channel_key = channel_id
-                channel_ip = self.__channels[channel_id]['address']
-                channel_port = str(self.__channels[channel_id]['port'])
-                channel_tag = 'IPTV - TDT Movistar.es' #self.__channels[channel_id]['genre']
+                # channel_ip = self.__channels[channel_id]['address']
+                # channel_port = str(self.__channels[channel_id]['port'])
+                channel_tag = 'IPTV - TDT Movistar.es'
+                # self.__channels[channel_id]['genre']
                 channel_number = services[channel_id]
                 if channel_number == '0':
                     channel_number = '999'
@@ -1189,8 +1193,8 @@ class XMLTV:
                 m3u += f'tvg-id="{channel_id}.movistar.tv" '
                 m3u += f'group-title="{channel_tag}" '
                 m3u += f'logo="{channel_logo}"'
-                #m3u += f'catchup-source="http://{sanic}/{channel_id}'
-                #m3u += '/video-{timestamp}-{duration}.m3u8"'
+                # m3u += f'catchup-source="http://{sanic}/{channel_id}'
+                # m3u += '/video-{timestamp}-{duration}.m3u8"'
                 m3u += f',{channel_name}\n'
                 m3u += f'http://{sanic}/{channel_id}/live\n'
         return m3u
