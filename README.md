@@ -6,21 +6,23 @@ Movistar IPTV U7D - Flussonic catchup proxy
 Uso
 ---
 
-Una vez instalado el servicio, tendremos las siguientes URLs disponibles, donde 192.168.1.1 es la ip donde tengamos `movistar-u7d.py` funcionando:
+Una vez instalado el servicio, tendremos las siguientes URLs disponibles, donde 192.168.1.1 será la IP donde sea accesible el servicio y corresponde al valor de la variable de entorno `LAN_IP`:
 
  - Canales: `http://192.168.1.1:8888/channels.m3u` o `http://192.168.1.1:8888/MovistarTV.m3u`
 
  - Guía de programación (EPG): `http://192.168.1.1:8888/guide.xml`
 
-Con configurar esas dos cosas debería ser suficiente. Aseguráos de que el TiviMate (o cliente IPTV con catchup Flussonic) guarda al menos 8 días de historial del EPG.
+Con configurar esas dos cosas debería ser suficiente. Aseguráos de que el cliente IPTV (con catchup Flussonic) guarda al menos 8 días de historial del EPG.
 
  - Los canales serán accesibles en URLs como: `http://192.168.1.1:8888/{canal}/live`
 
 Donde `canal` es el id del canal según la EPG. Podemos verlos en la lista de canales.
 
- - Se podrá acceder a cualquier instante de los últimos 7 días en `http://192.168.137.1:8888/{canal}/video-{timestamp}-{duracion}.m3u8`
+ - Se podrá acceder a cualquier instante de los últimos 7 días en `http://192.168.137.1:8888/{canal}/{timestamp}.{extension}`
 
-El timestamp es en el que queremos iniciar la reproducción, la duración no se usa, puede ser **0**, y el **.m3u8** puede tener cualquier valor. VLC necesita usarse con **.mpeg** por ejemplo, o no reproduce bien los streams.
+Opcionalmente, el timestamp puede ir precedido de una palabra y/o seguido de una duración en segundos: `http://192.168.137.1:8888/{canal}/video-{timestamp}-{duracion}.{extension}`. Esto ha cambiado para tener mayor compatibilidad con diferentes clientes.
+
+El timestamp es en el que queremos iniciar la reproducción, la duración no se usa, puede ser **0**, y la extensión puede tener cualquier valor. `OTT Nagivator IPTV` y `TiviMate` usan **.m3u8** mientras VLC necesita que sea **.mpeg** por ejemplo, o no reproduce bien los streams.
 
 
 Qué es y de dónde nace
@@ -65,6 +67,8 @@ El resultado es algo así (el funcionamiento real es fluido todo el tiempo, el v
 
  - [TiviMate_Movistar_20210320_U7D-2.mp4](https://openwrt.marcet.info/u7d/TiviMate_Movistar_20210320_U7D-2.mp4)
 
+Para Android puro, como móviles y tablets, es compatible con [OTT Navigator IPTV](https://play.google.com/store/apps/details?id=studio.scillarium.ottnavigator)
+
 
 Componentes
 -----------
@@ -79,6 +83,8 @@ El resultado son dos microservicios escritos en python asíncrono, con [Sanic](h
 
  - `tv_grab_es_movistartv`: encargado de generar la lista de canales y la programación, así como de guardar una caché de los últimos 8 días de programas, de manera que necesita ser ejecutado de forma recurrente (cada 2h). Esta información es imprescindible para que todo el proceso funcione bien. Tanto TiviMate como cualquier repdoductor con catchup flussonic sólo se preocupan por canal y un timestamp, que define un momento preciso en el tiempo. El proxy es el encargado de encontrar qué programa de la EPG corresponde a ese canal en ese momento y negociar con Movistar la reproducción.
 
+ - `env-example`: fichero con variables de entorno. Como mínimo fijaos en `LAN_IP` que será la IP que incluirán tanto la lista de canales como la guía de programación; el resto pueden funcionar son sus valores por defecto. Con docker-compsoe lo copiamos a `.env` y hacemos los cambios necesarios.
+
 Extras para la EPG:
 
  - `updateguide.sh`: script para ejecutar de forma recurrente, se asegurará de mantener la EPG y su caché al día
@@ -90,10 +96,6 @@ Para Systemd:
  - `movistar-u7d.service`: script para el microservicio principal
 
  - `movistar-epg.service`: script para el microservicio que mantiene el estado (la EPG)
-
-Para docker-compose:
-
- - `env-example`: fichero con variables de entorno. Lo copiamos a `.env` y hacemos los cambios necesarios
 
 
 Observaciones
