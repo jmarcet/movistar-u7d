@@ -26,7 +26,8 @@ GUIDE = os.path.join(HOME, 'guide.xml')
 CHANNELS = os.path.join(HOME, 'MovistarTV.m3u')
 IMAGENIO_URL = ('http://html5-static.svc.imagenio.telefonica.net'
                 '/appclientv/nux/incoming/epg')
-MIME = 'video/mp4;audio/mp3'
+MIME_MP4 = 'video/mp4;audio/mp3'
+MIME_TS = 'video/MP2T;audio/mp3'
 SANIC_EPG_URL = f'http://{SANIC_EPG_HOST}:{SANIC_EPG_PORT}'
 SESSION = None
 SESSION_LOGOS = None
@@ -120,7 +121,7 @@ async def handle_channel(request, channel_id):
             port = r['port']
         log.info(f'[{request.ip}] {request.method} '
                  f'{request.raw_url.decode()} => {UDPXY}/{address}:{port}')
-        return response.redirect(f'{UDPXY}/{address}:{port}')
+        return response.redirect(f'{UDPXY}/{address}:{port}', content_type=MIME_TS)
     except Exception as ex:
         log.error(f'[{request.ip}]',
                   f"aiohttp.ClientSession().get('{epg_url}')",
@@ -192,7 +193,7 @@ async def handle_flussonic(request, channel_id, url):
     log.info(f'[{request.ip}] Start: {u7d_msg}')
     with closing(await asyncio_dgram.bind((host, client_port))) as stream:
         timedout = False
-        respond = await request.respond(content_type=MIME)
+        respond = await request.respond(content_type=MIME_MP4)
         try:
             await respond.send((await asyncio.wait_for(stream.recv(), 1))[0])
             while True:
