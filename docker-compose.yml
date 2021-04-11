@@ -22,7 +22,8 @@ services:
     # - ${HOME}:/home
     # - ${U7D_DIR}:${U7D_DIR}
     environment:
-      - UDPXY=http://192.168.1.1:4022/rtp/
+      - LAN_IP=${LAN_IP}
+      - UDPXY=${UDPXY}
     # - MAC_IPTV_U7D=${MAC_IPTV_U7D}
     # - MAC_MOVISTAR_U7D=${MAC_MOVISTAR_U7D}
     # - SANIC_HOST=${SANIC_HOST}
