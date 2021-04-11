@@ -825,6 +825,8 @@ class MulticastIPTV:
             logger.info('Sin caché de EPG guardada')
             return new_epg
 
+        logger.debug(f'Fecha de caducidad: [{time.ctime(deadline)}]')
+
         expired = 0
         for channel in new_epg:
             if channel not in cached_epg:
@@ -835,8 +837,8 @@ class MulticastIPTV:
                     timestamp = int(timestamp)
                     if timestamp < deadline:
                         expired += 1
-                        logger.debug(f'[{channel}] Caducando evento de '
-                                     f'[{time.ctime(timestamp)}]')
+                        logger.debug(f'[{channel}] Evento de '
+                                     f'[{time.ctime(timestamp)}] caducado')
                         continue
                     # here we force cast to str since cache gives us str
                     # and fresh epg has ints

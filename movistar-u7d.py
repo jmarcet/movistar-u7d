@@ -118,7 +118,8 @@ async def handle_channel(request, channel_id):
             channel_id = r['channel_id']
             address = r['address']
             port = r['port']
-        log.info(f'[{request.ip}] {request.method} {request.raw_url.decode()} => {UDPXY}/{address}:{port}')
+        log.info(f'[{request.ip}] {request.method} '
+                 f'{request.raw_url.decode()} => {UDPXY}/{address}:{port}')
         return response.redirect(f'{UDPXY}/{address}:{port}')
     except Exception as ex:
         log.error(f'[{request.ip}]',
