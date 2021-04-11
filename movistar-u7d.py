@@ -43,6 +43,14 @@ app.config.update({'KEEP_ALIVE': False})
 host = socket.gethostbyname(socket.gethostname())
 
 
+def get_free_port():
+    with closing(socket.socket(socket.AF_INET, socket.SOCK_DGRAM)) as s:
+        s.bind(('', 0))
+        s.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+        client_port = s.getsockname()[1]
+    return client_port
+
+
 @app.listener('after_server_start')
 async def notify_server_start(app, loop):
     log.info('after_server_start')
@@ -151,11 +159,7 @@ async def handle_flussonic(request, channel_id, url):
     if not program_id:
         return response.json({'status': f'{channel_id}/{url} not found'}, 404)
 
-    with closing(socket.socket(socket.AF_INET, socket.SOCK_DGRAM)) as s:
-        s.bind(('', 0))
-        s.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
-        client_port = s.getsockname()[1]
-
+    client_port = get_free_port()
     cmd = ('/app/u7d.py', channel_id, program_id, '-s', offset, '-p', str(client_port))
     duration = int(x.groups()[1]) if x.groups()[1] else 0
     remaining = str(duration - int(offset))
