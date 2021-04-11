@@ -26,7 +26,7 @@ GUIDE = os.path.join(HOME, 'guide.xml')
 CHANNELS = os.path.join(HOME, 'MovistarTV.m3u')
 IMAGENIO_URL = ('http://html5-static.svc.imagenio.telefonica.net'
                 '/appclientv/nux/incoming/epg')
-MIME = 'video/MP2T'
+MIME = 'video/mp4;audio/mp3'
 SANIC_EPG_URL = f'http://{SANIC_EPG_HOST}:{SANIC_EPG_PORT}'
 SESSION = None
 SESSION_LOGOS = None
