@@ -22,7 +22,7 @@ MVTV_URL = 'http://www-60.svc.imagenio.telefonica.net:2001/appserver/mvtv.do'
 SANIC_EPG_URL = f'http://{SANIC_EPG_HOST}:{SANIC_EPG_PORT}'
 Request = namedtuple('Request', ['request', 'response'])
 Response = namedtuple('Response', ['version', 'status', 'url', 'headers', 'body'])
-VID_EXT = '.ts'
+VID_EXT = '.mp4'
 UA = 'MICA-IP-STB'
 # WIDTH = 134
 
