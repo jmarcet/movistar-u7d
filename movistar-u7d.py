@@ -7,6 +7,7 @@ import os
 import re
 import signal
 import socket
+import struct
 
 from contextlib import closing
 from sanic import Sanic, response
@@ -20,7 +21,6 @@ SANIC_PORT = int(os.getenv('SANIC_PORT', '8888'))
 SANIC_THREADS = int(os.getenv('SANIC_THREADS', '3'))
 SANIC_EPG_HOST = os.getenv('SANIC_EPG_HOST', '127.0.0.1')
 SANIC_EPG_PORT = int(os.getenv('SANIC_EPG_PORT', '8889'))
-UDPXY = os.getenv('UDPXY', 'http://192.168.1.1:4022/rtp')
 
 GUIDE = os.path.join(HOME, 'guide.xml')
 CHANNELS = os.path.join(HOME, 'MovistarTV.m3u')
@@ -31,7 +31,6 @@ MIME_TS = 'video/MP2T;audio/mp3'
 SANIC_EPG_URL = f'http://{SANIC_EPG_HOST}:{SANIC_EPG_PORT}'
 SESSION = None
 SESSION_LOGOS = None
-UDPXY = UDPXY[:-1] if UDPXY.endswith('/') else UDPXY
 YEAR_SECONDS = 365 * 24 * 60 * 60
 
 LOG_SETTINGS = LOGGING_CONFIG_DEFAULTS
@@ -125,10 +124,26 @@ async def handle_channel(request, channel_id):
                 return response.json({'status': f'{channel_id} not found'}, 404)
             r = await r.json()
             address = r['address']
-            port = r['port']
-        log.info(f'[{request.ip}] {request.method} '
-                 f'{request.raw_url.decode()} => {UDPXY}/{address}:{port}')
-        return response.redirect(f'{UDPXY}/{address}:{port}', content_type=MIME_TS)
+            name = r['name']
+            port = int(r['port'])
+        with closing(socket.socket(socket.AF_INET, socket.SOCK_DGRAM, socket.IPPROTO_UDP)) as sock:
+            sock.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+            sock.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEPORT, 1)
+            sock.bind((address, port))
+            mreq = struct.pack('4sl', socket.inet_aton(address), socket.INADDR_ANY)
+            #sock.setsockopt(socket.SOL_SOCKET, socket.SO_RCVBUF, buf_size)
+            sock.setsockopt(socket.IPPROTO_IP, socket.IP_ADD_MEMBERSHIP, mreq)
+            respond = await request.respond(content_type=MIME_TS)
+            log.info(f'[{request.ip}] {request.method} '
+                     f'{request.raw_url.decode()} => Playing "{name}"')
+            with closing(await asyncio_dgram.from_socket(sock)) as stream:
+                try:
+                    while True:
+                        data = ((await stream.recv())[0])[28:]
+                        await respond.send(data)
+                finally:
+                    log.info(f'[{request.ip}] {request.method} '
+                             f'{request.raw_url.decode()} => Stopped "{name}"')
     except Exception as ex:
         log.error(f'[{request.ip}]',
                   f"aiohttp.ClientSession().get('{epg_url}')",

@@ -83,7 +83,7 @@ El resultado son dos microservicios escritos en python asíncrono, con [Sanic](h
 
  - `tv_grab_es_movistartv`: encargado de generar la lista de canales y la programación, así como de guardar una caché de los últimos 8 días de programas, de manera que necesita ser ejecutado de forma recurrente (cada 2h). Esta información es imprescindible para que todo el proceso funcione bien. Tanto TiviMate como cualquier repdoductor con catchup flussonic sólo se preocupan por canal y un timestamp, que define un momento preciso en el tiempo. El proxy es el encargado de encontrar qué programa de la EPG corresponde a ese canal en ese momento y negociar con Movistar la reproducción.
 
- - `env-example`: fichero con variables de entorno. Como mínimo fijaos en `LAN_IP` que será la IP que incluirán tanto la lista de canales como la guía de programación, y en `UDPXY` que será la url donde tengáis el `udpxy`; el resto pueden funcionar son sus valores por defecto. Con docker-compsoe lo copiamos a `.env` y hacemos los cambios necesarios.
+ - `env-example`: fichero con variables de entorno. Como mínimo fijaos en `LAN_IP` que será la IP que incluirán tanto la lista de canales como la guía de programación, el resto pueden funcionar son sus valores por defecto. Con docker-compsoe lo copiamos a `.env` y hacemos los cambios necesarios.
 
 Extras para la EPG:
 
@@ -108,29 +108,12 @@ Observaciones
 Con este servicio, en lugar de cortarse, se produce una mínima pausa, durante la que se detiene el sonido y la imagen queda congelada. Es durante un mínimo instante de tiempo, un par de segundos, por lo que aunque te das cuenta de que ha habido un cambio de programa, no molesta lo más mínimo. Así puedes ver toda la programación de un canal en diferido, el tiempo que quieras dentro de la última semana, sin más que iniciar la reproducción en el instante deseado.
 
 
-Prerequisitos
--------------
-
- - [udpxy](http://www.udpxy.com/) debe estar configurado para que pueda acceder a los canales de Movistar;
-
-
-Según donde lo ejecutemos:
-
-```
-udpxy -T -S -a eth0 -p 4022 -m eth0 -c 20 -B 7896
-```
-
-```
-udpxy -T -S -a br-lan -p 4022 -m eth0.2 -c 20 -B 7896
-```
-
-
 Instalación
 -----------
 
 Si tenemos una máquina conectada por cable al router, podemos ejecutarlo sin mayores complicaciones.
 
- - Tenemos la opción de utilizar docker y docker-compose. Dentro del container queda casi todo lo necesario salvo el `udpxy`. Tras editar el valor de la variable _UDPXY_ en el compose:
+ - Tenemos la opción de utilizar docker y docker-compose. Dentro del container queda casi todo lo necesario:
 
 ```
 docker-copose up -d
@@ -150,7 +133,7 @@ pip3 install -r requirements.txt
 cp movistar-u7d.py movistar-epg.py tv_grab_es_movistartv u7d.py /usr/local/bin/
 ```
 
- - Si queremos usar systemd, copiamos los `.service` a `/etc/systemd/system`, ajustando al menos la variable de entorno _UDPXY_, que debe ser la URL donde tenemos configurado `udpxy`. Habilitamos los servicios y los iniciamos:
+ - Si queremos usar systemd, copiamos los `.service` a `/etc/systemd/system`, ajustando las variables de entorno que queramos. Habilitamos los servicios y los iniciamos:
 
 ```
 cp *.service /etc/systemd/system/

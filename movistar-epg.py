@@ -99,6 +99,7 @@ async def handle_get_channel_address(request, channel_id):
     if channel_id in _channels:
         return response.json({'status': 'OK',
                               'address': _channels[channel_id]['address'],
+                              'name': _channels[channel_id]['name'],
                               'port': _channels[channel_id]['port']})
 
 

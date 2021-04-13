@@ -10,7 +10,6 @@ Type=simple
 # Environment=SANIC_HOST=0.0.0.0
 # Environment=SANIC_PORT=8888
 # Environment=SANIC_THREADS=3
-Environment=UDPXY=http://192.168.1.1:4022/rtp/
 ExecStart=movistar-u7d.py
 
 [Install]
