@@ -116,7 +116,6 @@ async def handle_channel(request, channel_id):
             if r.status != 200:
                 return response.json({'status': f'{channel_id} not found'}, 404)
             r = await r.json()
-            channel_id = r['channel_id']
             address = r['address']
             port = r['port']
         log.info(f'[{request.ip}] {request.method} '
@@ -142,7 +141,6 @@ async def handle_flussonic(request, channel_id, url):
             if r.status != 200:
                 return response.json({'status': f'{url} not found'}, 404)
             r = await r.json()
-            channel_id = r['channel_id']
             program_id = r['program_id']
             offset = r['offset']
     except Exception as ex:
@@ -198,7 +196,6 @@ async def handle_flussonic(request, channel_id, url):
             await respond.send((await asyncio.wait_for(stream.recv(), 1))[0])
             while True:
                 await respond.send((await asyncio.wait_for(stream.recv(), 0.25))[0])
-            return respond
         except Exception as ex:
             log.warning(f'[{request.ip}] {repr(ex)}')
             if isinstance(ex, TimeoutError):

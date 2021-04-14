@@ -98,7 +98,6 @@ async def handle_get_channel_address(request, channel_id):
     log.debug(f'Searching Channel freqsuency: {channel_id}')
     if channel_id in _channels:
         return response.json({'status': 'OK',
-                              'channel_id': channel_id,
                               'address': _channels[channel_id]['address'],
                               'port': _channels[channel_id]['port']})
 
