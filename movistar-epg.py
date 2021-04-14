@@ -118,6 +118,7 @@ async def handle_get_program_id(request, channel_id, url):
     if channel_id in _channels:
         channel_key = _channels[channel_id]['replacement'] \
             if 'replacement' in _channels[channel_id] else channel_id
+        channel_name = _channels[channel_id]['name']
         if channel_key in _epgdata:
             if start in _epgdata[channel_key]:
                 program_id = str(_epgdata[channel_key][start]['pid'])
@@ -138,7 +139,7 @@ async def handle_get_program_id(request, channel_id, url):
                     end = str(_epgdata[channel_key][start]['end'])
                     duration = str(int(end) - int(start))
                     full_title = _epgdata[channel_key][start]['full_title']
-            log.info(f'"{full_title}" '
+            log.info(f'"{channel_name}" - "{full_title}" '
                      f'{channel_id}/{channel_key} '
                      f'{program_id} '
                      f'{start} '

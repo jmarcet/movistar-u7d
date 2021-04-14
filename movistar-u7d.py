@@ -179,14 +179,13 @@ async def handle_flussonic(request, channel_id, url):
     duration = int(x.groups()[1]) if x.groups()[1] else 0
     remaining = str(duration - int(offset))
     u7d_msg = '%s %s [%s/%d]' % (channel_id, program_id, offset, duration)
+
     if record := request.query_args and request.query_args[0][0] == 'record':
         record_time = request.query_args[0][1] \
             if request.query_args[0][1].isnumeric() else remaining
         cmd += ('-t', record_time, '-w')
-        log.info(f'[{request.ip}] '
-                 'Record: '
-                 f'[{record_time}]s '
-                 '{u7d_msg}')
+        log.info(f'[{request.ip}] Record: [{record_time}]s {u7d_msg}')
+
     cmd += ('-i', request.ip)
     u7d = await asyncio.create_subprocess_exec(*cmd, stdout=asyncio.subprocess.PIPE)
     try:
