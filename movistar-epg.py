@@ -147,7 +147,6 @@ async def handle_get_program_id(request, channel_id, url):
 
     if program_id:
         return response.json({'status': 'OK',
-                              'channel_id': channel_id,
                               'program_id': program_id,
                               'offset': offset})
     else:
