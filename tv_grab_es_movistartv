@@ -837,8 +837,6 @@ class MulticastIPTV:
                     timestamp = int(timestamp)
                     if timestamp < deadline:
                         expired += 1
-                        logger.debug(f'[{channel}] Evento de '
-                                     f'[{time.ctime(timestamp)}] caducado')
                         continue
                     # here we force cast to str since cache gives us str
                     # and fresh epg has ints
@@ -846,6 +844,24 @@ class MulticastIPTV:
                 cached_epg[channel] = clean_channel_epg
             for timestamp in new_epg[channel]:
                 cached_epg[channel][timestamp] = new_epg[channel][timestamp]
+
+            nr_entries = len(cached_epg[channel])
+            prev_end = None
+            while True:
+                stales = []
+                for timestamp in sorted(cached_epg[channel]):
+                    if prev_end and timestamp != prev_end and timestamp not in new_epg[channel]:
+                        stales.append(timestamp)
+                        continue
+                    prev_end = cached_epg[channel][timestamp]['end']
+                if not stales:
+                    break
+                for timestamp in stales:
+                    del(cached_epg[channel][timestamp])
+            new_nr_entries = len(cached_epg[channel])
+            if new_nr_entries != nr_entries:
+                logger.info(f'[{channel}] {nr_entries} => {new_nr_entries}: '
+                            f'{nr_entries - new_nr_entries} Eventos de EPG rotos eliminados')
 
         logger.info('Canales con EPG: %s' % len(cached_epg))
         nr_epg = 0
