@@ -827,6 +827,7 @@ class MulticastIPTV:
 
         logger.debug(f'Fecha de caducidad: [{time.ctime(deadline)}]')
 
+        broken = 0
         expired = 0
         for channel in new_epg:
             if channel not in cached_epg:
@@ -860,14 +861,16 @@ class MulticastIPTV:
                     del(cached_epg[channel][timestamp])
             new_nr_entries = len(cached_epg[channel])
             if new_nr_entries != nr_entries:
+                _broken = nr_entries - new_nr_entries
                 logger.info(f'[{channel}] {nr_entries} => {new_nr_entries}: '
-                            f'{nr_entries - new_nr_entries} Eventos de EPG rotos eliminados')
+                            f'{_broken} Eventos de EPG rotos eliminados')
+                broken += _broken
 
         logger.info('Canales con EPG: %s' % len(cached_epg))
         nr_epg = 0
         for channel in cached_epg:
             nr_epg += len(cached_epg[channel])
-        logger.info(f'Entradas en el EPG: Total: {nr_epg} Caducados: {expired}')
+        logger.info(f'Entradas en el EPG: Total: {nr_epg} Caducados: {expired} Rotos: {broken}')
 
         cache.save_epg(cached_epg)
         return cached_epg
