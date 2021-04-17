@@ -848,10 +848,12 @@ class MulticastIPTV:
 
             nr_entries = len(cached_epg[channel])
             prev_end = None
+            new_timestamp = sorted(new_epg[channel])[0]
             while True:
                 stales = []
                 for timestamp in sorted(cached_epg[channel]):
-                    if prev_end and timestamp != prev_end and timestamp not in new_epg[channel]:
+                    if prev_end and timestamp != prev_end and \
+                            timestamp >= new_timestamp and timestamp not in new_epg[channel]:
                         stales.append(timestamp)
                         continue
                     prev_end = cached_epg[channel][timestamp]['end']
