@@ -847,20 +847,22 @@ class MulticastIPTV:
                 cached_epg[channel][timestamp] = new_epg[channel][timestamp]
 
             nr_entries = len(cached_epg[channel])
-            prev_end = None
-            new_timestamp = sorted(new_epg[channel])[0]
-            while True:
-                stales = []
-                for timestamp in sorted(cached_epg[channel]):
-                    if prev_end and timestamp != prev_end and \
-                            timestamp >= new_timestamp and timestamp not in new_epg[channel]:
+            prev_end = 0
+            sorted_new_epg = sorted(new_epg[channel])
+            new_timestamp = sorted_new_epg[0]
+            newest_timestamp = new_epg[channel][sorted_new_epg[-1]]['end']
+            stales = []
+            for timestamp in sorted(cached_epg[channel]):
+                if prev_end > timestamp:
+                    if timestamp < new_timestamp or timestamp > newest_timestamp \
+                            or timestamp not in new_epg[channel]:
                         stales.append(timestamp)
                         continue
-                    prev_end = cached_epg[channel][timestamp]['end']
-                if not stales:
-                    break
-                for timestamp in stales:
-                    del(cached_epg[channel][timestamp])
+                prev_end = cached_epg[channel][timestamp]['end']
+            if not stales:
+                continue
+            for timestamp in stales:
+                del(cached_epg[channel][timestamp])
             new_nr_entries = len(cached_epg[channel])
             if new_nr_entries != nr_entries:
                 _broken = nr_entries - new_nr_entries
