@@ -37,12 +37,11 @@ import traceback
 import httpx
 import xml.etree.ElementTree as ElTr
 from queue import Queue
-from datetime import datetime, timedelta
+from datetime import date, datetime, timedelta
 from logging.handlers import RotatingFileHandler
 from threading import Thread
 from xml.sax.saxutils import unescape
 
-CACHED_TIME = 8 * 24 * 60 * 60
 EPG_CHANNELS = ['1', '2', '3', '4','5', '6', '477', '578', '582', '597', '657',
                 '663', '717', '743', '744', '745', '844', '884', '934', '935',
                 '1221', '2843', '2863', '3184', '3186', '3325', '3443', '3603', '4911']
@@ -835,13 +834,10 @@ class MulticastIPTV:
             else:
                 clean_channel_epg = {}
                 for timestamp in sorted(cached_epg[channel]):
-                    timestamp = int(timestamp)
-                    if timestamp < deadline:
+                    if cached_epg[channel][timestamp]['end'] < deadline:
                         expired += 1
                         continue
-                    # here we force cast to str since cache gives us str
-                    # and fresh epg has ints
-                    clean_channel_epg[timestamp] = cached_epg[channel][str(timestamp)]
+                    clean_channel_epg[int(timestamp)] = cached_epg[channel][timestamp]
                 cached_epg[channel] = clean_channel_epg
             for timestamp in new_epg[channel]:
                 cached_epg[channel][timestamp] = new_epg[channel][timestamp]
@@ -1317,7 +1313,8 @@ def export_channels(m3u_file):
 
 # Guarda el timestamp de inicio
 time_start = int(time.time())
-deadline = time_start - CACHED_TIME
+deadline = int(datetime.combine(date.today() - timedelta(days=7),
+                                datetime.min.time()).timestamp())
 
 # Crea el logger
 logger = create_logger(sys.argv)
