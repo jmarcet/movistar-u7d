@@ -339,7 +339,7 @@ class Cache:
     def __save(cfile, data):
         try:
             with open('%s/cache/%s' % (app_dir, cfile), 'w') as fp:
-                json.dump({'data': data}, fp, ensure_ascii=False, indent=4)
+                json.dump({'data': data}, fp, ensure_ascii=False, indent=4, sort_keys=True)
             # logger.debug("Cache: %s guardado" % cfile)
         except IOError:
             logger.error('Caché: No se puede escribir en disco')
