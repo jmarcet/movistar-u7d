@@ -318,7 +318,7 @@ class Cache:
                 try:
                     with open(fp) as fd:
                         _data = json.loads(fd.read())['data']
-                    _exp_date = int(_data['expDate'] / 1000)
+                    _exp_date = int(_data['endTime'] / 1000)
                     if _exp_date < deadline:
                         logger.debug(f'Caché: {f} caducado [{time.ctime(_exp_date)}]')
                         os.remove(fp)
@@ -881,7 +881,6 @@ class MulticastIPTV:
         if data:
             logger.info('Canales: %i' % len(data['channels']))
             logger.info('Paquetes: %i' % len(data['packages']))
-            # logger.info('Días de EPG: %i' % len(data['segments']))
             self.__xml_data = data
         else:
             logger.info('Descargando canales y paquetes')
@@ -1074,7 +1073,6 @@ class XMLTV:
     def __get_series_data(program, ext_info):
         episode = program['episode']
         season = program['season']
-        desc = u'Año: %s. %s' % (program['year'], ext_info['description'])
         if 'episode_title' in program:
             stitle = '%ix%02d %s' % (season, episode, program['episode_title'])
         else:
@@ -1086,8 +1084,7 @@ class XMLTV:
             'title': program['serie'] if 'serie' in program else program['full_title'],
             'sub-title': stitle,
             'season': season if season > 0 else '',
-            'episode': episode,
-            'desc': desc
+            'episode': episode
         }
 
     def __build_programme_tag(self, channel_id, program, tz):
@@ -1099,6 +1096,8 @@ class XMLTV:
             'stop': '%s +0%s00' % (stop, tz)})
         tag_title = ElTr.SubElement(tag_programme, 'title', lang['es'])
         tag_title.text = program['full_title']
+        tag_desc = ElTr.SubElement(tag_programme, 'desc', lang['es'])
+        tag_desc.text = 'Año: ' + program['year'] + '. '
         gens = self.__get_genre_and_subgenre(program['genre'])
         keys = self.__get_key_and_subkey(program['genre'], config['genres'])
         ext_info = mtv.get_epg_extended_info(program['pid'], channel_id)
@@ -1108,8 +1107,6 @@ class XMLTV:
             tag_title.text = tsse['title']
             tag_stitle = ElTr.SubElement(tag_programme, 'sub-title', lang['es'])
             tag_stitle.text = tsse['sub-title']
-            tag_desc = ElTr.SubElement(tag_programme, 'desc', lang['es'])
-            tag_desc.text = tsse['desc']
             tag_date = ElTr.SubElement(tag_programme, 'date')
             tag_date.text = program['year']
             tag_episode_num = ElTr.SubElement(tag_programme,
@@ -1123,22 +1120,25 @@ class XMLTV:
             if 'Movie' in gens['genre'] and 'productionDate' in ext_info:
                 tag_stitle = ElTr.SubElement(tag_programme, 'sub-title', lang['es'])
                 tag_stitle.text = str(ext_info['productionDate'])
-            tag_desc = ElTr.SubElement(tag_programme, 'desc', lang['es'])
-            tag_desc.text = ext_info['description']
             if 'productionDate' in ext_info:
                 tag_date = ElTr.SubElement(tag_programme, 'date')
                 tag_date.text = str(ext_info['productionDate'])
+                tag_desc.text = 'Año: ' + tag_date.text + '. '
         # Comunes a los tres
         if ext_info:
             if ('mainActors' or 'directors') in ext_info:
                 tag_credits = ElTr.SubElement(tag_programme, 'credits')
                 if 'directors' in ext_info:
+                    tag_desc.text += ','.join(ext_info['directors'])
+                    tag_desc.text += '. '
                     length = len(ext_info['directors']) \
                         if len(ext_info['directors']) <= max_credits else max_credits
                     for director in ext_info['directors'][:length]:
                         tag_director = ElTr.SubElement(tag_credits, 'director')
                         tag_director.text = director.strip()
                 if 'mainActors' in ext_info:
+                    tag_desc.text += ','.join(ext_info['mainActors'])
+                    tag_desc.text += '.'
                     length = len(ext_info['mainActors']) \
                         if len(ext_info['mainActors']) <= max_credits else max_credits
                     for actor in ext_info['mainActors'][:length]:
@@ -1146,8 +1146,7 @@ class XMLTV:
                         tag_actor.text = actor.strip()
             ElTr.SubElement(tag_programme, 'icon', {
                     'src': '%s%s' % (f'http://{sanic}/Covers/', ext_info['cover'])})
-        tag_original_title = ElTr.SubElement(tag_programme, 'original-title')
-        tag_original_title.text = '%s|%s' % (channel_id, program['pid'])
+        tag_desc.text += '\n\n' + ext_info['description']
         tag_rating = ElTr.SubElement(tag_programme, 'rating', {'system': 'pl'})
         tag_value = ElTr.SubElement(tag_rating, 'value')
         tag_value.text = age_rating[program['age_rating']]
@@ -1189,10 +1188,7 @@ class XMLTV:
             if channel_id in self.__channels:
                 channel_name = self.__channels[channel_id]['name']
                 channel_key = channel_id
-                # channel_ip = self.__channels[channel_id]['address']
-                # channel_port = str(self.__channels[channel_id]['port'])
                 channel_tag = 'IPTV - TDT Movistar.es'
-                # self.__channels[channel_id]['genre']
                 channel_number = services[channel_id]
                 if channel_number == '0':
                     channel_number = '999'
@@ -1211,8 +1207,6 @@ class XMLTV:
                 m3u += f'tvg-id="{channel_id}.movistar.tv" '
                 m3u += f'group-title="{channel_tag}" '
                 m3u += f'tvg-logo="{channel_logo}"'
-                # m3u += f'catchup-source="http://{sanic}/{channel_id}'
-                # m3u += '/video-{timestamp}-{duration}.m3u8"'
                 m3u += f',{channel_name}\n'
                 m3u += f'http://{sanic}/{channel_id}/live\n'
         return m3u
