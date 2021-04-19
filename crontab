@@ -1,1 +1,1 @@
-5 */2 * * * /etc/updateguide.sh
+20 */1 * * * /etc/updateguide.sh
