@@ -85,15 +85,10 @@ async def handle_guide(request):
     return await response.file(GUIDE)
 
 
-@app.get('/Covers/<path>/<cover>')
-@app.get('/Logos/<logo>')
+@app.route('/Covers/<path>/<cover>', methods=['GET', 'HEAD'])
+@app.route('/Logos/<logo>', methods=['GET', 'HEAD'])
 async def handle_logos(request, cover=None, logo=None, path=None):
     log.debug(f'[{request.ip}] {request.method} {request.url}')
-    global SESSION_LOGOS
-    if not SESSION_LOGOS:
-        headers = {'User-Agent': 'MICA-IP-STB'}
-        SESSION_LOGOS = aiohttp.ClientSession(headers=headers)
-
     if logo:
         orig_url = f'{IMAGENIO_URL}/channelLogo/{logo}'
     elif path and cover:
@@ -101,6 +96,14 @@ async def handle_logos(request, cover=None, logo=None, path=None):
                     f'/portrait/290x429/{path}/{cover}')
     else:
         return response.json({'status': f'{request.url} not found'}, 404)
+
+    if request.method == 'HEAD':
+        return response.HTTPResponse(content_type='image/jpeg', status=200)
+
+    global SESSION_LOGOS
+    if not SESSION_LOGOS:
+        headers = {'User-Agent': 'MICA-IP-STB'}
+        SESSION_LOGOS = aiohttp.ClientSession(headers=headers)
 
     async with SESSION_LOGOS.get(orig_url) as r:
         if r.status == 200:
