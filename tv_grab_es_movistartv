@@ -876,7 +876,16 @@ class MulticastIPTV:
         return cached_epg
 
     def __get_epg_data(self, mcast_grp, mcast_port):
-        xml = self.__get_xml_files(mcast_grp, mcast_port)
+        _t = 5
+        for t in range(_t):
+            xml = self.__get_xml_files(mcast_grp, mcast_port)
+            _msg = '[' + " ".join(sorted(xml)) + '] / [2_0 5_0 6_0]' 
+            if '2_0' in xml and '5_0' in xml and '6_0' in xml:
+                logger.info(f'Ficheros XML descargados: {_msg}')
+                break
+            else:
+                logger.info(f'Ficheros XML incompletos [{t+1}/{_t}]: {_msg}')
+                time.sleep(10)
         data = cache.load_epg_data()
         if data:
             logger.info('Canales: %i' % len(data['channels']))
