@@ -118,7 +118,7 @@ async def handle_logos(request, cover=None, logo=None, path=None):
         else:
             return response.json({'status': f'{orig_url} not found'}, 404)
 
-@app.get('/<channel_id>/live')
+@app.route('/<channel_id>/live', methods=['GET', 'HEAD'])
 async def handle_channel(request, channel_id):
     try:
         epg_url = f'{SANIC_EPG_URL}/channel_address/{channel_id}'
@@ -129,7 +129,16 @@ async def handle_channel(request, channel_id):
             address = r['address']
             name = r['name']
             port = int(r['port'])
-        with closing(socket.socket(socket.AF_INET, socket.SOCK_DGRAM, socket.IPPROTO_UDP)) as sock:
+
+        log.info(f'[{request.ip}] {request.method} '
+                 f'{request.raw_url.decode()} => Playing "{name}"')
+
+        if request.method == 'HEAD':
+            return response.HTTPResponse(content_type=MIME_TS, status=200)
+
+        with closing(socket.socket(socket.AF_INET,
+                                   socket.SOCK_DGRAM,
+                                   socket.IPPROTO_UDP)) as sock:
             sock.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
             sock.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEPORT, 1)
             sock.bind((address, port))
@@ -137,8 +146,6 @@ async def handle_channel(request, channel_id):
             #sock.setsockopt(socket.SOL_SOCKET, socket.SO_RCVBUF, buf_size)
             sock.setsockopt(socket.IPPROTO_IP, socket.IP_ADD_MEMBERSHIP, mreq)
             respond = await request.respond(content_type=MIME_TS)
-            log.info(f'[{request.ip}] {request.method} '
-                     f'{request.raw_url.decode()} => Playing "{name}"')
             with closing(await asyncio_dgram.from_socket(sock)) as stream:
                 try:
                     while True:
