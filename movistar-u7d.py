@@ -121,7 +121,7 @@ async def handle_logos(request, cover=None, logo=None, path=None):
 @app.get('/<channel_id>/live')
 async def handle_channel(request, channel_id):
     try:
-        epg_url = f'{SANIC_EPG_URL}/get_channel_address/{channel_id}'
+        epg_url = f'{SANIC_EPG_URL}/channel_address/{channel_id}'
         async with SESSION.get(epg_url) as r:
             if r.status != 200:
                 return response.json({'status': f'{channel_id} not found'}, 404)
@@ -162,7 +162,7 @@ async def handle_flussonic(request, channel_id, url):
 
     try:
         program_id = None
-        epg_url = f'{SANIC_EPG_URL}/get_program_id/{channel_id}/{url}'
+        epg_url = f'{SANIC_EPG_URL}/program_id/{channel_id}/{url}'
         async with SESSION.get(epg_url) as r:
             if r.status != 200:
                 return response.json({'status': f'{url} not found'}, 404)

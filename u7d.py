@@ -186,7 +186,7 @@ def main(args):
             client.print(client.send_request('PLAY', play))
 
             if args.write_to_file:
-                epg_url = (f'{SANIC_EPG_URL}/get_program_name/'
+                epg_url = (f'{SANIC_EPG_URL}/program_name/'
                            f'{args.channel}/{args.broadcast}')
                 resp = httpx.get(epg_url)
 
