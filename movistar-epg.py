@@ -1,9 +1,12 @@
 #!/usr/bin/env python3
 
+import asyncio
+import httpx
 import json
 import os
 import re
 
+from datetime import datetime
 from sanic import Sanic, response
 from sanic.compat import open_async
 from sanic.log import logger as log
@@ -13,6 +16,8 @@ from sanic.log import LOGGING_CONFIG_DEFAULTS
 HOME = os.getenv('HOME', '/home/')
 SANIC_EPG_HOST = os.getenv('SANIC_EPG_HOST', '127.0.0.1')
 SANIC_EPG_PORT = int(os.getenv('SANIC_EPG_PORT', '8889'))
+SANIC_PORT = int(os.getenv('SANIC_PORT', '8888'))
+SANIC_URL = f'http://{SANIC_EPG_HOST}:{SANIC_PORT}'
 
 YEAR_SECONDS = 365 * 24 * 60 * 60
 
@@ -25,11 +30,7 @@ app.config.update({'KEEP_ALIVE_TIMEOUT': YEAR_SECONDS})
 
 _channels = {}
 _epgdata = {}
-
-
-@app.listener('after_server_start')
-async def notify_server_start(app, loop):
-    await handle_reload_epg_task()
+_task = None
 
 
 @app.get('/channel_address/<channel_id>/')
@@ -193,6 +194,83 @@ async def handle_reload_epg_task():
     log.info(f'Total EPG entries: {nr_epg}')
     log.info('EPG Updated')
     return response.json({'status': 'EPG Updated'}, 200)
+
+
+async def handle_timers():
+    log.info(f'handle_timers')
+
+    _recordings = _timers = {}
+    recordings = os.path.join(HOME, 'recordings.json')
+    timers = os.path.join(HOME, 'timers.json')
+
+    try:
+        async with await open_async(timers) as f:
+            _timers = json.loads(await f.read())
+        async with await open_async(recordings) as f:
+            _recordings = json.loads(await f.read())
+    except Exception as ex:
+        if not _timers:
+            log.error(f'handle_timers: {ex} no timers, returning!')
+            return
+        log.info(f'handle_timers: no recordings saved yet')
+
+    matched = 0
+    for channel in sorted(_timers['match']):
+        if matched > 4:
+            log.info(f'Already recording 5 streams')
+            break
+        _key = _channels[channel]['replacement'] if \
+            'replacement' in _channels[channel] else channel
+        if _key not in _epgdata:
+            log.info(f'Channel {channel} not found in EPG')
+            continue
+        for timestamp in sorted(_epgdata[_key]):
+            if int(timestamp) > (int(datetime.now().timestamp()) - 900):
+                break
+            if matched > 4:
+                log.info(f'Already recording 5 streams')
+                break
+            title = _epgdata[_key][timestamp]['full_title']
+            for timer_match in _timers['match'][channel]:
+                if timer_match in title and \
+                     (channel not in _recordings or
+                      (title not in repr(_recordings[channel]) and
+                      timestamp not in _recordings[channel])):
+                    log.info(f'Found match! {matched} {channel} {timestamp} "{title}"')
+                    matched += 1
+                    sanic_url = f'{SANIC_URL}/{channel}/{timestamp}.mp4?record=0'
+                    log.info(sanic_url)
+                    async with httpx.AsyncClient() as client:
+                        r = await client.get(sanic_url)
+                    log.info(repr(r))
+                    if r.status_code == 200:
+                        if channel not in _recordings:
+                            _recordings[channel] = {}
+                        _recordings[channel][timestamp] = {
+                            'full_title': title
+                        }
+
+    with open(recordings, 'w') as fp:
+        json.dump(_recordings, fp, ensure_ascii=False, indent=4, sort_keys=True)
+
+
+@app.listener('after_server_start')
+async def notify_server_start(app, loop):
+    global _task
+    await handle_reload_epg_task()
+    _task = asyncio.create_task(run_every(3600, handle_timers))
+
+
+@app.listener('after_server_stop')
+async def notify_server_stop(app, loop):
+    if _task:
+        _task.cancel()
+
+
+async def run_every(timeout, stuff):
+    log.info(f'run_every {timeout} {stuff}')
+    while True:
+        await asyncio.gather(asyncio.sleep(timeout), stuff())
 
 
 if __name__ == '__main__':
