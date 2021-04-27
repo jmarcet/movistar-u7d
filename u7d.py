@@ -241,15 +241,13 @@ def main(args):
 
             while True:
                 time.sleep(30)
+                if args.write_to_file and proc and not proc.is_alive():
+                    break
                 client.print(client.send_request('GET_PARAMETER', get_parameter))
 
         except KeyboardInterrupt:
             pass
         except Exception as ex:
-            if args.write_to_file and proc and proc.is_alive():
-                proc.terminate()
-                if proc.is_alive():
-                    subprocess.call(['pkill', '-f', f"{' '.join(command[:3])}"])
             print(f"{'[' + args.client_ip + '] ' if args.client_ip else ''}"
                   f"{'Finished:' if isinstance(ex, TimeoutError) else repr(ex)} "
                   f'{args.channel}',
@@ -259,6 +257,10 @@ def main(args):
         finally:
             if client and 'Session' in session:
                 client.print(client.send_request('TEARDOWN', session), killed=args)
+            if args.write_to_file and proc and proc.is_alive():
+                proc.terminate()
+                for i in range(2):
+                    subprocess.call(['pkill', '-f', f"{' '.join(command[:3])}"])
 
 
 if __name__ == '__main__':
