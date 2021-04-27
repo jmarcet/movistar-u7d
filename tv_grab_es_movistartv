@@ -924,6 +924,7 @@ class MulticastIPTV:
             }
         except Exception as ex:
             logger.error('Error al procesar la cabecera: %s' % repr(ex))
+            raise
 
     @staticmethod
     def __sanitize(text):
@@ -988,6 +989,7 @@ class MulticastIPTV:
             return programs
         except Exception as ex:
             logger.error('Error al procesar la guía: %s' % repr(ex))
+            raise
 
     def __merge_dicts(self, dict1, dict2, path=None):
         path = [] if path is None else path
