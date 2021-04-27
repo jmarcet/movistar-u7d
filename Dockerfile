@@ -1,7 +1,10 @@
-FROM python:3.9-alpine
+FROM python:3.9-slim
 
-RUN apk update \
-    && apk add bash build-base git htop less netcat-openbsd socat tcpdump vim xmltv
+RUN apt-get update && apt-get upgrade -y && \
+	apt-get install -y \
+	ffmpeg git htop iproute2 iputils-ping less netcat net-tools procps vim wget
+
+RUN apt-get -y clean && apt-get -y autoremove
 
 ENV HOME="/home"
 ENV PYTHONPATH=/app
