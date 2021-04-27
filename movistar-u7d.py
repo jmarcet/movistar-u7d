@@ -192,7 +192,8 @@ async def handle_flussonic(request, channel_id, url):
 
     if record := request.query_args and request.query_args[0][0] == 'record':
         record_time = request.query_args[0][1] \
-            if request.query_args[0][1].isnumeric() else remaining
+            if request.query_args[0][1] and request.query_args[0][1].isnumeric() \
+                else remaining
         cmd += ('-t', record_time, '-w')
         log.info(f'[{request.ip}] Record: [{record_time}]s {u7d_msg}')
 
