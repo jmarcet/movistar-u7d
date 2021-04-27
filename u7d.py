@@ -211,10 +211,16 @@ def main(args):
                 else:
                     raise ValueError('Recording time unknown')
 
-                command = ['socat']
-                command.append('-u')
-                command.append(f'UDP4-LISTEN:{args.client_port}')
-                command.append(f'OPEN:"{filename}",creat,trunc')
+                host = socket.gethostbyname(socket.gethostname())
+                command = ['ffmpeg', '-i']
+                command += [f'udp://@{host}:{args.client_port}']
+                command += ['-map', '0', '-c', 'copy', '-n']
+                command += ['-c:a:0', 'aac', '-c:a:1', 'aac']
+                command += ['-metadata:s:a:0', 'language=esp']
+                command += ['-metadata:s:a:1', 'language=eng']
+                command += ['-metadata:s:a:2', 'language=esp']
+                command += ['-metadata:s:a:3', 'language=eng']
+                command += ['-f', 'matroska', '-t', f'{args.time}', f'{filename}']
 
                 proc = multiprocessing.Process(target=subprocess.call, args=(command, ))
                 proc.start()
