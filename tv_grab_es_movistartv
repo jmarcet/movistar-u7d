@@ -908,7 +908,8 @@ class MulticastIPTV:
 
     @staticmethod
     def __decode_string(string):
-        return (''.join(chr(char ^ 0x15) for char in string)).encode('latin1').decode()
+        _t = (''.join(chr(char ^ 0x15) for char in string)).encode('latin1').decode()
+        return _t.replace('&quot;', '«', 1).replace('&quot;', '»', 1)
 
     @staticmethod
     def __parse_bin_epg_header(data):
@@ -938,21 +939,24 @@ class MulticastIPTV:
         try:
             programs = {}
             while epg_dt:
+                is_serie = False
+                serie = ''
                 start = struct.unpack('>I', epg_dt[4:8])[0]
                 duration = struct.unpack('>H', epg_dt[8:10])[0]
                 title_end = struct.unpack('B', epg_dt[31:32])[0] + 32
                 episode = struct.unpack('B', epg_dt[title_end + 8:title_end + 9])[0]
-                full_title = self.__sanitize(self.__decode_string(epg_dt[32:title_end]))
-                serie = re.findall(r'(.*)(:\s|\sT\d*|Episo)/?\d*.*', full_title, re.U)
                 season = struct.unpack('B', epg_dt[title_end + 11:title_end + 12])[0]
-                is_serie = bool(episode)
-                if serie and serie[0][0]:
+                full_title = self.__sanitize(self.__decode_string(epg_dt[32:title_end]))
+                x = re.search(r"(.+) +T([ \d]+) *Ep?.? *(\d+)([^\d]*)", full_title)
+                if x := x and x.groups():
                     is_serie = True
-                    serie = serie[0][0]
-                elif is_serie:
-                    serie = full_title
-                else:
-                    serie = ''
+                    serie = x[0]
+                    season = int(x[1].replace(' ', ''))
+                    episode = int(x[2])
+                    _end = x[3].strip()
+                    full_title = '%s S%02dE%02d' % (serie, season, episode)
+                    if len(_end):
+                        full_title += ' %s' % _end
                 pr_title_end = None
                 programs[start] = {
                     'pid': struct.unpack('>I', epg_dt[:4])[0],
@@ -971,11 +975,6 @@ class MulticastIPTV:
                     'season': season,
                     'is_serie': is_serie
                 }
-                if is_serie and not season:
-                    sn = re.findall(r'.*\sT(\d*/?\d+).*',
-                                    programs[start]['full_title'], re.U)
-                    if sn:
-                        programs[start]['season'] = int(sn[0].replace('/', ''))
                 pr_title = programs[start]['full_title'].split(' - ')
                 pr_title_end = \
                     struct.unpack('B',
@@ -1084,17 +1083,12 @@ class XMLTV:
     def __get_series_data(program, ext_info):
         episode = program['episode']
         season = program['season']
-        if 'episode_title' in program:
-            stitle = '%ix%02d %s' % (season, episode, program['episode_title'])
-        else:
-            stitle = '%ix%02d %s' % (
-                season, episode, ext_info['originalTitle']
-                if ext_info and 'originalTitle' in ext_info else 'Episodio %i' % episode
-            )
+        stitle = program['episode_title'] if 'episode_title' in program \
+            else ext_info['originalTitle'] if ext_info and 'originalTitle' in ext_info else ''
         return {
             'title': program['serie'] if 'serie' in program else program['full_title'],
             'sub-title': stitle,
-            'season': season if season > 0 else '',
+            'season': season,
             'episode': episode
         }
 
@@ -1123,9 +1117,8 @@ class XMLTV:
             tag_episode_num = ElTr.SubElement(tag_programme,
                                               'episode-num',
                                               {'system': 'xmltv_ns'})
-            tag_episode_num.text = '%s.%i.' % (
-                '%i' % (tsse['season'] - 1)
-                if tsse['season'] else '', tsse['episode'] - 1)
+            tag_episode_num.text = str(int(tsse['season']) - 1 if tsse['season'] else '') \
+                 + '.' + str(int(tsse['episode']) - 1 if tsse['episode'] else '')
         # Películas y otros
         elif ext_info:
             if 'Movie' in gens['genre'] and 'productionDate' in ext_info:
