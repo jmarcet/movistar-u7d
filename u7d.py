@@ -196,7 +196,7 @@ def main(args):
 
                     if not args.time:
                         args.time = int(data['duration']) - args.start
-                    title = safe_filename(data['full_title'])
+                    title = safe_filename(data['full_title']).replace('  ', ' - ')
                     if data['is_serie']:
                         path = os.path.join(STORAGE, safe_filename(data['serie']))
                         filename = os.path.join(path, title + VID_EXT)
