@@ -261,7 +261,7 @@ async def handle_timers():
 async def notify_server_start(app, loop):
     global _task
     await handle_reload_epg_task()
-    _task = asyncio.create_task(run_every(3600, handle_timers))
+    _task = asyncio.create_task(run_every(900, handle_timers))
 
 
 @app.listener('after_server_stop')
