@@ -124,9 +124,8 @@ def find_free_port():
 
 
 def safe_filename(filename):
-    keepcharacters = (' ', '.', '_', '-', ':')
-    return "".join(c for c in filename.replace('/', '_')
-                   if c.isalnum() or c in keepcharacters).rstrip()
+    keepcharacters = (' ', ',', '.', '_', '-', ':', '¡', '!', '¿', '?')
+    return "".join(c for c in filename if c.isalnum() or c in keepcharacters).rstrip()
 
 
 def main(args):
