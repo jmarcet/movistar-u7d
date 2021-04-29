@@ -214,10 +214,9 @@ async def handle_timers():
             return
         log.info(f'handle_timers: no recordings saved yet')
 
-    matched = 0
+    busy = False
     for channel in sorted(_timers['match']):
-        if matched > 4:
-            log.info(f'Already recording 5 streams')
+        if busy:
             break
         _key = _channels[channel]['replacement'] if \
             'replacement' in _channels[channel] else channel
@@ -227,8 +226,13 @@ async def handle_timers():
         for timestamp in sorted(_epgdata[_key]):
             if int(timestamp) > (int(datetime.now().timestamp()) - 900):
                 break
-            if matched > 4:
-                log.info(f'Already recording 5 streams')
+            p = await asyncio.create_subprocess_exec('pgrep', '-f', 'ffmpeg.+udp://',
+                                                     stdout=asyncio.subprocess.PIPE)
+            stdout, _ = await p.communicate()
+            nr_procs = len(stdout.split())
+            if nr_procs > 4:
+                log.info(f'Already recording {nr_procs} streams')
+                busy = True
                 break
             title = _epgdata[_key][timestamp]['full_title']
             for timer_match in _timers['match'][channel]:
@@ -236,8 +240,7 @@ async def handle_timers():
                      (channel not in _recordings or
                       (title not in repr(_recordings[channel]) and
                       timestamp not in _recordings[channel])):
-                    log.info(f'Found match! {matched} {channel} {timestamp} "{title}"')
-                    matched += 1
+                    log.info(f'Found match! {channel} {timestamp} "{title}"')
                     sanic_url = f'{SANIC_URL}/{channel}/{timestamp}.mp4?record=0'
                     log.info(sanic_url)
                     async with httpx.AsyncClient() as client:
