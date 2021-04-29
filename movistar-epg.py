@@ -232,7 +232,7 @@ async def handle_timers():
                 break
             title = _epgdata[_key][timestamp]['full_title']
             for timer_match in _timers['match'][channel]:
-                if timer_match in title and \
+                if re.match(timer_match, title) and \
                      (channel not in _recordings or
                       (title not in repr(_recordings[channel]) and
                       timestamp not in _recordings[channel])):
