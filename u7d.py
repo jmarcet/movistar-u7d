@@ -213,7 +213,7 @@ def main(args):
 
                 host = socket.gethostbyname(socket.gethostname())
                 command = ['ffmpeg', '-i']
-                command += [f'udp://@{host}:{args.client_port}']
+                command += [f'udp://@{host}:{args.client_port}?overrun_nonfatal=1&fifo_size=278873"']
                 command += ['-map', '0', '-n', '-c', 'copy']
                 command += ['-c:a:0', 'aac', '-c:a:1', 'aac']
                 command += ['-metadata:s:a:0', 'language=esp']
@@ -261,7 +261,7 @@ def main(args):
             if args.write_to_file and proc and proc.is_alive():
                 proc.terminate()
                 for i in range(2):
-                    subprocess.call(['pkill', '-f', f"{' '.join(command[:3])}"])
+                    subprocess.call(['pkill', '-f', f'ffmpeg.+udp://.+{args.client_port}'])
 
 
 if __name__ == '__main__':
