@@ -6,7 +6,7 @@ Movistar IPTV U7D - Flussonic catchup proxy
 Uso
 ---
 
-Una vez instalado el servicio, tendremos las siguientes URLs disponibles, donde 192.168.1.1 será la IP donde sea accesible el servicio y corresponde al valor de la variable de entorno `LAN_IP`:
+Una vez instalado el servicio, tendremos las siguientes URLs disponibles, donde 192.168.1.1 será la IP donde funcione este proxy:
 
  - Canales: `http://192.168.1.1:8888/channels.m3u` o `http://192.168.1.1:8888/MovistarTV.m3u`
 
@@ -83,8 +83,6 @@ El resultado son dos microservicios escritos en python asíncrono, con [Sanic](h
 
  - `tv_grab_es_movistartv`: encargado de generar la lista de canales y la programación, así como de guardar una caché de los últimos 8 días de programas, de manera que necesita ser ejecutado de forma recurrente (cada 2h). Esta información es imprescindible para que todo el proceso funcione bien. Tanto TiviMate como cualquier repdoductor con catchup flussonic sólo se preocupan por canal y un timestamp, que define un momento preciso en el tiempo. El proxy es el encargado de encontrar qué programa de la EPG corresponde a ese canal en ese momento y negociar con Movistar la reproducción.
 
- - `env-example`: fichero con variables de entorno. Como mínimo fijaos en `LAN_IP` que será la IP que incluirán tanto la lista de canales como la guía de programación, el resto pueden funcionar son sus valores por defecto. Con docker-compsoe lo copiamos a `.env` y hacemos los cambios necesarios.
-
 Extras para la EPG:
 
  - `updateguide.sh`: script para ejecutar de forma recurrente, se asegurará de mantener la EPG y su caché al día
@@ -96,6 +94,10 @@ Para Systemd:
  - `movistar-u7d.service`: script para el microservicio principal
 
  - `movistar-epg.service`: script para el microservicio que mantiene el estado (la EPG)
+
+
+Para docker:
+ - `env-example`: fichero con variables de entorno por si queremos modificar alguno de los valores por defecto o queremos hacerlo funcionar en el propio router. Con docker-compsoe lo copiamos a `.env` y hacemos los cambios necesarios.
 
 
 Observaciones
@@ -148,7 +150,7 @@ systemctl start movistar-u7d
 
  - En cualquiera de los casos, no debemos olvidarnos de mantener la EPG acutalizada, usando `updateguide.sh` de forma recurrente.
 
-Tened en cuenta que `tv_grab_es_movistartv` creará la lista de canales y la guía EPG apuntando a las variables de entorno `http://${LAN_IP}:${SANIC_PORT}`
+Tened en cuenta que `tv_grab_es_movistartv` creará la lista de canales y la guía EPG apuntando a las variables de entorno `http://${LAN_IP}:${SANIC_PORT}` por is os interesa llegar a modificar los valores por defecto.
 
 
 Instalación en el propio router con docker-compose
