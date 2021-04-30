@@ -887,6 +887,23 @@ class MulticastIPTV:
             nr_epg += len(cached_epg[channel])
         logger.info(f'Entradas en el EPG: Total: {nr_epg} Caducados: {expired} Rotos: {broken}')
 
+        fixed = 0
+        logger.info('Comprobando si el EPG cacheado necesita arreglos...')
+        for channel in cached_epg:
+            sorted_cached_epg = sorted(cached_epg[channel])
+            for i in range(len(sorted_cached_epg) - 1):
+                _end = cached_epg[channel][sorted_cached_epg[i]]['end']
+                _next = cached_epg[channel][sorted_cached_epg[i + 1]]['start'] 
+                if _end > _next:
+                    logger.error(f'{channel} {sorted_cached_epg[i]} end={_end} >> next={_next}')
+                    cached_epg[channel][sorted_cached_epg[i]]['end'] = _next
+                    fixed += 1
+        if fixed:
+            logger.error(f'EPG CACHEADO CONTENíA ERRORES DE PROGRAMAS QUE SE PISABAN')
+            logger.error(f'{fixed} programas acababan después de que el siguiente empezara')
+
+        if not cached_epg:
+            logger.info('Sin caché de EPG guardada')
         cache.save_epg(cached_epg)
         return cached_epg
 
