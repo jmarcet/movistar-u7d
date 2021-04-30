@@ -21,8 +21,8 @@ services:
     # - ./:/app
     # - ${HOME}:/home
     # - ${U7D_DIR}:${U7D_DIR}
-    environment:
-      - LAN_IP=${LAN_IP}
+    #environment:
+    # - LAN_IP=${LAN_IP}
     # - MAC_IPTV_U7D=${MAC_IPTV_U7D}
     # - MAC_MOVISTAR_U7D=${MAC_MOVISTAR_U7D}
     # - SANIC_HOST=${SANIC_HOST}
