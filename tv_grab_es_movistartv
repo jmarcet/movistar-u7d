@@ -820,6 +820,21 @@ class MulticastIPTV:
             self.__get_bin_epg()
         new_epg = self.__drop_encrypted_channels(self.__parse_bin_epg())
 
+        fixed = 0
+        logger.info('Comprobando si el nuevo EPG necesita arreglos...')
+        for channel in new_epg:
+            sorted_new_epg = sorted(new_epg[channel])
+            for i in range(len(sorted_new_epg) - 1):
+                _end = new_epg[channel][sorted_new_epg[i]]['end']
+                _next = new_epg[channel][sorted_new_epg[i + 1]]['start'] 
+                if _end > _next:
+                    logger.error(f'{channel} {sorted_new_epg[i]} end={_end} >> next={_next}')
+                    new_epg[channel][sorted_new_epg[i]]['end'] = _next
+                    fixed += 1
+        if fixed:
+            logger.error(f'NUEVO EPG CONTENíA ERRORES DE PROGRAMAS QUE SE PISABAN')
+            logger.error(f'{fixed} programas acababan después de que el siguiente empezara')
+
         if not cached_epg:
             logger.info('Sin caché de EPG guardada')
             return new_epg
