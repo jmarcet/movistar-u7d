@@ -215,7 +215,7 @@ async def handle_timers():
         log.info(f'handle_timers: no recordings saved yet')
 
     busy = False
-    for channel in sorted(_timers['match']):
+    for channel in _timers['match']:
         if busy:
             break
         _key = _channels[channel]['replacement'] if \
