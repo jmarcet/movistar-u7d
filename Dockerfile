@@ -2,7 +2,7 @@ FROM python:3.9-slim
 
 RUN apt-get update && apt-get upgrade -y && \
 	apt-get install -y \
-	ffmpeg git htop iproute2 iputils-ping less netcat net-tools procps vim wget
+	ffmpeg git htop iproute2 iputils-ping less mkvtoolnix netcat net-tools procps sudo vainfo vim wget
 
 RUN apt-get -y clean && apt-get -y autoremove
 
