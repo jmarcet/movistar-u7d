@@ -22,7 +22,8 @@ MVTV_URL = 'http://www-60.svc.imagenio.telefonica.net:2001/appserver/mvtv.do'
 SANIC_EPG_URL = f'http://{SANIC_EPG_HOST}:{SANIC_EPG_PORT}'
 Request = namedtuple('Request', ['request', 'response'])
 Response = namedtuple('Response', ['version', 'status', 'url', 'headers', 'body'])
-VID_EXT = '.mp4'
+TMP_EXT = '._mp4'
+VID_EXT = '.mkv'
 UA = 'MICA-IP-STB'
 # WIDTH = 134
 
@@ -198,15 +199,15 @@ def main(args):
                     title = safe_filename(data['full_title'])
                     if data['is_serie']:
                         path = os.path.join(STORAGE, safe_filename(data['serie']))
-                        filename = os.path.join(path, title + VID_EXT)
+                        filename = os.path.join(path, title)
                         if not os.path.exists(path):
                             print(f'Creating recording subdir {path}', flush=True)
                             os.mkdir(path)
                     else:
-                        filename = os.path.join(STORAGE, title + VID_EXT)
+                        filename = os.path.join(STORAGE, title)
                 elif args.time:
                     filename = os.path.join(STORAGE,
-                                            f'{args.channel}-{args.broadcast}{VID_EXT}')
+                                            f'{args.channel}-{args.broadcast}')
                 else:
                     raise ValueError('Recording time unknown')
 
@@ -219,8 +220,8 @@ def main(args):
                 command += ['-metadata:s:a:1', 'language=eng']
                 command += ['-metadata:s:a:2', 'language=esp']
                 command += ['-metadata:s:a:3', 'language=eng']
-                command += ['-movflags', '+faststart']
-                command += ['-f', 'matroska', '-t', f'{args.time}', f'{filename}']
+                command += ['-movflags', '+faststart', '-stats', '-v', 'panic']
+                command += ['-f', 'matroska', '-t', f'{args.time}', f'{filename}{TMP_EXT}']
 
                 proc = multiprocessing.Process(target=subprocess.call, args=(command, ))
                 proc.start()
@@ -253,14 +254,22 @@ def main(args):
                   f'{args.channel}',
                   f'{args.broadcast}',
                   f'[{args.time}s]',
-                  f'"{filename}"' if args.write_to_file and filename else '', flush=True)
+                  f'"{filename}"' if (args.write_to_file and filename) else '', flush=True)
         finally:
             if client and 'Session' in session:
                 client.print(client.send_request('TEARDOWN', session), killed=args)
-            if args.write_to_file and proc and proc.is_alive():
-                proc.terminate()
-                for i in range(2):
-                    subprocess.call(['pkill', '-f', f'ffmpeg.+udp://.+{args.client_port}'])
+            if args.write_to_file:
+                if proc and proc.is_alive():
+                    for i in range(2):
+                        subprocess.call(['pkill', '-f', f'ffmpeg.+udp://.+{args.client_port}'])
+                if filename:
+                    command = ['mkvmerge', '-o', f'{filename}{VID_EXT}', f'{filename}{TMP_EXT}']
+                    command += ['--default-language', 'spa']
+                    command += ['--language', '1:spa', '--language', '2:eng']
+                    command += ['--language', '3:spa', '--language', '4:eng']
+                    command += ['--language', '5:spa', '--language', '6:eng']
+                    subprocess.call(command)
+                    os.remove(f'{filename}{TMP_EXT}')
 
 
 if __name__ == '__main__':
@@ -286,4 +295,4 @@ if __name__ == '__main__':
               f'{args.broadcast}',
               f'-s {args.start}',
               '-p {args.client_port}',
-              f'"{filename}"' if args.write_to_file and filename else '', flush=True)
+              f'"{filename}"' if (args.write_to_file and filename) else '', flush=True)
