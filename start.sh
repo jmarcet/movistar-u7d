@@ -13,7 +13,7 @@ echo "nameserver 127.0.0.1" >> /etc/resolv.conf
 echo "172.26.22.23 www-60.svc.imagenio.telefonica.net" >> /etc/hosts
 echo "172.26.83.49 html5-static.svc.imagenio.telefonica.net" >> /etc/hosts
 
-( while (true); do /app/movistar-epg.py; sleep 1; done ) &
-( while (true); do /app/movistar-u7d.py; sleep 1; done ) &
+( while (true); do sudo -E -u nobody -g nogroup /app/movistar-epg.py; sleep 1; done ) &
+( while (true); do sudo -E -u nobody -g nogroup /app/movistar-u7d.py; sleep 1; done ) &
 
 tail -f /dev/null
