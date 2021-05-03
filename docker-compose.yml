@@ -20,9 +20,10 @@ services:
       - /etc/localtime:/etc/localtime
     # - ./:/app
     # - ${HOME}:/home
-    # - ${U7D_DIR}:${U7D_DIR}
+    # - ${RECORDINGS}:${RECORDINGS}
     #environment:
     # - LAN_IP=${LAN_IP}
+    # - RECORDINGS=${RECORDINGS}
     # - MAC_IPTV_U7D=${MAC_IPTV_U7D}
     # - MAC_MOVISTAR_U7D=${MAC_MOVISTAR_U7D}
     # - SANIC_HOST=${SANIC_HOST}
@@ -31,7 +32,6 @@ services:
     # - SANIC_EPG_PORT=${SANIC_EPG_PORT}
     # - IPTV_GW=${IPTV_GW}
     # - U7D_GW=${U7D_GW}
-    # - U7D_DIR=${U7D_DIR}
     # devices:
     #   - /dev/dri:/dev/dri
     # cpu_shares: 2048

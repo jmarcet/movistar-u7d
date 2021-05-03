@@ -6,7 +6,7 @@ Requires=movistar-epg.service
 [Service]
 Type=simple
 # Environment=HOME=/home
-# Environment=U7D_DIR=/tmp
+# Environment=RECORDINGS=/tmp
 # Environment=SANIC_HOST=0.0.0.0
 # Environment=SANIC_PORT=8888
 # Environment=SANIC_THREADS=3

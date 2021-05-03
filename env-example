@@ -1,6 +1,6 @@
 # HOME=/home                         # directorio donde quedará guardada la caché de tv_grab_es_movistartv
 # LAN_IP=192.168.1.1                 # ip pública que referenciará la lista de canales y la guía xml
-# U7D_DIR=/tmp                       # directorio donde `u7d.py -w` grabará el canal y programa indicados
+# RECORDIGS=/tmp                     # directorio donde `u7d.py -w` grabará el canal y programa indicados
 # SANIC_HOST=0.0.0.0                 # ip para anclar movistar-u7d.py
 # SANIC_PORT=8888                    # puerto
 # SANIC_THREADS=3                    # número de hilos de ejecución de movistar-u7d.py
