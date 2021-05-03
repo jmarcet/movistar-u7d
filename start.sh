@@ -13,6 +13,20 @@ echo "nameserver 127.0.0.1" >> /etc/resolv.conf
 echo "172.26.22.23 www-60.svc.imagenio.telefonica.net" >> /etc/hosts
 echo "172.26.83.49 html5-static.svc.imagenio.telefonica.net" >> /etc/hosts
 
+while ! test -e "${HOME:-/home}/MovistarTV.m3u"; do
+    sudo -E -u nobody -g nogroup \
+        /app/tv_grab_es_movistartv --m3u "${HOME:-/home}/MovistarTV.m3u"
+    sleep 15
+done
+
+while ! test -e "${HOME:-/home}/guide.xml"; do
+    sudo -E -u nobody -g nogroup \
+        /app/tv_grab_es_movistartv \
+        --tvheadend "${HOME:-/home}/MovistarTV.m3u" \
+        --output "${HOME:-/home}/guide.xml"
+    sleep 15
+done
+
 ( while (true); do sudo -E -u nobody -g nogroup /app/movistar-epg.py; sleep 1; done ) &
 ( while (true); do sudo -E -u nobody -g nogroup /app/movistar-u7d.py; sleep 1; done ) &
 
