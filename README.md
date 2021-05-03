@@ -115,10 +115,12 @@ Instalación
 
 Si tenemos una máquina conectada por cable al router, podemos ejecutarlo sin mayores complicaciones.
 
+ - En todas los situaciones siguientes, no debemos olvidarnos de añadir el script `updateguide.sh` al cron, funcionando cada hora, ya sea con o sin docker. De él dependen la lista de canales y la guía. Sin éstos dos elementos nada funcionar, es decir, hasta que se ejecute satisfactoriamente al menos una vez, y tengamos por tanto una lista de canlaes y una guía, nada funcionará.
+
  - Tenemos la opción de utilizar docker y docker-compose. Dentro del container queda casi todo lo necesario:
 
 ```
-docker-copose up -d
+docker-copose up -d && docker-copose logs -f
 ```
 
 Si, por el contrario, preferimos instalarlo y usarlo directamente:
