@@ -972,7 +972,9 @@ class MulticastIPTV:
                         full_title.split('-')[0].strip() if '-' in full_title else full_title
                     season = int(x[1])
                     episode = int(x[2])
-                    episode_title = x[3].strip()
+                    episode_title = \
+                        x[3].strip().replace('- ',
+                                             '-').replace(' -','-').replace('-',' - ')
                     full_title = '%s S%02dE%02d' % (serie, season, episode)
                     if episode_title:
                         full_title += ' - %s' % episode_title
