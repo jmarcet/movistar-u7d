@@ -19,6 +19,14 @@ while ! test -e "${HOME:-/home}/MovistarTV.m3u"; do
     sleep 15
 done
 
+while ! test -e "${HOME:-/home}/guide.xml"; do
+    sudo -E -u nobody -g nogroup \
+        /app/tv_grab_es_movistartv \
+        --tvheadend "${HOME:-/home}/MovistarTV.m3u" \
+        --output "${HOME:-/home}/guide.xml"
+    sleep 15
+done
+
 ( while (true); do sudo -E -u nobody -g nogroup /app/movistar-epg.py; sleep 1; done ) &
 ( while (true); do sudo -E -u nobody -g nogroup /app/movistar-u7d.py; sleep 1; done ) &
 
