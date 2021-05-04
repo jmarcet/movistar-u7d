@@ -213,13 +213,9 @@ def main(args):
 
                 host = socket.gethostbyname(socket.gethostname())
                 command = ['ffmpeg', '-i']
-                command += [f'udp://@{host}:{args.client_port}?overrun_nonfatal=1&fifo_size=278873"']
-                command += ['-map', '0', '-n', '-c', 'copy']
+                command += [f'udp://@{host}:{args.client_port}?fifo_size=278873"']
+                command += ['-map', '0', '-y', '-c', 'copy']
                 command += ['-c:a:0', 'aac', '-c:a:1', 'aac']
-                command += ['-metadata:s:a:0', 'language=esp']
-                command += ['-metadata:s:a:1', 'language=eng']
-                command += ['-metadata:s:a:2', 'language=esp']
-                command += ['-metadata:s:a:3', 'language=eng']
                 command += ['-movflags', '+faststart', '-stats', '-v', 'panic']
                 command += ['-f', 'matroska', '-t', f'{args.time}', f'{filename}{TMP_EXT}']
 
