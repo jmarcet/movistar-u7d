@@ -195,8 +195,8 @@ async def handle_reload_epg_task():
     for channel in _epgdata:
         nr_epg += len(_epgdata[channel])
     log.info(f'Total EPG entries: {nr_epg}')
-    log.info('EPG Parsed')
-    return response.json({'status': 'EPG Parsed'}, 200)
+    log.info('EPG Updated')
+    return response.json({'status': 'EPG Updated'}, 200)
 
 
 async def handle_timers():
