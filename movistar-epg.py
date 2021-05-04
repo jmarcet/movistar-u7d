@@ -25,12 +25,14 @@ LOG_SETTINGS = LOGGING_CONFIG_DEFAULTS
 LOG_SETTINGS['formatters']['generic']['datefmt'] = \
     LOG_SETTINGS['formatters']['access']['datefmt'] = '[%Y-%m-%d %H:%M:%S]'
 
+PREFIX = ''
+
 app = Sanic('Movistar_epg')
 app.config.update({'KEEP_ALIVE_TIMEOUT': YEAR_SECONDS})
 
 _channels = {}
 _epgdata = {}
-_task = None
+_t_epg = _t_timers = None
 
 
 @app.get('/channel_address/<channel_id>/')
@@ -192,8 +194,8 @@ async def handle_reload_epg_task():
     for channel in _epgdata:
         nr_epg += len(_epgdata[channel])
     log.info(f'Total EPG entries: {nr_epg}')
-    log.info('EPG Updated')
-    return response.json({'status': 'EPG Updated'}, 200)
+    log.info('EPG Parsed')
+    return response.json({'status': 'EPG Parsed'}, 200)
 
 
 async def handle_timers():
@@ -257,17 +259,41 @@ async def handle_timers():
         json.dump(_recordings, fp, ensure_ascii=False, indent=4, sort_keys=True)
 
 
+async def handle_update_epg():
+    log.info(f'handle_update_epg')
+    for i in range(5):
+        tvgrab = await asyncio.create_subprocess_exec(f'{PREFIX}tv_grab_es_movistartv',
+                                                      '--tvheadend',
+                                                      os.path.join(HOME, 'MovistarTV.m3u'),
+                                                      '--output',
+                                                      os.path.join(HOME, 'guide.xml'))
+        await tvgrab.wait()
+        if tvgrab.returncode != 0:
+            await asyncio.sleep(15)
+            log.err(f'Trying again [{i+2}/5] to update EPG')
+        else:
+            await handle_reload_epg_task()
+            break
+
+
 @app.listener('after_server_start')
 async def notify_server_start(app, loop):
-    global _task
+    global PREFIX, _t_epg, _t_timers
+    if __file__.startswith('/app/'):
+        PREFIX = '/app/'
+
     await handle_reload_epg_task()
-    _task = asyncio.create_task(run_every(900, handle_timers))
+    await asyncio.create_subprocess_exec('pkill', '-f', 'tv_grab_es_movistartv')
+    _t_timers = asyncio.create_task(run_every(900, handle_timers))
+    _t_epg = asyncio.create_task(run_every(3600, handle_update_epg))
 
 
 @app.listener('after_server_stop')
 async def notify_server_stop(app, loop):
-    if _task:
-        _task.cancel()
+    if _t_epg:
+        _t_epg.cancel()
+    if _t_timers:
+        _t_timers.cancel()
 
 
 async def run_every(timeout, stuff):

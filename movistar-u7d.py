@@ -37,33 +37,11 @@ LOG_SETTINGS = LOGGING_CONFIG_DEFAULTS
 LOG_SETTINGS['formatters']['generic']['datefmt'] = \
     LOG_SETTINGS['formatters']['access']['datefmt'] = '[%Y-%m-%d %H:%M:%S]'
 
+PREFIX = ''
+
 app = Sanic('Movistar_u7d', log_config=LOG_SETTINGS)
 app.config.update({'KEEP_ALIVE': False})
 host = socket.gethostbyname(socket.gethostname())
-
-
-def get_free_port():
-    with closing(socket.socket(socket.AF_INET, socket.SOCK_DGRAM)) as s:
-        s.bind(('', 0))
-        s.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
-        client_port = s.getsockname()[1]
-    return client_port
-
-
-@app.listener('after_server_start')
-async def notify_server_start(app, loop):
-    log.info('after_server_start')
-    global SESSION
-    conn = aiohttp.TCPConnector(keepalive_timeout=YEAR_SECONDS, limit_per_host=1)
-    SESSION = aiohttp.ClientSession(connector=conn)
-
-
-@app.listener('after_server_stop')
-async def notify_server_stop(app, loop):
-    log.info('after_server_stop killing u7d.py')
-    p = await asyncio.create_subprocess_exec('/usr/bin/pkill', '-INT',
-                                             '-f', 'u7d.py .+ -p ')
-    await p.wait()
 
 
 @app.get('/channels.m3u')
@@ -185,7 +163,7 @@ async def handle_flussonic(request, channel_id, url):
         return response.json({'status': f'{channel_id}/{url} not found'}, 404)
 
     client_port = get_free_port()
-    cmd = ('/app/u7d.py', channel_id, program_id, '-s', offset, '-p', str(client_port))
+    cmd = (f'{PREFIX}u7d.py', channel_id, program_id, '-s', offset, '-p', str(client_port))
     duration = int(x.groups()[1]) if x.groups()[1] else 0
     remaining = str(duration - int(offset))
     u7d_msg = '%s %s [%s/%d]' % (channel_id, program_id, offset, duration)
@@ -239,6 +217,31 @@ async def handle_flussonic(request, channel_id, url):
             except Exception as ex:
                 log.warning(f'[{request.ip}] {repr(ex)}')
 
+
+@app.listener('after_server_start')
+async def notify_server_start(app, loop):
+    log.info('after_server_start')
+    global PREFIX, SESSION
+    if __file__.startswith('/app/'):
+        PREFIX = '/app/'
+
+    conn = aiohttp.TCPConnector(keepalive_timeout=YEAR_SECONDS, limit_per_host=1)
+    SESSION = aiohttp.ClientSession(connector=conn)
+
+
+@app.listener('after_server_stop')
+async def notify_server_stop(app, loop):
+    log.info('after_server_stop killing u7d.py')
+    p = await asyncio.create_subprocess_exec('pkill', '-INT', '-f', 'u7d.py .+ -p ')
+    await p.wait()
+
+
+def get_free_port():
+    with closing(socket.socket(socket.AF_INET, socket.SOCK_DGRAM)) as s:
+        s.bind(('', 0))
+        s.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+        client_port = s.getsockname()[1]
+    return client_port
 
 
 if __name__ == '__main__':
