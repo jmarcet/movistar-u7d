@@ -77,17 +77,11 @@ El resultado son dos microservicios escritos en python asíncrono, con [Sanic](h
 
  - `movistar-u7d.py`: el proxy principal con el que se comunica el cliente final, como el TiviMate.
 
- - `movistar-epg.py`: otro miscroservicio en python asíncrono encargado de localizar el programa correspondiente al punto temporal que solicita el cliente. Mantiene el estado necesario para el servicio, permitiendo que el microservicio principal no tenga estado y pueda trabajar en múltiples hilos sin problemas.
+ - `movistar-epg.py`: otro miscroservicio en python asíncrono. Encargado de actualizar la EPG y de localizar el programa correspondiente al punto temporal que solicita el cliente. Mantiene el estado necesario para el servicio, permitiendo que el microservicio principal no tenga estado y pueda trabajar en múltiples hilos sin problemas.
 
  - `u7d.py`: pequeño script que mantiene abierta la reproducción de los programas de los últimos 7 días, habrá uno en ejecución por cada programa que se esté visionando, de consumo inapreciable.
 
  - `tv_grab_es_movistartv`: encargado de generar la lista de canales y la programación, así como de guardar una caché de los últimos 8 días de programas, de manera que necesita ser ejecutado de forma recurrente (cada 2h). Esta información es imprescindible para que todo el proceso funcione bien. Tanto TiviMate como cualquier repdoductor con catchup flussonic sólo se preocupan por canal y un timestamp, que define un momento preciso en el tiempo. El proxy es el encargado de encontrar qué programa de la EPG corresponde a ese canal en ese momento y negociar con Movistar la reproducción.
-
-Extras para la EPG:
-
- - `updateguide.sh`: script para ejecutar de forma recurrente, se asegurará de mantener la EPG y su caché al día
-
- - `crontab`: crontab de ejemplo para ejecutar el script anterior, cada 2h, en el minuto 5. La frecuencia es así de alta para enterarse de los cambios de última hora que a veces sufre la programación.
 
 Para Systemd:
 
@@ -114,8 +108,6 @@ Instalación
 -----------
 
 Si tenemos una máquina conectada por cable al router, podemos ejecutarlo sin mayores complicaciones.
-
- - En todas los situaciones siguientes, no debemos olvidarnos de añadir el script `updateguide.sh` al cron, funcionando cada hora, ya sea con o sin docker. De él dependen la lista de canales y la guía. Sin éstos dos elementos nada funcionar, es decir, hasta que se ejecute satisfactoriamente al menos una vez, y tengamos por tanto una lista de canlaes y una guía, nada funcionará.
 
  - Tenemos la opción de utilizar docker y docker-compose. Dentro del container queda casi todo lo necesario:
 
@@ -150,7 +142,7 @@ systemctl start movistar-u7d
 
  - Sin systemd, tendremos que lanzar directamente los dos `movistar-u7d.py` y `movistar-epg.py`.
 
- - En cualquiera de los casos, no debemos olvidarnos de mantener la EPG acutalizada, usando `updateguide.sh` de forma recurrente.
+ - La primera vez tendremos que esperar a que termine de descargar la guía, ya que sin EPG no funcionará nada.
 
 Tened en cuenta que `tv_grab_es_movistartv` creará la lista de canales y la guía EPG apuntando a las variables de entorno `http://${LAN_IP}:${SANIC_PORT}` por is os interesa llegar a modificar los valores por defecto.
 
