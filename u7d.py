@@ -259,11 +259,12 @@ def main(args):
                     for i in range(2):
                         subprocess.call(['pkill', '-f', f'ffmpeg.+udp://.+{args.client_port}'])
                 if filename:
-                    command = ['mkvmerge', '-o', f'{filename}{VID_EXT}', f'{filename}{TMP_EXT}']
+                    command = ['mkvmerge', '-o', f'{filename}{VID_EXT}']
                     command += ['--default-language', 'spa']
                     command += ['--language', '1:spa', '--language', '2:eng']
                     command += ['--language', '3:spa', '--language', '4:eng']
                     command += ['--language', '5:spa', '--language', '6:eng']
+                    command += [f'{filename}{TMP_EXT}']
                     subprocess.call(command)
                     os.remove(f'{filename}{TMP_EXT}')
 
