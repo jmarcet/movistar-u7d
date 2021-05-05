@@ -243,8 +243,9 @@ async def handle_timers():
                      (channel not in _recordings or
                       (title not in repr(_recordings[channel]) and
                       timestamp not in _recordings[channel])):
+                    duration = _epgdata[_key][timestamp]['duration'] + 180
                     log.info(f'Found match! {channel} {timestamp} "{title}"')
-                    sanic_url = f'{SANIC_URL}/{channel}/{timestamp}.mp4?record=0'
+                    sanic_url = f'{SANIC_URL}/{channel}/{timestamp}.mp4?record={duration}'
                     log.info(sanic_url)
                     async with httpx.AsyncClient() as client:
                         r = await client.get(sanic_url)
