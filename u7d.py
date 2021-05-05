@@ -291,5 +291,4 @@ if __name__ == '__main__':
               f'{args.channel}',
               f'{args.broadcast}',
               f'-s {args.start}',
-              '-p {args.client_port}',
-              f'"{filename}"' if (args.write_to_file and filename) else '', flush=True)
+              '-p {args.client_port}', flush=True)
