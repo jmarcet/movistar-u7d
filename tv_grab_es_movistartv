@@ -336,12 +336,9 @@ class Cache:
 
     @staticmethod
     def __save(cfile, data):
-        try:
-            with open('%s/cache/%s' % (app_dir, cfile), 'w') as fp:
-                json.dump({'data': data}, fp, ensure_ascii=False, indent=4, sort_keys=True)
-            # logger.debug("Cache: %s guardado" % cfile)
-        except IOError:
-            logger.error('Caché: No se puede escribir en disco')
+        with open('%s/cache/%s' % (app_dir, cfile), 'w') as fp:
+            json.dump({'data': data}, fp, ensure_ascii=False, indent=4, sort_keys=True)
+        # logger.debug("Cache: %s guardado" % cfile)
 
     def load_cookie(self):
         data = self.__load(cookie_file)
@@ -660,6 +657,7 @@ class MulticastIPTV:
             return _files
         except Exception as ex:
             logger.error('Error al descargar los archivos XML: %s' % repr(ex))
+            raise
 
     @staticmethod
     def __get_channels(xml_channels):
@@ -1177,7 +1175,7 @@ class XMLTV:
                         tag_actor.text = actor.strip()
             ElTr.SubElement(tag_programme, 'icon', {
                     'src': '%s%s' % (f'http://{sanic}/Covers/', ext_info['cover'])})
-        tag_desc.text += '\n\n' + ext_info['description']
+            tag_desc.text += '\n\n' + ext_info['description']
         tag_rating = ElTr.SubElement(tag_programme, 'rating', {'system': 'pl'})
         tag_value = ElTr.SubElement(tag_rating, 'value')
         tag_value.text = age_rating[program['age_rating']]
@@ -1248,12 +1246,9 @@ class XMLTV:
 
     @staticmethod
     def __write_to_disk(file_path, content):
-        try:
-            with codecs.open(file_path, 'w', 'UTF-8') as file_h:
-                file_h.write(content)
-                file_h.close()
-        except IOError:
-            logger.error('No se puede escribir en disco')
+        with codecs.open(file_path, 'w', 'UTF-8') as file_h:
+            file_h.write(content)
+            file_h.close()
 
 
 def create_logger(argv):
