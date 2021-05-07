@@ -216,7 +216,7 @@ def main(args):
                 command += [f'udp://@{host}:{args.client_port}?fifo_size=278873"']
                 command += ['-map', '0', '-y', '-c', 'copy']
                 command += ['-c:a:0', 'aac', '-c:a:1', 'aac']
-                command += ['-movflags', '+faststart', '-stats', '-v', 'panic']
+                command += ['-movflags', '+faststart', '-v', 'panic']
                 command += ['-f', 'matroska', '-t', f'{args.time}', f'{filename}{TMP_EXT}']
 
                 proc = multiprocessing.Process(target=subprocess.call, args=(command, ))
