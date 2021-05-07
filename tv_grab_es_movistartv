@@ -963,19 +963,25 @@ class MulticastIPTV:
                 season = struct.unpack('B', epg_dt[title_end + 11:title_end + 12])[0]
                 full_title = self.__sanitize(self.__decode_string(epg_dt[32:title_end]))
                 serie_id = struct.unpack('>H', epg_dt[title_end + 5:title_end + 7])[0]
-                x = re.search(r"(.+) +T([ \d]+) *Ep?.? *(\d+)[ -]*(.*)", full_title)
+                if re.match(r".+ T\d+ .+", full_title):
+                    x = re.search(r"(.+(?!T\d)) +T([ \d]+)(?: *Ep?.? *(\d+))?[ -]*(.*)",
+                                  full_title)
+                else:
+                    x = re.search(r"(.+(?!T\d))(?: +T([ \d]+))? *Ep?.? *(\d+)[ -]*(.*)",
+                                  full_title)
                 if x := x and x.groups():
                     is_serie = True
-                    serie = x[0] if x[0] else \
+                    serie = x[0].strip() if x[0] else \
                         full_title.split('-')[0].strip() if '-' in full_title else full_title
-                    season = int(x[1])
-                    episode = int(x[2])
+                    season = int(x[1]) if x[1] else season
+                    episode = int(x[2]) if x[2] else episode
                     episode_title = \
                         x[3].strip().replace('- ',
                                              '-').replace(' -','-').replace('-',' - ')
-                    full_title = '%s S%02dE%02d' % (serie, season, episode)
-                    if episode_title:
-                        full_title += ' - %s' % episode_title
+                    if serie and season and episode:
+                        full_title = '%s S%02dE%02d' % (serie, season, episode)
+                        if episode_title:
+                            full_title += ' - %s' % episode_title
                 elif serie_id:
                     is_serie = True
                     if ' - ' in full_title:
