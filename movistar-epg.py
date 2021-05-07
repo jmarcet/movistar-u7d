@@ -277,11 +277,14 @@ async def handle_update_epg():
                                                       '--tvheadend',
                                                       os.path.join(HOME, 'MovistarTV.m3u'),
                                                       '--output',
-                                                      os.path.join(HOME, 'guide.xml'))
+                                                      os.path.join(HOME, 'guide.xml'),
+                                                      stdin=asyncio.subprocess.DEVNULL,
+                                                      stdout=asyncio.subprocess.DEVNULL,
+                                                      stderr=asyncio.subprocess.DEVNULL)
         await tvgrab.wait()
         if tvgrab.returncode != 0:
+            log.error(f'Waiting 15s before trying again [{i+2}/5] to update EPG')
             await asyncio.sleep(15)
-            log.err(f'Trying again [{i+2}/5] to update EPG')
         else:
             await handle_reload_epg_task()
             break
