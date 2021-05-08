@@ -19,6 +19,7 @@ SANIC_EPG_HOST = os.getenv('SANIC_EPG_HOST', '127.0.0.1')
 SANIC_EPG_PORT = int(os.getenv('SANIC_EPG_PORT', '8889'))
 SANIC_PORT = int(os.getenv('SANIC_PORT', '8888'))
 SANIC_URL = f'http://{SANIC_EPG_HOST}:{SANIC_PORT}'
+RECORDINGS = os.getenv('RECORDINGS')
 
 YEAR_SECONDS = 365 * 24 * 60 * 60
 
@@ -298,7 +299,8 @@ async def notify_server_start(app, loop):
 
     await handle_reload_epg_task()
     _t_epg1 = asyncio.create_task(delay_update_epg())
-    _t_timers = asyncio.create_task(run_every(900, handle_timers))
+    if RECORDINGS:
+        _t_timers = asyncio.create_task(run_every(900, handle_timers))
 
 
 @app.listener('after_server_stop')
