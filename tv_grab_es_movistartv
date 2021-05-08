@@ -970,7 +970,6 @@ class MulticastIPTV:
                     x = re.search(r"(.+(?!T\d))(?: +T([ \d]+))? *Ep?.? *(\d+)[ -]*(.*)",
                                   full_title)
                 if x := x and x.groups():
-                    is_serie = True
                     serie = x[0].strip() if x[0] else \
                         full_title.split('-')[0].strip() if '-' in full_title else full_title
                     season = int(x[1]) if x[1] else season
@@ -978,6 +977,7 @@ class MulticastIPTV:
                     episode_title = \
                         x[3].strip().replace('- ',
                                              '-').replace(' -','-').replace('-',' - ')
+                    is_serie = True if (serie and episode) else False
                     if serie and season and episode:
                         full_title = '%s S%02dE%02d' % (serie, season, episode)
                         if episode_title:
@@ -1138,7 +1138,7 @@ class XMLTV:
         gens = self.__get_genre_and_subgenre(program['genre'])
         keys = self.__get_key_and_subkey(program['genre'], config['genres'])
         # Series
-        if program['serie_id'] > 0:
+        if program['is_serie'] or program['serie_id'] > 0:
             tsse = self.__get_series_data(program, ext_info)
             tag_title.text = tsse['title']
             tag_stitle = ElTr.SubElement(tag_programme, 'sub-title', lang['es'])
