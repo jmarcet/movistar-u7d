@@ -16,7 +16,7 @@ from collections import namedtuple
 
 SANIC_EPG_HOST = os.getenv('SANIC_EPG_HOST', '127.0.0.1')
 SANIC_EPG_PORT = int(os.getenv('SANIC_EPG_PORT', '8889'))
-STORAGE = os.getenv('RECORDINGS', '/tmp')
+RECORDINGS = os.getenv('RECORDINGS', '/tmp')
 
 MVTV_URL = 'http://www-60.svc.imagenio.telefonica.net:2001/appserver/mvtv.do'
 SANIC_EPG_URL = f'http://{SANIC_EPG_HOST}:{SANIC_EPG_PORT}'
@@ -198,15 +198,15 @@ def main(args):
                         args.time = int(data['duration']) - args.start
                     title = safe_filename(data['full_title'])
                     if data['is_serie']:
-                        path = os.path.join(STORAGE, safe_filename(data['serie']))
+                        path = os.path.join(RECORDINGS, safe_filename(data['serie']))
                         filename = os.path.join(path, title)
                         if not os.path.exists(path):
                             print(f'Creating recording subdir {path}', flush=True)
                             os.mkdir(path)
                     else:
-                        filename = os.path.join(STORAGE, title)
+                        filename = os.path.join(RECORDINGS, title)
                 elif args.time:
-                    filename = os.path.join(STORAGE,
+                    filename = os.path.join(RECORDINGS,
                                             f'{args.channel}-{args.broadcast}')
                 else:
                     raise ValueError('Recording time unknown')
