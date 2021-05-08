@@ -22,6 +22,8 @@ services:
     # - ${HOME}:/home
     # - ${RECORDINGS}:${RECORDINGS}
     #environment:
+    # - U7D_UID=${U7D_UID}
+    # - U7D_GID=${U7D_GID}
     # - LAN_IP=${LAN_IP}
     # - RECORDINGS=${RECORDINGS}
     # - MAC_IPTV_U7D=${MAC_IPTV_U7D}

@@ -1,6 +1,8 @@
+# U7D_UID=nobody                     # UID para ejecutar los backends y para las grabaciones y caches
+# U7D_GID=nogroup                    # GID para ejecutar los backends y para las grabaciones y caches
 # HOME=/home                         # directorio donde quedará guardada la caché de tv_grab_es_movistartv
 # LAN_IP=192.168.1.1                 # ip pública que referenciará la lista de canales y la guía xml
-# RECORDIGS=/tmp                     # directorio donde `u7d.py -w` grabará el canal y programa indicados
+# RECORDIGS=/home/recordings         # directorio para grabaciones
 # SANIC_HOST=0.0.0.0                 # ip para anclar movistar-u7d.py
 # SANIC_PORT=8888                    # puerto
 # SANIC_THREADS=3                    # número de hilos de ejecución de movistar-u7d.py

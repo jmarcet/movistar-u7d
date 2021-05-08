@@ -13,21 +13,25 @@ echo "nameserver 127.0.0.1" >> /etc/resolv.conf
 echo "172.26.22.23 www-60.svc.imagenio.telefonica.net" >> /etc/hosts
 echo "172.26.83.49 html5-static.svc.imagenio.telefonica.net" >> /etc/hosts
 
+if [ -n "${U7D_UID}" -o -n "${U7D_GID}" ]; then
+	_SUDO="sudo -E"
+	[ -n "${U7D_UID}" ] && _SUDO="${_SUDO} -u ${U7D_UID}"
+	[ -n "${U7D_GID}" ] && _SUDO="${_SUDO} -g ${U7D_GID}"
+fi
+
 while ! test -e "${HOME:-/home}/MovistarTV.m3u"; do
-    sudo -E -u nobody -g nogroup \
-        /app/tv_grab_es_movistartv --m3u "${HOME:-/home}/MovistarTV.m3u"
+    ${_SUDO} /app/tv_grab_es_movistartv --m3u "${HOME:-/home}/MovistarTV.m3u"
     sleep 15
 done
 
 while ! test -e "${HOME:-/home}/guide.xml"; do
-    sudo -E -u nobody -g nogroup \
-        /app/tv_grab_es_movistartv \
+    ${_SUDO} /app/tv_grab_es_movistartv \
         --tvheadend "${HOME:-/home}/MovistarTV.m3u" \
         --output "${HOME:-/home}/guide.xml"
     sleep 15
 done
 
-( while (true); do sudo -E -u nobody -g nogroup /app/movistar-epg.py; sleep 1; done ) &
-( while (true); do sudo -E -u nobody -g nogroup /app/movistar-u7d.py; sleep 1; done ) &
+( while (true); do ${_SUDO} /app/movistar-epg.py; sleep 1; done ) &
+( while (true); do ${_SUDO} /app/movistar-u7d.py; sleep 1; done ) &
 
 tail -f /dev/null
