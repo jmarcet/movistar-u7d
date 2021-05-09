@@ -6,13 +6,21 @@ Movistar IPTV U7D - Flussonic catchup proxy
 Uso
 ---
 
+Ofrece compatibilidad completa con:
+
+- En Android TV: [TiviMate](https://play.google.com/store/apps/details?id=ar.tvplayer.tv).
+
+- En Android: [OTT Navigator IPTV](https://play.google.com/store/apps/details?id=studio.scillarium.ottnavigator)
+
+- Multiplataforma: [Kodi](https://kodi.tv/) con [IPTV Simple PVR](https://github.com/kodi-pvr/pvr.iptvsimple)
+
 Una vez instalado el servicio, tendremos las siguientes URLs disponibles, donde 192.168.1.1 será la IP donde funcione este proxy:
 
  - Canales: `http://192.168.1.1:8888/channels.m3u` o `http://192.168.1.1:8888/MovistarTV.m3u`
 
  - Guía de programación (EPG): `http://192.168.1.1:8888/guide.xml`
 
-Con configurar esas dos cosas debería ser suficiente. Aseguráos de que el cliente IPTV (con catchup Flussonic) guarda al menos 8 días de historial del EPG.
+Con configurar esas dos cosas debería ser suficiente. Aseguráos de que el cliente que uséis guarda al menos 8 días de historial del EPG. En el caso del `Kodi IPTV Simple`, además de añadir la lista de canales y la guía (sin caché) en los ajustes del addon, deberemos activar el Timeshift y el Catchup. Éste último en modo Default con 8 días de catchup y la opción de Reproducir desde la EPG en modo Live TV. De esta manera conseguiremos una experiencia de uso prácticamente idéntica a la del `TiviMate`, manteniendo la interfaz de LiveTV con el Catchup, con reproducción continua, etc.
 
  - Los canales serán accesibles en URLs como: `http://192.168.1.1:8888/{canal}/live`
 
@@ -67,8 +75,6 @@ El resultado es algo así (el funcionamiento real es fluido todo el tiempo, el v
 
  - [TiviMate_Movistar_20210320_U7D-2.mp4](https://openwrt.marcet.info/u7d/TiviMate_Movistar_20210320_U7D-2.mp4)
 
-Para Android puro, como móviles y tablets, es compatible con [OTT Navigator IPTV](https://play.google.com/store/apps/details?id=studio.scillarium.ottnavigator)
-
 
 Componentes
 -----------
@@ -97,7 +103,7 @@ Para docker:
 Observaciones
 -------------
 
- - Sólo hace falta tener contratada la fibra de Movistar, no es necesario ningún paquete de televisión.
+ - Sólo hace falta tener contratada la fibra de Movista con acceso a la TDT, no es necesario ningún paquete de televisión.
 
  - La funcionalidad que más trabajo me dio conseguir y que más agradezco a la hora de usarlo es la reproducción continua. ¿Que qué es eso? Pues dado que Movistar da acceso a la programación de los últimos 7 días a partir de un identificador de canal y un identificador de programa, ambos incluidos en la EPG, a la hora de reproducir cualquier momento de la última semana se establece una negociación que te da acceso a reproducir **ese** programa, no el siguiente. De esta manera, tanto en la app oficial como en el addon cerrado, reproduces un programa y al acabar (normalmente sobre 1 o 2 minutos después del final) se detiene.
 
@@ -144,7 +150,7 @@ systemctl start movistar-u7d
 
  - La primera vez tendremos que esperar a que termine de descargar la guía, ya que sin EPG no funcionará nada.
 
-Tened en cuenta que `tv_grab_es_movistartv` creará la lista de canales y la guía EPG apuntando a las variables de entorno `http://${LAN_IP}:${SANIC_PORT}` por is os interesa llegar a modificar los valores por defecto.
+Tened en cuenta que `tv_grab_es_movistartv` creará la lista de canales y la guía EPG apuntando a las variables de entorno `http://${LAN_IP}:${SANIC_PORT}` por si os interesa llegar a modificar los valores por defecto.
 
 
 Instalación en el propio router con docker-compose
