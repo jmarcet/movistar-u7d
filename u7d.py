@@ -2,12 +2,13 @@
 
 import argparse
 import httpx
+import os
 import multiprocessing
 import signal
 import socket
 import subprocess
+import sys
 import time
-import os
 import urllib.parse
 
 from contextlib import closing
@@ -213,7 +214,11 @@ def main(args):
 
                 host = socket.gethostbyname(socket.gethostname())
                 command = ['ffmpeg', '-i']
-                command += [f'udp://@{host}:{args.client_port}?fifo_size=278873"']
+                command += [f'udp://@{host}:{args.client_port}'
+                             '?buffer_size=64512'
+                             '&fifo_size=114688'
+                             '&pkt_size=1344'
+                             '&timeout=500000']
                 command += ['-map', '0', '-y', '-c', 'copy']
                 command += ['-c:a:0', 'aac', '-c:a:1', 'aac']
                 command += ['-movflags', '+faststart', '-v', 'panic']
@@ -222,19 +227,18 @@ def main(args):
                 proc = multiprocessing.Process(target=subprocess.call, args=(command, ))
                 proc.start()
 
-            if args.time:
-                def _handle_timeout(signum, frame):
-                    raise TimeoutError()
-                signal.signal(signal.SIGALRM, _handle_timeout)
-                signal.alarm(args.time)
-
-            if args.write_to_file:
                 print(f"{'[' + args.client_ip + '] ' if args.client_ip else ''}"
                       f'Recording:',
                       f'{args.channel}',
                       f'{args.broadcast}',
                       f'[{args.time}s]',
                       f'"{filename}"', flush=True)
+
+            if args.time:
+                def _handle_timeout(signum, frame):
+                    raise TimeoutError()
+                signal.signal(signal.SIGALRM, _handle_timeout)
+                signal.alarm(args.time)
 
             while True:
                 time.sleep(30)
@@ -254,41 +258,39 @@ def main(args):
         finally:
             if client and 'Session' in session:
                 client.print(client.send_request('TEARDOWN', session), killed=args)
-            if args.write_to_file:
-                if proc and proc.is_alive():
-                    for i in range(2):
-                        subprocess.call(['pkill', '-f', f'ffmpeg.+udp://.+{args.client_port}'])
-                if filename:
-                    command = ['mkvmerge', '-o', f'{filename}{VID_EXT}']
-                    command += ['--default-language', 'spa']
-                    command += ['--language', '1:spa', '--language', '2:eng']
-                    command += ['--language', '3:spa', '--language', '4:eng']
-                    command += ['--language', '5:spa', '--language', '6:eng']
-                    command += [f'{filename}{TMP_EXT}']
-                    subprocess.call(command)
-                    os.remove(f'{filename}{TMP_EXT}')
+
+        if args.write_to_file and filename:
+            subprocess.call(['pkill', '-HUP', '-f',
+                            f'ffmpeg -i udp://@{host}:{args.client_port}'])
+            if not os.path.exists(f'{filename}{TMP_EXT}'):
+                sys.exit(1)
+            command = ['mkvmerge', '-o', f'{filename}{VID_EXT}']
+            command += ['--default-language', 'spa']
+            command += ['--language', '1:spa', '--language', '2:eng']
+            command += ['--language', '3:spa', '--language', '4:eng']
+            command += ['--language', '5:spa', '--language', '6:eng']
+            command += [f'{filename}{TMP_EXT}']
+            subprocess.call(command)
+            os.remove(f'{filename}{TMP_EXT}')
 
 
 if __name__ == '__main__':
-    try:
-        parser = argparse.ArgumentParser('Stream content from the Movistar U7D service.')
-        parser.add_argument('channel', help='channel id')
-        parser.add_argument('broadcast', help='broadcast id')
-        parser.add_argument('--client_ip', '-i', help='client ip address')
-        parser.add_argument('--client_port', '-p', help='client udp port', type=int)
-        parser.add_argument('--start', '-s', help='stream start offset', type=int)
-        parser.add_argument('--time', '-t', help='recording time in seconds', type=int)
-        parser.add_argument('--write_to_file', '-w', help='record', action='store_true')
-        args = parser.parse_args()
-        if not args.client_port:
-            args.client_port = find_free_port()
-        if not args.start:
-            args.start = 0
-        main(args)
-    except Exception as ex:
-        print(f"{'[' + args.client_ip + '] ' if args.client_ip else ''}"
-              f'{repr(ex)}',
-              f'{args.channel}',
-              f'{args.broadcast}',
-              f'-s {args.start}',
-              '-p {args.client_port}', flush=True)
+
+    parser = argparse.ArgumentParser('Stream content from the Movistar U7D service.')
+    parser.add_argument('channel', help='channel id')
+    parser.add_argument('broadcast', help='broadcast id')
+    parser.add_argument('--client_ip', '-i', help='client ip address')
+    parser.add_argument('--client_port', '-p', help='client udp port', type=int)
+    parser.add_argument('--start', '-s', help='stream start offset', type=int)
+    parser.add_argument('--time', '-t', help='recording time in seconds', type=int)
+    parser.add_argument('--write_to_file', '-w', help='record', action='store_true')
+
+    args = parser.parse_args()
+
+    if not args.client_port:
+        args.client_port = find_free_port()
+
+    if not args.start:
+        args.start = 0
+
+    main(args)
