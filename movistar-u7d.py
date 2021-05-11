@@ -125,13 +125,12 @@ async def handle_channel(request, channel_id):
             sock.setsockopt(socket.IPPROTO_IP, socket.IP_ADD_MEMBERSHIP, mreq)
             respond = await request.respond(content_type=MIME_TS)
             with closing(await asyncio_dgram.from_socket(sock)) as stream:
-                try:
-                    while True:
+                while True:
+                    try:
                         data = ((await stream.recv())[0])[28:]
                         await respond.send(data)
-                finally:
-                    log.info(f'[{request.ip}] {request.method} '
-                             f'{request.raw_url.decode()} => Stopped "{name}"')
+                    except TypeError:
+                        break
     except Exception as ex:
         log.error(f'[{request.ip}]',
                   f"aiohttp.ClientSession().get('{epg_url}')",
