@@ -781,7 +781,7 @@ class MulticastIPTV:
 
     def __get_bin_epg_threaded(self):
         queue = Queue()
-        threads = 16
+        threads = 8
         day = -1
         self.__epg = [{} for r in range(0, len(self.__xml_data['segments']))]
         logger.info('Multithread: %s descargas simultáneas' % threads)
@@ -900,15 +900,13 @@ class MulticastIPTV:
                 logger.info(f'Ficheros XML incompletos [{t+1}/{_t}]: {_msg}')
                 time.sleep(10)
         data = cache.load_epg_data()
-        if data:
-            logger.info('Canales: %i' % len(data['channels']))
-            logger.info('Paquetes: %i' % len(data['packages']))
-            self.__xml_data = data
-        else:
-            logger.info('Descargando canales y paquetes')
-            self.__xml_data = {
-                'channels': self.__get_channels(xml['2_0']),
-                'packages': self.__get_packages(xml['5_0'])}
+        logger.info('Canales: %i' % len(data['channels']))
+        logger.info('Paquetes: %i' % len(data['packages']))
+        self.__xml_data = data
+        logger.info('Descargando canales y paquetes')
+        self.__xml_data = {
+            'channels': self.__get_channels(xml['2_0']),
+            'packages': self.__get_packages(xml['5_0'])}
         logger.info('Descargando índices')
         self.__xml_data['segments'] = self.__get_segments(xml['6_0'])
         cache.save_epg_data(self.__xml_data)
