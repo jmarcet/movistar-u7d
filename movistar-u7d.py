@@ -217,6 +217,11 @@ async def handle_flussonic(request, channel_id, url):
                 log.warning(f'[{request.ip}] {repr(ex)}')
 
 
+@app.get('/favicon.ico')
+async def handle_notfound(request):
+    return response.json({}, 404)
+
+
 @app.listener('after_server_start')
 async def notify_server_start(app, loop):
     log.info('after_server_start')
