@@ -189,8 +189,9 @@ def main(args):
             if args.write_to_file:
                 epg_url = (f'{SANIC_EPG_URL}/program_name/'
                            f'{args.channel}/{args.broadcast}')
-                resp = httpx.get(epg_url)
+                host = socket.gethostbyname(socket.gethostname())
 
+                resp = httpx.get(epg_url)
                 if resp.status_code == 200:
                     data = resp.json()
                     print(f'{repr(data)}', flush=True)
@@ -212,7 +213,6 @@ def main(args):
                 else:
                     raise ValueError('Recording time unknown')
 
-                host = socket.gethostbyname(socket.gethostname())
                 command = ['ffmpeg', '-i']
                 command += [f'udp://@{host}:{args.client_port}'
                              '?buffer_size=64512'
