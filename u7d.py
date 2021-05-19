@@ -293,4 +293,7 @@ if __name__ == '__main__':
     if not args.start:
         args.start = 0
 
-    main(args)
+    try:
+        main(args)
+    except KeyboardInterrupt:
+        sys.exit(1)
