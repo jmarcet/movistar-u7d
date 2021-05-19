@@ -976,6 +976,9 @@ class MulticastIPTV:
                         x[3].strip().replace('- ',
                                              '-').replace(' -','-').replace('-',' - ')
                     is_serie = True if (serie and episode) else False
+                    if ': ' in serie and episode and not episode_title:
+                        episode_title = serie.split(':')[1].strip()
+                        serie = serie.split(':')[0].strip()
                     if serie and season and episode:
                         full_title = '%s S%02dE%02d' % (serie, season, episode)
                         if episode_title:
