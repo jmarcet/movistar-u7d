@@ -1239,7 +1239,7 @@ class XMLTV:
                 m3u += f'tvg-id="{channel_id}.movistar.tv" '
                 m3u += f'group-title="{channel_tag}" '
                 m3u += f'tvg-logo="{channel_logo}" '
-                m3u += f'catchup-source="http://{sanic}/{channel_id}' + '/{utc}-{duration}.m3u8"'
+                m3u += f'catchup-source="http://{sanic}/{channel_id}' + '/{utc}-{duration}.ts"'
                 m3u += f',{channel_name}\n'
                 m3u += '#KODIPROP:inputstream=inputstream.ffmpegdirect\n'
                 m3u += '#KODIPROP:inputstream.ffmpegdirect.stream_mode=timeshift\n'
