@@ -95,6 +95,7 @@ async def handle_logos(request, cover=None, logo=None, path=None):
         else:
             return response.json({'status': f'{orig_url} not found'}, 404)
 
+
 @app.route('/<channel_id>/live', methods=['GET', 'HEAD'])
 async def handle_channel(request, channel_id):
     try:
@@ -136,7 +137,7 @@ async def handle_channel(request, channel_id):
                   f'{repr(ex)}')
 
 
-@app.get('/<channel_id>/<url>')
+@app.route('/<channel_id>/<url>', methods=['GET', 'HEAD'])
 async def handle_flussonic(request, channel_id, url):
     log.info(f'[{request.ip}] {request.method} {request.raw_url.decode()}')
     x = re.search(r"\w*-?(\d{10})-?(\d+){0,1}\.\w+", url)
@@ -159,6 +160,9 @@ async def handle_flussonic(request, channel_id, url):
 
     if not program_id:
         return response.json({'status': f'{channel_id}/{url} not found'}, 404)
+
+    if request.method == 'HEAD':
+        return response.HTTPResponse(content_type=MIME_TS, status=200)
 
     client_port = get_free_port()
     cmd = (f'{PREFIX}u7d.py', channel_id, program_id, '-s', offset, '-p', str(client_port))
