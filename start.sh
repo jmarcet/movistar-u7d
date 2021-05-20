@@ -1,6 +1,7 @@
 #!/bin/sh
 
-if ifconfig eth1 &>/dev/null; then
+if [ -n "${IPTV_GW}" -a -n "${U7D_GW}" ] && \
+	[ -e /sys/class/net/eth0 -a -e /sys/class/net/eth1 ]; then
     [ -n "${MAC_IPTV_U7D}" ] && ifconfig eth0 hw ether ${MAC_IPTV_U7D}
     [ -n "${MAC_MOVISTAR_U7D}" ] && ifconfig eth1 hw ether ${MAC_MOVISTAR_U7D}
     ip route del 0.0.0.0/0 via ${IPTV_GW} dev eth0
