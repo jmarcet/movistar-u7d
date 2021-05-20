@@ -317,9 +317,12 @@ async def run_every(timeout, stuff):
 
 
 if __name__ == '__main__':
-    app.run(host=SANIC_EPG_HOST,
-            port=SANIC_EPG_PORT,
-            access_log=False,
-            auto_reload=True,
-            debug=False,
-            workers=1)
+    try:
+        app.run(host=SANIC_EPG_HOST,
+                port=SANIC_EPG_PORT,
+                access_log=False,
+                auto_reload=True,
+                debug=False,
+                workers=1)
+    except KeyboardInterrupt:
+        sys.exit(1)

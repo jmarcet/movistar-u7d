@@ -252,9 +252,12 @@ def get_free_port():
 
 
 if __name__ == '__main__':
-    app.run(host=SANIC_HOST,
-            port=SANIC_PORT,
-            access_log=False,
-            auto_reload=True,
-            debug=False,
-            workers=SANIC_THREADS)
+    try:
+        app.run(host=SANIC_HOST,
+                port=SANIC_PORT,
+                access_log=False,
+                auto_reload=True,
+                debug=False,
+                workers=SANIC_THREADS)
+    except KeyboardInterrupt:
+        sys.exit(1)
