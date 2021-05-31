@@ -1,0 +1,21 @@
+image: docker:latest
+
+services:
+  - docker:dind
+
+stages:
+  - build-docker
+
+variables:
+  API_REPOSITORY: $CI_REGISTRY/javier/movistar-u7d
+
+before_script:
+  - docker login -u $CI_REGISTRY_USER -p $CI_REGISTRY_PASSWORD $CI_REGISTRY
+
+build-docker:
+  stage: build-docker
+  script:
+    - docker build -t $API_REPOSITORY:$CI_COMMIT_SHA .
+    - docker push $API_REPOSITORY:$CI_COMMIT_SHA
+  only:
+    - master
