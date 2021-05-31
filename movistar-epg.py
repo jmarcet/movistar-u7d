@@ -71,7 +71,7 @@ async def handle_next_program(request, channel_id, program_id):
         elif _epgdata[channel_key][event]['pid'] == int(program_id):
             _found = True
             continue
-    
+
     if not _found:
         return response.json({'status': f'{channel_id}/{program_id} not found'}, 404)
 
@@ -243,8 +243,8 @@ async def handle_timers():
                 if re.match(timer_match, title) and \
                      (channel not in _recordings or
                       (title not in repr(_recordings[channel]) and
-                      timestamp not in _recordings[channel])):
-                    duration = _epgdata[_key][timestamp]['duration'] + 180
+                       timestamp not in _recordings[channel])):
+                    duration = _epgdata[_key][timestamp]['duration'] + 300
                     log.info(f'Found match! {channel} {timestamp} "{title}"')
                     sanic_url = f'{SANIC_URL}/{channel}/{timestamp}.mp4?record={duration}'
                     log.info(sanic_url)

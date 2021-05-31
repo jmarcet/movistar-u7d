@@ -23,6 +23,7 @@
 
 import argparse
 import codecs
+import httpx
 import json
 import logging
 import os
@@ -34,13 +35,14 @@ import struct
 import sys
 import time
 import traceback
-import httpx
 import xml.etree.ElementTree as ElTr
-from queue import Queue
+
 from datetime import date, datetime, timedelta
 from logging.handlers import RotatingFileHandler
+from queue import Queue
 from threading import Thread
 from xml.sax.saxutils import unescape
+
 
 EPG_CHANNELS = ['1', '2', '3', '4','5', '6', '477', '578', '582', '597', '657',
                 '663', '717', '743', '744', '745', '844', '884', '934', '935',

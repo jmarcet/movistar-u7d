@@ -2,8 +2,8 @@
 
 import argparse
 import httpx
-import os
 import multiprocessing
+import os
 import signal
 import socket
 import subprocess
@@ -11,8 +11,8 @@ import sys
 import time
 import urllib.parse
 
-from contextlib import closing
 from collections import namedtuple
+from contextlib import closing
 
 
 SANIC_EPG_HOST = os.getenv('SANIC_EPG_HOST', '127.0.0.1')
@@ -207,11 +207,9 @@ def main(args):
                             os.mkdir(path)
                     else:
                         filename = os.path.join(RECORDINGS, title)
-                elif args.time:
+                else:
                     filename = os.path.join(RECORDINGS,
                                             f'{args.channel}-{args.broadcast}')
-                else:
-                    raise ValueError('Recording time unknown')
 
                 command = ['ffmpeg', '-i']
                 command += [f'udp://@{host}:{args.client_port}'
@@ -222,7 +220,10 @@ def main(args):
                 command += ['-map', '0', '-y', '-c', 'copy']
                 command += ['-c:a:0', 'aac', '-c:a:1', 'aac']
                 command += ['-movflags', '+faststart', '-v', 'panic']
-                command += ['-f', 'matroska', '-t', f'{args.time}', f'{filename}{TMP_EXT}']
+                command += ['-f', 'matroska']
+                if args.time and args.time > 0:
+                    command += ['-t', f'{args.time}']
+                command += [f'{filename}{TMP_EXT}']
 
                 proc = multiprocessing.Process(target=subprocess.call, args=(command, ))
                 proc.start()
@@ -258,10 +259,11 @@ def main(args):
         finally:
             if client and 'Session' in session:
                 client.print(client.send_request('TEARDOWN', session), killed=args)
+            if args.write_to_file and proc:
+                subprocess.call(['pkill', '-HUP', '-f',
+                                f'ffmpeg -i udp://@{host}:{args.client_port}'])
 
         if args.write_to_file and filename:
-            subprocess.call(['pkill', '-HUP', '-f',
-                            f'ffmpeg -i udp://@{host}:{args.client_port}'])
             if not os.path.exists(f'{filename}{TMP_EXT}'):
                 sys.exit(1)
             command = ['mkvmerge', '-o', f'{filename}{VID_EXT}']
@@ -270,6 +272,8 @@ def main(args):
             command += ['--language', '3:spa', '--language', '4:eng']
             command += ['--language', '5:spa', '--language', '6:eng']
             command += [f'{filename}{TMP_EXT}']
+            if os.path.exists(f'{filename}{VID_EXT}'):
+                os.remove(f'{filename}{VID_EXT}')
             subprocess.call(command)
             os.remove(f'{filename}{TMP_EXT}')
 
@@ -289,9 +293,6 @@ if __name__ == '__main__':
 
     if not args.client_port:
         args.client_port = find_free_port()
-
-    if not args.start:
-        args.start = 0
 
     try:
         main(args)
