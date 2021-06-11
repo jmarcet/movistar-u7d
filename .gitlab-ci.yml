@@ -15,7 +15,7 @@ before_script:
 build-docker:
   stage: build-docker
   script:
-    - docker build -t $API_REPOSITORY:$CI_COMMIT_SHA .
-    - docker push $API_REPOSITORY:$CI_COMMIT_SHA
+    - docker build -t $API_REPOSITORY:$CI_COMMIT_SHA -t $API_REPOSITORY:latest .
+    - docker push -a $API_REPOSITORY
   only:
     - master
