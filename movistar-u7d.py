@@ -161,9 +161,6 @@ async def handle_flussonic(request, channel_id, url):
     if not program_id:
         return response.json({'status': f'{channel_id}/{url} not found'}, 404)
 
-    if request.method == 'HEAD':
-        return response.HTTPResponse(content_type=MIME_TS, status=200)
-
     client_port = get_free_port()
     cmd = (f'{PREFIX}u7d.py', channel_id, program_id, '-s', offset, '-p', str(client_port))
     duration = int(x.groups()[1]) if x.groups()[1] else 0
@@ -196,6 +193,9 @@ async def handle_flussonic(request, channel_id, url):
                               'program_id': program_id,
                               'offset': offset,
                               'time': record_time})
+
+    if request.method == 'HEAD':
+        return response.HTTPResponse(content_type=MIME_TS, status=200)
 
     log.info(f'[{request.ip}] Start: {u7d_msg}')
     with closing(await asyncio_dgram.bind((host, client_port))) as stream:
