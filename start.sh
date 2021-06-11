@@ -9,10 +9,10 @@ if [ -n "${IPTV_GW}" -a -n "${U7D_GW}" ] && \
     ip route add 0.0.0.0/0 via ${U7D_GW} dev eth1
 fi
 
-echo "nameserver 172.26.23.3" > /etc/resolv.conf
-echo "nameserver 127.0.0.1" >> /etc/resolv.conf
-echo "172.26.22.23 www-60.svc.imagenio.telefonica.net" >> /etc/hosts
-echo "172.26.83.49 html5-static.svc.imagenio.telefonica.net" >> /etc/hosts
+echo "nameserver 127.0.0.1" > /etc/resolv.conf
+
+/etc/init.d/dnsmasq start
+tail -f /var/log/dns.log &
 
 if [ -n "${U7D_UID}" -o -n "${U7D_GID}" ]; then
 	_SUDO="sudo -E"
