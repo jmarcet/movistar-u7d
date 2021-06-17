@@ -5,6 +5,7 @@ import httpx
 import json
 import os
 import re
+import sys
 import time
 
 from datetime import datetime
@@ -255,7 +256,7 @@ async def handle_timers():
                     log.info(f'Found match! {channel} {timestamp} "{title}"')
                     sanic_url = f'{SANIC_URL}/{channel}/{timestamp}.mp4?record={duration}'
                     if vo:
-                        sanic_url ++ '&vo=1'
+                        sanic_url += '&vo=1'
                     log.info(sanic_url)
                     async with httpx.AsyncClient() as client:
                         r = await client.get(sanic_url)
