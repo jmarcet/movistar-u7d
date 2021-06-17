@@ -213,15 +213,21 @@ def main(args):
 
                 command = ['ffmpeg', '-i']
                 command += [f'udp://@{host}:{args.client_port}'
-                             '&pkt_size=1316'
-                             '&timeout=500000']
-                command += ['-map', '0', '-y', '-c', 'copy']
+                            '&fifo_size=42'
+                            '&pkt_size=1316'
+                            '&timeout=500000']
+                command += ['-map', '0', '-c', 'copy']
                 command += ['-c:a:0', 'aac', '-c:a:1', 'aac']
-                command += ['-avioflags', 'direct', '-fflags', 'bitexact']
-                # command += ['-fflags', 'discardcorrupt', '-fflags', 'flush_packets']
-                command += ['-fflags', 'nobuffer', '-fflags', 'nofillin']
-                command += ['-fflags', 'noparse', '-chunk_size', '1316']
-                command += ['-movflags', '+faststart', '-v', 'warning']
+                command += ['-avioflags', 'direct']
+                command += ['-fflags', 'discardcorrupt']
+                command += ['-fflags', 'flush_packets']
+                command += ['-fflags', 'nobuffer']
+                command += ['-fflags', 'nofillin']
+                command += ['-fflags', 'noparse']
+                command += ['-chunk_size', '188']
+                command += ['-packetsize', '1316']
+                command += ['-movflags', '+faststart']
+                command += ['-v', 'warning', '-y']
                 command += ['-f', 'matroska', '-live', 'true']
                 if args.time and args.time > 0:
                     command += ['-t', f'{args.time}']
