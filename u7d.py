@@ -86,7 +86,7 @@ class RtspClient(object):
         self.sock.send(req.encode())
         resp = self.read_message()
 
-        if resp.status != '200 OK' and 'SETUP' not in method:
+        if resp.status != '200 OK' and method not in ['SETUP', 'TEARDOWN']:
             raise ValueError(f'{method} {repr(resp)}')
 
         return Request(req, resp)
@@ -257,11 +257,11 @@ def main(args):
                   f'[{args.time}s]',
                   f'"{filename}"' if (args.write_to_file and filename) else '', flush=True)
         finally:
-            if client and 'Session' in session:
-                client.print(client.send_request('TEARDOWN', session), killed=args)
             if args.write_to_file and proc:
                 subprocess.call(['pkill', '-HUP', '-f',
                                 f'ffmpeg -i udp://@{host}:{args.client_port}'])
+            if client and 'Session' in session:
+                client.print(client.send_request('TEARDOWN', session), killed=args)
 
         if args.write_to_file and filename:
             if not os.path.exists(f'{filename}{TMP_EXT}'):
