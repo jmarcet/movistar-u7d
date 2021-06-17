@@ -239,7 +239,14 @@ async def handle_timers():
                 busy = True
                 break
             title = _epgdata[_key][timestamp]['full_title']
+            deflang = _timers['language']['default'] if (
+                'language' in _timers and 'default' in _timers['language']) else ''
             for timer_match in _timers['match'][channel]:
+                if ' ## ' in timer_match:
+                        timer_match, lang = timer_match.split(' ## ')
+                else:
+                    lang = deflang
+                vo = True if lang == 'VO' else False
                 if re.match(timer_match, title) and \
                      (channel not in _recordings or
                       (title not in repr(_recordings[channel]) and
@@ -247,6 +254,8 @@ async def handle_timers():
                     duration = _epgdata[_key][timestamp]['duration'] + 300
                     log.info(f'Found match! {channel} {timestamp} "{title}"')
                     sanic_url = f'{SANIC_URL}/{channel}/{timestamp}.mp4?record={duration}'
+                    if vo:
+                        sanic_url ++ '&vo=1'
                     log.info(sanic_url)
                     async with httpx.AsyncClient() as client:
                         r = await client.get(sanic_url)

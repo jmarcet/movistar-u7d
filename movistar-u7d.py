@@ -167,11 +167,11 @@ async def handle_flussonic(request, channel_id, url):
     remaining = str(duration - int(offset))
     u7d_msg = '%s %s [%s/%d]' % (channel_id, program_id, offset, duration)
 
-    if record := request.query_args and request.query_args[0][0] == 'record':
-        record_time = request.query_args[0][1] \
-            if request.query_args[0][1] and request.query_args[0][1].isnumeric() \
-                else remaining
+    if record := request.args.get('record', False):
+        record_time = record if record.isnumeric() else remaining
         cmd += ('-t', record_time, '-w')
+        if vo := request.args.get('vo', False):
+            cmd += ('--vo', '1')
         log.info(f'[{request.ip}] Record: [{record_time}]s {u7d_msg}')
 
     cmd += ('-i', request.ip)

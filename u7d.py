@@ -213,14 +213,16 @@ def main(args):
 
                 command = ['ffmpeg', '-i']
                 command += [f'udp://@{host}:{args.client_port}'
-                             '?buffer_size=64512'
-                             '&fifo_size=114688'
-                             '&pkt_size=1344'
+                             '&pkt_size=1316'
                              '&timeout=500000']
                 command += ['-map', '0', '-y', '-c', 'copy']
                 command += ['-c:a:0', 'aac', '-c:a:1', 'aac']
-                command += ['-movflags', '+faststart', '-v', 'panic']
-                command += ['-f', 'matroska']
+                command += ['-avioflags', 'direct', '-fflags', 'bitexact']
+                # command += ['-fflags', 'discardcorrupt', '-fflags', 'flush_packets']
+                command += ['-fflags', 'nobuffer', '-fflags', 'nofillin']
+                command += ['-fflags', 'noparse', '-chunk_size', '1316']
+                command += ['-movflags', '+faststart', '-v', 'warning']
+                command += ['-f', 'matroska', '-live', 'true']
                 if args.time and args.time > 0:
                     command += ['-t', f'{args.time}']
                 command += [f'{filename}{TMP_EXT}']
@@ -271,6 +273,9 @@ def main(args):
             command += ['--language', '1:spa', '--language', '2:eng']
             command += ['--language', '3:spa', '--language', '4:eng']
             command += ['--language', '5:spa', '--language', '6:eng']
+            if args.vo:
+                command += ['--track-order', '0:2,0:1,0:4,0:3,0:6,0:5']
+                command += ['--default-track', '2:1']
             command += [f'{filename}{TMP_EXT}']
             if os.path.exists(f'{filename}{VID_EXT}'):
                 os.remove(f'{filename}{VID_EXT}')
@@ -287,6 +292,7 @@ if __name__ == '__main__':
     parser.add_argument('--client_port', '-p', help='client udp port', type=int)
     parser.add_argument('--start', '-s', help='stream start offset', type=int)
     parser.add_argument('--time', '-t', help='recording time in seconds', type=int)
+    parser.add_argument('--vo', help='set 2nd language as main one', type=bool, default=False)
     parser.add_argument('--write_to_file', '-w', help='record', action='store_true')
 
     args = parser.parse_args()
