@@ -65,35 +65,38 @@ async def handle_guide(request):
 @app.route('/Covers/<path>/<cover>', methods=['GET', 'HEAD'])
 @app.route('/Logos/<logo>', methods=['GET', 'HEAD'])
 async def handle_logos(request, cover=None, logo=None, path=None):
-    log.debug(f'[{request.ip}] {request.method} {request.url}')
-    if logo:
-        orig_url = f'{IMAGENIO_URL}/channelLogo/{logo}'
-    elif path and cover:
-        orig_url = (f'{IMAGENIO_URL}/covers/programmeImages'
-                    f'/portrait/290x429/{path}/{cover}')
-    else:
-        return response.json({'status': f'{request.url} not found'}, 404)
-
-    if request.method == 'HEAD':
-        return response.HTTPResponse(content_type='image/jpeg', status=200)
-
-    global SESSION_LOGOS
-    if not SESSION_LOGOS:
-        headers = {'User-Agent': 'MICA-IP-STB'}
-        SESSION_LOGOS = aiohttp.ClientSession(headers=headers)
-
-    async with SESSION_LOGOS.get(orig_url) as r:
-        if r.status == 200:
-            logo_data = await r.read()
-            headers = {}
-            headers.setdefault('Content-Disposition',
-                               f'attachment; filename="{logo}"')
-            return response.HTTPResponse(body=logo_data,
-                                         content_type='image/jpeg',
-                                         headers=headers,
-                                         status=200)
+    try:
+        log.debug(f'[{request.ip}] {request.method} {request.url}')
+        if logo:
+            orig_url = f'{IMAGENIO_URL}/channelLogo/{logo}'
+        elif path and cover:
+            orig_url = (f'{IMAGENIO_URL}/covers/programmeImages'
+                        f'/portrait/290x429/{path}/{cover}')
         else:
-            return response.json({'status': f'{orig_url} not found'}, 404)
+            return response.json({'status': f'{request.url} not found'}, 404)
+
+        if request.method == 'HEAD':
+            return response.HTTPResponse(content_type='image/jpeg', status=200)
+
+        global SESSION_LOGOS
+        if not SESSION_LOGOS:
+            headers = {'User-Agent': 'MICA-IP-STB'}
+            SESSION_LOGOS = aiohttp.ClientSession(headers=headers)
+
+        async with SESSION_LOGOS.get(orig_url) as r:
+            if r.status == 200:
+                logo_data = await r.read()
+                headers = {}
+                headers.setdefault('Content-Disposition',
+                                   f'attachment; filename="{logo}"')
+                return response.HTTPResponse(body=logo_data,
+                                             content_type='image/jpeg',
+                                             headers=headers,
+                                             status=200)
+            else:
+                return response.json({'status': f'{orig_url} not found'}, 404)
+    except asyncio.exceptions.CancelledError:
+        pass
 
 
 @app.route('/<channel_id>/live', methods=['GET', 'HEAD'])
@@ -131,6 +134,8 @@ async def handle_channel(request, channel_id):
                         await respond.send(data)
                     except TypeError:
                         break
+    except asyncio.exceptions.CancelledError:
+        pass
     except Exception as ex:
         log.error(f'[{request.ip}]',
                   f"aiohttp.ClientSession().get('{epg_url}')",
