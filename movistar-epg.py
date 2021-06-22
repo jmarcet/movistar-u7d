@@ -229,7 +229,7 @@ async def handle_timers():
             log.info(f'Channel {channel} not found in EPG')
             continue
         for timestamp in sorted(_epgdata[_key]):
-            if int(timestamp) > (int(datetime.now().timestamp()) - 900):
+            if int(timestamp) > (int(datetime.now().timestamp()) - (3600 * 3)):
                 break
             p = await asyncio.create_subprocess_exec('pgrep', '-f', 'ffmpeg.+udp://',
                                                      stdout=asyncio.subprocess.PIPE)
