@@ -231,7 +231,7 @@ def main(args):
                 command += ['-chunk_size', '188']
                 command += ['-packetsize', '1316']
                 command += ['-movflags', '+faststart']
-                command += ['-v', 'warning', '-y']
+                command += ['-v', 'panic', '-y']
                 command += ['-f', 'matroska']
                 if args.time and args.time > 0:
                     command += ['-t', f'{args.time}']
