@@ -310,6 +310,14 @@ async def notify_server_start(app, loop):
     await handle_reload_epg_task()
     _t_epg1 = asyncio.create_task(delay_update_epg())
     if RECORDINGS:
+        try:
+            async with await open_async('/proc/uptime', 'r') as f:
+                proc = await f.read()
+            uptime = int(float(proc.split()[1]))
+            if uptime < 300:
+                await asyncio.sleep(300)
+        except FileNotFoundError:
+            pass
         _t_timers = asyncio.create_task(run_every(900, handle_timers))
 
 
