@@ -318,7 +318,10 @@ async def notify_server_start(app, loop):
                 await asyncio.sleep(300)
         except FileNotFoundError:
             pass
-        _t_timers = asyncio.create_task(run_every(900, handle_timers))
+        if os.path.exists(os.path.join(HOME, 'timers.json')):
+            _t_timers = asyncio.create_task(run_every(900, handle_timers))
+        else:
+            log.info('No timers.json found, recordings disabled')
 
 
 @app.listener('after_server_stop')
