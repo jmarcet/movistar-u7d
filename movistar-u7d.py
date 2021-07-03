@@ -10,10 +10,13 @@ import socket
 import struct
 
 from contextlib import closing
+from setproctitle import setproctitle
 from sanic import Sanic, response
 from sanic.log import logger as log
 from sanic.log import LOGGING_CONFIG_DEFAULTS
 
+
+setproctitle('movistar-u7d')
 
 HOME = os.getenv('HOME', '/home')
 SANIC_HOST = os.getenv('SANIC_HOST', '0.0.0.0')

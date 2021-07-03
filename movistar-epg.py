@@ -9,11 +9,14 @@ import sys
 import time
 
 from datetime import datetime
+from setproctitle import getproctitle, setproctitle
 from sanic import Sanic, response
 from sanic.compat import open_async
 from sanic.log import logger as log
 from sanic.log import LOGGING_CONFIG_DEFAULTS
 
+
+setproctitle('movistar-epg')
 
 HOME = os.getenv('HOME', '/home/')
 SANIC_EPG_HOST = os.getenv('SANIC_EPG_HOST', '127.0.0.1')
