@@ -15,18 +15,18 @@ from collections import namedtuple
 from contextlib import closing
 
 
-SANIC_EPG_HOST = os.getenv('SANIC_EPG_HOST', '127.0.0.1')
-SANIC_EPG_PORT = int(os.getenv('SANIC_EPG_PORT', '8889'))
-RECORDINGS = os.getenv('RECORDINGS', '/tmp')
 
+IPTV = os.getenv('IPTV_ADDRESS', socket.gethostbyname(socket.gethostname()))
 MVTV_URL = 'http://www-60.svc.imagenio.telefonica.net:2001/appserver/mvtv.do'
-SANIC_EPG_URL = f'http://{SANIC_EPG_HOST}:{SANIC_EPG_PORT}'
-Request = namedtuple('Request', ['request', 'response'])
-Response = namedtuple('Response', ['version', 'status', 'url', 'headers', 'body'])
+RECORDINGS = os.getenv('RECORDINGS', '/tmp')
+SANIC_EPG_URL = f'http://127.0.0.1:8889'
 TMP_EXT = '._mp4'
 VID_EXT = '.mkv'
 UA = 'MICA-IP-STB'
 # WIDTH = 134
+
+Request = namedtuple('Request', ['request', 'response'])
+Response = namedtuple('Response', ['version', 'status', 'url', 'headers', 'body'])
 
 needs_position = False
 
@@ -189,7 +189,6 @@ def main(args):
             if args.write_to_file:
                 epg_url = (f'{SANIC_EPG_URL}/program_name/'
                            f'{args.channel}/{args.broadcast}')
-                host = socket.gethostbyname(socket.gethostname())
 
                 resp = httpx.get(epg_url)
                 if resp.status_code == 200:
@@ -212,7 +211,7 @@ def main(args):
                                             f'{args.channel}-{args.broadcast}')
 
                 command = ['ffmpeg', '-i']
-                command += [f'udp://@{host}:{args.client_port}'
+                command += [f'udp://@{IPTV}:{args.client_port}'
                             '&fifo_size=557753'
                             '&pkt_size=1316'
                             '&timeout=500000']
@@ -271,7 +270,7 @@ def main(args):
         finally:
             if args.write_to_file and proc:
                 subprocess.call(['pkill', '-HUP', '-f',
-                                f'ffmpeg -i udp://@{host}:{args.client_port}'])
+                                f'ffmpeg -i udp://@{IPTV}:{args.client_port}'])
             if client and 'Session' in session:
                 client.print(client.send_request('TEARDOWN', session), killed=args)
 

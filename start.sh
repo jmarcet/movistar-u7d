@@ -1,20 +1,5 @@
 #!/bin/sh
 
-if [ -n "${IPTV_GW}" -a -n "${U7D_GW}" ] && \
-	[ -e /sys/class/net/eth0 -a -e /sys/class/net/eth1 ]; then
-    [ -n "${MAC_IPTV_U7D}" ] && ifconfig eth0 hw ether ${MAC_IPTV_U7D}
-    [ -n "${MAC_MOVISTAR_U7D}" ] && ifconfig eth1 hw ether ${MAC_MOVISTAR_U7D}
-    ip route del 0.0.0.0/0 via ${IPTV_GW} dev eth0
-    ip route add 10.64.0.1/12 via ${IPTV_GW} dev eth0
-    ip route add 172.0.0.0/11 via ${IPTV_GW} dev eth0
-    ip route add 0.0.0.0/0 via ${U7D_GW} dev eth1
-fi
-
-echo "nameserver 127.0.0.1" > /etc/resolv.conf
-
-/etc/init.d/dnsmasq start
-tail -f /var/log/dns.log &
-
 if [ -n "${U7D_UID}" -o -n "${U7D_GID}" ]; then
 	_SUDO="sudo -E"
 	[ -n "${U7D_UID}" ] && _SUDO="${_SUDO} -u ${U7D_UID}"
@@ -37,3 +22,4 @@ done
 ( while (true); do nice -n -15 ionice -c 1 -n 0 ${_SUDO} /app/movistar-u7d.py; sleep 1; done ) &
 
 tail -f /dev/null
+

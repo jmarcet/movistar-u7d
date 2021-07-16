@@ -19,10 +19,9 @@ from sanic.log import LOGGING_CONFIG_DEFAULTS
 setproctitle('movistar-epg')
 
 HOME = os.getenv('HOME', '/home/')
-SANIC_EPG_HOST = os.getenv('SANIC_EPG_HOST', '127.0.0.1')
-SANIC_EPG_PORT = int(os.getenv('SANIC_EPG_PORT', '8889'))
+SANIC_HOST = os.getenv('LAN_IP', '127.0.0.1')
 SANIC_PORT = int(os.getenv('SANIC_PORT', '8888'))
-SANIC_URL = f'http://{SANIC_EPG_HOST}:{SANIC_PORT}'
+SANIC_URL = f'http://{SANIC_HOST}:{SANIC_PORT}'
 RECORDINGS = os.getenv('RECORDINGS')
 
 YEAR_SECONDS = 365 * 24 * 60 * 60
@@ -342,8 +341,8 @@ async def run_every(timeout, stuff):
 
 if __name__ == '__main__':
     try:
-        app.run(host=SANIC_EPG_HOST,
-                port=SANIC_EPG_PORT,
+        app.run(host='127.0.0.1',
+                port=8889,
                 access_log=False,
                 auto_reload=True,
                 debug=False,

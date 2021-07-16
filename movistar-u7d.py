@@ -18,19 +18,18 @@ from sanic.log import LOGGING_CONFIG_DEFAULTS
 
 setproctitle('movistar-u7d')
 
-HOME = os.getenv('HOME', '/home')
-SANIC_HOST = os.getenv('SANIC_HOST', '0.0.0.0')
+IPTV = os.getenv('IPTV_ADDRESS', socket.gethostbyname(socket.gethostname()))
+SANIC_EPG_URL = f'http://127.0.0.1:8889'
+SANIC_HOST = os.getenv('LAN_IP', '0.0.0.0')
 SANIC_PORT = int(os.getenv('SANIC_PORT', '8888'))
 SANIC_THREADS = int(os.getenv('SANIC_THREADS', '3'))
-SANIC_EPG_HOST = os.getenv('SANIC_EPG_HOST', '127.0.0.1')
-SANIC_EPG_PORT = int(os.getenv('SANIC_EPG_PORT', '8889'))
 
+HOME = os.getenv('HOME', '/home')
 GUIDE = os.path.join(HOME, 'guide.xml')
 CHANNELS = os.path.join(HOME, 'MovistarTV.m3u')
 IMAGENIO_URL = ('http://html5-static.svc.imagenio.telefonica.net'
                 '/appclientv/nux/incoming/epg')
 MIME_TS = 'video/MP2T;audio/mp3'
-SANIC_EPG_URL = f'http://{SANIC_EPG_HOST}:{SANIC_EPG_PORT}'
 SESSION = None
 SESSION_LOGOS = None
 YEAR_SECONDS = 365 * 24 * 60 * 60
@@ -43,7 +42,6 @@ PREFIX = ''
 
 app = Sanic('Movistar_u7d', log_config=LOG_SETTINGS)
 app.config.update({'KEEP_ALIVE': False})
-host = socket.gethostbyname(socket.gethostname())
 
 
 @app.get('/channels.m3u')
@@ -110,9 +108,9 @@ async def handle_channel(request, channel_id):
             if r.status != 200:
                 return response.json({'status': f'{channel_id} not found'}, 404)
             r = await r.json()
-            address = r['address']
+            mc_grp = r['address']
             name = r['name']
-            port = int(r['port'])
+            mc_port = int(r['port'])
 
         log.info(f'[{request.ip}] {request.method} '
                  f'{request.raw_url.decode()} => Playing "{name}"')
@@ -125,10 +123,10 @@ async def handle_channel(request, channel_id):
                                    socket.IPPROTO_UDP)) as sock:
             sock.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
             sock.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEPORT, 1)
-            sock.bind((address, port))
-            mreq = struct.pack('4sl', socket.inet_aton(address), socket.INADDR_ANY)
-            #sock.setsockopt(socket.SOL_SOCKET, socket.SO_RCVBUF, buf_size)
-            sock.setsockopt(socket.IPPROTO_IP, socket.IP_ADD_MEMBERSHIP, mreq)
+            sock.bind((mc_grp, mc_port))
+            sock.setsockopt(socket.SOL_IP, socket.IP_MULTICAST_IF, socket.inet_aton(IPTV))
+            sock.setsockopt(socket.SOL_IP, socket.IP_ADD_MEMBERSHIP,
+                            socket.inet_aton(mc_grp) + socket.inet_aton(IPTV))
             respond = await request.respond(content_type=MIME_TS)
             with closing(await asyncio_dgram.from_socket(sock)) as stream:
                 while True:
@@ -206,7 +204,7 @@ async def handle_flussonic(request, channel_id, url):
         return response.HTTPResponse(content_type=MIME_TS, status=200)
 
     log.info(f'[{request.ip}] Start: {u7d_msg}')
-    with closing(await asyncio_dgram.bind((host, client_port))) as stream:
+    with closing(await asyncio_dgram.bind((IPTV, client_port))) as stream:
         timedout = False
         respond = await request.respond(content_type=MIME_TS)
         try:

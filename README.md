@@ -150,52 +150,13 @@ systemctl start movistar-u7d
 
  - La primera vez tendremos que esperar a que termine de descargar la guía, ya que sin EPG no funcionará nada.
 
-Tened en cuenta que `tv_grab_es_movistartv` creará la lista de canales y la guía EPG apuntando a las variables de entorno `http://${LAN_IP}:${SANIC_PORT}` por si os interesa llegar a modificar los valores por defecto.
+ - Puede ser necesario establecer algunas variables de entorno. Lás principales son `LAN_IP` e `IPTV_ADDRESS`. `LAN_IP` es la ip donde queremos alojar el servicio, por defecto escuchará en todos los interfaces de red. `IPTV_ADDRESS` corresponde a la ip de la vlan2 de Movistar, la que tiene el tráfico iptv; en caso de hacerlo funcionar dentro del propio router, será imprescindible.
 
 
 Instalación en el propio router con docker-compose
 --------------------------------------------------
 
 Si queremos usarlo dentro del propio router, con su propia subred y con acceso a la VLAN de televisión, se complica todo un poco. De interesaros esta opción, [aquí](https://openwrt.marcet.info/latest/targets/x86/64/) podeís encontrar builds de openwrt para x86-64 con todo lo necesario para desplegar lo siguiente. Los actualizo cada pocos días.
-
-Más allá de esa opción, además de configurar todas las variables de entorno, necesitaremos:
-
- - [igmpproxy](https://github.com/pali/igmpproxy) para que `tv_grab_es_movistartv` funcione correctamente dentro del container.
-
-```
-$ cat /etc/igmpproxy.conf
-quickleave
-
-phyint eth0.2 upstream ratelimit 0 threshold 1
-        altnet 172.0/11
-
-phyint br-tvlan downstream ratelimit 0 threshold 1
-```
-
-Donde `eth0.2` es la VLAN 2 de Movistar, la de IPTV y `br-tvlan` es la subred `tvlan` en el docker-compose.
-
-Para que el microservicio `movistar-u7d.py` sea accesible desde la lan, tendremos que modificar el firewall de manera que los paquetes que lleguen al puerto 8888 del host (192.168.1.1 en el ejemplo) sean redirigidos al puerto 8888 de la ip donde escucha `movistar-u7d.py`, en todos los ejemplos U7D_ADDRESS. En OpenWrt bastaría con añadir a `/etc/config/firewall`:
-
-```
-config redirect
-        option name 'DNAT_LAN_TO_DOCKER_MOVISTAR_U7D'
-        option src 'lan'
-        option src_dip '192.168.1.1'
-        option src_dport '8888'
-        option dest 'tvlan'
-        option dest_ip '10.17.0.3'
-        option dest_port '8888'
-        option proto 'tcp'
-        option target 'DNAT'
-```
-
-que corresponde a:
-
-```
-iptables -A zone_lan_prerouting -d 192.168.1.1/32 -p tcp -m tcp --dport 8888 -m comment --comment "!fw3: DNAT_LAN_TO_DOCKER_MOVISTAR_U7D" -j DNAT --to-destination 10.17.0.3:8888
-```
-
-Por desgracia, al tener dos subredes dentro del container, no he conseguido hacerlo funcionar con el mapeado de puertos del propio docker, que haría infinitamente más sencillo este paso.
 
 
 Cualquier duda o consulta no dudéis en abrir una [incidencia](https://github.com/jmarcet/movistar-u7d/issues) [aquí](https://github.com/jmarcet/movistar-u7d) en Github.

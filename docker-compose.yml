@@ -11,11 +11,6 @@ services:
       - SYS_NICE
     restart: on-failure
     network_mode: host
-    # networks:
-    #   tvlan:
-    #     ipv4_address: ${U7D_ADDRESS}
-    #   iptv:
-    #     ipv4_address: ${IPTV_ADDRESS}
     volumes:
       - /etc/localtime:/etc/localtime
     # - ./:/app
@@ -24,16 +19,10 @@ services:
     #environment:
     # - U7D_UID=${U7D_UID}
     # - U7D_GID=${U7D_GID}
+    # - IPTV_ADDRESS=${IPTV_ADDRESS}
     # - LAN_IP=${LAN_IP}
     # - RECORDINGS=${RECORDINGS}
-    # - MAC_IPTV_U7D=${MAC_IPTV_U7D}
-    # - MAC_MOVISTAR_U7D=${MAC_MOVISTAR_U7D}
-    # - SANIC_HOST=${SANIC_HOST}
     # - SANIC_PORT=${SANIC_PORT}
-    # - SANIC_EPG_HOST=${SANIC_EPG_HOST}
-    # - SANIC_EPG_PORT=${SANIC_EPG_PORT}
-    # - IPTV_GW=${IPTV_GW}
-    # - U7D_GW=${U7D_GW}
     # devices:
     #   - /dev/dri:/dev/dri
     # cpu_shares: 2048
@@ -45,22 +34,5 @@ services:
     #   interval: 30s
     #   timeout: 5s
     #   retries: 3
-
-# networks:
-#   iptv:
-#     driver: macvlan
-#     driver_opts:
-#       parent: eth0.2
-#     ipam:
-#       config:
-#          - subnet: ${IPTV_NET}
-#   tvlan:
-#     driver: bridge
-#     ipam:
-#       driver: default
-#       config:
-#         - subnet: ${U7D_NET}
-#     driver_opts:
-#       com.docker.network.bridge.name: br-tvlan
 
 # vim: et ci pi sts=2 sw=2 ts=2

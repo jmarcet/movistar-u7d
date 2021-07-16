@@ -50,8 +50,10 @@ setproctitle('tv_grab_es_movistartv')
 EPG_CHANNELS = ['1', '2', '3', '4','5', '6', '477', '578', '582', '597', '657',
                 '663', '717', '743', '744', '745', '844', '884', '934', '935',
                 '1221', '2843', '2863', '3184', '3186', '3325', '3443', '3603', '4911']
+IPTV = os.getenv('IPTV_ADDRESS', socket.gethostbyname(socket.gethostname()))
 LAN_IP = os.getenv('LAN_IP', socket.gethostbyname(socket.gethostname()))
 SANIC_PORT = int(os.getenv('SANIC_PORT', '8888'))
+
 sanic = f'{LAN_IP}:{SANIC_PORT}'
 
 
@@ -632,8 +634,9 @@ class MulticastIPTV:
             sock.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
             sock.settimeout(3)
             sock.bind((mc_grp, int(mc_port)))
-            mreq = struct.pack("=4sl", socket.inet_aton(mc_grp), socket.INADDR_ANY)
-            sock.setsockopt(socket.IPPROTO_IP, socket.IP_ADD_MEMBERSHIP, mreq)
+            sock.setsockopt(socket.SOL_IP, socket.IP_MULTICAST_IF, socket.inet_aton(IPTV))
+            sock.setsockopt(socket.SOL_IP, socket.IP_ADD_MEMBERSHIP,
+                            socket.inet_aton(mc_grp) + socket.inet_aton(IPTV))
             # Wait for an end chunk to start by the beginning
             while not (chunk["end"]):
                 chunk = self.__parse_chunk(sock.recv(1500))

@@ -1,29 +1,9 @@
 # U7D_UID=nobody                     # UID para ejecutar los backends y para las grabaciones y caches
 # U7D_GID=nogroup                    # GID para ejecutar los backends y para las grabaciones y caches
 # HOME=/home                         # directorio donde quedará guardada la caché de tv_grab_es_movistartv
-# LAN_IP=192.168.1.1                 # ip pública que referenciará la lista de canales y la guía xml
+# IPTV_ADDRESS=                      # ip de la vlan2 de movistar, la de iptv
+# LAN_IP=                            # ip donde queremos tener el proxy funcionando
 # RECORDIGS=/home/recordings         # directorio para grabaciones
-# SANIC_HOST=0.0.0.0                 # ip para anclar movistar-u7d.py
-# SANIC_PORT=8888                    # puerto
+# SANIC_PORT=8888                    # puerto del proxy
 # SANIC_THREADS=3                    # número de hilos de ejecución de movistar-u7d.py
-# SANIC_EPG_HOST=127.0.0.1
-# SANIC_EPG_PORT=8889
 
-##########################################################################################
-# Para ejecuar en el propio router son su propia subred y acceso a la VLAN 2 de Movistar #
-##########################################################################################
-
-IPTV_ADDRESS=a.b.c.d                 # dirección IP de la VLAN 2 de Movistar, eth0 dentro del container
-IPTV_GW=10.64.0.1                    # puerta de enlace de la VLAN 2, eth0
-IPTV_NET=10.64.0.0/12                # máscara/subred de la VLAN 2, eth0
-
-U7D_ADDRESS=10.17.0.3                # dirección IP dentro del container, eth1, de movistar-u7d.py
-U7D_GW=10.17.0.1                     # puerta de enlace de eth1
-U7D_NET=10.17.0.0/24                 # máscara/subred de eth1
-
-# Podemos cambiar las MACs de los interfaces de red del container
-# que resulta útil para poder tener historial de datos y gráficas
-# limpias, con un número fijo de dispositivos
-#
-# MAC_IPTV_U7D=aa:bb:cc:dd:ee:02     # MAC del eth0 dentro del docker, que corresponde a la subred maclvan iptv
-# MAC_MOVISTAR_U7D=aa:bb:cc:dd:ee:03 # MAC del eth1 dentro del docker, que corresponde al bridge tvlan
