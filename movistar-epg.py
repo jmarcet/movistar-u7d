@@ -9,7 +9,7 @@ import sys
 import time
 
 from datetime import datetime
-from setproctitle import getproctitle, setproctitle
+from setproctitle import setproctitle
 from sanic import Sanic, response
 from sanic.compat import open_async
 from sanic.log import logger as log
@@ -153,7 +153,7 @@ async def handle_program_name(request, channel_id, program_id):
         if int(program_id) == _epg['pid']:
             _found = True
             break
-    
+
     if not _found:
         return response.json({'status': f'{channel_id}/{program_id} not found'}, 404)
 
@@ -252,9 +252,9 @@ async def handle_timers():
                     lang = deflang
                 vo = True if lang == 'VO' else False
                 if re.match(timer_match, title) and \
-                     (channel not in _recordings or
-                      (title not in repr(_recordings[channel]) and
-                       timestamp not in _recordings[channel])):
+                    (channel not in _recordings or
+                        (title not in repr(_recordings[channel]) and
+                         timestamp not in _recordings[channel])):
                     duration = _epgdata[_key][timestamp]['duration'] + 300
                     log.info(f'Found match! {channel} {timestamp} "{title}"')
                     sanic_url = f'{SANIC_URL}/{channel}/{timestamp}.mp4?record={duration}'
