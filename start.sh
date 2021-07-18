@@ -18,7 +18,7 @@ while ! test -e "${HOME:-/home}/guide.xml"; do
     sleep 15
 done
 
-( while (true); do nice -n -15 ionice -c 1 -n 0 ${_SUDO} /app/movistar-epg.py; sleep 1; done ) &
+( while (true); do nice -n -10 ionice -c 2 -n 0 ${_SUDO} /app/movistar-epg.py; sleep 1; done ) &
 ( while (true); do nice -n -15 ionice -c 1 -n 0 ${_SUDO} /app/movistar-u7d.py; sleep 1; done ) &
 
 tail -f /dev/null
