@@ -277,7 +277,8 @@ def main(args):
         if args.write_to_file and filename:
             if not os.path.exists(f'{filename}{TMP_EXT}'):
                 sys.exit(1)
-            command = ['mkvmerge', '-o', f'{filename}{VID_EXT}']
+            command = ['nice', '-n', '10', 'ionice', '-c', '3']
+            command += ['mkvmerge', '-o', f'{filename}{VID_EXT}']
             command += ['--default-language', 'spa']
             command += ['--language', '1:spa', '--language', '2:eng']
             command += ['--language', '3:spa', '--language', '4:eng']
