@@ -237,7 +237,7 @@ async def handle_timers():
                                                      stdout=asyncio.subprocess.PIPE)
             stdout, _ = await p.communicate()
             nr_procs = len(stdout.split())
-            if nr_procs > 4:
+            if nr_procs > 3:
                 log.info(f'Already recording {nr_procs} streams')
                 busy = True
                 break
