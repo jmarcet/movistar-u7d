@@ -21,6 +21,7 @@ services:
     # - U7D_GID=${U7D_GID}
     # - IPTV_ADDRESS=${IPTV_ADDRESS}
     # - LAN_IP=${LAN_IP}
+    # - PARALLEL_RECORDINGS=${PARALLEL_RECORDINGS}
     # - RECORDINGS=${RECORDINGS}
     # - SANIC_PORT=${SANIC_PORT}
     # devices:

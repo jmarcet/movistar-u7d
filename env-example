@@ -3,6 +3,7 @@
 # HOME=/home                         # directorio donde quedará guardada la caché de tv_grab_es_movistartv
 # IPTV_ADDRESS=                      # ip de la vlan2 de movistar, la de iptv
 # LAN_IP=                            # ip donde queremos tener el proxy funcionando
+# PARALLEL_RECORDINGS=4              # número de grabaciones simultáneas
 # RECORDIGS=/home/recordings         # directorio para grabaciones
 # SANIC_PORT=8888                    # puerto del proxy
 # SANIC_THREADS=3                    # número de hilos de ejecución de movistar-u7d.py
