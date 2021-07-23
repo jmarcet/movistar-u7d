@@ -45,7 +45,7 @@ _t_epg1 = _t_epg2 = _t_timers = None
 async def handle_channel_address(request, channel_id):
     log.debug(f'Searching Channel freqsuency: {channel_id}')
 
-    if not channel_id in _channels:
+    if channel_id not in _channels:
         return response.json({'status': f'{channel_id} not found'}, 404)
 
     return response.json({'status': 'OK',
@@ -58,13 +58,13 @@ async def handle_channel_address(request, channel_id):
 async def handle_next_program(request, channel_id, program_id):
     log.info(f'Searching next EPG: /{channel_id}/{program_id}')
 
-    if not channel_id in _channels:
+    if channel_id not in _channels:
         return response.json({'status': f'{channel_id}/{program_id} not found'}, 404)
 
     channel_key = _channels[channel_id]['replacement'] \
         if 'replacement' in _channels[channel_id] else channel_id
 
-    if not channel_key in _epgdata:
+    if channel_key not in _epgdata:
         return response.json({'status': f'{channel_id}/{program_id} not found'}, 404)
 
     _found = False
@@ -99,7 +99,7 @@ async def handle_program_id(request, channel_id, url):
     last_event = program_id = None
     offset = '0'
 
-    if not channel_id in _channels:
+    if channel_id not in _channels:
         return response.json({'status': f'{channel_id}/{url} not found'}, 404)
 
     channel_key = _channels[channel_id]['replacement'] \
@@ -142,7 +142,7 @@ async def handle_program_id(request, channel_id, url):
 
 @app.get('/program_name/<channel_id>/<program_id>')
 async def handle_program_name(request, channel_id, program_id):
-    if not channel_id in _channels:
+    if channel_id not in _channels:
         return response.json({'status': f'{channel_id}/{program_id} not found'}, 404)
 
     channel_key = _channels[channel_id]['replacement'] \

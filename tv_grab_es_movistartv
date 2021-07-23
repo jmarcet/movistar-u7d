@@ -47,7 +47,7 @@ from xml.sax.saxutils import unescape
 
 setproctitle('tv_grab_es_movistartv')
 
-EPG_CHANNELS = ['1', '2', '3', '4','5', '6', '477', '578', '582', '597', '657',
+EPG_CHANNELS = ['1', '2', '3', '4', '5', '6', '477', '578', '582', '597', '657',
                 '663', '717', '743', '744', '745', '844', '884', '934', '935',
                 '1221', '2843', '2863', '3184', '3186', '3325', '3443', '3603', '4911']
 IPTV = os.getenv('IPTV_ADDRESS', socket.gethostbyname(socket.gethostname()))
@@ -683,7 +683,7 @@ class MulticastIPTV:
                     'name': i[2][0].text.encode('latin1').decode(),
                     'shortname': i[2][1].text.encode('latin1').decode(),
                     'genre': i[2][3][0].text.encode('latin1').decode(),
-                    'logo_uri': i[1].attrib['logoURI'] if 'logoURI' in i[1].attrib \
+                    'logo_uri': i[1].attrib['logoURI'] if 'logoURI' in i[1].attrib
                                                           else 'MAY_1/imSer/4146.jpg'}
                 if i[2][4].tag == '{urn:dvb:ipisdns:2006}ReplacementService':
                     channel_list[channel_id]['replacement'] = \
@@ -982,7 +982,7 @@ class MulticastIPTV:
                     episode = int(x[2]) if x[2] else episode
                     episode_title = \
                         x[3].strip().replace('- ',
-                                             '-').replace(' -','-').replace('-',' - ')
+                                             '-').replace(' -', '-').replace('-', ' - ')
                     is_serie = True if (serie and episode) else False
                     if ': ' in serie and episode and not episode_title:
                         episode_title = serie.split(':')[1].strip()
@@ -1017,7 +1017,7 @@ class MulticastIPTV:
                     programs[start]['episode_title'] = episode_title
                 pr_title_end = \
                     struct.unpack('B', epg_dt[title_end + 12:title_end + 13])[0] \
-                        + title_end + 13
+                    + title_end + 13
                 cut = pr_title_end if pr_title_end else title_end
                 epg_dt \
                     = epg_dt[struct.unpack('B', epg_dt[cut + 3:cut + 4])[0] + cut + 4:]
@@ -1142,7 +1142,7 @@ class XMLTV:
         orig_title = ext_info['originalTitle'] \
             if ext_info and 'originalTitle' in ext_info else None
         if orig_title and \
-            orig_title not in program['full_title'] and not orig_title.startswith('Episod'):
+                orig_title not in program['full_title'] and not orig_title.startswith('Episod'):
             tag_desc.text += f'«{orig_title}» ' 
         gens = self.__get_genre_and_subgenre(program['genre'])
         keys = self.__get_key_and_subkey(program['genre'], config['genres'])
@@ -1158,7 +1158,7 @@ class XMLTV:
                                               'episode-num',
                                               {'system': 'xmltv_ns'})
             tag_episode_num.text = str(int(tsse['season']) - 1 if tsse['season'] else '') \
-                 + '.' + str(int(tsse['episode']) - 1 if tsse['episode'] else '')
+                + '.' + str(int(tsse['episode']) - 1 if tsse['episode'] else '')
         # Películas y otros
         elif ext_info:
             if 'productionDate' in ext_info:
