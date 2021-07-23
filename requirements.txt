@@ -1,5 +1,5 @@
 aiohttp
 asyncio_dgram
 httpx
-git+https://github.com/sanic-org/sanic
+sanic>-21.6.0
 setproctitle
