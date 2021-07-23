@@ -212,7 +212,7 @@ def main(args):
 
                 command = ['ffmpeg', '-i']
                 command += [f'udp://@{IPTV}:{args.client_port}'
-                            '&fifo_size=557753'
+                            '&fifo_size=168'
                             '&pkt_size=1316'
                             '&timeout=500000']
                 command += ['-async', '1', '-vsync', 'passthrough']
