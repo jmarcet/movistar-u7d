@@ -970,10 +970,10 @@ class MulticastIPTV:
                 full_title = self.__sanitize(self.__decode_string(epg_dt[32:title_end]))
                 serie_id = struct.unpack('>H', epg_dt[title_end + 5:title_end + 7])[0]
                 if re.match(r".+ T\d+ .+", full_title):
-                    x = re.search(r"(.+(?!T\d)) +T([ \d]+)(?: *Ep?.? *(\d+))?[ -]*(.*)",
+                    x = re.search(r"(.+(?!T\d)) +T(\d+)(?: *Ep?.? *(\d+))?[ -]*(.*)",
                                   full_title)
                 else:
-                    x = re.search(r"(.+(?!T\d))(?: +T([ \d]+))? *Ep?.? *(\d+)[ -]*(.*)",
+                    x = re.search(r"(.+(?!T\d))(?: +T(\d+))? *Ep?.? *(\d+)[ -]*(.*)",
                                   full_title)
                 if x := x and x.groups():
                     serie = x[0].strip() if x[0] else \
@@ -1143,7 +1143,7 @@ class XMLTV:
             if ext_info and 'originalTitle' in ext_info else None
         if orig_title and \
             orig_title not in program['full_title'] and not orig_title.startswith('Episod'):
-            tag_desc.text +=  f'«{orig_title}» ' 
+            tag_desc.text += f'«{orig_title}» ' 
         gens = self.__get_genre_and_subgenre(program['genre'])
         keys = self.__get_key_and_subkey(program['genre'], config['genres'])
         # Series
