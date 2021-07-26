@@ -215,18 +215,18 @@ def main(args):
 
                 command = ['ffmpeg', '-i']
                 command += [f'udp://@{IPTV}:{args.client_port}'
-                            '&fifo_size=168'
+                            '&fifo_size=5572'
                             '&pkt_size=1316'
                             '&timeout=500000']
-                command += ['-async', '1', '-vsync', 'passthrough']
+                #command += ['-async', '1', '-vsync', 'passthrough']
                 command += ['-bsf:v', 'h264_mp4toannexb']
                 command += ['-ts_packetsize', '1316']
                 command += ['-map', '0', '-c', 'copy']
                 command += ['-c:a:0', 'aac', '-c:a:1', 'aac']
-                command += ['-avioflags', 'direct']
-                command += ['-fflags', '+discardcorrupt']
-                command += ['-fflags', '+flush_packets']
-                command += ['-fflags', '+genpts']
+                #command += ['-avioflags', 'direct']
+                #command += ['-fflags', '+discardcorrupt']
+                #command += ['-fflags', '+flush_packets']
+                #command += ['-fflags', '+genpts']
                 command += ['-fflags', '+nobuffer']
                 command += ['-fflags', '+nofillin']
                 command += ['-fflags', '+noparse']
@@ -315,5 +315,5 @@ if __name__ == '__main__':
 
     try:
         main(args)
-    except KeyboardInterrupt:
+    except (KeyboardInterrupt, TimeoutError):
         sys.exit(1)
