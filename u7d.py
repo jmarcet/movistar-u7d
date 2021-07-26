@@ -15,7 +15,11 @@ from collections import namedtuple
 from contextlib import closing
 
 
-IPTV = os.getenv('IPTV_ADDRESS', socket.gethostbyname(socket.gethostname()))
+if 'IPTV_ADDRESS' in os.environ:
+    IPTV = os.getenv('IPTV_ADDRESS')
+else:
+    IPTV = socket.gethostbyname(socket.gethostname())
+
 MVTV_URL = 'http://www-60.svc.imagenio.telefonica.net:2001/appserver/mvtv.do'
 RECORDINGS = os.getenv('RECORDINGS', '/tmp')
 SANIC_EPG_URL = f'http://127.0.0.1:8889'

@@ -18,7 +18,11 @@ from sanic.log import LOGGING_CONFIG_DEFAULTS
 
 setproctitle('movistar-u7d')
 
-IPTV = os.getenv('IPTV_ADDRESS', socket.gethostbyname(socket.gethostname()))
+if 'IPTV_ADDRESS' in os.environ:
+    IPTV = os.getenv('IPTV_ADDRESS')
+else:
+    IPTV = socket.gethostbyname(socket.gethostname())
+
 SANIC_EPG_URL = f'http://127.0.0.1:8889'
 SANIC_HOST = os.getenv('LAN_IP', '0.0.0.0')
 SANIC_PORT = int(os.getenv('SANIC_PORT', '8888'))

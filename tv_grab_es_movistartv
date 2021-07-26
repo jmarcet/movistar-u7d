@@ -47,11 +47,19 @@ from xml.sax.saxutils import unescape
 
 setproctitle('tv_grab_es_movistartv')
 
+if 'IPTV_ADDRESS' in os.environ:
+    IPTV = os.getenv('IPTV_ADDRESS')
+else:
+    IPTV = socket.gethostbyname(socket.gethostname())
+
+if 'LAN_IP' in os.environ:
+    LAN_IP = os.getenv('LAN_IP')
+else:
+    LAN_IP = socket.gethostbyname(socket.gethostname())
+
 EPG_CHANNELS = ['1', '2', '3', '4', '5', '6', '477', '578', '582', '597', '657',
                 '663', '717', '743', '744', '745', '844', '884', '934', '935',
                 '1221', '2843', '2863', '3184', '3186', '3325', '3443', '3603', '4911']
-IPTV = os.getenv('IPTV_ADDRESS', socket.gethostbyname(socket.gethostname()))
-LAN_IP = os.getenv('LAN_IP', socket.gethostbyname(socket.gethostname()))
 SANIC_PORT = int(os.getenv('SANIC_PORT', '8888'))
 
 sanic = f'{LAN_IP}:{SANIC_PORT}'
