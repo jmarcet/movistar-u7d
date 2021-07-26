@@ -233,7 +233,7 @@ async def handle_notfound(request):
 
 @app.listener('after_server_start')
 async def notify_server_start(app, loop):
-    log.info('after_server_start')
+    log.debug('after_server_start')
     global PREFIX, SESSION
     if __file__.startswith('/app/'):
         PREFIX = '/app/'
@@ -244,7 +244,7 @@ async def notify_server_start(app, loop):
 
 @app.listener('after_server_stop')
 async def notify_server_stop(app, loop):
-    log.info('after_server_stop killing u7d.py')
+    log.debug('after_server_stop killing u7d.py')
     p = await asyncio.create_subprocess_exec('pkill', '-INT', '-f', 'u7d.py .+ -p ')
     await p.wait()
 
