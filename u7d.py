@@ -141,6 +141,12 @@ def safe_filename(filename):
     return "".join(c for c in filename if c.isalnum() or c in keepcharacters).rstrip()
 
 
+def _cleanup():
+    if os.path.exists(filename + TMP_EXT):
+        os.remove(filename + TMP_EXT)
+    httpx.get(f'{SANIC_EPG_URL}/check_timers')
+
+
 # @ffmpeg.on('stderr')
 # def on_stderr(line):
 #     sys.stderr.write(f"{'[' + args.client_ip + '] ' if args.client_ip else ''}"
@@ -164,8 +170,7 @@ def safe_filename(filename):
 def on_terminated():
     sys.stderr.write(f"{'[' + args.client_ip + '] ' if args.client_ip else ''}"
                      '[u7d.py] ffmpeg terminated\n')
-    if os.path.exists(filename + TMP_EXT):
-        os.remove(filename + TMP_EXT)
+    _cleanup()
 
 
 @ffmpeg.on('error')
@@ -179,8 +184,7 @@ def on_error(code):
                          f'{args.broadcast} '
                          f'[{args.time}s] '
                          f'"{filename}"\n')
-        if os.path.exists(filename + TMP_EXT):
-            os.remove(filename + TMP_EXT)
+        _cleanup()
 
 
 @ffmpeg.on('completed')

@@ -238,6 +238,12 @@ async def handle_reload_epg_task():
     return response.json({'status': 'EPG Updated'}, 200)
 
 
+@app.get('/check_timers')
+async def handle_check_timers(request):
+    asyncio.create_task(handle_timers())
+    return response.json({'status': 'Checking Timers'}, 200)
+
+
 async def handle_timers():
     log.debug(f'handle_timers')
 
