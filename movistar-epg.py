@@ -9,6 +9,7 @@ import sys
 import time
 
 from datetime import datetime
+from filelock import FileLock
 from setproctitle import setproctitle
 from sanic import Sanic, response
 from sanic.compat import open_async
@@ -36,9 +37,16 @@ PREFIX = ''
 app = Sanic('Movistar_epg')
 app.config.update({'KEEP_ALIVE_TIMEOUT': YEAR_SECONDS})
 
+recordings = os.path.join(HOME, 'recordings.json')
+
 _channels = {}
 _epgdata = {}
 _t_epg1 = _t_epg2 = _t_timers = None
+
+
+def _safe_filename(filename):
+    keepcharacters = (' ', ',', '.', '_', '-', ':', '¡', '!', '¿', '?')
+    return "".join(c for c in filename if c.isalnum() or c in keepcharacters).rstrip()
 
 
 @app.get('/channel_address/<channel_id>/')
@@ -140,7 +148,7 @@ async def handle_program_id(request, channel_id, url):
     return response.json({'status': 'OK', 'program_id': program_id, 'offset': offset})
 
 
-@app.get('/program_name/<channel_id>/<program_id>')
+@app.route('/program_name/<channel_id>/<program_id>', methods=['GET', 'PUT'])
 async def handle_program_name(request, channel_id, program_id):
     if channel_id not in _channels:
         return response.json({'status': f'{channel_id}/{program_id} not found'}, 404)
@@ -157,11 +165,37 @@ async def handle_program_name(request, channel_id, program_id):
     if not _found:
         return response.json({'status': f'{channel_id}/{program_id} not found'}, 404)
 
-    return response.json({'status': 'OK',
+    if request.method == 'GET':
+        return response.json({'status': 'OK',
+                              'full_title': _epg['full_title'],
+                              'duration': _epg['duration'],
+                              'is_serie': _epg['is_serie'],
+                              'serie': _epg['serie']
+                              }, ensure_ascii=False)
+
+    lock = FileLock(recordings + '.lock')
+    try:
+        with lock:
+            async with await open_async(recordings) as f:
+                _recordings = json.loads(await f.read())
+    except (FileNotFoundError, TypeError) as ex:
+        _recordings = {}
+
+    if channel_id not in _recordings:
+        _recordings[channel_id] = {}
+    _recordings[channel_id][program_id] = {
+        'full_title': _epg['full_title']
+    }
+
+    with lock:
+        with open(recordings, 'w') as fp:
+            json.dump(_recordings, fp, ensure_ascii=False, indent=4, sort_keys=True)
+
+    asyncio.create_task(handle_timers())
+
+    log.info(f'Recording DONE: {channel_id} {program_id} "' + _epg['full_title'] + '"')
+    return response.json({'status': 'Recorded OK',
                           'full_title': _epg['full_title'],
-                          'duration': _epg['duration'],
-                          'is_serie': _epg['is_serie'],
-                          'serie': _epg['serie']
                           }, ensure_ascii=False)
 
 
@@ -180,7 +214,7 @@ async def handle_reload_epg_task():
             epgdata = json.loads(await f.read())['data']
         _epgdata = epgdata
         log.info('Loaded fresh EPG data')
-    except Exception as ex:
+    except (FileNotFoundError, TypeError) as ex:
         log.error(f'Failed to load EPG data {repr(ex)}')
         if not _epgdata:
             raise
@@ -190,7 +224,7 @@ async def handle_reload_epg_task():
             channels = json.loads(await f.read())['data']['channels']
         _channels = channels
         log.info('Loaded Channels metadata')
-    except Exception as ex:
+    except (FileNotFoundError, TypeError) as ex:
         log.error(f'Failed to load Channels metadata {repr(ex)}')
         if not _channels:
             raise
@@ -205,18 +239,19 @@ async def handle_reload_epg_task():
 
 
 async def handle_timers():
-    log.info(f'handle_timers')
+    log.debug(f'handle_timers')
 
     _recordings = _timers = {}
-    recordings = os.path.join(HOME, 'recordings.json')
     timers = os.path.join(HOME, 'timers.json')
 
     try:
         async with await open_async(timers) as f:
             _timers = json.loads(await f.read())
-        async with await open_async(recordings) as f:
-            _recordings = json.loads(await f.read())
-    except Exception as ex:
+        lock = FileLock(recordings + '.lock')
+        with lock:
+            async with await open_async(recordings) as f:
+                _recordings = json.loads(await f.read())
+    except (FileNotFoundError, TypeError) as ex:
         if not _timers:
             log.error(f'handle_timers: {ex} no timers, returning!')
             return
@@ -231,13 +266,15 @@ async def handle_timers():
         if _key not in _epgdata:
             log.info(f'Channel {channel} not found in EPG')
             continue
+        timers_added = []
         for timestamp in sorted(_epgdata[_key]):
             if int(timestamp) > (int(datetime.now().timestamp()) - (3600 * 3)):
                 break
-            p = await asyncio.create_subprocess_exec('pgrep', '-f', 'ffmpeg.+udp://',
+            p = await asyncio.create_subprocess_exec('pgrep', '-af', 'ffmpeg.+udp://',
                                                      stdout=asyncio.subprocess.PIPE)
             stdout, _ = await p.communicate()
-            nr_procs = len(stdout.split())
+            _ffmpeg = [t.rstrip().decode() for t in stdout.splitlines()]
+            nr_procs = len(_ffmpeg)
             if nr_procs > PARALLEL_RECORDINGS:
                 log.info(f'Already recording {nr_procs} streams')
                 busy = True
@@ -252,27 +289,21 @@ async def handle_timers():
                     lang = deflang
                 vo = True if lang == 'VO' else False
                 if re.match(timer_match, title) and \
-                    (channel not in _recordings or
-                        (title not in repr(_recordings[channel]) and
-                         timestamp not in _recordings[channel])):
+                    (title not in timers_added and
+                        _safe_filename(title) not in str(_ffmpeg) and
+                        (channel not in _recordings or
+                         (title not in repr(_recordings[channel]) and
+                          timestamp not in _recordings[channel]))):
                     duration = _epgdata[_key][timestamp]['duration'] + 300
                     log.info(f'Found match! {channel} {timestamp} "{title}"')
                     sanic_url = f'{SANIC_URL}/{channel}/{timestamp}.mp4?record={duration}'
                     if vo:
                         sanic_url += '&vo=1'
-                    log.info(sanic_url)
                     async with httpx.AsyncClient() as client:
                         r = await client.get(sanic_url)
-                    log.info(repr(r))
+                    log.info(f'{sanic_url} => {repr(r)}')
                     if r.status_code == 200:
-                        if channel not in _recordings:
-                            _recordings[channel] = {}
-                        _recordings[channel][timestamp] = {
-                            'full_title': title
-                        }
-
-    with open(recordings, 'w') as fp:
-        json.dump(_recordings, fp, ensure_ascii=False, indent=4, sort_keys=True)
+                        timers_added.append(title)
 
 
 async def delay_update_epg():
@@ -335,7 +366,7 @@ async def notify_server_stop(app, loop):
 
 
 async def run_every(timeout, stuff):
-    log.info(f'run_every {timeout} {stuff}')
+    log.debug(f'run_every {timeout} {stuff}')
     while True:
         await asyncio.gather(asyncio.sleep(timeout), stuff())
 

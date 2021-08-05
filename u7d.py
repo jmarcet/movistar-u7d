@@ -1,9 +1,11 @@
 #!/usr/bin/env python3
 
 import argparse
+import asyncio
 import httpx
 import multiprocessing
 import os
+import re
 import signal
 import socket
 import subprocess
@@ -13,6 +15,8 @@ import urllib.parse
 
 from collections import namedtuple
 from contextlib import closing
+from ffmpeg import FFmpeg
+from threading import Thread
 
 
 if 'IPTV_ADDRESS' in os.environ:
@@ -23,7 +27,7 @@ else:
 MVTV_URL = 'http://www-60.svc.imagenio.telefonica.net:2001/appserver/mvtv.do'
 RECORDINGS = os.getenv('RECORDINGS', '/tmp')
 SANIC_EPG_URL = f'http://127.0.0.1:8889'
-TMP_EXT = '._mp4'
+TMP_EXT = '.tmp'
 VID_EXT = '.mkv'
 UA = 'MICA-IP-STB'
 # WIDTH = 134
@@ -31,6 +35,8 @@ UA = 'MICA-IP-STB'
 Request = namedtuple('Request', ['request', 'response'])
 Response = namedtuple('Response', ['version', 'status', 'url', 'headers', 'body'])
 
+ffmpeg = FFmpeg().option('y')
+_ffmpeg = args = epg_url = filename = None
 needs_position = False
 
 
@@ -95,9 +101,11 @@ class RtspClient(object):
         return Request(req, resp)
 
     def print(self, req, killed=None):
+        return req.response
         resp = req.response
-        return resp
         _req = req.request.split('\r\n')[0].split(' ')
+        if 'TEARDOWN' not in _req:
+            return resp
         _off = 90 - len(_req[0])
         if killed:
             tmp = _req[1].split('/')
@@ -109,15 +117,15 @@ class RtspClient(object):
                         f'-p {killed.client_port}')
         _req_l = _req[0] + ' ' + _req[1][:_off]
         _req_r = ' ' * (100 - len(_req_l) - len(_req[2]))
-        print(f'Req: {_req_l}{_req_r}{_req[2]}', end=' ', flush=True)
-        print(f'Resp: {resp.version} {resp.status}', flush=True)
+        sys.stdout.write(f'Req: {_req_l}{_req_r}{_req[2]}')
+        sys.stderr.write(f'Resp: {resp.version} {resp.status}')
         # headers = self.serialize_headers(resp.headers)
-        # print('-' * WIDTH, flush=True)
-        # print('Request: ' + req.request.split('\m')[0], end='', flush=True)
-        # print(f'Response: {resp.version} {resp.status}\n{headers}', flush=True)
+        # sys.stderr.write('-' * WIDTH)
+        # sys.stderr.write('Request: ' + req.request.split('\m')[0])
+        # sys.stderr.write(f'Response: {resp.version} {resp.status}\n{headers}')
         # if resp.body:
-        #     print(f'\n{resp.body.rstrip()}', flush=True)
-        # print('-' * WIDTH, flush=True)
+        #     sys.stderr.write(f'\n{resp.body.rstrip()}')
+        # sys.stderr.write('-' * WIDTH)
         return resp
 
 
@@ -133,10 +141,112 @@ def safe_filename(filename):
     return "".join(c for c in filename if c.isalnum() or c in keepcharacters).rstrip()
 
 
-def main(args):
-    global needs_position
+# @ffmpeg.on('stderr')
+# def on_stderr(line):
+#     sys.stderr.write(f"{'[' + args.client_ip + '] ' if args.client_ip else ''}"
+#                      f'[u7d.py] {line}\n')
 
-    client = filename = proc = s = None
+
+# @ffmpeg.on('progress')
+# def on_progress(progress):
+#    sys.stderr.write(f"{'[' + args.client_ip + '] ' if args.client_ip else ''}"
+#                     f'[u7d.py] {progress}\n')
+
+
+# @ffmpeg.on('start')
+# def on_start(arguments):
+#     time.sleep(0.1)
+#     sys.stderr.write(f"{'[' + args.client_ip + '] ' if args.client_ip else ''}"
+#                      f'[u7d.py] ffmpeg arguments: {arguments}\n')
+
+
+@ffmpeg.on('terminated')
+def on_terminated():
+    sys.stderr.write(f"{'[' + args.client_ip + '] ' if args.client_ip else ''}"
+                     '[u7d.py] ffmpeg terminated\n')
+    if os.path.exists(filename + TMP_EXT):
+        os.remove(filename + TMP_EXT)
+
+
+@ffmpeg.on('error')
+def on_error(code):
+    if code == -1:
+        on_completed()
+    else:
+        sys.stderr.write(f"{'[' + args.client_ip + '] ' if args.client_ip else ''}"
+                         f'[u7d.py] Recording FAILED error={code}: '
+                         f'{args.channel} '
+                         f'{args.broadcast} '
+                         f'[{args.time}s] '
+                         f'"{filename}"\n')
+        if os.path.exists(filename + TMP_EXT):
+            os.remove(filename + TMP_EXT)
+
+
+@ffmpeg.on('completed')
+def on_completed():
+    if not os.path.exists(filename + TMP_EXT):
+        return
+
+    _nice = ['nice', '-n', '10', 'ionice', '-c', '3']
+    command = _nice
+
+    if not args.mp4:
+        command += ['mkvmerge', '-o', filename + VID_EXT]
+        command += ['--default-language', 'spa']
+        if args.vo:
+            command += ['--track-order', '0:2,0:1,0:4,0:3,0:6,0:5']
+            command += ['--default-track', '2:1']
+        command += [filename + TMP_EXT]
+        if os.path.exists(filename + VID_EXT):
+            os.remove(filename + VID_EXT)
+        subprocess.run(command)
+
+    else:
+        proc = subprocess.run(['ffprobe', filename + TMP_EXT], capture_output=True)
+        subs = [t.split()[1] for t in proc.stderr.decode().splitlines() if ' Subtitle:' in t]
+
+        command += ['ffmpeg', '-i', filename + TMP_EXT]
+        command += ['-map', '0', '-c', 'copy', '-sn']
+        command += ['-movflags', '+faststart']
+        command += ['-v', 'panic', '-y', '-f', 'mp4']
+        command += [filename + VID_EXT]
+
+        if os.path.exists(filename + VID_EXT):
+            os.remove(filename + VID_EXT)
+
+        proc = multiprocessing.Process(target=subprocess.run, args=(command, ))
+        proc.start()
+
+        if len(subs):
+            track, lang = re.search(r"^#([0-9:]+)[^:]*\((\w+)\):", subs[0]).groups()
+            if lang == 'esp':
+                lang = 'spa'
+            command = _nice
+            command += ['ffmpeg', '-i', filename + TMP_EXT, '-map', track]
+            command += ['-c:s', 'dvbsub', '-f', 'mpegts', '-v', 'panic']
+            command += ['-y', f'{filename}.{lang}.sub']
+            subprocess.run(command)
+
+        proc.join()
+
+    if os.path.exists(filename + TMP_EXT):
+        os.remove(filename + TMP_EXT)
+
+    resp = httpx.put(epg_url)
+    if resp.status_code == 200:
+        sys.stderr.write(f"{'[' + args.client_ip + '] ' if args.client_ip else ''}"
+                         f'[u7d.py] Recording COMPLETE: '
+                         f'{args.channel} '
+                         f'{args.broadcast} '
+                         f'[{args.time}s] '
+                         f'"{filename}"')
+
+
+def main():
+    global epg_url, ffmpeg, _ffmpeg, filename, needs_position
+
+    client = s = None
     headers = {'CSeq': '', 'User-Agent': UA}
 
     setup = session = play = describe = headers.copy()
@@ -147,16 +257,19 @@ def main(args):
               f'&extInfoID={args.broadcast}'
               f'&channelID={args.channel}'
               f'&service=hd&mode=1')
-    resp = httpx.get(f'{MVTV_URL}?{params}', headers={'User-Agent': UA})
-    data = resp.json()
+    try:
+        resp = httpx.get(f'{MVTV_URL}?{params}', headers={'User-Agent': UA})
+        data = resp.json()
+    except httpx.ConnectError:
+        data = None
 
-    if data['resultCode'] != 0:
+    if not data or 'resultCode' not in data or data['resultCode'] != 0:
         print(f"{'[' + args.client_ip + '] ' if args.client_ip else ''}"
-              f'Error: {data} '
-              f'{args.channel} '
-              f'{args.broadcast}',
+              f'Error: {data} ' if data else 'Error: ',
               flush=True)
         return
+
+    epg_url = (f'{SANIC_EPG_URL}/program_name/{args.channel}/{args.broadcast}')
 
     url = data['resultData']['url']
     uri = urllib.parse.urlparse(url)
@@ -190,13 +303,10 @@ def main(args):
             client.print(client.send_request('PLAY', play))
 
             if args.write_to_file:
-                epg_url = (f'{SANIC_EPG_URL}/program_name/'
-                           f'{args.channel}/{args.broadcast}')
-
                 resp = httpx.get(epg_url)
                 if resp.status_code == 200:
                     data = resp.json()
-                    print(f'{repr(data)}', flush=True)
+                    # sys.stderr.write(f'{repr(data)}\n')
 
                     if not args.time:
                         args.time = int(data['duration']) - args.start
@@ -205,7 +315,7 @@ def main(args):
                         path = os.path.join(RECORDINGS, safe_filename(data['serie']))
                         filename = os.path.join(path, title)
                         if not os.path.exists(path):
-                            print(f'Creating recording subdir {path}', flush=True)
+                            sys.stderr.wrtie(f'Creating recording subdir {path}')
                             os.mkdir(path)
                     else:
                         filename = os.path.join(RECORDINGS, title)
@@ -213,87 +323,68 @@ def main(args):
                     filename = os.path.join(RECORDINGS,
                                             f'{args.channel}-{args.broadcast}')
 
-                command = ['ffmpeg', '-i']
-                command += [f'udp://@{IPTV}:{args.client_port}'
-                            '&fifo_size=5572'
-                            '&pkt_size=1316'
-                            '&timeout=500000']
-                #command += ['-async', '1', '-vsync', 'passthrough']
-                command += ['-bsf:v', 'h264_mp4toannexb']
-                command += ['-ts_packetsize', '1316']
-                command += ['-map', '0', '-c', 'copy']
-                command += ['-c:a:0', 'aac', '-c:a:1', 'aac']
-                #command += ['-avioflags', 'direct']
-                #command += ['-fflags', '+discardcorrupt']
-                #command += ['-fflags', '+flush_packets']
-                #command += ['-fflags', '+genpts']
-                command += ['-fflags', '+nobuffer']
-                command += ['-fflags', '+nofillin']
-                command += ['-fflags', '+noparse']
-                command += ['-chunk_size', '188']
-                command += ['-packetsize', '1316']
-                command += ['-movflags', '+faststart']
-                command += ['-v', 'panic', '-y']
-                command += ['-f', 'matroska']
-                if args.time and args.time > 0:
-                    command += ['-t', f'{args.time}']
-                command += [f'{filename}{TMP_EXT}']
+                ffmpeg.input(
+                    f'udp://@{IPTV}:{args.client_port}',
+                    fifo_size=5572,
+                    pkt_size=1316,
+                    timeout=500000
+                ).output(filename + TMP_EXT, {
+                    'map': '0',
+                    'c': 'copy',
+                    'c:a:0': 'libmp3lame',
+                    'c:a:1': 'libmp3lame',
+                    'metadata:s:a:0': 'language=spa',
+                    'metadata:s:a:1': 'language=eng',
+                    'metadata:s:a:2': 'language=spa',
+                    'metadata:s:a:3': 'language=eng',
+                    'metadata:s:s:0': 'language=spa',
+                    'metadata:s:s:1': 'language=eng',
+                    'bsf:v': 'h264_mp4toannexb',
+                    'async': '1',
+                    'vsync': '1'},
+                    chunk_size='188',
+                    packetsize='1316',
+                    ts_packetsize='1316',
+                    avioflags='direct',
+                    avoid_negative_ts='disabled',
+                    fflags='+genpts+igndts+nobuffer',
+                    t=str(args.time),
+                    v='info',
+                    f='matroska')
 
-                proc = multiprocessing.Process(target=subprocess.call, args=(command, ))
-                proc.start()
+                _ffmpeg = Thread(target=asyncio.run, args=(ffmpeg.execute(),))
+                _ffmpeg.start()
 
-                print(f"{'[' + args.client_ip + '] ' if args.client_ip else ''}"
-                      f'Recording:',
-                      f'{args.channel}',
-                      f'{args.broadcast}',
-                      f'[{args.time}s]',
-                      f'"{filename}"', flush=True)
+                sys.stderr.write(f"{'[' + args.client_ip + '] ' if args.client_ip else ''}"
+                                 f'[u7d.py] Recording STARTED: '
+                                 f'{args.channel} '
+                                 f'{args.broadcast} '
+                                 f'[{args.time}s] '
+                                 f'"{filename}"\n')
 
+            def _handle_cleanup(signum, frame):
+                raise TimeoutError()
+            signal.signal(signal.SIGHUP, _handle_cleanup)
             if args.time:
-                def _handle_timeout(signum, frame):
-                    raise TimeoutError()
-                signal.signal(signal.SIGALRM, _handle_timeout)
+                signal.signal(signal.SIGALRM, _handle_cleanup)
                 signal.alarm(args.time)
 
             while True:
                 time.sleep(30)
-                if args.write_to_file and proc and not proc.is_alive():
+                if args.write_to_file and _ffmpeg and not _ffmpeg.is_alive():
                     break
                 client.print(client.send_request('GET_PARAMETER', get_parameter))
 
-        except KeyboardInterrupt:
+        except TimeoutError:
             pass
-        except Exception as ex:
-            print(f"{'[' + args.client_ip + '] ' if args.client_ip else ''}"
-                  f"{'Finished:' if isinstance(ex, TimeoutError) else repr(ex)} "
-                  f'{args.channel}',
-                  f'{args.broadcast}',
-                  f'[{args.time}s]',
-                  f'"{filename}"' if (args.write_to_file and filename) else '', flush=True)
+
         finally:
-            if args.write_to_file and proc:
-                subprocess.call(['pkill', '-HUP', '-f',
-                                f'ffmpeg -i udp://@{IPTV}:{args.client_port}'])
+            # sys.stderr.write('finally\n')
             if client and 'Session' in session:
                 client.print(client.send_request('TEARDOWN', session), killed=args)
-
-        if args.write_to_file and filename:
-            if not os.path.exists(f'{filename}{TMP_EXT}'):
-                sys.exit(1)
-            command = ['nice', '-n', '10', 'ionice', '-c', '3']
-            command += ['mkvmerge', '-o', f'{filename}{VID_EXT}']
-            command += ['--default-language', 'spa']
-            command += ['--language', '1:spa', '--language', '2:eng']
-            command += ['--language', '3:spa', '--language', '4:eng']
-            command += ['--language', '5:spa', '--language', '6:eng']
-            if args.vo:
-                command += ['--track-order', '0:2,0:1,0:4,0:3,0:6,0:5']
-                command += ['--default-track', '2:1']
-            command += [f'{filename}{TMP_EXT}']
-            if os.path.exists(f'{filename}{VID_EXT}'):
-                os.remove(f'{filename}{VID_EXT}')
-            subprocess.call(command)
-            os.remove(f'{filename}{TMP_EXT}')
+            if args.write_to_file and _ffmpeg and _ffmpeg.is_alive():
+                subprocess.run(['pkill', '-HUP', '-f',
+                               f'ffmpeg.+udp://@{IPTV}:{args.client_port}'])
 
 
 if __name__ == '__main__':
@@ -305,6 +396,7 @@ if __name__ == '__main__':
     parser.add_argument('--client_port', '-p', help='client udp port', type=int)
     parser.add_argument('--start', '-s', help='stream start offset', type=int)
     parser.add_argument('--time', '-t', help='recording time in seconds', type=int)
+    parser.add_argument('--mp4', help='output split mp4 and vobsub files', type=bool, default=False)
     parser.add_argument('--vo', help='set 2nd language as main one', type=bool, default=False)
     parser.add_argument('--write_to_file', '-w', help='record', action='store_true')
 
@@ -314,6 +406,6 @@ if __name__ == '__main__':
         args.client_port = find_free_port()
 
     try:
-        main(args)
+        main()
     except (KeyboardInterrupt, TimeoutError):
         sys.exit(1)

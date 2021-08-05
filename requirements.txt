@@ -3,3 +3,5 @@ asyncio_dgram
 httpx
 sanic>-21.6.0
 setproctitle
+filelock
+python-ffmpeg

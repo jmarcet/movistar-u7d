@@ -8,12 +8,14 @@ import re
 import signal
 import socket
 import struct
+import subprocess
 
 from contextlib import closing
 from setproctitle import setproctitle
-from sanic import Sanic, response
+from sanic import Sanic, exceptions, response
 from sanic.log import logger as log
 from sanic.log import LOGGING_CONFIG_DEFAULTS
+from threading import Thread
 
 
 setproctitle('movistar-u7d')
@@ -34,6 +36,7 @@ CHANNELS = os.path.join(HOME, 'MovistarTV.m3u')
 IMAGENIO_URL = ('http://html5-static.svc.imagenio.telefonica.net'
                 '/appclientv/nux/incoming/epg')
 MIME_TS = 'video/MP2T;audio/mp3'
+MP4_OUTPUT = bool(os.getenv('MP4_OUTPUT', False))
 SESSION = None
 SESSION_LOGOS = None
 YEAR_SECONDS = 365 * 24 * 60 * 60
@@ -115,36 +118,36 @@ async def handle_channel(request, channel_id):
             mc_grp = r['address']
             name = r['name']
             mc_port = int(r['port'])
+    except (AttributeError, exceptions.ServerError) as ex:
+        log.error(f'[{request.ip}]',
+                  f"aiohttp.ClientSession().get('{epg_url}')", f'{repr(ex)}')
+        return response.json({'status': f'{channel_id}/live not found'}, 404)
 
-        log.info(f'[{request.ip}] {request.method} '
-                 f'{request.raw_url.decode()} => Playing "{name}"')
+    if request.method == 'HEAD':
+        return response.HTTPResponse(content_type=MIME_TS, status=200)
 
-        if request.method == 'HEAD':
-            return response.HTTPResponse(content_type=MIME_TS, status=200)
+    log.info(f'[{request.ip}] {request.method} '
+             f'{request.raw_url.decode()} => Playing "{name}"')
 
-        with closing(socket.socket(socket.AF_INET,
-                                   socket.SOCK_DGRAM,
-                                   socket.IPPROTO_UDP)) as sock:
-            sock.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
-            sock.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEPORT, 1)
-            sock.bind((mc_grp, mc_port))
-            sock.setsockopt(socket.SOL_IP, socket.IP_MULTICAST_IF, socket.inet_aton(IPTV))
-            sock.setsockopt(socket.SOL_IP, socket.IP_ADD_MEMBERSHIP,
-                            socket.inet_aton(mc_grp) + socket.inet_aton(IPTV))
+    with closing(socket.socket(socket.AF_INET,
+                               socket.SOCK_DGRAM,
+                               socket.IPPROTO_UDP)) as sock:
+        sock.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+        sock.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEPORT, 1)
+        sock.bind((mc_grp, mc_port))
+        sock.setsockopt(socket.SOL_IP, socket.IP_MULTICAST_IF, socket.inet_aton(IPTV))
+        sock.setsockopt(socket.SOL_IP, socket.IP_ADD_MEMBERSHIP,
+                        socket.inet_aton(mc_grp) + socket.inet_aton(IPTV))
+        try:
             respond = await request.respond(content_type=MIME_TS)
             with closing(await asyncio_dgram.from_socket(sock)) as stream:
                 while True:
-                    try:
-                        data = ((await stream.recv())[0])[28:]
-                        await respond.send(data)
-                    except TypeError:
-                        break
-    except asyncio.exceptions.CancelledError:
-        pass
-    except Exception as ex:
-        log.error(f'[{request.ip}]',
-                  f"aiohttp.ClientSession().get('{epg_url}')",
-                  f'{repr(ex)}')
+                    data = ((await stream.recv())[0])[28:]
+                    await respond.send(data)
+        except (asyncio.exceptions.CancelledError,
+                exceptions.ServerError,
+                TypeError):
+            pass
 
 
 @app.route('/<channel_id>/<url>', methods=['GET', 'HEAD'])
@@ -163,7 +166,7 @@ async def handle_flussonic(request, channel_id, url):
             r = await r.json()
             program_id = r['program_id']
             offset = r['offset']
-    except Exception as ex:
+    except AttributeError as ex:
         log.error(f'[{request.ip}]',
                   f"aiohttp.ClientSession().get('{epg_url}')",
                   f'{repr(ex)}')
@@ -180,31 +183,29 @@ async def handle_flussonic(request, channel_id, url):
     if record := request.args.get('record', False):
         record_time = record if record.isnumeric() else remaining
         cmd += ('-t', record_time, '-w')
-        if vo := request.args.get('vo', False):
+        if MP4_OUTPUT or request.args.get('mp4', False):
+            cmd += ('--mp4', '1')
+        if request.args.get('vo', False):
             cmd += ('--vo', '1')
         log.info(f'[{request.ip}] Record: [{record_time}]s {u7d_msg}')
 
     cmd += ('-i', request.ip)
-    u7d = await asyncio.create_subprocess_exec(*cmd, stdout=asyncio.subprocess.PIPE)
-    try:
-        await asyncio.wait_for(u7d.wait(), 0.5)
-        msg = (await u7d.stdout.readline()).decode().rstrip()
-        log.info(f'NOT_AVAILABLE: {msg} {u7d_msg}')
+    u7d = Thread(target=subprocess.run, args=(cmd,), daemon=True)
+    u7d.start()
+
+    await asyncio.sleep(0.5)
+    if not u7d.is_alive():
+        log.info(f'NOT_AVAILABLE: {u7d_msg}')
         await SESSION.get(f'{SANIC_EPG_URL}/reload_epg')
         return response.json({'status': 'NOT_AVAILABLE',
-                              'msg': msg,
                               'cmd': u7d_msg}, 404)
-    except asyncio.exceptions.TimeoutError:
-        pass
-
-    if record:
+    elif record:
         return response.json({'status': 'OK',
                               'channel_id': channel_id,
                               'program_id': program_id,
                               'offset': offset,
                               'time': record_time})
-
-    if request.method == 'HEAD':
+    elif request.method == 'HEAD':
         return response.HTTPResponse(content_type=MIME_TS, status=200)
 
     log.info(f'[{request.ip}] Start: {u7d_msg}')
@@ -212,22 +213,22 @@ async def handle_flussonic(request, channel_id, url):
         timedout = False
         respond = await request.respond(content_type=MIME_TS)
         try:
-            await respond.send((await asyncio.wait_for(stream.recv(), 1))[0])
+            await respond.send((await asyncio.wait_for(stream.recv(), 0.5))[0])
             while True:
                 await respond.send((await asyncio.wait_for(stream.recv(), 0.05))[0])
-        except Exception as ex:
-            log.warning(f'[{request.ip}] {repr(ex)}')
-            if isinstance(ex, TimeoutError):
-                timedout = True
+        except TimeoutError:
+            timedout = True
+        except exceptions.ServerError:
+            pass
         finally:
             log.info(f'[{request.ip}] End: {u7d_msg}')
-            try:
-                if timedout:
+            if timedout:
+                try:
                     await respond.send(end_stream=True)
-                else:
-                    u7d.send_signal(signal.SIGINT)
-            except Exception as ex:
-                log.warning(f'[{request.ip}] {repr(ex)}')
+                except exceptions.ServerError:
+                    pass
+            else:
+                await asyncio.create_subprocess_exec('pkill', '-HUP', '-f', ' '.join(cmd))
 
 
 @app.get('/favicon.ico')
