@@ -335,8 +335,9 @@ def main():
                 ).output(filename + TMP_EXT, {
                     'map': '0',
                     'c': 'copy',
-                    'c:a:0': 'libmp3lame',
-                    'c:a:1': 'libmp3lame',
+                    'c:a:0': 'aac',
+                    'c:a:1': 'aac',
+                    'aac_pred': '1',
                     'metadata:s:a:0': 'language=spa',
                     'metadata:s:a:1': 'language=eng',
                     'metadata:s:a:2': 'language=spa',
