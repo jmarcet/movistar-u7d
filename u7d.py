@@ -16,6 +16,7 @@ import urllib.parse
 from collections import namedtuple
 from contextlib import closing
 from ffmpeg import FFmpeg
+from httpcore import ReadTimeout
 from threading import Thread
 
 
@@ -369,7 +370,9 @@ def main():
 
             def _handle_cleanup(signum, frame):
                 raise TimeoutError()
-            signal.signal(signal.SIGHUP, _handle_cleanup)
+
+            for _sig in [signal.SIGABRT, signal.SIGHUP, signal.SIGINT, signal.SIGTERM]:
+                signal.signal(_sig, _handle_cleanup)
             if args.time:
                 signal.signal(signal.SIGALRM, _handle_cleanup)
                 signal.alarm(args.time)
@@ -380,7 +383,7 @@ def main():
                     break
                 client.print(client.send_request('GET_PARAMETER', get_parameter))
 
-        except TimeoutError:
+        except (asyncio.exceptions.CancelledError, TimeoutError):
             pass
 
         except ValueError:
@@ -388,12 +391,16 @@ def main():
 
         finally:
             # sys.stderr.write('finally\n')
+            if args.write_to_file:
+                if _ffmpeg and _ffmpeg.is_alive():
+                    subprocess.run(['pkill', '-HUP', '-f',
+                                   f'ffmpeg.+udp://@{IPTV}:{args.client_port}'])
+                try:
+                    httpx.get(f'{SANIC_EPG_URL}/check_timers')
+                except ReadTimeout:
+                    pass
             if _teardown and client and 'Session' in session:
                 client.print(client.send_request('TEARDOWN', session), killed=args)
-            if args.write_to_file and _ffmpeg and _ffmpeg.is_alive():
-                subprocess.run(['pkill', '-HUP', '-f',
-                               f'ffmpeg.+udp://@{IPTV}:{args.client_port}'])
-            httpx.get(f'{SANIC_EPG_URL}/check_timers')
 
 
 if __name__ == '__main__':
@@ -416,5 +423,5 @@ if __name__ == '__main__':
 
     try:
         main()
-    except KeyboardInterrupt:
+    except (KeyboardInterrupt, TimeoutError):
         sys.exit(1)

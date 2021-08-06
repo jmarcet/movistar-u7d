@@ -118,7 +118,7 @@ async def handle_channel(request, channel_id):
             mc_grp = r['address']
             name = r['name']
             mc_port = int(r['port'])
-    except (AttributeError, exceptions.ServerError) as ex:
+    except Exception as ex:
         log.error(f'[{request.ip}]',
                   f"aiohttp.ClientSession().get('{epg_url}')", f'{repr(ex)}')
         return response.json({'status': f'{channel_id}/live not found'}, 404)
@@ -144,10 +144,8 @@ async def handle_channel(request, channel_id):
                 while True:
                     data = ((await stream.recv())[0])[28:]
                     await respond.send(data)
-        except (asyncio.exceptions.CancelledError,
-                exceptions.ServerError,
-                TypeError):
-            pass
+        except Exception as ex:
+            log.warning(f'[{request.ip}] {repr(ex)}')
 
 
 @app.route('/<channel_id>/<url>', methods=['GET', 'HEAD'])
@@ -157,19 +155,15 @@ async def handle_flussonic(request, channel_id, url):
     if not x or not x.groups():
         return response.json({'status': 'URL not understood'}, 404)
 
-    try:
-        program_id = None
-        epg_url = f'{SANIC_EPG_URL}/program_id/{channel_id}/{url}'
+    program_id = None
+    epg_url = f'{SANIC_EPG_URL}/program_id/{channel_id}/{url}'
+    if SESSION:
         async with SESSION.get(epg_url) as r:
             if r.status != 200:
                 return response.json({'status': f'{url} not found'}, 404)
             r = await r.json()
             program_id = r['program_id']
             offset = r['offset']
-    except AttributeError as ex:
-        log.error(f'[{request.ip}]',
-                  f"aiohttp.ClientSession().get('{epg_url}')",
-                  f'{repr(ex)}')
 
     if not program_id:
         return response.json({'status': f'{channel_id}/{url} not found'}, 404)
@@ -218,15 +212,15 @@ async def handle_flussonic(request, channel_id, url):
                 await respond.send((await asyncio.wait_for(stream.recv(), 0.05))[0])
         except TimeoutError:
             timedout = True
-        except exceptions.ServerError:
-            pass
+        except Exception as ex:
+            log.warning(f'[{request.ip}] {repr(ex)}')
         finally:
             log.info(f'[{request.ip}] End: {u7d_msg}')
             if timedout:
                 try:
                     await respond.send(end_stream=True)
-                except exceptions.ServerError:
-                    pass
+                except Exception:
+                    log.warning(f'[{request.ip}] {repr(ex)}')
             else:
                 await asyncio.create_subprocess_exec('pkill', '-HUP', '-f', ' '.join(cmd))
 
@@ -270,5 +264,6 @@ if __name__ == '__main__':
                 auto_reload=True,
                 debug=False,
                 workers=SANIC_THREADS)
-    except KeyboardInterrupt:
+    except (asyncio.exceptions.CancelledError,
+            KeyboardInterrupt):
         sys.exit(1)

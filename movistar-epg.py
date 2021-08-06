@@ -369,6 +369,8 @@ async def notify_server_start(app, loop):
         except FileNotFoundError:
             pass
         if os.path.exists(os.path.join(HOME, 'timers.json')):
+            log.info('Waiting 60s to check timers, ensuring no stale rtsp are present')
+            await asyncio.sleep(60)
             _t_timers = asyncio.create_task(run_every(900, handle_timers))
         else:
             log.info('No timers.json found, recordings disabled')
@@ -395,5 +397,6 @@ if __name__ == '__main__':
                 auto_reload=True,
                 debug=False,
                 workers=1)
-    except KeyboardInterrupt:
+    except (asyncio.exceptions.CancelledError,
+            KeyboardInterrupt):
         sys.exit(1)
