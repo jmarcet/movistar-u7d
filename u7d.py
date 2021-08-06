@@ -279,6 +279,7 @@ def main():
     uri = urllib.parse.urlparse(url)
 
     with closing(socket.socket(socket.AF_INET, socket.SOCK_STREAM)) as s:
+        _teardown = True
         try:
             s.connect((uri.hostname, uri.port))
             s.settimeout(10)
@@ -383,9 +384,12 @@ def main():
         except TimeoutError:
             pass
 
+        except ValueError:
+            _teardown = False
+
         finally:
             # sys.stderr.write('finally\n')
-            if client and 'Session' in session:
+            if _teardown and client and 'Session' in session:
                 client.print(client.send_request('TEARDOWN', session), killed=args)
             if args.write_to_file and _ffmpeg and _ffmpeg.is_alive():
                 subprocess.run(['pkill', '-HUP', '-f',
@@ -412,5 +416,5 @@ if __name__ == '__main__':
 
     try:
         main()
-    except (KeyboardInterrupt, TimeoutError):
+    except KeyboardInterrupt:
         sys.exit(1)
