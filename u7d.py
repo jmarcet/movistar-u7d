@@ -144,7 +144,6 @@ def safe_filename(filename):
 def _cleanup():
     if os.path.exists(filename + TMP_EXT):
         os.remove(filename + TMP_EXT)
-    httpx.get(f'{SANIC_EPG_URL}/check_timers')
 
 
 # @ffmpeg.on('stderr')
@@ -394,6 +393,7 @@ def main():
             if args.write_to_file and _ffmpeg and _ffmpeg.is_alive():
                 subprocess.run(['pkill', '-HUP', '-f',
                                f'ffmpeg.+udp://@{IPTV}:{args.client_port}'])
+            httpx.get(f'{SANIC_EPG_URL}/check_timers')
 
 
 if __name__ == '__main__':
