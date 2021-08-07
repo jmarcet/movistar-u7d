@@ -11,7 +11,7 @@ import time
 from datetime import datetime
 from filelock import FileLock, Timeout
 from setproctitle import setproctitle
-from sanic import Sanic, response
+from sanic import Sanic, exceptions, response
 from sanic.compat import open_async
 from sanic.log import logger as log
 from sanic.log import LOGGING_CONFIG_DEFAULTS
@@ -34,7 +34,7 @@ LOG_SETTINGS['formatters']['generic']['datefmt'] = \
 
 PREFIX = ''
 
-app = Sanic('Movistar_epg')
+app = Sanic('movistar_epg')
 app.config.update({'KEEP_ALIVE_TIMEOUT': YEAR_SECONDS})
 
 recordings = os.path.join(HOME, 'recordings.json')
@@ -48,6 +48,12 @@ _t_epg1 = _t_epg2 = _t_timers = None
 def _safe_filename(filename):
     keepcharacters = (' ', ',', '.', '_', '-', ':', '¡', '!', '¿', '?')
     return "".join(c for c in filename if c.isalnum() or c in keepcharacters).rstrip()
+
+
+@app.exception(exceptions.ServerError)
+def handler_exception(request, exception):
+    log.error(f'{request.ip}] {repr(exception)}')
+    return response.text("Internal Server Error.", 500)
 
 
 @app.get('/channel_address/<channel_id>/')
@@ -304,11 +310,14 @@ async def handle_timers():
                             sanic_url += f'?record={duration}'
                             if vo:
                                 sanic_url += '&vo=1'
-                            async with httpx.AsyncClient() as client:
-                                r = await client.get(sanic_url)
-                            log.info(f'{sanic_url} => {repr(r)}')
-                            if r.status_code == 200:
-                                timers_added.append(title)
+                            try:
+                                async with httpx.AsyncClient() as client:
+                                    r = await client.get(sanic_url)
+                                log.info(f'{sanic_url} => {repr(r)}')
+                                if r.status_code == 200:
+                                    timers_added.append(title)
+                            except httpcore.ReadTimeout as ex:
+                                log.warn(f'{repr(ex)}')
     except Timeout:
         log.info(f'timers_lock in place')
 
@@ -325,7 +334,7 @@ async def handle_check_timers(request):
 async def delay_update_epg():
     global _t_epg2
     delay = 3600 - (time.localtime().tm_min * 60 + time.localtime().tm_sec)
-    log.info(f'Waiting for {delay}s to start updating EPG...')
+    log.info(f'Waiting {delay}s to start updating EPG...')
     await asyncio.sleep(delay)
     _t_epg2 = asyncio.create_task(run_every(3600, handle_update_epg))
 
@@ -369,7 +378,7 @@ async def notify_server_start(app, loop):
         except FileNotFoundError:
             pass
         if os.path.exists(os.path.join(HOME, 'timers.json')):
-            log.info('Waiting 60s to check timers, ensuring no stale rtsp are present')
+            log.info('Waiting 60s to check timers (ensuring no stale rtsp is present)...')
             await asyncio.sleep(60)
             _t_timers = asyncio.create_task(run_every(900, handle_timers))
         else:

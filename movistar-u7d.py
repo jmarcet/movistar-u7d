@@ -47,8 +47,14 @@ LOG_SETTINGS['formatters']['generic']['datefmt'] = \
 
 PREFIX = ''
 
-app = Sanic('Movistar_u7d', log_config=LOG_SETTINGS)
+app = Sanic('movistar_u7d', log_config=LOG_SETTINGS)
 app.config.update({'KEEP_ALIVE': False})
+
+
+@app.exception(exceptions.ServerError)
+def handler_exception(request, exception):
+    log.error(f'{request.ip}] {repr(exception)}')
+    return response.text("Internal Server Error.", 500)
 
 
 @app.get('/channels.m3u')
@@ -138,14 +144,12 @@ async def handle_channel(request, channel_id):
         sock.setsockopt(socket.SOL_IP, socket.IP_MULTICAST_IF, socket.inet_aton(IPTV))
         sock.setsockopt(socket.SOL_IP, socket.IP_ADD_MEMBERSHIP,
                         socket.inet_aton(mc_grp) + socket.inet_aton(IPTV))
-        try:
-            respond = await request.respond(content_type=MIME_TS)
-            with closing(await asyncio_dgram.from_socket(sock)) as stream:
-                while True:
-                    data = ((await stream.recv())[0])[28:]
-                    await respond.send(data)
-        except Exception as ex:
-            log.warning(f'[{request.ip}] {repr(ex)}')
+
+        respond = await request.respond(content_type=MIME_TS)
+        with closing(await asyncio_dgram.from_socket(sock)) as stream:
+            while True:
+                data = ((await stream.recv())[0])[28:]
+                await respond.send(data)
 
 
 @app.route('/<channel_id>/<url>', methods=['GET', 'HEAD'])
@@ -157,13 +161,15 @@ async def handle_flussonic(request, channel_id, url):
 
     program_id = None
     epg_url = f'{SANIC_EPG_URL}/program_id/{channel_id}/{url}'
-    if SESSION:
+    try:
         async with SESSION.get(epg_url) as r:
             if r.status != 200:
                 return response.json({'status': f'{url} not found'}, 404)
             r = await r.json()
             program_id = r['program_id']
             offset = r['offset']
+    except Exception as ex:
+        log.warn(f'{request.ip}] {repr(ex)}')
 
     if not program_id:
         return response.json({'status': f'{channel_id}/{url} not found'}, 404)
@@ -210,17 +216,12 @@ async def handle_flussonic(request, channel_id, url):
             await respond.send((await asyncio.wait_for(stream.recv(), 0.5))[0])
             while True:
                 await respond.send((await asyncio.wait_for(stream.recv(), 0.05))[0])
-        except TimeoutError:
+        except asyncio.exceptions.TimeoutError:
             timedout = True
-        except Exception as ex:
-            log.warning(f'[{request.ip}] {repr(ex)}')
         finally:
             log.info(f'[{request.ip}] End: {u7d_msg}')
             if timedout:
-                try:
-                    await respond.send(end_stream=True)
-                except Exception:
-                    log.warning(f'[{request.ip}] {repr(ex)}')
+                await respond.send(end_stream=True)
             else:
                 await asyncio.create_subprocess_exec('pkill', '-HUP', '-f', ' '.join(cmd))
 

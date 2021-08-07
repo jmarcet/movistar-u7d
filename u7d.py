@@ -102,31 +102,25 @@ class RtspClient(object):
         return Request(req, resp)
 
     def print(self, req, killed=None):
-        return req.response
+        # return req.response
         resp = req.response
         _req = req.request.split('\r\n')[0].split(' ')
         if 'TEARDOWN' not in _req:
             return resp
-        _off = 90 - len(_req[0])
         if killed:
             tmp = _req[1].split('/')
-            _req[1] = str(tmp[0]) + '://' + str(tmp[2])[:26] + ' '
-            _req[1] += (f'[{killed.client_ip}] '
-                        f'{killed.channel} '
-                        f'{killed.broadcast} '
-                        f'-s {killed.start} '
-                        f'-p {killed.client_port}')
-        _req_l = _req[0] + ' ' + _req[1][:_off]
-        _req_r = ' ' * (100 - len(_req_l) - len(_req[2]))
-        sys.stdout.write(f'Req: {_req_l}{_req_r}{_req[2]}')
-        sys.stderr.write(f'Resp: {resp.version} {resp.status}')
+            _req[1] = (f'{tmp[0]}//{str(tmp[2])[:26]} '
+                       f'{killed.channel} {killed.broadcast} '
+                       f'-s {killed.start} -p {killed.client_port}')
+        sys.stdout.write(f'[{killed.client_ip}][U7D] Req: {_req[0]} [{_req[1]}] '
+                         f'{_req[2]} => {resp.status}\n')
         # headers = self.serialize_headers(resp.headers)
-        # sys.stderr.write('-' * WIDTH)
-        # sys.stderr.write('Request: ' + req.request.split('\m')[0])
-        # sys.stderr.write(f'Response: {resp.version} {resp.status}\n{headers}')
+        # sys.stderr.write('-' * WIDTH + '\n')
+        # sys.stderr.write('Request: ' + req.request.split('\n')[0] + '\n')
+        # sys.stderr.write(f'Response: {resp.version} {resp.status}\n{headers}\n')
         # if resp.body:
-        #     sys.stderr.write(f'\n{resp.body.rstrip()}')
-        # sys.stderr.write('-' * WIDTH)
+        #     sys.stderr.write(f'\n{resp.body.rstrip()}\n')
+        # sys.stderr.write('-' * WIDTH + '\n')
         return resp
 
 
@@ -147,29 +141,10 @@ def _cleanup():
         os.remove(filename + TMP_EXT)
 
 
-# @ffmpeg.on('stderr')
-# def on_stderr(line):
-#     sys.stderr.write(f"{'[' + args.client_ip + '] ' if args.client_ip else ''}"
-#                      f'[u7d.py] {line}\n')
-
-
-# @ffmpeg.on('progress')
-# def on_progress(progress):
-#    sys.stderr.write(f"{'[' + args.client_ip + '] ' if args.client_ip else ''}"
-#                     f'[u7d.py] {progress}\n')
-
-
-# @ffmpeg.on('start')
-# def on_start(arguments):
-#     time.sleep(0.1)
-#     sys.stderr.write(f"{'[' + args.client_ip + '] ' if args.client_ip else ''}"
-#                      f'[u7d.py] ffmpeg arguments: {arguments}\n')
-
-
 @ffmpeg.on('terminated')
 def on_terminated():
     sys.stderr.write(f"{'[' + args.client_ip + '] ' if args.client_ip else ''}"
-                     '[u7d.py] ffmpeg terminated\n')
+                     '[U7D] ffmpeg terminated\n')
     _cleanup()
 
 
@@ -179,11 +154,11 @@ def on_error(code):
         on_completed()
     else:
         sys.stderr.write(f"{'[' + args.client_ip + '] ' if args.client_ip else ''}"
-                         f'[u7d.py] Recording FAILED error={code}: '
+                         f'[U7D] Recording FAILED error={code}: '
                          f'{args.channel} '
                          f'{args.broadcast} '
                          f'[{args.time}s] '
-                         f'"{filename}"\n')
+                         f'"{filename[20:]}"\n')
         _cleanup()
 
 
@@ -240,11 +215,11 @@ def on_completed():
     resp = httpx.put(epg_url)
     if resp.status_code == 200:
         sys.stderr.write(f"{'[' + args.client_ip + '] ' if args.client_ip else ''}"
-                         f'[u7d.py] Recording COMPLETE: '
+                         f'[U7D] Recording COMPLETE: '
                          f'{args.channel} '
                          f'{args.broadcast} '
                          f'[{args.time}s] '
-                         f'"{filename}"')
+                         f'"{filename}"\n')
 
 
 def main():
@@ -320,7 +295,8 @@ def main():
                         path = os.path.join(RECORDINGS, safe_filename(data['serie']))
                         filename = os.path.join(path, title)
                         if not os.path.exists(path):
-                            sys.stderr.wrtie(f'Creating recording subdir {path}')
+                            sys.stderr.write(f"{'[' + args.client_ip + '] ' if args.client_ip else ''}"
+                                             f'[U7D] Creating recording subdir {path}\n')
                             os.mkdir(path)
                     else:
                         filename = os.path.join(RECORDINGS, title)
@@ -362,11 +338,11 @@ def main():
                 _ffmpeg.start()
 
                 sys.stderr.write(f"{'[' + args.client_ip + '] ' if args.client_ip else ''}"
-                                 f'[u7d.py] Recording STARTED: '
+                                 f'[U7D] Recording STARTED: '
                                  f'{args.channel} '
                                  f'{args.broadcast} '
                                  f'[{args.time}s] '
-                                 f'"{filename}"\n')
+                                 f'"{filename[20:]}"\n')
 
             def _handle_cleanup(signum, frame):
                 raise TimeoutError()
@@ -383,24 +359,23 @@ def main():
                     break
                 client.print(client.send_request('GET_PARAMETER', get_parameter))
 
-        except (asyncio.exceptions.CancelledError, TimeoutError):
+        except TimeoutError:
             pass
 
         except ValueError:
             _teardown = False
 
         finally:
-            # sys.stderr.write('finally\n')
+            if _teardown and client and 'Session' in session:
+                client.print(client.send_request('TEARDOWN', session), killed=args)
             if args.write_to_file:
                 if _ffmpeg and _ffmpeg.is_alive():
                     subprocess.run(['pkill', '-HUP', '-f',
                                    f'ffmpeg.+udp://@{IPTV}:{args.client_port}'])
                 try:
                     httpx.get(f'{SANIC_EPG_URL}/check_timers')
-                except ReadTimeout:
+                except Exception:
                     pass
-            if _teardown and client and 'Session' in session:
-                client.print(client.send_request('TEARDOWN', session), killed=args)
 
 
 if __name__ == '__main__':
