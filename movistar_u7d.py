@@ -18,7 +18,7 @@ from sanic.log import LOGGING_CONFIG_DEFAULTS
 from threading import Thread
 
 
-setproctitle('movistar-u7d')
+setproctitle('movistar_u7d')
 
 if 'IPTV_ADDRESS' in os.environ:
     IPTV = os.getenv('IPTV_ADDRESS')

@@ -81,9 +81,9 @@ Componentes
 
 El resultado son dos microservicios escritos en python asíncrono, con [Sanic](https://github.com/sanic-org/sanic):
 
- - `movistar-u7d.py`: el proxy principal con el que se comunica el cliente final, como el TiviMate.
+ - `movistar_u7d.py`: el proxy principal con el que se comunica el cliente final, como el TiviMate.
 
- - `movistar-epg.py`: otro miscroservicio en python asíncrono. Encargado de actualizar la EPG y de localizar el programa correspondiente al punto temporal que solicita el cliente. Mantiene el estado necesario para el servicio, permitiendo que el microservicio principal no tenga estado y pueda trabajar en múltiples hilos sin problemas.
+ - `movistar_epg.py`: otro miscroservicio en python asíncrono. Encargado de actualizar la EPG y de localizar el programa correspondiente al punto temporal que solicita el cliente. Mantiene el estado necesario para el servicio, permitiendo que el microservicio principal no tenga estado y pueda trabajar en múltiples hilos sin problemas.
 
  - `vod.py`: pequeño script que mantiene abierta la reproducción de los programas bajo demanda (los últimos 7 días), habrá uno en ejecución por cada programa que se esté visionando. Encargado también de realizar las grabaciones con ffmpeg.
 
@@ -91,9 +91,9 @@ El resultado son dos microservicios escritos en python asíncrono, con [Sanic](h
 
 Para Systemd:
 
- - `movistar-u7d.service`: script para el microservicio principal
+ - `movistar_u7d.service`: script para el microservicio principal
 
- - `movistar-epg.service`: script para el microservicio que mantiene el estado (la EPG)
+ - `movistar_epg.service`: script para el microservicio que mantiene el estado (la EPG)
 
 
 Para docker:
@@ -129,10 +129,10 @@ Si, por el contrario, preferimos instalarlo y usarlo directamente:
 pip3 install -r requirements.txt
 ```
 
- - Copiamos `movistar-u7d.py`, `movistar-epg.py`, `tv_grab_es_movistartv` y `vod.py` a alguna ruta que tengamos en el PATH:
+ - Copiamos `movistar_u7d.py`, `movistar_epg.py`, `tv_grab_es_movistartv` y `vod.py` a alguna ruta que tengamos en el PATH:
 
 ```
-cp movistar-u7d.py movistar-epg.py tv_grab_es_movistartv vod.py /usr/local/bin/
+cp movistar_u7d.py movistar_epg.py tv_grab_es_movistartv vod.py /usr/local/bin/
 ```
 
  - Si queremos usar systemd, copiamos los `.service` a `/etc/systemd/system`, ajustando las variables de entorno que queramos. Habilitamos los servicios y los iniciamos:
@@ -140,13 +140,13 @@ cp movistar-u7d.py movistar-epg.py tv_grab_es_movistartv vod.py /usr/local/bin/
 ```
 cp *.service /etc/systemd/system/
 systemctl daemon-reload
-systemctl enable movistar-epg
-systemctl enable movistar-u7d
-systemctl start movistar-epg
-systemctl start movistar-u7d
+systemctl enable movistar_epg
+systemctl enable movistar_u7d
+systemctl start movistar_epg
+systemctl start movistar_u7d
 ```
 
- - Sin systemd, tendremos que lanzar directamente los dos `movistar-u7d.py` y `movistar-epg.py`.
+ - Sin systemd, tendremos que lanzar directamente los dos `movistar_u7d.py` y `movistar_epg.py`.
 
  - La primera vez tendremos que esperar a que termine de descargar la guía, ya que sin EPG no funcionará nada.
 
@@ -159,7 +159,7 @@ Instalación en el propio router con docker-compose
 Si queremos usarlo dentro del propio router, con su propia subred y con acceso a la VLAN de televisión, se complica todo un poco. De interesaros esta opción, [aquí](https://openwrt.marcet.info/latest/targets/x86/64/) podeís encontrar builds de openwrt para x86-64 con todo lo necesario para desplegar lo siguiente. Los actualizo cada pocos días.
 
 
-Cualquier duda o consulta no dudéis en abrir una [incidencia](https://github.com/jmarcet/movistar-u7d/issues) [aquí](https://github.com/jmarcet/movistar-u7d) en Github.
+Cualquier duda o consulta no dudéis en abrir una [incidencia](https://github.com/jmarcet/movistar_u7d/issues) [aquí](https://github.com/jmarcet/movistar_u7d) en Github.
 
 
 Posibles problemas

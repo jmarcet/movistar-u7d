@@ -1,7 +1,7 @@
 [Unit]
 Description=Movistar U7D Flussonic TCP Proxy
 After=network.target
-Requires=movistar-epg.service
+Requires=movistar_epg.service
 
 [Service]
 Type=simple
@@ -10,7 +10,7 @@ Type=simple
 # Environment=SANIC_HOST=0.0.0.0
 # Environment=SANIC_PORT=8888
 # Environment=SANIC_THREADS=3
-ExecStart=movistar-u7d.py
+ExecStart=movistar_u7d.py
 
 [Install]
 WantedBy=multi-user.target

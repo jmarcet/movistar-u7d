@@ -15,9 +15,10 @@ from sanic import Sanic, exceptions, response
 from sanic.compat import open_async
 from sanic.log import logger as log
 from sanic.log import LOGGING_CONFIG_DEFAULTS
+from vod import safe_filename
 
 
-setproctitle('movistar-epg')
+setproctitle('movistar_epg')
 
 HOME = os.getenv('HOME', '/home/')
 SANIC_HOST = os.getenv('LAN_IP', '127.0.0.1')
@@ -43,11 +44,6 @@ timers_lock = FileLock('/tmp/_timers.lock')
 _channels = {}
 _epgdata = {}
 _t_epg1 = _t_epg2 = _t_timers = None
-
-
-def _safe_filename(filename):
-    keepcharacters = (' ', ',', '.', '_', '-', ':', '¡', '!', '¿', '?')
-    return "".join(c for c in filename if c.isalnum() or c in keepcharacters).rstrip()
 
 
 @app.exception(exceptions.ServerError)
@@ -300,7 +296,7 @@ async def handle_timers():
                         vo = True if lang == 'VO' else False
                         if re.match(timer_match, title) and \
                             (title not in timers_added and
-                                _safe_filename(title) not in str(_ffmpeg) and
+                                safe_filename(title) not in str(_ffmpeg) and
                                 (channel not in _recordings or
                                  (title not in repr(_recordings[channel]) and
                                   timestamp not in _recordings[channel]))):
