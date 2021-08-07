@@ -175,10 +175,10 @@ async def handle_flussonic(request, channel_id, url):
         return response.json({'status': f'{channel_id}/{url} not found'}, 404)
 
     client_port = get_free_port()
-    cmd = (f'{PREFIX}u7d.py', channel_id, program_id, '-s', offset, '-p', str(client_port))
+    cmd = (f'{PREFIX}vod.py', channel_id, program_id, '-s', offset, '-p', str(client_port))
     duration = int(x.groups()[1]) if x.groups()[1] else 0
     remaining = str(duration - int(offset))
-    u7d_msg = '%s %s [%s/%d]' % (channel_id, program_id, offset, duration)
+    vod_msg = '%s %s [%s/%d]' % (channel_id, program_id, offset, duration)
 
     if record := request.args.get('record', False):
         record_time = record if record.isnumeric() else remaining
@@ -187,18 +187,18 @@ async def handle_flussonic(request, channel_id, url):
             cmd += ('--mp4', '1')
         if request.args.get('vo', False):
             cmd += ('--vo', '1')
-        log.info(f'[{request.ip}] Record: [{record_time}]s {u7d_msg}')
+        log.info(f'[{request.ip}] Record: [{record_time}]s {vod_msg}')
 
     cmd += ('-i', request.ip)
-    u7d = Thread(target=subprocess.run, args=(cmd,), daemon=True)
-    u7d.start()
+    vod = Thread(target=subprocess.run, args=(cmd,), daemon=True)
+    vod.start()
 
     await asyncio.sleep(0.5)
-    if not u7d.is_alive():
-        log.info(f'NOT_AVAILABLE: {u7d_msg}')
+    if not vod.is_alive():
+        log.info(f'NOT_AVAILABLE: {vod_msg}')
         await SESSION.get(f'{SANIC_EPG_URL}/reload_epg')
         return response.json({'status': 'NOT_AVAILABLE',
-                              'cmd': u7d_msg}, 404)
+                              'cmd': vod_msg}, 404)
     elif record:
         return response.json({'status': 'OK',
                               'channel_id': channel_id,
@@ -208,7 +208,7 @@ async def handle_flussonic(request, channel_id, url):
     elif request.method == 'HEAD':
         return response.HTTPResponse(content_type=MIME_TS, status=200)
 
-    log.info(f'[{request.ip}] Start: {u7d_msg}')
+    log.info(f'[{request.ip}] Start: {vod_msg}')
     with closing(await asyncio_dgram.bind((IPTV, client_port))) as stream:
         timedout = False
         respond = await request.respond(content_type=MIME_TS)
@@ -219,7 +219,7 @@ async def handle_flussonic(request, channel_id, url):
         except asyncio.exceptions.TimeoutError:
             timedout = True
         finally:
-            log.info(f'[{request.ip}] End: {u7d_msg}')
+            log.info(f'[{request.ip}] End: {vod_msg}')
             if timedout:
                 await respond.send(end_stream=True)
             else:
@@ -244,8 +244,8 @@ async def notify_server_start(app, loop):
 
 @app.listener('after_server_stop')
 async def notify_server_stop(app, loop):
-    log.debug('after_server_stop killing u7d.py')
-    p = await asyncio.create_subprocess_exec('pkill', '-INT', '-f', 'u7d.py .+ -p ')
+    log.debug('after_server_stop killing vod.py')
+    p = await asyncio.create_subprocess_exec('pkill', '-INT', '-f', 'vod.py .+ -p ')
     await p.wait()
 
 

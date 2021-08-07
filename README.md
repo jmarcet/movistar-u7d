@@ -85,7 +85,7 @@ El resultado son dos microservicios escritos en python asíncrono, con [Sanic](h
 
  - `movistar-epg.py`: otro miscroservicio en python asíncrono. Encargado de actualizar la EPG y de localizar el programa correspondiente al punto temporal que solicita el cliente. Mantiene el estado necesario para el servicio, permitiendo que el microservicio principal no tenga estado y pueda trabajar en múltiples hilos sin problemas.
 
- - `u7d.py`: pequeño script que mantiene abierta la reproducción de los programas de los últimos 7 días, habrá uno en ejecución por cada programa que se esté visionando, de consumo inapreciable.
+ - `vod.py`: pequeño script que mantiene abierta la reproducción de los programas bajo demanda (los últimos 7 días), habrá uno en ejecución por cada programa que se esté visionando. Encargado también de realizar las grabaciones con ffmpeg.
 
  - `tv_grab_es_movistartv`: encargado de generar la lista de canales y la programación, así como de guardar una caché de los últimos 8 días de programas, de manera que necesita ser ejecutado de forma recurrente (cada 2h). Esta información es imprescindible para que todo el proceso funcione bien. Tanto TiviMate como cualquier repdoductor con catchup flussonic sólo se preocupan por canal y un timestamp, que define un momento preciso en el tiempo. El proxy es el encargado de encontrar qué programa de la EPG corresponde a ese canal en ese momento y negociar con Movistar la reproducción.
 
@@ -129,10 +129,10 @@ Si, por el contrario, preferimos instalarlo y usarlo directamente:
 pip3 install -r requirements.txt
 ```
 
- - Copiamos `movistar-u7d.py`, `movistar-epg.py`, `tv_grab_es_movistartv` y `u7d.py` a alguna ruta que tengamos en el PATH:
+ - Copiamos `movistar-u7d.py`, `movistar-epg.py`, `tv_grab_es_movistartv` y `vod.py` a alguna ruta que tengamos en el PATH:
 
 ```
-cp movistar-u7d.py movistar-epg.py tv_grab_es_movistartv u7d.py /usr/local/bin/
+cp movistar-u7d.py movistar-epg.py tv_grab_es_movistartv vod.py /usr/local/bin/
 ```
 
  - Si queremos usar systemd, copiamos los `.service` a `/etc/systemd/system`, ajustando las variables de entorno que queramos. Habilitamos los servicios y los iniciamos:

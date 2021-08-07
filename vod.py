@@ -112,7 +112,7 @@ class RtspClient(object):
             _req[1] = (f'{tmp[0]}//{str(tmp[2])[:26]} '
                        f'{killed.channel} {killed.broadcast} '
                        f'-s {killed.start} -p {killed.client_port}')
-        sys.stdout.write(f'[{killed.client_ip}][U7D] Req: {_req[0]} [{_req[1]}] '
+        sys.stdout.write(f'[{killed.client_ip}][VOD] Req: {_req[0]} [{_req[1]}] '
                          f'{_req[2]} => {resp.status}\n')
         # headers = self.serialize_headers(resp.headers)
         # sys.stderr.write('-' * WIDTH + '\n')
@@ -144,7 +144,7 @@ def _cleanup():
 @ffmpeg.on('terminated')
 def on_terminated():
     sys.stderr.write(f"{'[' + args.client_ip + '] ' if args.client_ip else ''}"
-                     '[U7D] ffmpeg terminated\n')
+                     '[VOD] ffmpeg terminated\n')
     _cleanup()
 
 
@@ -154,7 +154,7 @@ def on_error(code):
         on_completed()
     else:
         sys.stderr.write(f"{'[' + args.client_ip + '] ' if args.client_ip else ''}"
-                         f'[U7D] Recording FAILED error={code}: '
+                         f'[VOD] Recording FAILED error={code}: '
                          f'{args.channel} '
                          f'{args.broadcast} '
                          f'[{args.time}s] '
@@ -215,7 +215,7 @@ def on_completed():
     resp = httpx.put(epg_url)
     if resp.status_code == 200:
         sys.stderr.write(f"{'[' + args.client_ip + '] ' if args.client_ip else ''}"
-                         f'[U7D] Recording COMPLETE: '
+                         f'[VOD] Recording COMPLETE: '
                          f'{args.channel} '
                          f'{args.broadcast} '
                          f'[{args.time}s] '
@@ -296,7 +296,7 @@ def main():
                         filename = os.path.join(path, title)
                         if not os.path.exists(path):
                             sys.stderr.write(f"{'[' + args.client_ip + '] ' if args.client_ip else ''}"
-                                             f'[U7D] Creating recording subdir {path}\n')
+                                             f'[VOD] Creating recording subdir {path}\n')
                             os.mkdir(path)
                     else:
                         filename = os.path.join(RECORDINGS, title)
@@ -338,7 +338,7 @@ def main():
                 _ffmpeg.start()
 
                 sys.stderr.write(f"{'[' + args.client_ip + '] ' if args.client_ip else ''}"
-                                 f'[U7D] Recording STARTED: '
+                                 f'[VOD] Recording STARTED: '
                                  f'{args.channel} '
                                  f'{args.broadcast} '
                                  f'[{args.time}s] '
@@ -380,7 +380,7 @@ def main():
 
 if __name__ == '__main__':
 
-    parser = argparse.ArgumentParser('Stream content from the Movistar U7D service.')
+    parser = argparse.ArgumentParser('Stream content from the Movistar VOD service.')
     parser.add_argument('channel', help='channel id')
     parser.add_argument('broadcast', help='broadcast id')
     parser.add_argument('--client_ip', '-i', help='client ip address')
