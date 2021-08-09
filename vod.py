@@ -348,8 +348,7 @@ def main():
             def _handle_cleanup(signum, frame):
                 raise TimeoutError()
 
-            for _sig in [signal.SIGABRT, signal.SIGHUP, signal.SIGINT, signal.SIGTERM]:
-                signal.signal(_sig, _handle_cleanup)
+            signal.signal(signal.SIGHUP, _handle_cleanup)
             if args.time:
                 signal.signal(signal.SIGALRM, _handle_cleanup)
                 signal.alarm(args.time)
