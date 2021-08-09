@@ -288,8 +288,10 @@ def main():
                     data = resp.json()
                     # sys.stderr.write(f'{repr(data)}\n')
 
-                    if not args.time:
-                        args.time = int(data['duration']) - args.start
+                    if args.time:
+                        args.time += 300
+                    else:
+                        args.time = int(data['duration']) - args.start + 300
                     title = safe_filename(data['full_title'])
                     if data['is_serie']:
                         path = os.path.join(RECORDINGS, safe_filename(data['serie']))

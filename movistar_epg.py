@@ -300,10 +300,9 @@ async def handle_timers():
                                 (channel not in _recordings or
                                  (title not in repr(_recordings[channel]) and
                                   timestamp not in _recordings[channel]))):
-                            duration = _epgdata[_key][timestamp]['duration'] + 300
                             log.info(f'Found match! {channel} {timestamp} "{title}"')
                             sanic_url = f'{SANIC_URL}/{channel}/{timestamp}.mp4'
-                            sanic_url += f'?record={duration}'
+                            sanic_url += f'?record=1'
                             if vo:
                                 sanic_url += '&vo=1'
                             try:

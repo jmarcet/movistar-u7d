@@ -181,7 +181,7 @@ async def handle_flussonic(request, channel_id, url):
     vod_msg = '%s %s [%s/%d]' % (channel_id, program_id, offset, duration)
 
     if record := request.args.get('record', False):
-        record_time = record if record.isnumeric() else remaining
+        record_time = record if (record.isnumeric() and int(record) > 1) else remaining
         cmd += ('-t', record_time, '-w')
         if MP4_OUTPUT or request.args.get('mp4', False):
             cmd += ('--mp4', '1')
