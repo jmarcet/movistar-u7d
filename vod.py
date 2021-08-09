@@ -311,6 +311,21 @@ def main():
             client.print(client.send_request('PLAY', play))
 
             if args.write_to_file:
+                _options = {
+                    'map': '0',
+                    'c': 'copy',
+                    'c:a:0': 'aac',
+                    'c:a:1': 'aac',
+                    'aac_pred': '1',
+                    'bsf:v': 'h264_mp4toannexb',
+                    'metadata:s:a:0': 'language=spa',
+                    'metadata:s:a:1': 'language=eng',
+                    'metadata:s:a:2': 'language=spa',
+                    'metadata:s:a:3': 'language=eng',
+                    'metadata:s:s:0': 'language=spa',
+                    'metadata:s:s:1': 'language=eng'
+                }
+
                 resp = httpx.get(epg_url)
                 if resp.status_code == 200:
                     data = resp.json()
@@ -320,16 +335,19 @@ def main():
                         args.time += 300
                     else:
                         args.time = int(data['duration']) - args.start + 300
-                    title = safe_filename(data['full_title'])
+                    title = data['full_title']
+                    _options['metadata:s:v'] = f'title={title}'
+                    if data['description']:
+                        _options['metadata:s:v:0'] = 'description=' + data['description']
                     if data['is_serie']:
                         path = os.path.join(RECORDINGS, safe_filename(data['serie']))
-                        filename = os.path.join(path, title)
+                        filename = os.path.join(path, safe_filename(title))
                         if not os.path.exists(path):
                             sys.stderr.write(f"{'[' + args.client_ip + '] ' if args.client_ip else ''}"
                                              f'[VOD] Creating recording subdir {path}\n')
                             os.mkdir(path)
                     else:
-                        filename = os.path.join(RECORDINGS, title)
+                        filename = os.path.join(RECORDINGS, safe_filename(title))
                 else:
                     filename = os.path.join(RECORDINGS,
                                             f'{args.channel}-{args.broadcast}')
@@ -339,19 +357,7 @@ def main():
                     fifo_size=5572,
                     pkt_size=1316,
                     timeout=500000
-                ).output(filename + TMP_EXT, {
-                    'map': '0',
-                    'c': 'copy',
-                    'c:a:0': 'aac',
-                    'c:a:1': 'aac',
-                    'aac_pred': '1',
-                    'metadata:s:a:0': 'language=spa',
-                    'metadata:s:a:1': 'language=eng',
-                    'metadata:s:a:2': 'language=spa',
-                    'metadata:s:a:3': 'language=eng',
-                    'metadata:s:s:0': 'language=spa',
-                    'metadata:s:s:1': 'language=eng',
-                    'bsf:v': 'h264_mp4toannexb'},
+                ).output(filename + TMP_EXT, _options,
                     chunk_size='188',
                     packetsize='1316',
                     ts_packetsize='1316',
@@ -361,7 +367,8 @@ def main():
                     vsync='2',
                     t=str(args.time),
                     v='info',
-                    f='matroska')
+                    f='matroska'
+                )
 
                 _ffmpeg = Thread(target=asyncio.run, args=(ffmpeg.execute(),))
                 _ffmpeg.start()
