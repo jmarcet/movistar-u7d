@@ -137,29 +137,29 @@ def safe_filename(filename):
 
 
 def _check_recording():
-    if not os.path.exists(filename + TMP_EXT):
+    if not os.path.exists(filename + VID_EXT):
         sys.stderr.write(f"{'[' + args.client_ip + '] ' if args.client_ip else ''}"
-                         f'[VOD] Recording CANNOT FIND: "{filename + TMP_EXT}"\n')
+                         f'[VOD] Recording CANNOT FIND: "{filename + VID_EXT}"\n')
         return 0
 
     command = ['ffprobe', '-v', 'quiet', '-print_format', 'json', '-show_format']
-    command += [filename + TMP_EXT]
+    command += [filename + VID_EXT]
     try:
         probe = json.loads(subprocess.run(command, capture_output=True).stdout.decode())
         duration = int(float(probe['format']['duration']))
     except KeyError:
         sys.stderr.write(f"{'[' + args.client_ip + '] ' if args.client_ip else ''}"
-                         f'[VOD] Recording CANNOT PARSE: "{filename + TMP_EXT}"\n')
+                         f'[VOD] Recording CANNOT PARSE: "{filename + VID_EXT}"\n')
         return 0
 
-    if duration == args.time or (duration + 500) < args.time:
+    if (duration + 500) < args.time:
         sys.stderr.write(f"{'[' + args.client_ip + '] ' if args.client_ip else ''}"
-                         f'[VOD] Recording checked=INCOMPLETE: '
+                         f'[VOD] Recording INCOMPLETE: '
                          f'duration={duration} wanted={args.time}\n')
         return 0
     else:
         sys.stderr.write(f"{'[' + args.client_ip + '] ' if args.client_ip else ''}"
-                         f'[VOD] Recording checked=COMPLETE: '
+                         f'[VOD] Recording COMPLETE: '
                          f'duration={duration} wanted={args.time}\n')
         return 1
 
@@ -193,9 +193,6 @@ def on_error(code):
 
 @ffmpeg.on('completed')
 def on_completed():
-    if not _check_recording():
-        return
-
     _nice = ['nice', '-n', '10', 'ionice', '-c', '3']
     command = _nice
 
@@ -238,16 +235,10 @@ def on_completed():
 
         proc.join()
 
-    _cleanup()
+    if _check_recording():
+        httpx.put(epg_url)
 
-    resp = httpx.put(epg_url)
-    if resp.status_code == 200:
-        sys.stderr.write(f"{'[' + args.client_ip + '] ' if args.client_ip else ''}"
-                         f'[VOD] Recording COMPLETE: '
-                         f'{args.channel} '
-                         f'{args.broadcast} '
-                         f'[{args.time}s] '
-                         f'"{filename}"\n')
+    _cleanup()
 
 
 def main():
