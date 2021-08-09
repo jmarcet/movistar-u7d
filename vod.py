@@ -3,6 +3,7 @@
 import argparse
 import asyncio
 import httpx
+import json
 import multiprocessing
 import os
 import re
@@ -135,6 +136,41 @@ def safe_filename(filename):
     return "".join(c for c in filename if c.isalnum() or c in keepcharacters).rstrip()
 
 
+def _check_recording():
+    if not os.path.exists(filename + TMP_EXT):
+        sys.stderr.write(f"{'[' + args.client_ip + '] ' if args.client_ip else ''}"
+                         f'[VOD] Recording CANNOT FIND: "{filename + TMP_EXT}"\n')
+        return 0
+
+    command = ['ffprobe', '-v', 'quiet', '-print_format', 'json', '-show_format']
+    command += [filename + TMP_EXT]
+    try:
+        probe = json.loads(subprocess.run(command, capture_output=True).stdout.decode())
+        duration = int(float(probe['format']['duration']))
+    except KeyError:
+        sys.stderr.write(f"{'[' + args.client_ip + '] ' if args.client_ip else ''}"
+                         f'[VOD] Recording CANNOT PARSE: "{filename + TMP_EXT}"\n')
+        return 0
+
+    if duration == args.time or (duration + 500) < args.time:
+        sys.stderr.write(f"{'[' + args.client_ip + '] ' if args.client_ip else ''}"
+                         f'[VOD] Recording checked=INCOMPLETE: '
+                         f'duration={duration} wanted={args.time}\n')
+        return 0
+    else:
+        sys.stderr.write(f"{'[' + args.client_ip + '] ' if args.client_ip else ''}"
+                         f'[VOD] Recording checked=COMPLETE: '
+                         f'duration={duration} wanted={args.time}\n')
+        return 1
+
+
+def _check_timers():
+    try:
+        httpx.get(f'{SANIC_EPG_URL}/check_timers')
+    except Exception:
+        pass
+
+
 def _cleanup():
     if os.path.exists(filename + TMP_EXT):
         os.remove(filename + TMP_EXT)
@@ -144,6 +180,7 @@ def _cleanup():
 def on_terminated():
     sys.stderr.write(f"{'[' + args.client_ip + '] ' if args.client_ip else ''}"
                      '[VOD] ffmpeg terminated\n')
+    on_completed()
     _cleanup()
 
 
@@ -158,12 +195,14 @@ def on_error(code):
                          f'{args.broadcast} '
                          f'[{args.time}s] '
                          f'"{filename[20:]}"\n')
-        _cleanup()
+    _cleanup()
 
 
 @ffmpeg.on('completed')
 def on_completed():
-    if not os.path.exists(filename + TMP_EXT):
+    if not _check_recording():
+        time.sleep(60)
+        _check_timers()
         return
 
     _nice = ['nice', '-n', '10', 'ionice', '-c', '3']
@@ -208,8 +247,7 @@ def on_completed():
 
         proc.join()
 
-    if os.path.exists(filename + TMP_EXT):
-        os.remove(filename + TMP_EXT)
+    _cleanup()
 
     resp = httpx.put(epg_url)
     if resp.status_code == 200:
@@ -219,6 +257,8 @@ def on_completed():
                          f'{args.broadcast} '
                          f'[{args.time}s] '
                          f'"{filename}"\n')
+
+    _check_timers()
 
 
 def main():
@@ -372,10 +412,6 @@ def main():
                 if _ffmpeg and _ffmpeg.is_alive():
                     subprocess.run(['pkill', '-HUP', '-f',
                                    f'ffmpeg.+udp://@{IPTV}:{args.client_port}'])
-                try:
-                    httpx.get(f'{SANIC_EPG_URL}/check_timers')
-                except Exception:
-                    pass
 
 
 if __name__ == '__main__':
