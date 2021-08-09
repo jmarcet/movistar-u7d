@@ -209,10 +209,10 @@ async def handle_flussonic(request, channel_id, url):
     elif request.method == 'HEAD':
         return response.HTTPResponse(content_type=MIME_TS, status=200)
 
+    timedout = False
+    respond = await request.respond(content_type=MIME_TS)
     log.info(f'[{request.ip}] Start: {vod_msg}')
     with closing(await asyncio_dgram.bind((IPTV, client_port))) as stream:
-        timedout = False
-        respond = await request.respond(content_type=MIME_TS)
         try:
             await respond.send((await asyncio.wait_for(stream.recv(), 0.5))[0])
             while True:
@@ -225,6 +225,7 @@ async def handle_flussonic(request, channel_id, url):
                 await respond.send(end_stream=True)
             else:
                 await asyncio.create_subprocess_exec('pkill', '-HUP', '-f', ' '.join(cmd))
+    return respond
 
 
 @app.get('/favicon.ico')
