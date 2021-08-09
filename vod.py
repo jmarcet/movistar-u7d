@@ -16,7 +16,6 @@ import urllib.parse
 from collections import namedtuple
 from contextlib import closing
 from ffmpeg import FFmpeg
-from httpcore import ReadTimeout
 from threading import Thread
 
 
@@ -400,5 +399,9 @@ if __name__ == '__main__':
 
     try:
         main()
+        sys.exit(0)
     except (KeyboardInterrupt, TimeoutError):
+        sys.exit(1)
+    except Exception as ex:
+        sys.stderr.write(f'{repr(ex)}\n')
         sys.exit(1)

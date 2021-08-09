@@ -9,6 +9,7 @@ import signal
 import socket
 import struct
 import subprocess
+import sys
 
 from contextlib import closing
 from setproctitle import setproctitle
@@ -267,4 +268,7 @@ if __name__ == '__main__':
                 workers=SANIC_THREADS)
     except (asyncio.exceptions.CancelledError,
             KeyboardInterrupt):
+        sys.exit(1)
+    except Exception as ex:
+        logger.critical(f'{repr(ex)}')
         sys.exit(1)

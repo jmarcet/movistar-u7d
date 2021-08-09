@@ -311,8 +311,8 @@ async def handle_timers():
                                 log.info(f'{sanic_url} => {repr(r)}')
                                 if r.status_code == 200:
                                     timers_added.append(title)
-                            except httpcore.ReadTimeout as ex:
-                                log.warn(f'{repr(ex)}')
+                            except Exception as ex:
+                                log.warning(f'{repr(ex)}')
     except Timeout:
         log.info(f'timers_lock in place')
 
@@ -403,4 +403,7 @@ if __name__ == '__main__':
                 workers=1)
     except (asyncio.exceptions.CancelledError,
             KeyboardInterrupt):
+        sys.exit(1)
+    except Exception as ex:
+        logger.critical(f'{repr(ex)}')
         sys.exit(1)

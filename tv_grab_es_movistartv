@@ -1428,7 +1428,7 @@ try:
     sys.exit(0)
 
 except Exception as e:
-    logger.critical('%s\n%s' % (repr(e), traceback.format_exc()))
-    print(u'Excepción:\n\n\t %s\n\nTraceback:\n\n\t%s'
-          % (repr(e), traceback.format_exc()))
+    logger.critical(f'{repr(e)}')
+    # print(u'Excepción:\n\n\t %s\n\nTraceback:\n\n\t%s'
+    #       % (repr(e), traceback.format_exc()))
     sys.exit(1)
