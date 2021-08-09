@@ -170,10 +170,18 @@ def _cleanup():
         os.remove(filename + TMP_EXT)
 
 
+@ffmpeg.on('stderr')
+def on_stderr(line):
+    if line.startswith('frame='):
+        return
+    sys.stderr.write(f"{'[' + args.client_ip + '] ' if args.client_ip else ''}"
+                     f'[VOD] [ffmpeg] {line}\n')
+
+
 @ffmpeg.on('terminated')
 def on_terminated():
     sys.stderr.write(f"{'[' + args.client_ip + '] ' if args.client_ip else ''}"
-                     '[VOD] ffmpeg terminated\n')
+                     '[VOD] [ffmpeg] terminated\n')
     on_completed()
     _cleanup()
 
