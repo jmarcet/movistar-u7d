@@ -369,6 +369,7 @@ async def notify_server_start(app, loop):
                 proc = await f.read()
             uptime = int(float(proc.split()[1]))
             if uptime < 300:
+                log.info('Waiting 300s to check timers after rebooting...')
                 await asyncio.sleep(300)
         except FileNotFoundError:
             pass
