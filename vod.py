@@ -164,13 +164,6 @@ def _check_recording():
         return 1
 
 
-def _check_timers():
-    try:
-        httpx.get(f'{SANIC_EPG_URL}/check_timers')
-    except Exception:
-        pass
-
-
 def _cleanup():
     if os.path.exists(filename + TMP_EXT):
         os.remove(filename + TMP_EXT)
@@ -201,8 +194,6 @@ def on_error(code):
 @ffmpeg.on('completed')
 def on_completed():
     if not _check_recording():
-        time.sleep(60)
-        _check_timers()
         return
 
     _nice = ['nice', '-n', '10', 'ionice', '-c', '3']
@@ -257,8 +248,6 @@ def on_completed():
                          f'{args.broadcast} '
                          f'[{args.time}s] '
                          f'"{filename}"\n')
-
-    _check_timers()
 
 
 def main():
@@ -412,6 +401,10 @@ def main():
                 if _ffmpeg and _ffmpeg.is_alive():
                     subprocess.run(['pkill', '-HUP', '-f',
                                    f'ffmpeg.+udp://@{IPTV}:{args.client_port}'])
+                try:
+                    httpx.get(f'{SANIC_EPG_URL}/check_timers')
+                except Exception:
+                    pass
 
 
 if __name__ == '__main__':
