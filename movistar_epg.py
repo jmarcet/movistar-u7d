@@ -261,7 +261,6 @@ async def handle_timers():
                 if not _timers:
                     log.error(f'handle_timers: {ex} no timers, returning!')
                     return
-                log.info(f'handle_timers: no recordings saved yet')
 
             busy = False
             for channel in _timers['match']:
