@@ -207,7 +207,7 @@ async def handle_flussonic(request, channel_id, url):
 
     timedout = False
     respond = await request.respond(content_type=MIME_TS)
-    log.info(f'[{request.ip}] Start: {vod_msg}')
+    log.debug(f'[{request.ip}] Start: {vod_msg}')
     with closing(await asyncio_dgram.bind((IPTV, client_port))) as stream:
         try:
             await respond.send((await asyncio.wait_for(stream.recv(), 0.5))[0])
@@ -216,7 +216,7 @@ async def handle_flussonic(request, channel_id, url):
         except asyncio.exceptions.TimeoutError:
             timedout = True
         finally:
-            log.info(f'[{request.ip}] End: {vod_msg}')
+            log.debug(f'[{request.ip}] End: {vod_msg}')
             if timedout:
                 await respond.send(end_stream=True)
             else:
