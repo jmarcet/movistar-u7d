@@ -24,7 +24,7 @@ HOME = os.getenv('HOME', '/home/')
 SANIC_HOST = os.getenv('LAN_IP', '127.0.0.1')
 SANIC_PORT = int(os.getenv('SANIC_PORT', '8888'))
 SANIC_URL = f'http://{SANIC_HOST}:{SANIC_PORT}'
-PARALLEL_RECORDINGS = int(os.getenv('PARALLEL_RECORDINGS', '4')) - 1
+PARALLEL_RECORDINGS = int(os.getenv('PARALLEL_RECORDINGS', '4'))
 RECORDINGS = os.getenv('RECORDINGS')
 
 YEAR_SECONDS = 365 * 24 * 60 * 60
@@ -248,7 +248,7 @@ async def handle_timers():
                                                      stdout=asyncio.subprocess.PIPE)
             stdout, _ = await p.communicate()
             _ffmpeg = [t.rstrip().decode() for t in stdout.splitlines()]
-            if (nr_procs := len(_ffmpeg)) > PARALLEL_RECORDINGS:
+            if not (nr_procs := len(_ffmpeg)) < PARALLEL_RECORDINGS:
                 log.info(f'Already recording {nr_procs} streams')
                 return
 
@@ -292,7 +292,7 @@ async def handle_timers():
                                 log.info(f'{sanic_url} => {repr(r)}')
                                 if r.status_code == 200:
                                     timers_added.append(title)
-                                    if (nr_procs := nr_procs + 1) > PARALLEL_RECORDINGS:
+                                    if not (nr_procs := nr_procs + 1) < PARALLEL_RECORDINGS:
                                         log.info(f'Already recording {nr_procs} streams')
                                         return
                             except Exception as ex:
