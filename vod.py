@@ -293,7 +293,6 @@ def main():
                     'c': 'copy',
                     'c:a:0': 'aac',
                     'c:a:1': 'aac',
-                    'aac_pred': '1',
                     'bsf:v': 'h264_mp4toannexb',
                     'metadata:s:a:0': 'language=spa',
                     'metadata:s:a:1': 'language=eng',
@@ -330,17 +329,13 @@ def main():
                     pkt_size=1316,
                     timeout=500000
                 ).output(filename + TMP_EXT, _options,
-                    chunk_size='188',
-                    packetsize='1316',
-                    ts_packetsize='1316',
-                    avioflags='direct',
-                    avoid_negative_ts='disabled',
-                    fflags='+genpts+igndts',
-                    vsync='2',
-                    t=str(args.time + 300),
-                    v='panic',
-                    f='matroska'
-                )
+                         fflags='+genpts+igndts',
+                         seek2any='1',
+                         max_error_rate='0.0',
+                         t=str(args.time + 600),
+                         v='panic',
+                         vsync='2',
+                         f='matroska')
 
                 _ffmpeg = Thread(target=asyncio.run, args=(ffmpeg.execute(),))
                 _ffmpeg.start()
