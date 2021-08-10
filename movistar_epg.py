@@ -274,27 +274,24 @@ async def handle_timers():
                     log.error(f'handle_timers: {ex} no timers, returning!')
                     return
 
-            busy = False
+            p = await asyncio.create_subprocess_exec('pgrep', '-af', 'ffmpeg.+udp://',
+                                                     stdout=asyncio.subprocess.PIPE)
+            stdout, _ = await p.communicate()
+            _ffmpeg = [t.rstrip().decode() for t in stdout.splitlines()]
+            if (nr_procs := len(_ffmpeg)) > PARALLEL_RECORDINGS:
+                log.info(f'Already recording {nr_procs} streams')
+                return
+
             for channel in _timers['match']:
-                if busy:
-                    break
                 _key = _channels[channel]['replacement'] if \
                     'replacement' in _channels[channel] else channel
                 if _key not in _epgdata:
                     log.info(f'Channel {channel} not found in EPG')
                     continue
+
                 timers_added = []
                 for timestamp in sorted(_epgdata[_key]):
                     if int(timestamp) > (int(datetime.now().timestamp()) - (3600 * 3)):
-                        break
-                    p = await asyncio.create_subprocess_exec('pgrep', '-af', 'ffmpeg.+udp://',
-                                                             stdout=asyncio.subprocess.PIPE)
-                    stdout, _ = await p.communicate()
-                    _ffmpeg = [t.rstrip().decode() for t in stdout.splitlines()]
-                    nr_procs = len(_ffmpeg)
-                    if nr_procs > PARALLEL_RECORDINGS:
-                        log.info(f'Already recording {nr_procs} streams')
-                        busy = True
                         break
                     title = _epgdata[_key][timestamp]['full_title']
                     deflang = _timers['language']['default'] if (
@@ -322,10 +319,13 @@ async def handle_timers():
                                 log.info(f'{sanic_url} => {repr(r)}')
                                 if r.status_code == 200:
                                     timers_added.append(title)
+                                    if (nr_procs := nr_procs + 1) > PARALLEL_RECORDINGS:
+                                        log.info(f'Already recording {nr_procs} streams')
+                                        return
                             except Exception as ex:
                                 log.warning(f'{repr(ex)}')
     except Timeout:
-        log.info(f'timers_lock in place')
+        log.info('timers_lock in place')
 
 
 @app.get('/check_timers')
