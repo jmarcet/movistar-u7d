@@ -439,5 +439,5 @@ if __name__ == '__main__':
             KeyboardInterrupt):
         sys.exit(1)
     except Exception as ex:
-        logger.critical(f'{repr(ex)}')
+        log.critical(f'{repr(ex)}')
         sys.exit(1)
