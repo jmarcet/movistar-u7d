@@ -15,7 +15,7 @@ from sanic import Sanic, exceptions, response
 from sanic.compat import open_async
 from sanic.log import logger as log
 from sanic.log import LOGGING_CONFIG_DEFAULTS
-from vod import safe_filename
+from vod import TMP_EXT
 
 
 setproctitle('movistar_epg')
@@ -180,11 +180,13 @@ async def handle_program_name(request, channel_id, program_id):
         except (FileNotFoundError, TypeError) as ex:
             log.warning(f'Failed to load extra metadata {repr(ex)}')
 
+        (path, filename) = _get_recording_path(channel_key, event)
+
         return response.json({'status': 'OK',
                               'full_title': _epg['full_title'],
                               'duration': _epg['duration'],
-                              'is_serie': _epg['is_serie'],
-                              'serie': _epg['serie'],
+                              'path': path,
+                              'filename': filename,
                               'description': _desc
                               }, ensure_ascii=False)
 
@@ -302,9 +304,12 @@ async def handle_timers():
                         else:
                             lang = deflang
                         vo = True if lang == 'VO' else False
+                        (_, filename) = _get_recording_path(_key, timestamp)
+                        filename += TMP_EXT
                         if re.match(timer_match, title) and \
                             (title not in timers_added and
-                                safe_filename(title) not in str(_ffmpeg) and
+                                filename not in str(_ffmpeg) and
+                                not os.path.exists(filename) and
                                 (channel not in _recordings or
                                  (title not in repr(_recordings[channel]) and
                                   timestamp not in _recordings[channel]))):
@@ -403,6 +408,23 @@ async def run_every(timeout, stuff):
     log.debug(f'run_every {timeout} {stuff}')
     while True:
         await asyncio.gather(asyncio.sleep(timeout), stuff())
+
+
+def safe_filename(filename):
+    filename = filename.replace(':', ',').replace('...', '…')
+    keepcharacters = (' ', ',', '.', '_', '-', '¡', '!')
+    return "".join(c for c in filename if c.isalnum() or c in keepcharacters).rstrip()
+
+
+def _get_recording_path(channel_key, timestamp):
+    if _epgdata[channel_key][timestamp]['is_serie']:
+        path = os.path.join(RECORDINGS,
+                            safe_filename(_epgdata[channel_key][timestamp]['serie']))
+    else:
+        path = RECORDINGS
+    filename = os.path.join(path,
+                            safe_filename(_epgdata[channel_key][timestamp]['full_title']))
+    return (path, filename)
 
 
 if __name__ == '__main__':

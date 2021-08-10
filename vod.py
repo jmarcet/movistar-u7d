@@ -131,12 +131,6 @@ def find_free_port():
         return s.getsockname()[1]
 
 
-def safe_filename(filename):
-    filename = filename.replace(':', ',').replace('...', '…')
-    keepcharacters = (' ', ',', '.', '_', '-', '¡', '!')
-    return "".join(c for c in filename if c.isalnum() or c in keepcharacters).rstrip()
-
-
 def _check_recording():
     if not os.path.exists(filename + VID_EXT):
         sys.stderr.write(f'{_log_prefix} Recording CANNOT FIND: {_log_suffix}')
@@ -183,7 +177,7 @@ def on_error(code):
         on_completed()
     else:
         sys.stderr.write(f'{_log_prefix} Recording FAILED error={code}: {_log_suffix}')
-    _cleanup()
+        _cleanup()
 
 
 @ffmpeg.on('completed')
@@ -320,14 +314,11 @@ def main():
                     _options['metadata:s:v'] = f'title={title}'
                     if data['description']:
                         _options['metadata:s:v:0'] = 'description=' + data['description']
-                    if data['is_serie']:
-                        path = os.path.join(RECORDINGS, safe_filename(data['serie']))
-                        filename = os.path.join(path, safe_filename(title))
-                        if not os.path.exists(path):
-                            sys.stderr.write(f'{_log_prefix} Creating recording subdir {path}\n')
-                            os.mkdir(path)
-                    else:
-                        filename = os.path.join(RECORDINGS, safe_filename(title))
+                    path = data['path']
+                    filename = data['filename']
+                    if not os.path.exists(path):
+                        sys.stderr.write(f'{_log_prefix} Creating recording subdir {path}\n')
+                        os.mkdir(path)
                 else:
                     filename = os.path.join(RECORDINGS,
                                             f'{args.channel}-{args.broadcast}')
