@@ -145,7 +145,7 @@ def _check_recording():
         sys.stderr.write(f'{_log_prefix} Recording CANNOT PARSE: {_log_suffix}')
         return 0
 
-    _bad = (duration + 300) < args.time
+    _bad = (duration + 30) < args.time
     sys.stderr.write(f"{_log_prefix} Recording {'INCOMPLETE:' if _bad else 'COMPLETE:'} "
                      f'[{duration}s] -> '
                      f'{_log_suffix}')
