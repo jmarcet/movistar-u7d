@@ -37,7 +37,7 @@ Request = namedtuple('Request', ['request', 'response'])
 Response = namedtuple('Response', ['version', 'status', 'url', 'headers', 'body'])
 
 ffmpeg = FFmpeg().option('y')
-_ffmpeg = args = epg_url = filename = None
+_ffmpeg = _log_prefix = _log_suffix = args = epg_url = filename = None
 needs_position = False
 
 
@@ -139,8 +139,7 @@ def safe_filename(filename):
 
 def _check_recording():
     if not os.path.exists(filename + VID_EXT):
-        sys.stderr.write(f"{'[' + args.client_ip + '] ' if args.client_ip else ''}"
-                         f'[VOD] Recording CANNOT FIND: "{filename + VID_EXT}"\n')
+        sys.stderr.write(f'{_log_prefix} Recording CANNOT FIND: {_log_suffix}')
         return 0
 
     command = ['ffprobe', '-v', 'quiet', '-print_format', 'json', '-show_format']
@@ -149,20 +148,15 @@ def _check_recording():
         probe = json.loads(subprocess.run(command, capture_output=True).stdout.decode())
         duration = int(float(probe['format']['duration']))
     except KeyError:
-        sys.stderr.write(f"{'[' + args.client_ip + '] ' if args.client_ip else ''}"
-                         f'[VOD] Recording CANNOT PARSE: "{filename + VID_EXT}"\n')
+        sys.stderr.write(f'{_log_prefix} Recording CANNOT PARSE: {_log_suffix}')
         return 0
 
-    if (duration + 500) < args.time:
-        sys.stderr.write(f"{'[' + args.client_ip + '] ' if args.client_ip else ''}"
-                         f'[VOD] Recording INCOMPLETE: '
-                         f'duration={duration} wanted={args.time}\n')
-        return 0
-    else:
-        sys.stderr.write(f"{'[' + args.client_ip + '] ' if args.client_ip else ''}"
-                         f'[VOD] Recording COMPLETE: '
-                         f'duration={duration} wanted={args.time}\n')
-        return 1
+    _bad = (duration + 300) < args.time
+    sys.stderr.write(f"{_log_prefix} Recording {'INCOMPLETE:' if _bad else 'COMPLETE:'} "
+                     f'[{duration}s] -> '
+                     f'{_log_suffix}')
+
+    return 0 if _bad else 1
 
 
 def _cleanup():
@@ -174,16 +168,13 @@ def _cleanup():
 def on_stderr(line):
     if line.startswith('frame='):
         return
-    sys.stderr.write(f"{'[' + args.client_ip + '] ' if args.client_ip else ''}"
-                     f'[VOD] [ffmpeg] {line}\n')
+    sys.stderr.write(f'{_log_prefix} [ffmpeg] {line}\n')
 
 
 @ffmpeg.on('terminated')
 def on_terminated():
-    sys.stderr.write(f"{'[' + args.client_ip + '] ' if args.client_ip else ''}"
-                     '[VOD] [ffmpeg] terminated\n')
+    sys.stderr.write(f'{_log_prefix} [ffmpeg] TERMINATED: {_log_suffix}')
     on_completed()
-    _cleanup()
 
 
 @ffmpeg.on('error')
@@ -191,19 +182,16 @@ def on_error(code):
     if code == -1:
         on_completed()
     else:
-        sys.stderr.write(f"{'[' + args.client_ip + '] ' if args.client_ip else ''}"
-                         f'[VOD] Recording FAILED error={code}: '
-                         f'{args.channel} '
-                         f'{args.broadcast} '
-                         f'[{args.time}s] '
-                         f'"{filename[20:]}"\n')
+        sys.stderr.write(f'{_log_prefix} Recording FAILED error={code}: {_log_suffix}')
     _cleanup()
 
 
 @ffmpeg.on('completed')
 def on_completed():
-    _nice = ['nice', '-n', '10', 'ionice', '-c', '3']
-    command = _nice
+    command = _nice = ['nice', '-n', '10', 'ionice', '-c', '3']
+
+    if os.path.exists(filename + VID_EXT):
+        os.remove(filename + VID_EXT)
 
     if not args.mp4:
         command += ['mkvmerge', '-o', filename + VID_EXT]
@@ -212,8 +200,6 @@ def on_completed():
             command += ['--track-order', '0:2,0:1,0:4,0:3,0:6,0:5']
             command += ['--default-track', '2:1']
         command += [filename + TMP_EXT]
-        if os.path.exists(filename + VID_EXT):
-            os.remove(filename + VID_EXT)
         subprocess.run(command)
 
     else:
@@ -225,9 +211,6 @@ def on_completed():
         command += ['-movflags', '+faststart']
         command += ['-v', 'panic', '-y', '-f', 'mp4']
         command += [filename + VID_EXT]
-
-        if os.path.exists(filename + VID_EXT):
-            os.remove(filename + VID_EXT)
 
         proc = multiprocessing.Process(target=subprocess.run, args=(command, ))
         proc.start()
@@ -251,7 +234,7 @@ def on_completed():
 
 
 def main():
-    global epg_url, ffmpeg, _ffmpeg, filename, needs_position
+    global _ffmpeg, _log_suffix, epg_url, ffmpeg, filename, needs_position
 
     client = s = None
     headers = {'CSeq': '', 'User-Agent': UA}
@@ -331,10 +314,8 @@ def main():
                     data = resp.json()
                     # sys.stderr.write(f'{repr(data)}\n')
 
-                    if args.time:
-                        args.time += 300
-                    else:
-                        args.time = int(data['duration']) - args.start + 300
+                    if not args.time:
+                        args.time = int(data['duration']) - args.start
                     title = data['full_title']
                     _options['metadata:s:v'] = f'title={title}'
                     if data['description']:
@@ -343,14 +324,14 @@ def main():
                         path = os.path.join(RECORDINGS, safe_filename(data['serie']))
                         filename = os.path.join(path, safe_filename(title))
                         if not os.path.exists(path):
-                            sys.stderr.write(f"{'[' + args.client_ip + '] ' if args.client_ip else ''}"
-                                             f'[VOD] Creating recording subdir {path}\n')
+                            sys.stderr.write(f'{_log_prefix} Creating recording subdir {path}\n')
                             os.mkdir(path)
                     else:
                         filename = os.path.join(RECORDINGS, safe_filename(title))
                 else:
                     filename = os.path.join(RECORDINGS,
                                             f'{args.channel}-{args.broadcast}')
+                _log_suffix += f' [{args.time}s] "{filename[20:]}"\n'
 
                 ffmpeg.input(
                     f'udp://@{IPTV}:{args.client_port}',
@@ -365,20 +346,15 @@ def main():
                     avoid_negative_ts='disabled',
                     fflags='+genpts+igndts',
                     vsync='2',
-                    t=str(args.time),
-                    v='info',
+                    t=str(args.time + 300),
+                    v='panic',
                     f='matroska'
                 )
 
                 _ffmpeg = Thread(target=asyncio.run, args=(ffmpeg.execute(),))
                 _ffmpeg.start()
 
-                sys.stderr.write(f"{'[' + args.client_ip + '] ' if args.client_ip else ''}"
-                                 f'[VOD] Recording STARTED: '
-                                 f'{args.channel} '
-                                 f'{args.broadcast} '
-                                 f'[{args.time}s] '
-                                 f'"{filename[20:]}"\n')
+                sys.stderr.write(f'{_log_prefix} Recording STARTED: {_log_suffix}')
 
             def _handle_cleanup(signum, frame):
                 raise TimeoutError()
@@ -430,6 +406,9 @@ if __name__ == '__main__':
 
     if not args.client_port:
         args.client_port = find_free_port()
+
+    _log_prefix = f"{'[' + args.client_ip + '] ' if args.client_ip else ''}[VOD:{os.getpid()}]"
+    _log_suffix = f'{args.channel} {args.broadcast}'
 
     try:
         main()
