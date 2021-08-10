@@ -148,7 +148,8 @@ async def handle_program_id(request, channel_id, url):
              f'{program_id} '
              f'{start} '
              f'[{offset}/{duration}]')
-    return response.json({'status': 'OK', 'program_id': program_id, 'offset': offset})
+    return response.json({'status': 'OK',
+                          'program_id': program_id, 'duration': duration, 'offset': offset})
 
 
 @app.route('/program_name/<channel_id>/<program_id>', methods=['GET', 'PUT'])

@@ -155,11 +155,7 @@ async def handle_channel(request, channel_id):
 
 @app.route('/<channel_id>/<url>', methods=['GET', 'HEAD'])
 async def handle_flussonic(request, channel_id, url):
-    log.info(f'[{request.ip}] {request.method} {request.raw_url.decode()}')
-    x = re.search(r"\w*-?(\d{10})-?(\d+){0,1}\.\w+", url)
-    if not x or not x.groups():
-        return response.json({'status': 'URL not understood'}, 404)
-
+    log.debug(f'[{request.ip}] {request.method} {request.raw_url.decode()}')
     program_id = None
     epg_url = f'{SANIC_EPG_URL}/program_id/{channel_id}/{url}'
     try:
@@ -168,6 +164,7 @@ async def handle_flussonic(request, channel_id, url):
                 return response.json({'status': f'{url} not found'}, 404)
             r = await r.json()
             program_id = r['program_id']
+            duration = r['duration']
             offset = r['offset']
     except Exception as ex:
         log.warn(f'{request.ip}] {repr(ex)}')
@@ -177,18 +174,17 @@ async def handle_flussonic(request, channel_id, url):
 
     client_port = get_free_port()
     cmd = (f'{PREFIX}vod.py', channel_id, program_id, '-s', offset, '-p', str(client_port))
-    duration = int(x.groups()[1]) if x.groups()[1] else 0
-    remaining = str(duration - int(offset))
-    vod_msg = '%s %s [%s/%d]' % (channel_id, program_id, offset, duration)
+    remaining = str(int(duration) - int(offset))
+    vod_msg = '%s %s [%s/%s]' % (channel_id, program_id, offset, duration)
 
-    if record := request.args.get('record', False):
-        record_time = record if (record.isnumeric() and int(record) > 1) else remaining
+    if record := int(request.args.get('record', 0)):
+        record_time = record if record > 1 else remaining
         cmd += ('-t', record_time, '-w')
         if MP4_OUTPUT or request.args.get('mp4', False):
             cmd += ('--mp4', '1')
         if request.args.get('vo', False):
             cmd += ('--vo', '1')
-        log.info(f'[{request.ip}] Record: [{record_time}]s {vod_msg}')
+        log.info(f'[{request.ip}] Record: [{record_time}s] {vod_msg}')
 
     cmd += ('-i', request.ip)
     vod = Thread(target=subprocess.run, args=(cmd,), daemon=True)
