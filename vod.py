@@ -330,7 +330,7 @@ def main():
                 needs_position = True
                 r = client.print(client.send_request('SETUP2', setup))
                 if r.status != '200 OK':
-                    print(f'{repr(r)}', flush=True)
+                    sys.stderr.write(f'{repr(r)}\n')
                     return
 
             play['Range'] = f'npt={args.start}-end'
