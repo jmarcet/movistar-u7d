@@ -188,7 +188,7 @@ def on_completed():
         os.remove(filename + VID_EXT)
 
     if not args.mp4:
-        command += ['mkvmerge', '-o', filename + VID_EXT]
+        command += ['mkvmerge', '-q', '-o', filename + VID_EXT]
         command += ['--default-language', 'spa']
         if args.vo:
             command += ['--track-order', '0:2,0:1,0:4,0:3,0:6,0:5']
