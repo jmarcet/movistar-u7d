@@ -227,8 +227,65 @@ def on_completed():
     _cleanup()
 
 
+def record_stream():
+    global _ffmpeg, _log_suffix, ffmpeg, filename
+    _options = {
+        'map': '0',
+        'c': 'copy',
+        'c:a:0': 'aac',
+        'c:a:1': 'aac',
+        'bsf:v': 'h264_mp4toannexb',
+        'metadata:s:a:0': 'language=spa',
+        'metadata:s:a:1': 'language=eng',
+        'metadata:s:a:2': 'language=spa',
+        'metadata:s:a:3': 'language=eng',
+        'metadata:s:s:0': 'language=spa',
+        'metadata:s:s:1': 'language=eng'
+    }
+
+    resp = httpx.get(epg_url)
+    if resp.status_code == 200:
+        data = resp.json()
+        # sys.stderr.write(f'{repr(data)}\n')
+
+        if not args.time:
+            args.time = int(data['duration']) - args.start
+        title = data['full_title']
+        _options['metadata:s:v'] = f'title={title}'
+        if data['description']:
+            _options['metadata:s:v:0'] = 'description=' + data['description']
+        path = data['path']
+        filename = data['filename']
+        if not os.path.exists(path):
+            sys.stderr.write(f'{_log_prefix} Creating recording subdir {path}\n')
+            os.mkdir(path)
+    else:
+        filename = os.path.join(RECORDINGS,
+                                f'{args.channel}-{args.broadcast}')
+    _log_suffix += f' [{args.time}s] "{filename[20:]}"\n'
+
+    ffmpeg.input(
+        f'udp://@{IPTV}:{args.client_port}',
+        fifo_size=5572,
+        pkt_size=1316,
+        timeout=500000
+    ).output(filename + TMP_EXT, _options,
+             fflags='+genpts+igndts',
+             seek2any='1',
+             max_error_rate='0.0',
+             t=str(args.time + 600),
+             v='panic',
+             vsync='2',
+             f='matroska')
+
+    _ffmpeg = Thread(target=asyncio.run, args=(ffmpeg.execute(),))
+    _ffmpeg.start()
+
+    sys.stderr.write(f'{_log_prefix} Recording STARTED: {_log_suffix}')
+
+
 def main():
-    global _ffmpeg, _log_suffix, epg_url, ffmpeg, filename, needs_position
+    global epg_url, needs_position
 
     client = s = None
     headers = {'CSeq': '', 'User-Agent': UA}
@@ -288,59 +345,7 @@ def main():
             client.print(client.send_request('PLAY', play))
 
             if args.write_to_file:
-                _options = {
-                    'map': '0',
-                    'c': 'copy',
-                    'c:a:0': 'aac',
-                    'c:a:1': 'aac',
-                    'bsf:v': 'h264_mp4toannexb',
-                    'metadata:s:a:0': 'language=spa',
-                    'metadata:s:a:1': 'language=eng',
-                    'metadata:s:a:2': 'language=spa',
-                    'metadata:s:a:3': 'language=eng',
-                    'metadata:s:s:0': 'language=spa',
-                    'metadata:s:s:1': 'language=eng'
-                }
-
-                resp = httpx.get(epg_url)
-                if resp.status_code == 200:
-                    data = resp.json()
-                    # sys.stderr.write(f'{repr(data)}\n')
-
-                    if not args.time:
-                        args.time = int(data['duration']) - args.start
-                    title = data['full_title']
-                    _options['metadata:s:v'] = f'title={title}'
-                    if data['description']:
-                        _options['metadata:s:v:0'] = 'description=' + data['description']
-                    path = data['path']
-                    filename = data['filename']
-                    if not os.path.exists(path):
-                        sys.stderr.write(f'{_log_prefix} Creating recording subdir {path}\n')
-                        os.mkdir(path)
-                else:
-                    filename = os.path.join(RECORDINGS,
-                                            f'{args.channel}-{args.broadcast}')
-                _log_suffix += f' [{args.time}s] "{filename[20:]}"\n'
-
-                ffmpeg.input(
-                    f'udp://@{IPTV}:{args.client_port}',
-                    fifo_size=5572,
-                    pkt_size=1316,
-                    timeout=500000
-                ).output(filename + TMP_EXT, _options,
-                         fflags='+genpts+igndts',
-                         seek2any='1',
-                         max_error_rate='0.0',
-                         t=str(args.time + 600),
-                         v='panic',
-                         vsync='2',
-                         f='matroska')
-
-                _ffmpeg = Thread(target=asyncio.run, args=(ffmpeg.execute(),))
-                _ffmpeg.start()
-
-                sys.stderr.write(f'{_log_prefix} Recording STARTED: {_log_suffix}')
+                record_stream()
 
             def _handle_cleanup(signum, frame):
                 raise TimeoutError()
