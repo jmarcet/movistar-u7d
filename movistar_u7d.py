@@ -71,7 +71,6 @@ async def handle_channels(request):
 @app.get('/guide.xml')
 async def handle_guide(request):
     log.info(f'[{request.ip}] {request.method} {request.url}')
-    await SESSION.get(f'{SANIC_EPG_URL}/reload_epg')
     if not os.path.exists(GUIDE):
         return response.json({}, 404)
     log.info(f'[{request.ip}] Return: {request.method} {request.url}')
@@ -194,7 +193,6 @@ async def handle_flussonic(request, channel_id, url):
     await asyncio.sleep(0.5)
     if not vod.is_alive():
         log.info(f'NOT_AVAILABLE: {vod_msg}')
-        await SESSION.get(f'{SANIC_EPG_URL}/reload_epg')
         return response.json({'status': 'NOT_AVAILABLE',
                               'cmd': vod_msg}, 404)
     elif record:
