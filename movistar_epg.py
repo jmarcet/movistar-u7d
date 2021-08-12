@@ -262,9 +262,10 @@ async def handle_timers():
                     continue
 
                 timers_added = []
-                for timestamp in sorted(_epgdata[_key]):
-                    if int(timestamp) > (int(datetime.now().timestamp()) - (3600 * 3)):
-                        break
+                _time_limit = int(datetime.now().timestamp()) - (3600 * 3)
+                for timestamp in reversed(_epgdata[_key]):
+                    if int(timestamp) > _time_limit:
+                        continue
                     title = _epgdata[_key][timestamp]['full_title']
                     deflang = _timers['language']['default'] if (
                         'language' in _timers and 'default' in _timers['language']) else ''
