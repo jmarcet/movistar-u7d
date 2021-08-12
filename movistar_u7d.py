@@ -192,7 +192,7 @@ async def handle_flussonic(request, channel_id, url):
 
     await asyncio.sleep(0.5)
     if not vod.is_alive():
-        log.info(f'NOT_AVAILABLE: {vod_msg}')
+        log.error(f'NOT_AVAILABLE: {vod_msg}')
         return response.json({'status': 'NOT_AVAILABLE',
                               'cmd': vod_msg}, 404)
     elif record:
