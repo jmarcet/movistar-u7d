@@ -17,6 +17,7 @@ from sanic import Sanic, exceptions, response
 from sanic.log import logger as log
 from sanic.log import LOGGING_CONFIG_DEFAULTS
 from threading import Thread
+from vod import find_free_port
 
 
 setproctitle('movistar_u7d')
@@ -26,7 +27,7 @@ if 'IPTV_ADDRESS' in os.environ:
 else:
     IPTV = socket.gethostbyname(socket.gethostname())
 
-SANIC_EPG_URL = f'http://127.0.0.1:8889'
+SANIC_EPG_URL = 'http://127.0.0.1:8889'
 SANIC_HOST = os.getenv('LAN_IP', '0.0.0.0')
 SANIC_PORT = int(os.getenv('SANIC_PORT', '8888'))
 SANIC_THREADS = int(os.getenv('SANIC_THREADS', '3'))
@@ -172,7 +173,7 @@ async def handle_flussonic(request, channel_id, url):
     if not program_id:
         return response.json({'status': f'{channel_id}/{url} not found'}, 404)
 
-    client_port = get_free_port()
+    client_port = find_free_port()
     cmd = (f'{PREFIX}vod.py', channel_id, program_id, '-s', offset, '-p', str(client_port))
     remaining = str(int(duration) - int(offset))
     vod_msg = '%s %s [%s/%s]' % (channel_id, program_id, offset, duration)
@@ -245,14 +246,6 @@ async def notify_server_stop(app, loop):
     log.debug('after_server_stop killing vod.py')
     p = await asyncio.create_subprocess_exec('pkill', '-INT', '-f', 'vod.py .+ -p ')
     await p.wait()
-
-
-def get_free_port():
-    with closing(socket.socket(socket.AF_INET, socket.SOCK_DGRAM)) as s:
-        s.bind(('', 0))
-        s.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
-        client_port = s.getsockname()[1]
-    return client_port
 
 
 if __name__ == '__main__':

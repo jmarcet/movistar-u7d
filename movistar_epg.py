@@ -21,11 +21,13 @@ from vod import TMP_EXT
 setproctitle('movistar_epg')
 
 HOME = os.getenv('HOME', '/home/')
+GUIDE = os.path.join(HOME, 'guide.xml')
+CHANNELS = os.path.join(HOME, 'MovistarTV.m3u')
 SANIC_HOST = os.getenv('LAN_IP', '127.0.0.1')
 SANIC_PORT = int(os.getenv('SANIC_PORT', '8888'))
 SANIC_URL = f'http://{SANIC_HOST}:{SANIC_PORT}'
 PARALLEL_RECORDINGS = int(os.getenv('PARALLEL_RECORDINGS', '4'))
-RECORDINGS = os.getenv('RECORDINGS')
+RECORDINGS = os.getenv('RECORDINGS', '/tmp')
 
 YEAR_SECONDS = 365 * 24 * 60 * 60
 
@@ -323,10 +325,8 @@ async def handle_update_epg():
     await asyncio.create_subprocess_exec('pkill', '-f', 'tv_grab_es_movistartv')
     for i in range(5):
         tvgrab = await asyncio.create_subprocess_exec(f'{PREFIX}tv_grab_es_movistartv',
-                                                      '--tvheadend',
-                                                      os.path.join(HOME, 'MovistarTV.m3u'),
-                                                      '--output',
-                                                      os.path.join(HOME, 'guide.xml'),
+                                                      '--tvheadend', CHANNELS,
+                                                      '--output', GUIDE,
                                                       stdin=asyncio.subprocess.DEVNULL,
                                                       stdout=asyncio.subprocess.DEVNULL,
                                                       stderr=asyncio.subprocess.DEVNULL)

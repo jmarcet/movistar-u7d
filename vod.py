@@ -27,7 +27,7 @@ else:
 
 MVTV_URL = 'http://www-60.svc.imagenio.telefonica.net:2001/appserver/mvtv.do'
 RECORDINGS = os.getenv('RECORDINGS', '/tmp')
-SANIC_EPG_URL = f'http://127.0.0.1:8889'
+SANIC_EPG_URL = 'http://127.0.0.1:8889'
 TMP_EXT = '.tmp'
 VID_EXT = '.mkv'
 UA = 'MICA-IP-STB'

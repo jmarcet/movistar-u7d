@@ -38,9 +38,9 @@ import traceback
 import xml.etree.ElementTree as ElTr
 
 from datetime import date, datetime, timedelta
-from setproctitle import setproctitle
 from logging.handlers import RotatingFileHandler
 from queue import Queue
+from setproctitle import setproctitle
 from threading import Thread
 from xml.sax.saxutils import unescape
 
