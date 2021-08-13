@@ -2,7 +2,8 @@ version: '2.4'
 
 services:
   movistar_u7d:
-    build: .
+    # build: .
+    image: registry.marcet.info/javier/movistar-u7d
     container_name: movistar_u7d
     cap_add:
       - NET_ADMIN
