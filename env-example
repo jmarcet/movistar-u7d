@@ -1,5 +1,4 @@
 # U7D_UID=nobody                     # UID para ejecutar los backends y para las grabaciones y caches
-# U7D_GID=nogroup                    # GID para ejecutar los backends y para las grabaciones y caches
 # HOME=/home                         # directorio donde quedará guardada la caché de tv_grab_es_movistartv
 # IPTV_ADDRESS=                      # ip de la vlan2 de movistar, la de iptv
 # LAN_IP=                            # ip donde queremos tener el proxy funcionando

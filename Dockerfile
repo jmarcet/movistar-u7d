@@ -1,11 +1,6 @@
-FROM python:3.9-slim
+FROM python:3.9-alpine
 
-RUN apt-get update && apt-get upgrade -y && \
-	apt-get install -y \
-	ffmpeg htop iproute2 iputils-ping less mkvtoolnix netcat net-tools \
-	procps sudo vim wget
-
-RUN apt-get -y clean && apt-get -y autoremove
+RUN apk update && apk add build-base && apk add bash ffmpeg htop mkvtoolnix s6 vim
 
 ENV HOME="/home"
 ENV PYTHONPATH=/app
@@ -15,7 +10,7 @@ RUN mkdir /app
 WORKDIR /app
 
 COPY requirements.txt .
-RUN pip install -r requirements.txt
+RUN pip install -r requirements.txt && apk del build-base
 
 COPY . .
 

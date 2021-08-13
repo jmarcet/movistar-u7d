@@ -1,10 +1,6 @@
 #!/bin/sh
 
-if [ -n "${U7D_UID}" -o -n "${U7D_GID}" ]; then
-    _SUDO="sudo -E"
-    [ -n "${U7D_UID}" ] && _SUDO="${_SUDO} -u ${U7D_UID}"
-    [ -n "${U7D_GID}" ] && _SUDO="${_SUDO} -g ${U7D_GID}"
-fi
+[ -n "${U7D_UID}" ] && _SUDO="s6-setuidgid ${U7D_UID}"
 
 _ping()
 {
