@@ -374,10 +374,6 @@ def main():
                 if _ffmpeg and _ffmpeg.is_alive():
                     subprocess.run(['pkill', '-HUP', '-f',
                                    f'ffmpeg.+udp://@{IPTV}:{args.client_port}'])
-                try:
-                    httpx.get(f'{SANIC_EPG_URL}/check_timers')
-                except Exception:
-                    pass
 
 
 if __name__ == '__main__':
