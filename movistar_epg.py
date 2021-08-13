@@ -9,7 +9,6 @@ import sys
 import time
 
 from datetime import datetime
-from filelock import FileLock, Timeout
 from setproctitle import setproctitle
 from sanic import Sanic, exceptions, response
 from sanic.compat import open_async
@@ -41,7 +40,8 @@ app = Sanic('movistar_epg')
 app.config.update({'KEEP_ALIVE_TIMEOUT': YEAR_SECONDS})
 
 recordings = os.path.join(HOME, 'recordings.json')
-timers_lock = FileLock('/tmp/_timers.lock')
+recordings_lock = asyncio.Lock()
+timers_lock = asyncio.Lock()
 
 _channels = {}
 _epgdata = {}
@@ -160,13 +160,12 @@ async def handle_program_name(request, channel_id, program_id):
                               'description': _desc
                               }, ensure_ascii=False)
 
-    lock = FileLock(recordings + '.lock')
-    try:
-        with lock:
+    async with recordings_lock:
+        try:
             async with await open_async(recordings) as f:
                 _recordings = json.loads(await f.read())
-    except (FileNotFoundError, TypeError) as ex:
-        _recordings = {}
+        except (FileNotFoundError, TypeError) as ex:
+            _recordings = {}
 
     if channel_id not in _recordings:
         _recordings[channel_id] = {}
@@ -174,9 +173,9 @@ async def handle_program_name(request, channel_id, program_id):
         'full_title': _epg['full_title']
     }
 
-    with lock:
-        with open(recordings, 'w') as fp:
-            json.dump(_recordings, fp, ensure_ascii=False, indent=4, sort_keys=True)
+    async with recordings_lock:
+        with open(recordings, 'w') as f:
+            json.dump(_recordings, f, ensure_ascii=False, indent=4, sort_keys=True)
 
     asyncio.create_task(handle_timers())
 
@@ -226,87 +225,82 @@ async def handle_reload_epg_task():
 
 
 async def handle_timers():
-    global timers_lock
-    try:
-        with timers_lock.acquire(0):
-            log.info(f'Processing timers')
+    async with timers_lock:
+        log.info(f'Processing timers')
 
-            _recordings = _timers = {}
-            timers = os.path.join(HOME, 'timers.json')
+        _recordings = _timers = {}
+        timers = os.path.join(HOME, 'timers.json')
 
-            try:
-                async with await open_async(timers) as f:
-                    _timers = json.loads(await f.read())
-                lock = FileLock(recordings + '.lock')
-                with lock:
-                    async with await open_async(recordings) as f:
-                        _recordings = json.loads(await f.read())
-            except (FileNotFoundError, TypeError) as ex:
-                if not _timers:
-                    log.error(f'handle_timers: {ex} no timers, returning!')
-                    return
-
-            p = await asyncio.create_subprocess_exec('pgrep', '-af', 'ffmpeg.+udp://',
-                                                     stdout=asyncio.subprocess.PIPE)
-            stdout, _ = await p.communicate()
-            _ffmpeg = [t.rstrip().decode() for t in stdout.splitlines()]
-            if not (nr_procs := len(_ffmpeg)) < PARALLEL_RECORDINGS:
-                log.info(f'Already recording {nr_procs} streams')
+        try:
+            async with await open_async(timers) as f:
+                _timers = json.loads(await f.read())
+            async with recordings_lock:
+                async with await open_async(recordings) as f:
+                    _recordings = json.loads(await f.read())
+        except (FileNotFoundError, TypeError) as ex:
+            if not _timers:
+                log.error(f'handle_timers: {ex} no timers, returning!')
                 return
 
-            for channel in _timers['match']:
-                _key = _channels[channel]['replacement'] if \
-                    'replacement' in _channels[channel] else channel
-                if _key not in _epgdata:
-                    log.info(f'Channel {channel} not found in EPG')
-                    continue
+        p = await asyncio.create_subprocess_exec('pgrep', '-af', 'ffmpeg.+udp://',
+                                                 stdout=asyncio.subprocess.PIPE)
+        stdout, _ = await p.communicate()
+        _ffmpeg = [t.rstrip().decode() for t in stdout.splitlines()]
+        if not (nr_procs := len(_ffmpeg)) < PARALLEL_RECORDINGS:
+            log.info(f'Already recording {nr_procs} streams')
+            return
 
-                timers_added = []
-                _time_limit = int(datetime.now().timestamp()) - (3600 * 3)
-                for timestamp in reversed(_epgdata[_key]):
-                    if int(timestamp) > _time_limit:
-                        continue
-                    title = _epgdata[_key][timestamp]['full_title']
-                    deflang = _timers['language']['default'] if (
-                        'language' in _timers and 'default' in _timers['language']) else ''
-                    for timer_match in _timers['match'][channel]:
-                        if ' ## ' in timer_match:
-                                timer_match, lang = timer_match.split(' ## ')
-                        else:
-                            lang = deflang
-                        vo = True if lang == 'VO' else False
-                        (_, filename) = _get_recording_path(_key, timestamp)
-                        filename += TMP_EXT
-                        if re.match(timer_match, title) and \
-                            (title not in timers_added and
-                                filename not in str(_ffmpeg) and
-                                not os.path.exists(filename) and
-                                (channel not in _recordings or
-                                 (title not in repr(_recordings[channel]) and
-                                  timestamp not in _recordings[channel]))):
-                            log.info(f'Found match! {channel} {timestamp} "{title}"')
-                            sanic_url = f'{SANIC_URL}/{channel}/{timestamp}.mp4'
-                            sanic_url += f'?record=1'
-                            if vo:
-                                sanic_url += '&vo=1'
-                            try:
-                                async with httpx.AsyncClient() as client:
-                                    r = await client.get(sanic_url)
-                                log.info(f'{sanic_url} => {repr(r)}')
-                                if r.status_code == 200:
-                                    timers_added.append(title)
-                                    if not (nr_procs := nr_procs + 1) < PARALLEL_RECORDINGS:
-                                        log.info(f'Already recording {nr_procs} streams')
-                                        return
-                            except Exception as ex:
-                                log.warning(f'{repr(ex)}')
-    except Timeout:
-        log.info('timers_lock in place')
+        for channel in _timers['match']:
+            _key = _channels[channel]['replacement'] if \
+                'replacement' in _channels[channel] else channel
+            if _key not in _epgdata:
+                log.info(f'Channel {channel} not found in EPG')
+                continue
+
+            timers_added = []
+            _time_limit = int(datetime.now().timestamp()) - (3600 * 3)
+            for timestamp in reversed(_epgdata[_key]):
+                if int(timestamp) > _time_limit:
+                    continue
+                title = _epgdata[_key][timestamp]['full_title']
+                deflang = _timers['language']['default'] if (
+                    'language' in _timers and 'default' in _timers['language']) else ''
+                for timer_match in _timers['match'][channel]:
+                    if ' ## ' in timer_match:
+                            timer_match, lang = timer_match.split(' ## ')
+                    else:
+                        lang = deflang
+                    vo = True if lang == 'VO' else False
+                    (_, filename) = _get_recording_path(_key, timestamp)
+                    filename += TMP_EXT
+                    if re.match(timer_match, title) and \
+                        (title not in timers_added and
+                            filename not in str(_ffmpeg) and
+                            not os.path.exists(filename) and
+                            (channel not in _recordings or
+                             (title not in repr(_recordings[channel]) and
+                              timestamp not in _recordings[channel]))):
+                        log.info(f'Found match! {channel} {timestamp} "{title}"')
+                        sanic_url = f'{SANIC_URL}/{channel}/{timestamp}.mp4'
+                        sanic_url += f'?record=1'
+                        if vo:
+                            sanic_url += '&vo=1'
+                        try:
+                            async with httpx.AsyncClient() as client:
+                                r = await client.get(sanic_url)
+                            log.info(f'{sanic_url} => {repr(r)}')
+                            if r.status_code == 200:
+                                timers_added.append(title)
+                                if not (nr_procs := nr_procs + 1) < PARALLEL_RECORDINGS:
+                                    log.info(f'Already recording {nr_procs} streams')
+                                    return
+                        except Exception as ex:
+                            log.warning(f'{repr(ex)}')
 
 
 @app.get('/check_timers')
 async def handle_check_timers(request):
-    if timers_lock.is_locked:
+    if timers_lock.locked():
         return response.json({'status': 'Busy'}, 201)
 
     asyncio.create_task(handle_timers())
@@ -350,7 +344,7 @@ async def notify_server_start(app, loop):
     _t_epg1 = asyncio.create_task(delay_update_epg())
     if RECORDINGS:
         try:
-            async with await open_async('/proc/uptime', 'r') as f:
+            async with await open_async('/proc/uptime') as f:
                 proc = await f.read()
             uptime = int(float(proc.split()[1]))
             if uptime < 300:
