@@ -305,9 +305,7 @@ def main():
         data = None
 
     if not data or 'resultCode' not in data or data['resultCode'] != 0:
-        print(f"{'[' + args.client_ip + '] ' if args.client_ip else ''}"
-              f'Error: {data} ' if data else 'Error: ',
-              flush=True)
+        sys.stderr.write(f'{_log_prefix} Error: {data}\n')
         return
 
     epg_url = (f'{SANIC_EPG_URL}/program_name/{args.channel}/{args.broadcast}')
