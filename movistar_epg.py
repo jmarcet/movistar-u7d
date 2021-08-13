@@ -114,7 +114,7 @@ async def handle_program_id(request, channel_id, url):
     if not program_id:
         return response.json({'status': f'{channel_id}/{url} not found'}, 404)
 
-    log.info(f'"{channel_name}" - "{full_title}" '
+    log.info(f'"{channel_name}/{full_title}" '
              f'{channel_id}/{channel_key} '
              f'{program_id} '
              f'{start} '
