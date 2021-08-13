@@ -9,6 +9,7 @@ import sys
 import time
 
 from datetime import datetime
+from glob import glob
 from setproctitle import setproctitle
 from sanic import Sanic, exceptions, response
 from sanic.compat import open_async
@@ -242,10 +243,7 @@ async def handle_timers():
                 log.error(f'handle_timers: {ex} no timers, returning!')
                 return
 
-        p = await asyncio.create_subprocess_exec('pgrep', '-af', 'ffmpeg.+udp://',
-                                                 stdout=asyncio.subprocess.PIPE)
-        stdout, _ = await p.communicate()
-        _ffmpeg = [t.rstrip().decode() for t in stdout.splitlines()]
+        _ffmpeg = await get_ffmpeg_procs()
         if not (nr_procs := len(_ffmpeg)) < PARALLEL_RECORDINGS:
             log.info(f'Already recording {nr_procs} streams')
             return
@@ -353,6 +351,10 @@ async def notify_server_start(app, loop):
         except FileNotFoundError:
             pass
         if os.path.exists(os.path.join(HOME, 'timers.json')):
+            _ffmpeg = str(await get_ffmpeg_procs())
+            [os.remove(t) for t in glob(f'{RECORDINGS}/**/*{TMP_EXT}')
+             if os.path.basename(t) not in _ffmpeg]
+
             log.info('Waiting 60s to check timers (ensuring no stale rtsp is present)...')
             await asyncio.sleep(60)
             _t_timers = asyncio.create_task(run_every(900, handle_timers))
@@ -365,6 +367,13 @@ async def notify_server_stop(app, loop):
     for task in [_t_epg2, _t_epg1, _t_timers]:
         if task:
             task.cancel()
+
+
+async def get_ffmpeg_procs():
+    p = await asyncio.create_subprocess_exec('pgrep', '-af', 'ffmpeg.+udp://',
+                                             stdout=asyncio.subprocess.PIPE)
+    stdout, _ = await p.communicate()
+    return [t.rstrip().decode() for t in stdout.splitlines()]
 
 
 async def run_every(timeout, stuff):
