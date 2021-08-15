@@ -131,8 +131,8 @@ async def handle_channel(request, channel_id):
         sock.setsockopt(socket.SOL_IP, socket.IP_ADD_MEMBERSHIP,
                         socket.inet_aton(mc_grp) + socket.inet_aton(IPTV))
 
-        _response = await request.respond(content_type=MIME_TS)
         with closing(await asyncio_dgram.from_socket(sock)) as stream:
+            _response = await request.respond(content_type=MIME_TS)
             log.info(f'[{request.ip}] {request.raw_url} -> Playing "{name}"')
             try:
                 while True:
@@ -180,20 +180,23 @@ async def handle_flussonic(request, channel_id, url):
     vod = Thread(target=subprocess.run, args=(cmd,), daemon=True)
     vod.start()
 
-    await asyncio.sleep(0.5)
-    if not vod.is_alive():
-        log.error(f'NOT_AVAILABLE: {vod_msg}')
-        return response.json({'status': 'NOT_AVAILABLE', 'cmd': vod_msg}, 404)
-    elif record:
+    if record:
         return response.json({'status': 'OK',
                               'channel_id': channel_id, 'program_id': program_id,
                               'offset': offset, 'time': record_time})
     elif request.method == 'HEAD':
         return response.HTTPResponse(content_type=MIME_TS, status=200)
 
-    _response = await request.respond(content_type=MIME_TS)
     with closing(await asyncio_dgram.bind((IPTV, client_port))) as stream:
+        _response = await request.respond(content_type=MIME_TS)
         log.info(f'[{request.ip}] {request.raw_url} -> Playing {vod_msg}')
+        try:
+            data = (await asyncio.wait_for(stream.recv(), 1))[0]
+            await _response.send(data)
+        except asyncio.exceptions.TimeoutError:
+            log.error(f'NOT_AVAILABLE: {vod_msg}')
+            subprocess.run(('pkill', '-HUP', '-f', ' '.join(cmd)))
+            return await _response.eof()
         try:
             while True:
                 await _response.send((await stream.recv())[0])
