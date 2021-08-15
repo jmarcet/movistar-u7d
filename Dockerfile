@@ -17,4 +17,9 @@ RUN apk del build-base
 
 COPY . .
 
+RUN sed \
+    -e '/except CancelledError:/,/await self.error_response(e)/d' \
+    -e 's/raise ServerError.\+$/return/g' \
+    -i /usr/local/lib/python3.9/site-packages/sanic/http.py
+
 CMD /app/start.sh
