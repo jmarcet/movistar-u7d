@@ -30,7 +30,7 @@ else:
 SANIC_EPG_URL = 'http://127.0.0.1:8889'
 SANIC_HOST = os.getenv('LAN_IP', '0.0.0.0')
 SANIC_PORT = int(os.getenv('SANIC_PORT', '8888'))
-SANIC_THREADS = int(os.getenv('SANIC_THREADS', '3'))
+SANIC_THREADS = int(os.getenv('SANIC_THREADS', '4'))
 
 HOME = os.getenv('HOME', '/home')
 GUIDE = os.path.join(HOME, 'guide.xml')
@@ -50,13 +50,7 @@ LOG_SETTINGS['formatters']['generic']['datefmt'] = \
 PREFIX = ''
 
 app = Sanic('movistar_u7d', log_config=LOG_SETTINGS)
-app.config.update({'KEEP_ALIVE': False})
-
-
-@app.exception(exceptions.ServerError)
-def handler_exception(request, exception):
-    log.error(f'{request.ip}] {repr(exception)}')
-    return response.text("Internal Server Error.", 500)
+app.config.update({'GRACEFUL_SHUTDOWN_TIMEOUT': 1, 'RESPONSE_TIMEOUT': 1})
 
 
 @app.get('/channels.m3u')
@@ -73,45 +67,42 @@ async def handle_guide(request):
     log.info(f'[{request.ip}] {request.method} {request.url}')
     if not os.path.exists(GUIDE):
         return response.json({}, 404)
-    log.info(f'[{request.ip}] Return: {request.method} {request.url}')
+    log.debug(f'[{request.ip}] Return: {request.method} {request.url}')
     return await response.file(GUIDE)
 
 
 @app.route('/Covers/<path>/<cover>', methods=['GET', 'HEAD'])
 @app.route('/Logos/<logo>', methods=['GET', 'HEAD'])
 async def handle_logos(request, cover=None, logo=None, path=None):
-    try:
-        log.debug(f'[{request.ip}] {request.method} {request.url}')
-        if logo:
-            orig_url = f'{IMAGENIO_URL}/channelLogo/{logo}'
-        elif path and cover:
-            orig_url = (f'{IMAGENIO_URL}/covers/programmeImages'
-                        f'/portrait/290x429/{path}/{cover}')
+    log.debug(f'[{request.ip}] {request.method} {request.url}')
+    if logo:
+        orig_url = f'{IMAGENIO_URL}/channelLogo/{logo}'
+    elif path and cover:
+        orig_url = (f'{IMAGENIO_URL}/covers/programmeImages'
+                    f'/portrait/290x429/{path}/{cover}')
+    else:
+        return response.json({'status': f'{request.url} not found'}, 404)
+
+    if request.method == 'HEAD':
+        return response.HTTPResponse(content_type='image/jpeg', status=200)
+
+    global SESSION_LOGOS
+    if not SESSION_LOGOS:
+        headers = {'User-Agent': 'MICA-IP-STB'}
+        SESSION_LOGOS = aiohttp.ClientSession(headers=headers)
+
+    async with SESSION_LOGOS.get(orig_url) as r:
+        if r.status == 200:
+            logo_data = await r.read()
+            headers = {}
+            headers.setdefault('Content-Disposition',
+                               f'attachment; filename="{logo}"')
+            return response.HTTPResponse(body=logo_data,
+                                         content_type='image/jpeg',
+                                         headers=headers,
+                                         status=200)
         else:
-            return response.json({'status': f'{request.url} not found'}, 404)
-
-        if request.method == 'HEAD':
-            return response.HTTPResponse(content_type='image/jpeg', status=200)
-
-        global SESSION_LOGOS
-        if not SESSION_LOGOS:
-            headers = {'User-Agent': 'MICA-IP-STB'}
-            SESSION_LOGOS = aiohttp.ClientSession(headers=headers)
-
-        async with SESSION_LOGOS.get(orig_url) as r:
-            if r.status == 200:
-                logo_data = await r.read()
-                headers = {}
-                headers.setdefault('Content-Disposition',
-                                   f'attachment; filename="{logo}"')
-                return response.HTTPResponse(body=logo_data,
-                                             content_type='image/jpeg',
-                                             headers=headers,
-                                             status=200)
-            else:
-                return response.json({'status': f'{orig_url} not found'}, 404)
-    except asyncio.exceptions.CancelledError:
-        pass
+            return response.json({'status': f'{orig_url} not found'}, 404)
 
 
 @app.route('/<channel_id>/live', methods=['GET', 'HEAD'])
@@ -122,40 +113,40 @@ async def handle_channel(request, channel_id):
             if r.status != 200:
                 return response.json({'status': f'{channel_id} not found'}, 404)
             r = await r.json()
-            mc_grp = r['address']
-            name = r['name']
-            mc_port = int(r['port'])
+            mc_grp, name, mc_port = [r[t] for t in ['address', 'name', 'port']]
     except Exception as ex:
-        log.error(f'[{request.ip}]',
-                  f"aiohttp.ClientSession().get('{epg_url}')", f'{repr(ex)}')
+        log.error(f"[{request.ip}] get('{epg_url}') {ex}")
         return response.json({'status': f'{channel_id}/live not found'}, 404)
 
     if request.method == 'HEAD':
         return response.HTTPResponse(content_type=MIME_TS, status=200)
-
-    log.info(f'[{request.ip}] {request.method} '
-             f'{request.raw_url.decode()} => Playing "{name}"')
 
     with closing(socket.socket(socket.AF_INET,
                                socket.SOCK_DGRAM,
                                socket.IPPROTO_UDP)) as sock:
         sock.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
         sock.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEPORT, 1)
-        sock.bind((mc_grp, mc_port))
+        sock.bind((mc_grp, int(mc_port)))
         sock.setsockopt(socket.SOL_IP, socket.IP_MULTICAST_IF, socket.inet_aton(IPTV))
         sock.setsockopt(socket.SOL_IP, socket.IP_ADD_MEMBERSHIP,
                         socket.inet_aton(mc_grp) + socket.inet_aton(IPTV))
 
-        respond = await request.respond(content_type=MIME_TS)
+        _response = await request.respond(content_type=MIME_TS)
         with closing(await asyncio_dgram.from_socket(sock)) as stream:
-            while True:
-                data = ((await stream.recv())[0])[28:]
-                await respond.send(data)
+            log.info(f'[{request.ip}] {request.raw_url} -> Playing "{name}"')
+            try:
+                while True:
+                    await _response.send((await stream.recv())[0][28:])
+            except asyncio_dgram.aio.TransportClosed:
+                pass
+            finally:
+                log.info(f'[{request.ip}] {request.raw_url} -> Stopped "{name}"')
+                await _response.eof()
 
 
 @app.route('/<channel_id>/<url>', methods=['GET', 'HEAD'])
 async def handle_flussonic(request, channel_id, url):
-    log.debug(f'[{request.ip}] {request.method} {request.raw_url.decode()}')
+    log.debug(f'[{request.ip}] {request.method} {request.raw_url}')
     program_id = None
     epg_url = f'{SANIC_EPG_URL}/program_id/{channel_id}/{url}'
     try:
@@ -163,11 +154,10 @@ async def handle_flussonic(request, channel_id, url):
             if r.status != 200:
                 return response.json({'status': f'{url} not found'}, 404)
             r = await r.json()
-            program_id = r['program_id']
-            duration = r['duration']
-            offset = r['offset']
+            name, program_id, duration, offset = [r[t] for t in ['name', 'program_id',
+                                                                 'duration', 'offset']]
     except Exception as ex:
-        log.warn(f'{request.ip}] {repr(ex)}')
+        log.error(f'{request.ip}] {ex}')
 
     if not program_id:
         return response.json({'status': f'{channel_id}/{url} not found'}, 404)
@@ -175,7 +165,7 @@ async def handle_flussonic(request, channel_id, url):
     client_port = find_free_port()
     cmd = (f'{PREFIX}vod.py', channel_id, program_id, '-s', offset, '-p', str(client_port))
     remaining = str(int(duration) - int(offset))
-    vod_msg = '%s %s [%s/%s]' % (channel_id, program_id, offset, duration)
+    vod_msg = '"%s" %s [%s/%s]' % (name, program_id, offset, duration)
 
     if record := int(request.args.get('record', 0)):
         record_time = record if record > 1 else remaining
@@ -184,7 +174,7 @@ async def handle_flussonic(request, channel_id, url):
             cmd += ('--mp4', '1')
         if request.args.get('vo', False):
             cmd += ('--vo', '1')
-        log.info(f'[{request.ip}] Record: [{record_time}s] {vod_msg}')
+        log.info(f'[{request.ip}] {request.raw_url} -> Recording [{record_time}s] {vod_msg}')
 
     cmd += ('-i', request.ip)
     vod = Thread(target=subprocess.run, args=(cmd,), daemon=True)
@@ -193,34 +183,26 @@ async def handle_flussonic(request, channel_id, url):
     await asyncio.sleep(0.5)
     if not vod.is_alive():
         log.error(f'NOT_AVAILABLE: {vod_msg}')
-        return response.json({'status': 'NOT_AVAILABLE',
-                              'cmd': vod_msg}, 404)
+        return response.json({'status': 'NOT_AVAILABLE', 'cmd': vod_msg}, 404)
     elif record:
         return response.json({'status': 'OK',
-                              'channel_id': channel_id,
-                              'program_id': program_id,
-                              'offset': offset,
-                              'time': record_time})
+                              'channel_id': channel_id, 'program_id': program_id,
+                              'offset': offset, 'time': record_time})
     elif request.method == 'HEAD':
         return response.HTTPResponse(content_type=MIME_TS, status=200)
 
-    timedout = False
-    respond = await request.respond(content_type=MIME_TS)
-    log.debug(f'[{request.ip}] Start: {vod_msg}')
+    _response = await request.respond(content_type=MIME_TS)
     with closing(await asyncio_dgram.bind((IPTV, client_port))) as stream:
+        log.info(f'[{request.ip}] {request.raw_url} -> Playing {vod_msg}')
         try:
-            await respond.send((await asyncio.wait_for(stream.recv(), 0.5))[0])
             while True:
-                await respond.send((await asyncio.wait_for(stream.recv(), 0.05))[0])
-        except asyncio.exceptions.TimeoutError:
-            timedout = True
+                await _response.send((await stream.recv())[0])
+        except asyncio_dgram.aio.TransportClosed:
+            pass
         finally:
-            log.debug(f'[{request.ip}] End: {vod_msg}')
-            if timedout:
-                await respond.send(end_stream=True)
-            else:
-                await asyncio.create_subprocess_exec('pkill', '-HUP', '-f', ' '.join(cmd))
-    return respond
+            log.info(f'[{request.ip}] {request.raw_url} -> Stopped {vod_msg}')
+            subprocess.run(('pkill', '-HUP', '-f', ' '.join(cmd)))
+            await _response.eof()
 
 
 @app.get('/favicon.ico')
@@ -241,22 +223,17 @@ async def notify_server_start(app, loop):
 
 @app.listener('after_server_stop')
 async def notify_server_stop(app, loop):
-    log.debug('after_server_stop killing vod.py')
+    log.debug('after_server_stop')
     p = await asyncio.create_subprocess_exec('pkill', '-INT', '-f', 'vod.py .+ -p ')
     await p.wait()
 
 
 if __name__ == '__main__':
     try:
-        app.run(host=SANIC_HOST,
-                port=SANIC_PORT,
-                access_log=False,
-                auto_reload=True,
-                debug=False,
-                workers=SANIC_THREADS)
-    except (asyncio.exceptions.CancelledError,
-            KeyboardInterrupt):
+        app.run(host=SANIC_HOST, port=SANIC_PORT,
+                access_log=False, auto_reload=True, debug=False, workers=SANIC_THREADS)
+    except KeyboardInterrupt:
         sys.exit(1)
     except Exception as ex:
-        log.critical(f'{repr(ex)}')
+        log.critical(f'{ex}')
         sys.exit(1)

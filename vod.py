@@ -97,22 +97,21 @@ class RtspClient(object):
         resp = self.read_message()
 
         if resp.status != '200 OK' and method not in ['SETUP', 'TEARDOWN']:
-            raise ValueError(f'{method} {repr(resp)}')
+            raise ValueError(f'{method} {resp}')
 
         return Request(req, resp)
 
-    def print(self, req, killed=None):
+    def print(self, req):
         # return req.response
         resp = req.response
         _req = req.request.split('\r\n')[0].split(' ')
         if 'TEARDOWN' not in _req:
             return resp
-        if killed:
-            tmp = _req[1].split('/')
-            _req[1] = (f'{tmp[0]}//{str(tmp[2])[:26]} '
-                       f'{killed.channel} {killed.broadcast} '
-                       f'-s {killed.start} -p {killed.client_port}')
-        sys.stdout.write(f'[{killed.client_ip}][VOD] Req: {_req[0]} [{_req[1]}] '
+        tmp = _req[1].split('/')
+        _req[1] = (f'{tmp[0]}//{str(tmp[2])[:26]} '
+                   f'{args.channel} {args.broadcast} '
+                   f'-s {args.start} -p {args.client_port}')
+        sys.stdout.write(f'[{args.client_ip}][VOD] Req: {_req[0]} [{_req[1]}] '
                          f'{_req[2]} => {resp.status}\n')
         # headers = self.serialize_headers(resp.headers)
         # sys.stderr.write('-' * WIDTH + '\n')
@@ -246,7 +245,7 @@ def record_stream():
     resp = httpx.get(epg_url)
     if resp.status_code == 200:
         data = resp.json()
-        # sys.stderr.write(f'{repr(data)}\n')
+        # sys.stderr.write(f'{data}\n')
 
         if not args.time:
             args.time = int(data['duration']) - args.start
@@ -314,7 +313,6 @@ def main():
     uri = urllib.parse.urlparse(url)
 
     with closing(socket.socket(socket.AF_INET, socket.SOCK_STREAM)) as s:
-        _teardown = True
         try:
             s.connect((uri.hostname, uri.port))
             s.settimeout(10)
@@ -328,7 +326,7 @@ def main():
                 needs_position = True
                 r = client.print(client.send_request('SETUP2', setup))
                 if r.status != '200 OK':
-                    sys.stderr.write(f'{repr(r)}\n')
+                    sys.stderr.write(f'{r}\n')
                     return
 
             play['Range'] = f'npt={args.start}-end'
@@ -357,15 +355,12 @@ def main():
                     break
                 client.print(client.send_request('GET_PARAMETER', get_parameter))
 
-        except TimeoutError:
+        except (TimeoutError, ValueError):
             pass
 
-        except ValueError:
-            _teardown = False
-
         finally:
-            if _teardown and client and 'Session' in session:
-                client.print(client.send_request('TEARDOWN', session), killed=args)
+            if client and 'Session' in session:
+                client.print(client.send_request('TEARDOWN', session))
             if args.write_to_file:
                 if _ffmpeg and _ffmpeg.is_alive():
                     subprocess.run(['pkill', '-HUP', '-f',
@@ -399,5 +394,5 @@ if __name__ == '__main__':
     except (KeyboardInterrupt, TimeoutError):
         sys.exit(1)
     except Exception as ex:
-        sys.stderr.write(f'{repr(ex)}\n')
+        sys.stderr.write(f'{ex}\n')
         sys.exit(1)
