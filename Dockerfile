@@ -22,4 +22,8 @@ RUN sed \
     -e 's/raise ServerError.\+$/return/g' \
     -i /usr/local/lib/python3.9/site-packages/sanic/http.py
 
+ARG TARGETARCH
+
+RUN if [ "$TARGETARCH" = "amd64" ] ; then apk add ipython wrk; fi
+
 CMD /app/start.sh
