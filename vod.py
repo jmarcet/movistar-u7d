@@ -273,7 +273,7 @@ def record_stream():
              fflags='+genpts+igndts',
              seek2any='1',
              max_error_rate='0.0',
-             t=str(args.time + 600),
+             t=str(args.time + 300),
              v='panic',
              vsync='2',
              f='matroska')
@@ -342,16 +342,14 @@ def main():
 
             client.print(client.send_request('PLAY', play))
 
-            if args.write_to_file:
-                record_stream()
-
             def _handle_cleanup(signum, frame):
                 raise TimeoutError()
-
             signal.signal(signal.SIGHUP, _handle_cleanup)
-            if args.time:
+
+            if args.write_to_file:
+                record_stream()
                 signal.signal(signal.SIGALRM, _handle_cleanup)
-                signal.alarm(args.time)
+                signal.alarm(args.time + 300)
 
             while True:
                 time.sleep(30)
