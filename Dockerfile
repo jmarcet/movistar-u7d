@@ -31,6 +31,6 @@ RUN sed \
     -e 's/transport.set_write_buffer_limits.\+$/transport.set_write_buffer_limits(low=1316, high=7896)/' \
     -i /usr/local/lib/python3.9/site-packages/sanic/server.py
 
-RUN if [ "$TARGETARCH" = "amd64" ] ; then apk add ipython wrk; fi
+RUN if [ "$TARGETARCH" = "amd64" ] ; then apk add wrk && pip install ipython; fi
 
 CMD /app/start.sh

@@ -17,7 +17,7 @@ from sanic import Sanic, exceptions, response
 from sanic.log import logger as log
 from sanic.log import LOGGING_CONFIG_DEFAULTS
 from threading import Thread
-from vod import find_free_port
+from vod import find_free_port, IMAGENIO_URL, COVER_URL
 
 
 setproctitle('movistar_u7d')
@@ -35,8 +35,6 @@ SANIC_THREADS = int(os.getenv('SANIC_THREADS', '4'))
 HOME = os.getenv('HOME', '/home')
 GUIDE = os.path.join(HOME, 'guide.xml')
 CHANNELS = os.path.join(HOME, 'MovistarTV.m3u')
-IMAGENIO_URL = ('http://html5-static.svc.imagenio.telefonica.net'
-                '/appclientv/nux/incoming/epg')
 MIME_TS = 'video/MP2T;audio/mp3'
 MP4_OUTPUT = bool(os.getenv('MP4_OUTPUT', False))
 SESSION = None
@@ -78,8 +76,7 @@ async def handle_logos(request, cover=None, logo=None, path=None):
     if logo:
         orig_url = f'{IMAGENIO_URL}/channelLogo/{logo}'
     elif path and cover:
-        orig_url = (f'{IMAGENIO_URL}/covers/programmeImages'
-                    f'/portrait/290x429/{path}/{cover}')
+        orig_url = f'{COVER_URL}/{path}/{cover}'
     else:
         return response.json({'status': f'{request.url} not found'}, 404)
 

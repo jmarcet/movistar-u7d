@@ -25,9 +25,13 @@ if 'IPTV_ADDRESS' in os.environ:
 else:
     IPTV = socket.gethostbyname(socket.gethostname())
 
+CACHE_DIR = os.path.join(os.getenv('HOME', '/home'), '.xmltv/cache/programs')
+IMAGENIO_URL = 'http://html5-static.svc.imagenio.telefonica.net/appclientv/nux/incoming/epg'
+COVER_URL = f'{IMAGENIO_URL}/covers/programmeImages/portrait/290x429'
 MVTV_URL = 'http://www-60.svc.imagenio.telefonica.net:2001/appserver/mvtv.do'
 RECORDINGS = os.getenv('RECORDINGS', '/tmp')
 SANIC_EPG_URL = 'http://127.0.0.1:8889'
+NFO_EXT = '.txt'
 TMP_EXT = '.tmp'
 VID_EXT = '.mkv'
 UA = 'MICA-IP-STB'
@@ -37,7 +41,7 @@ Request = namedtuple('Request', ['request', 'response'])
 Response = namedtuple('Response', ['version', 'status', 'url', 'headers', 'body'])
 
 ffmpeg = FFmpeg().option('y')
-_ffmpeg = _log_prefix = _log_suffix = args = epg_url = filename = None
+_ffmpeg = _log_prefix = _log_suffix = args = epg_url = filename = path = None
 needs_position = False
 
 
@@ -108,7 +112,7 @@ class RtspClient(object):
         if 'TEARDOWN' not in _req:
             return resp
         tmp = _req[1].split('/')
-        _req[1] = (f'{tmp[0]}//{str(tmp[2])[:26]} '
+        _req[1] = (f'{tmp[0]}//{str(tmp[2])[:40]} '
                    f'{args.channel} {args.broadcast} '
                    f'-s {args.start} -p {args.client_port}')
         sys.stdout.write(f'[{args.client_ip}][VOD] Req: {_req[0]} [{_req[1]}] '
@@ -221,13 +225,14 @@ def on_completed():
         proc.join()
 
     if _check_recording():
+        save_metadata()
         httpx.put(epg_url)
 
     _cleanup()
 
 
 def record_stream():
-    global _ffmpeg, _log_suffix, ffmpeg, filename
+    global _ffmpeg, _log_suffix, ffmpeg, filename, path
     _options = {
         'map': '0',
         'c': 'copy',
@@ -249,15 +254,13 @@ def record_stream():
 
         if not args.time:
             args.time = int(data['duration']) - args.start
-        title = data['full_title']
+        title, path, filename = [data[t] for t in ['full_title', 'path', 'filename']]
         _options['metadata:s:v'] = f'title={title}'
-        if data['description']:
-            _options['metadata:s:v:0'] = 'description=' + data['description']
-        path = data['path']
-        filename = data['filename']
         if not os.path.exists(path):
             sys.stderr.write(f'{_log_prefix} Creating recording subdir {path}\n')
             os.mkdir(path)
+        if not os.path.exists(path + '/metadata'):
+            os.mkdir(path + '/metadata')
     else:
         filename = os.path.join(RECORDINGS,
                                 f'{args.channel}-{args.broadcast}')
@@ -281,6 +284,39 @@ def record_stream():
     _ffmpeg.start()
 
     sys.stderr.write(f'{_log_prefix} Recording STARTED: {_log_suffix}')
+
+
+def save_metadata():
+    try:
+        with open(os.path.join(CACHE_DIR, f'{args.broadcast}.json')) as f:
+            metadata = json.loads(f.read())['data']
+        _cover = metadata['cover']
+        resp = httpx.get(f'{COVER_URL}/{_cover}')
+        if resp.status_code == 200:
+            image_ext = os.path.basename(_cover).split('.')[-1]
+            _img_name = f'{filename}.{image_ext}'
+            with open(_img_name, 'wb') as f:
+                f.write(resp.read())
+            metadata['cover'] = os.path.basename(_img_name)
+        if 'covers' in metadata:
+            for _img in metadata['covers']:
+                _cover = metadata['covers'][_img]
+                resp = httpx.get(_cover)
+                if resp.status_code != 200:
+                    metadata['covers'].pop(_img, None)
+                    continue
+                image_ext = os.path.basename(_cover).split('.')[-1]
+                _img_name = (f'{path}/metadata/{os.path.basename(filename)}-{_img}'
+                             f'.{image_ext}')
+                with open(_img_name, 'wb') as f:
+                    f.write(resp.read())
+                metadata['covers'][_img] = os.path.basename(_img_name)
+        metadata.pop('logos', None)
+        with open(filename + NFO_EXT, 'w') as f:
+            json.dump(metadata, f, ensure_ascii=False, indent=4)
+
+    except (FileNotFoundError, TypeError, json.decoder.JSONDecodeError) as ex:
+        sys.stderr.write(f'{_log_prefix} No metadata found {ex}\n')
 
 
 def main():
