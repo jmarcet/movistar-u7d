@@ -3,7 +3,6 @@
 import argparse
 import asyncio
 import httpx
-import json
 import multiprocessing
 import os
 import re
@@ -12,13 +11,13 @@ import socket
 import subprocess
 import sys
 import time
+import ujson
 import urllib.parse
 
 from collections import namedtuple
 from contextlib import closing
 from ffmpeg import FFmpeg
 from json2xml import json2xml
-from json2xml.utils import readfromurl, readfromstring, readfromjson
 from threading import Thread
 
 
@@ -144,7 +143,7 @@ def _check_recording():
     command = ['ffprobe', '-v', 'quiet', '-print_format', 'json', '-show_format']
     command += [filename + VID_EXT]
     try:
-        probe = json.loads(subprocess.run(command, capture_output=True).stdout.decode())
+        probe = ujson.loads(subprocess.run(command, capture_output=True).stdout.decode())
         duration = int(float(probe['format']['duration']))
     except KeyError:
         sys.stderr.write(f'{_log_prefix} Recording CANNOT PARSE: {_log_suffix}')
@@ -291,7 +290,7 @@ def record_stream():
 def save_metadata():
     try:
         with open(os.path.join(CACHE_DIR, f'{args.broadcast}.json')) as f:
-            metadata = json.loads(f.read())['data']
+            metadata = ujson.loads(f.read())['data']
         _cover = metadata['cover']
         resp = httpx.get(f'{COVER_URL}/{_cover}')
         if resp.status_code == 200:
@@ -318,7 +317,7 @@ def save_metadata():
             f.write(json2xml.Json2xml(metadata, attr_type=False,
                                       pretty=True, wrapper='metadata').to_xml())
 
-    except (FileNotFoundError, TypeError, json.decoder.JSONDecodeError) as ex:
+    except (FileNotFoundError, TypeError, ValueError) as ex:
         sys.stderr.write(f'{_log_prefix} No metadata found {ex}\n')
 
 

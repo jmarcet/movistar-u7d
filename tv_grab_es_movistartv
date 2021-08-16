@@ -24,7 +24,6 @@
 import argparse
 import codecs
 import httpx
-import json
 import logging
 import os
 import random
@@ -35,6 +34,7 @@ import struct
 import sys
 import time
 import traceback
+import ujson
 import xml.etree.ElementTree as ElTr
 
 from datetime import date, datetime, timedelta
@@ -332,7 +332,7 @@ class Cache:
             if os.path.isfile(fp):
                 try:
                     with open(fp) as fd:
-                        _data = json.loads(fd.read())['data']
+                        _data = ujson.loads(fd.read())['data']
                     _exp_date = int(_data['endTime'] / 1000)
                     if _exp_date < deadline:
                         logger.debug(f'Caché: {f} caducado [{time.ctime(_exp_date)}]')
@@ -344,7 +344,7 @@ class Cache:
     def __load(cfile):
         try:
             with open(f'{app_dir}/cache/{cfile}', 'r') as fp:
-                content = json.load(fp)
+                content = ujson.load(fp)
                 return content['data']
         except IOError:
             return None
@@ -352,7 +352,7 @@ class Cache:
     @staticmethod
     def __save(cfile, data):
         with open(f'{app_dir}/cache/{cfile}', 'w') as fp:
-            json.dump({'data': data}, fp, ensure_ascii=False, indent=4, sort_keys=True)
+            ujson.dump({'data': data}, fp, ensure_ascii=False, indent=4, sort_keys=True)
         # logger.debug(f'Cache: {cfile} guardado')
 
     def load_cookie(self):

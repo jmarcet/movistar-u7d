@@ -2,11 +2,11 @@
 
 import asyncio
 import httpx
-import json
 import os
 import re
 import sys
 import time
+import ujson
 
 from asyncio.subprocess import DEVNULL
 from datetime import datetime
@@ -137,8 +137,8 @@ async def handle_program_name(request, channel_id, program_id):
     async with recordings_lock:
         try:
             async with await open_async(recordings) as f:
-                _recordings = json.loads(await f.read())
-        except (FileNotFoundError, TypeError, json.decoder.JSONDecodeError) as ex:
+                _recordings = ujson.loads(await f.read())
+        except (FileNotFoundError, TypeError, ValueError) as ex:
             _recordings = {}
 
     if channel_id not in _recordings:
@@ -149,7 +149,7 @@ async def handle_program_name(request, channel_id, program_id):
 
     async with recordings_lock:
         with open(recordings, 'w') as f:
-            json.dump(_recordings, f, ensure_ascii=False, indent=4, sort_keys=True)
+            ujson.dump(_recordings, f, ensure_ascii=False, indent=4, sort_keys=True)
 
     asyncio.create_task(handle_timers())
 
@@ -171,20 +171,20 @@ async def handle_reload_epg_task():
 
     try:
         async with await open_async(epg_data) as f:
-            epgdata = json.loads(await f.read())['data']
+            epgdata = ujson.loads(await f.read())['data']
         _epgdata = epgdata
         log.info('Loaded fresh EPG data')
-    except (FileNotFoundError, TypeError, json.decoder.JSONDecodeError) as ex:
+    except (FileNotFoundError, TypeError, ValueError) as ex:
         log.error(f'Failed to load EPG data {ex}')
         if not _epgdata:
             raise
 
     try:
         async with await open_async(epg_metadata) as f:
-            channels = json.loads(await f.read())['data']['channels']
+            channels = ujson.loads(await f.read())['data']['channels']
         _channels = channels
         log.info('Loaded Channels metadata')
-    except (FileNotFoundError, TypeError, json.decoder.JSONDecodeError) as ex:
+    except (FileNotFoundError, TypeError, ValueError) as ex:
         log.error(f'Failed to load Channels metadata {ex}')
         if not _channels:
             raise
@@ -207,11 +207,11 @@ async def handle_timers():
 
         try:
             async with await open_async(timers) as f:
-                _timers = json.loads(await f.read())
+                _timers = ujson.loads(await f.read())
             async with recordings_lock:
                 async with await open_async(recordings) as f:
-                    _recordings = json.loads(await f.read())
-        except (FileNotFoundError, TypeError, json.decoder.JSONDecodeError) as ex:
+                    _recordings = ujson.loads(await f.read())
+        except (FileNotFoundError, TypeError, ValueError) as ex:
             if not _timers:
                 log.error(f'handle_timers: {ex}')
                 return
