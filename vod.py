@@ -304,14 +304,13 @@ def save_metadata():
                 _cover = metadata['covers'][_img]
                 resp = httpx.get(_cover)
                 if resp.status_code != 200:
-                    metadata['covers'].pop(_img, None)
                     continue
                 image_ext = os.path.basename(_cover).split('.')[-1]
                 _img_name = (f'{path}/metadata/{os.path.basename(filename)}-{_img}'
                              f'.{image_ext}')
                 with open(_img_name, 'wb') as f:
                     f.write(resp.read())
-                metadata['covers'][_img] = os.path.basename(_img_name)
+        metadata.pop('covers', None)
         metadata.pop('logos', None)
         with open(filename + NFO_EXT, 'w') as f:
             f.write(json2xml.Json2xml(metadata, attr_type=False,
