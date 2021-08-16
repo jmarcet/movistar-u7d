@@ -17,6 +17,8 @@ import urllib.parse
 from collections import namedtuple
 from contextlib import closing
 from ffmpeg import FFmpeg
+from json2xml import json2xml
+from json2xml.utils import readfromurl, readfromstring, readfromjson
 from threading import Thread
 
 
@@ -31,7 +33,7 @@ COVER_URL = f'{IMAGENIO_URL}/covers/programmeImages/portrait/290x429'
 MVTV_URL = 'http://www-60.svc.imagenio.telefonica.net:2001/appserver/mvtv.do'
 RECORDINGS = os.getenv('RECORDINGS', '/tmp')
 SANIC_EPG_URL = 'http://127.0.0.1:8889'
-NFO_EXT = '.txt'
+NFO_EXT = '-movistar.nfo'
 TMP_EXT = '.tmp'
 VID_EXT = '.mkv'
 UA = 'MICA-IP-STB'
@@ -313,7 +315,8 @@ def save_metadata():
                 metadata['covers'][_img] = os.path.basename(_img_name)
         metadata.pop('logos', None)
         with open(filename + NFO_EXT, 'w') as f:
-            json.dump(metadata, f, ensure_ascii=False, indent=4)
+            f.write(json2xml.Json2xml(metadata, attr_type=False,
+                                      pretty=True, wrapper='metadata').to_xml())
 
     except (FileNotFoundError, TypeError, json.decoder.JSONDecodeError) as ex:
         sys.stderr.write(f'{_log_prefix} No metadata found {ex}\n')

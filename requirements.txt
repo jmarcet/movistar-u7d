@@ -1,6 +1,7 @@
 aiohttp
 asyncio_dgram
 httpx
+json2xml
 python-ffmpeg
 git+https://github.com/sanic-org/sanic
 setproctitle
