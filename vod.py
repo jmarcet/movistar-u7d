@@ -42,7 +42,7 @@ Request = namedtuple('Request', ['request', 'response'])
 Response = namedtuple('Response', ['version', 'status', 'url', 'headers', 'body'])
 
 ffmpeg = FFmpeg().option('y')
-_ffmpeg = _log_prefix = _log_suffix = args = epg_url = filename = path = None
+_ffmpeg = _log_prefix = _log_suffix = args = epg_url = filename = full_title = path = None
 needs_position = False
 
 
@@ -233,7 +233,7 @@ def on_completed():
 
 
 def record_stream():
-    global _ffmpeg, _log_suffix, ffmpeg, filename, path
+    global _ffmpeg, _log_suffix, ffmpeg, filename, full_title, path
     _options = {
         'map': '0',
         'c': 'copy',
@@ -255,8 +255,8 @@ def record_stream():
 
         if not args.time:
             args.time = int(data['duration']) - args.start
-        title, path, filename = [data[t] for t in ['full_title', 'path', 'filename']]
-        _options['metadata:s:v'] = f'title={title}'
+        full_title, path, filename = [data[t] for t in ['full_title', 'path', 'filename']]
+        _options['metadata:s:v'] = f'title={full_title}'
         if not os.path.exists(path):
             sys.stderr.write(f'{_log_prefix} Creating recording subdir {path}\n')
             os.mkdir(path)
@@ -310,6 +310,7 @@ def save_metadata():
                              f'.{image_ext}')
                 with open(_img_name, 'wb') as f:
                     f.write(resp.read())
+        metadata['name'] = full_title
         metadata.pop('covers', None)
         metadata.pop('logos', None)
         with open(filename + NFO_EXT, 'w') as f:
