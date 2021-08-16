@@ -260,8 +260,6 @@ def record_stream():
         if not os.path.exists(path):
             sys.stderr.write(f'{_log_prefix} Creating recording subdir {path}\n')
             os.mkdir(path)
-        if not os.path.exists(path + '/metadata'):
-            os.mkdir(path + '/metadata')
     else:
         filename = os.path.join(RECORDINGS,
                                 f'{args.channel}-{args.broadcast}')
@@ -300,6 +298,8 @@ def save_metadata():
                 f.write(resp.read())
             metadata['cover'] = os.path.basename(_img_name)
         if 'covers' in metadata:
+            if not os.path.exists(os.path.join(path + '/metadata')):
+                os.mkdir(os.path.join(path + '/metadata'))
             for _img in metadata['covers']:
                 _cover = metadata['covers'][_img]
                 resp = httpx.get(_cover)
