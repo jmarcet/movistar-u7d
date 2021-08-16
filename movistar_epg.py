@@ -125,16 +125,6 @@ async def handle_program_name(request, channel_id, program_id):
         return response.json({'status': f'{channel_id}/{program_id} not found'}, 404)
 
     if request.method == 'GET':
-        extra_data = os.path.join(HOME, f'.xmltv/cache/programs/{program_id}.json')
-
-        _desc = ''
-        try:
-            async with await open_async(extra_data) as f:
-                data = json.loads(await f.read())['data']
-            _desc = data['description']
-        except (FileNotFoundError, TypeError, json.decoder.JSONDecodeError) as ex:
-            log.warning(f'Failed to load extra metadata {ex}')
-
         (path, filename) = _get_recording_path(channel_key, event)
 
         return response.json({'status': 'OK',
@@ -142,7 +132,6 @@ async def handle_program_name(request, channel_id, program_id):
                               'duration': _epg['duration'],
                               'path': path,
                               'filename': filename,
-                              'description': _desc
                               }, ensure_ascii=False)
 
     async with recordings_lock:
