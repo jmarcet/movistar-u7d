@@ -48,7 +48,7 @@ LOG_SETTINGS['formatters']['generic']['datefmt'] = \
 PREFIX = ''
 
 app = Sanic('movistar_u7d', log_config=LOG_SETTINGS)
-app.config.update({'GRACEFUL_SHUTDOWN_TIMEOUT': 1, 'RESPONSE_TIMEOUT': 1})
+app.config.update({'REQUEST_TIMEOUT': 1, 'RESPONSE_TIMEOUT': 1})
 
 
 @app.get('/channels.m3u')
