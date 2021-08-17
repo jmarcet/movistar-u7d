@@ -188,19 +188,18 @@ async def handle_flussonic(request, channel_id, url):
         _response = await request.respond(content_type=MIME_TS)
         log.info(f'[{request.ip}] {request.raw_url} -> Playing {vod_msg}')
         try:
-            data = (await asyncio.wait_for(stream.recv(), 1))[0]
-            await _response.send(data)
+            await _response.send((await asyncio.wait_for(stream.recv(), 1))[0])
         except asyncio.exceptions.TimeoutError:
             log.error(f'NOT_AVAILABLE: {vod_msg}')
             subprocess.run(('pkill', '-HUP', '-f', ' '.join(cmd)))
-            return await _response.eof()
+            return response.empty(404)
         try:
             while True:
                 await _response.send((await stream.recv())[0])
         except asyncio_dgram.aio.TransportClosed:
             pass
         finally:
-            log.info(f'[{request.ip}] {request.raw_url} -> Stopped {vod_msg}')
+            log.debug(f'[{request.ip}] {request.raw_url} -> Stopped {vod_msg}')
             subprocess.run(('pkill', '-HUP', '-f', ' '.join(cmd)))
             await _response.eof()
 
