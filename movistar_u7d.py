@@ -17,7 +17,7 @@ from sanic import Sanic, exceptions, response
 from sanic.log import logger as log
 from sanic.log import LOGGING_CONFIG_DEFAULTS
 from threading import Thread
-from vod import find_free_port, get_vod_url, COVER_URL, IMAGENIO_URL
+from vod import find_free_port, COVER_URL, IMAGENIO_URL, MVTV_URL, UA
 
 
 setproctitle('movistar_u7d')
@@ -49,6 +49,20 @@ PREFIX = ''
 
 app = Sanic('movistar_u7d', log_config=LOG_SETTINGS)
 app.config.update({'REQUEST_TIMEOUT': 1, 'RESPONSE_TIMEOUT': 1})
+
+
+async def get_vod_url(channel_id, program_id):
+    params = (f'action=getCatchUpUrl&extInfoID={program_id}&channelID={channel_id}'
+              f'&service=hd&mode=1')
+    try:
+        async with SESSION.get(f'{MVTV_URL}?{params}', headers={'User-Agent': UA}) as r:
+            if r.status != 200:
+                return response.json({'status': f'{channel_id} not found'}, 404)
+            resp = await r.json()
+            return resp['resultData']['url']
+    except Exception as ex:
+        log.error(f'{ex}')
+        return None
 
 
 @app.get('/channels.m3u')
@@ -157,9 +171,7 @@ async def handle_flussonic(request, channel_id, url):
     if not program_id:
         return response.json({'status': f'{channel_id}/{url} not found'}, 404)
 
-    try:
-        url = get_vod_url(channel_id, program_id)['resultData']['url']
-    except Exception as ex:
+    if not (url := await get_vod_url(channel_id, program_id)):
         log.error(f'{request.ip}] NOT_AVAILABLE: {ex}')
         return response.empty(404)
 

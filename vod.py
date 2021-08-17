@@ -107,7 +107,7 @@ class RtspClient(object):
         return Request(req, resp)
 
     def print(self, req):
-        # return req.response
+        return req.response
         resp = req.response
         _req = req.request.split('\r\n')[0].split(' ')
         if 'TEARDOWN' not in _req:
@@ -233,13 +233,11 @@ def on_completed():
 
 
 def get_vod_url(channel_id, program_id):
-    params = (f'action=getCatchUpUrl'
-              f'&extInfoID={program_id}'
-              f'&channelID={channel_id}'
+    params = (f'action=getCatchUpUrl&extInfoID={program_id}&channelID={channel_id}'
               f'&service=hd&mode=1')
     try:
-        resp = httpx.get(f'{MVTV_URL}?{params}', headers={'User-Agent': UA})
-        return resp.json()
+        resp = httpx.get(f'{MVTV_URL}?{params}', headers={'User-Agent': UA}).json()
+        return resp['resultData']['url']
     except httpx.ConnectError:
         return None
 
@@ -345,12 +343,9 @@ def main():
 
     if args.url:
         url = args.url
-    else:
-        try:
-            url = get_vod_url(args.channel, args.broadcast)['resultData']['url']
-        except Exception as ex:
-            sys.stderr.write(f'{_log_prefix} Error: {ex}\n')
-            return None
+    elif not (url := get_vod_url(args.channel, args.broadcast)):
+        sys.stderr.write(f'{_log_prefix} Error: {ex}\n')
+        return None
 
     uri = urllib.parse.urlparse(url)
     epg_url = (f'{SANIC_EPG_URL}/program_name/{args.channel}/{args.broadcast}')
