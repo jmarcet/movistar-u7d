@@ -17,7 +17,7 @@ from sanic import Sanic, exceptions, response
 from sanic.log import logger as log
 from sanic.log import LOGGING_CONFIG_DEFAULTS
 from threading import Thread
-from vod import find_free_port, IMAGENIO_URL, COVER_URL
+from vod import find_free_port, get_vod_url, COVER_URL, IMAGENIO_URL
 
 
 setproctitle('movistar_u7d')
@@ -129,13 +129,11 @@ async def handle_channel(request, channel_id):
                         socket.inet_aton(mc_grp) + socket.inet_aton(IPTV))
 
         with closing(await asyncio_dgram.from_socket(sock)) as stream:
-            _response = await request.respond(content_type=MIME_TS)
             log.info(f'[{request.ip}] {request.raw_url} -> Playing "{name}"')
             try:
+                _response = await request.respond(content_type=MIME_TS)
                 while True:
                     await _response.send((await stream.recv())[0][28:])
-            except asyncio_dgram.aio.TransportClosed:
-                pass
             finally:
                 log.info(f'[{request.ip}] {request.raw_url} -> Stopped "{name}"')
                 await _response.eof()
@@ -159,49 +157,56 @@ async def handle_flussonic(request, channel_id, url):
     if not program_id:
         return response.json({'status': f'{channel_id}/{url} not found'}, 404)
 
+    try:
+        url = get_vod_url(channel_id, program_id)['resultData']['url']
+    except Exception as ex:
+        log.error(f'{request.ip}] NOT_AVAILABLE: {ex}')
+        return response.empty(404)
+
     client_port = find_free_port()
-    cmd = (f'{PREFIX}vod.py', channel_id, program_id, '-s', offset, '-p', str(client_port))
+    cmd = f'{PREFIX}vod.py {channel_id} {program_id} -s {offset} -p {client_port}'
+    cmd += f' -i {request.ip} --url {url}'
     remaining = str(int(duration) - int(offset))
     vod_msg = '"%s" %s [%s/%s]' % (name, program_id, offset, duration)
 
-    if record := int(request.args.get('record', 0)):
+    if request.method == 'HEAD':
+        return response.HTTPResponse(content_type=MIME_TS, status=200)
+    elif record := int(request.args.get('record', 0)):
         record_time = record if record > 1 else remaining
-        cmd += ('-t', record_time, '-w')
+        cmd += f' -t {record_time} -w'
         if MP4_OUTPUT or request.args.get('mp4', False):
-            cmd += ('--mp4', '1')
+            cmd += ' --mp4 1'
         if request.args.get('vo', False):
-            cmd += ('--vo', '1')
+            cmd += ' --vo 1'
         log.info(f'[{request.ip}] {request.raw_url} -> Recording [{record_time}s] {vod_msg}')
 
-    cmd += ('-i', request.ip)
-    vod = Thread(target=subprocess.run, args=(cmd,), daemon=True)
-    vod.start()
+    try:
+        vod = await asyncio.create_subprocess_exec(*(cmd.split()))
+        if record:
+            return response.json({'status': 'OK',
+                                  'channel_id': channel_id, 'program_id': program_id,
+                                  'offset': offset, 'time': record_time})
 
-    if record:
-        return response.json({'status': 'OK',
-                              'channel_id': channel_id, 'program_id': program_id,
-                              'offset': offset, 'time': record_time})
-    elif request.method == 'HEAD':
-        return response.HTTPResponse(content_type=MIME_TS, status=200)
-
-    with closing(await asyncio_dgram.bind((IPTV, client_port))) as stream:
-        _response = await request.respond(content_type=MIME_TS)
-        log.info(f'[{request.ip}] {request.raw_url} -> Playing {vod_msg}')
-        try:
-            await _response.send((await asyncio.wait_for(stream.recv(), 1))[0])
-        except asyncio.exceptions.TimeoutError:
-            log.error(f'NOT_AVAILABLE: {vod_msg}')
-            subprocess.run(('pkill', '-HUP', '-f', ' '.join(cmd)))
-            return response.empty(404)
-        try:
-            while True:
-                await _response.send((await stream.recv())[0])
-        except asyncio_dgram.aio.TransportClosed:
-            pass
-        finally:
-            log.debug(f'[{request.ip}] {request.raw_url} -> Stopped {vod_msg}')
-            subprocess.run(('pkill', '-HUP', '-f', ' '.join(cmd)))
-            await _response.eof()
+        with closing(await asyncio_dgram.bind((IPTV, client_port))) as stream:
+            log.info(f'[{request.ip}] {request.raw_url} -> Playing {vod_msg}')
+            try:
+                _response = await request.respond(content_type=MIME_TS)
+                await _response.send((await asyncio.wait_for(stream.recv(), 1))[0])
+            except asyncio.exceptions.TimeoutError:
+                log.error(f'NOT_AVAILABLE: {vod_msg}')
+                return response.empty(404)
+            try:
+                while True:
+                    await _response.send((await stream.recv())[0])
+            finally:
+                log.debug(f'[{request.ip}] {request.raw_url} -> Stopped {vod_msg}')
+                await _response.eof()
+    finally:
+        if not record:
+            try:
+                await vod.terminate()
+            except (ProcessLookupError, TypeError):
+                pass
 
 
 @app.get('/favicon.ico')
@@ -218,13 +223,6 @@ async def notify_server_start(app, loop):
 
     conn = aiohttp.TCPConnector(keepalive_timeout=YEAR_SECONDS, limit_per_host=1)
     SESSION = aiohttp.ClientSession(connector=conn)
-
-
-@app.listener('after_server_stop')
-async def notify_server_stop(app, loop):
-    log.debug('after_server_stop')
-    p = await asyncio.create_subprocess_exec('pkill', '-INT', '-f', 'vod.py .+ -p ')
-    await p.wait()
 
 
 if __name__ == '__main__':

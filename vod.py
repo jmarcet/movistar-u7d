@@ -232,6 +232,18 @@ def on_completed():
     _cleanup()
 
 
+def get_vod_url(channel_id, program_id):
+    params = (f'action=getCatchUpUrl'
+              f'&extInfoID={program_id}'
+              f'&channelID={channel_id}'
+              f'&service=hd&mode=1')
+    try:
+        resp = httpx.get(f'{MVTV_URL}?{params}', headers={'User-Agent': UA})
+        return resp.json()
+    except httpx.ConnectError:
+        return None
+
+
 def record_stream():
     global _ffmpeg, _log_suffix, ffmpeg, filename, full_title, path
     _options = {
@@ -331,24 +343,22 @@ def main():
     describe['Accept'] = 'application/sdp'
     setup['Transport'] = f'MP2T/H2221/UDP;unicast;client_port={args.client_port}'
 
-    params = (f'action=getCatchUpUrl'
-              f'&extInfoID={args.broadcast}'
-              f'&channelID={args.channel}'
-              f'&service=hd&mode=1')
-    try:
-        resp = httpx.get(f'{MVTV_URL}?{params}', headers={'User-Agent': UA})
-        data = resp.json()
-    except httpx.ConnectError:
-        data = None
+    if args.url:
+        url = args.url
+    else:
+        try:
+            url = get_vod_url(args.channel, args.broadcast)['resultData']['url']
+        except Exception as ex:
+            sys.stderr.write(f'{_log_prefix} Error: {ex}\n')
+            return None
 
-    if not data or 'resultCode' not in data or data['resultCode'] != 0:
-        sys.stderr.write(f'{_log_prefix} Error: {data}\n')
-        return
-
+    uri = urllib.parse.urlparse(url)
     epg_url = (f'{SANIC_EPG_URL}/program_name/{args.channel}/{args.broadcast}')
 
-    url = data['resultData']['url']
-    uri = urllib.parse.urlparse(url)
+    def _handle_cleanup(signum, frame):
+        raise TimeoutError()
+    signal.signal(signal.SIGHUP, _handle_cleanup)
+    signal.signal(signal.SIGTERM, _handle_cleanup)
 
     with closing(socket.socket(socket.AF_INET, socket.SOCK_STREAM)) as s:
         try:
@@ -378,10 +388,6 @@ def main():
 
             client.print(client.send_request('PLAY', play))
 
-            def _handle_cleanup(signum, frame):
-                raise TimeoutError()
-            signal.signal(signal.SIGHUP, _handle_cleanup)
-
             if args.write_to_file:
                 record_stream()
                 signal.signal(signal.SIGALRM, _handle_cleanup)
@@ -399,10 +405,6 @@ def main():
         finally:
             if client and 'Session' in session:
                 client.print(client.send_request('TEARDOWN', session))
-            if args.write_to_file:
-                if _ffmpeg and _ffmpeg.is_alive():
-                    subprocess.run(['pkill', '-HUP', '-f',
-                                   f'ffmpeg.+udp://@{IPTV}:{args.client_port}'])
 
 
 if __name__ == '__main__':
@@ -415,6 +417,7 @@ if __name__ == '__main__':
     parser.add_argument('--start', '-s', help='stream start offset', type=int)
     parser.add_argument('--time', '-t', help='recording time in seconds', type=int)
     parser.add_argument('--mp4', help='output split mp4 and vobsub files', type=bool, default=False)
+    parser.add_argument('--url', help='vod url', type=str)
     parser.add_argument('--vo', help='set 2nd language as main one', type=bool, default=False)
     parser.add_argument('--write_to_file', '-w', help='record', action='store_true')
 

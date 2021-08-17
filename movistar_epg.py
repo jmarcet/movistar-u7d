@@ -288,7 +288,6 @@ async def delay_update_epg():
 
 async def handle_update_epg():
     log.info(f'handle_update_epg')
-    await asyncio.create_subprocess_exec('pkill', '-f', 'tv_grab_es_movistartv')
     for i in range(5):
         tvgrab = await asyncio.create_subprocess_exec(f'{PREFIX}tv_grab_es_movistartv',
                                                       '--tvheadend', CHANNELS, '--output', GUIDE,
