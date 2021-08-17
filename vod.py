@@ -341,11 +341,9 @@ def main():
     describe['Accept'] = 'application/sdp'
     setup['Transport'] = f'MP2T/H2221/UDP;unicast;client_port={args.client_port}'
 
-    if args.url:
-        url = args.url
-    elif not (url := get_vod_url(args.channel, args.broadcast)):
+    if not (url := get_vod_url(args.channel, args.broadcast)):
         sys.stderr.write(f'{_log_prefix} Error: {ex}\n')
-        return None
+        sys.exit(1)
 
     uri = urllib.parse.urlparse(url)
     epg_url = (f'{SANIC_EPG_URL}/program_name/{args.channel}/{args.broadcast}')
@@ -412,7 +410,6 @@ if __name__ == '__main__':
     parser.add_argument('--start', '-s', help='stream start offset', type=int)
     parser.add_argument('--time', '-t', help='recording time in seconds', type=int)
     parser.add_argument('--mp4', help='output split mp4 and vobsub files', type=bool, default=False)
-    parser.add_argument('--url', help='vod url', type=str)
     parser.add_argument('--vo', help='set 2nd language as main one', type=bool, default=False)
     parser.add_argument('--write_to_file', '-w', help='record', action='store_true')
 
