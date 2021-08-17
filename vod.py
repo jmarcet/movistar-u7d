@@ -128,13 +128,6 @@ class RtspClient(object):
         return resp
 
 
-def find_free_port():
-    with closing(socket.socket(socket.AF_INET, socket.SOCK_DGRAM)) as s:
-        s.bind(('', 0))
-        s.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
-        return s.getsockname()[1]
-
-
 def _check_recording():
     if not os.path.exists(filename + VID_EXT):
         sys.stderr.write(f'{_log_prefix} Recording CANNOT FIND: {_log_suffix}')
@@ -162,26 +155,21 @@ def _cleanup():
         os.remove(filename + TMP_EXT)
 
 
-@ffmpeg.on('stderr')
-def on_stderr(line):
-    if line.startswith('frame='):
-        return
-    sys.stderr.write(f'{_log_prefix} [ffmpeg] {line}\n')
+def find_free_port():
+    with closing(socket.socket(socket.AF_INET, socket.SOCK_DGRAM)) as s:
+        s.bind(('', 0))
+        s.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+        return s.getsockname()[1]
 
 
-@ffmpeg.on('terminated')
-def on_terminated():
-    sys.stderr.write(f'{_log_prefix} [ffmpeg] TERMINATED: {_log_suffix}')
-    on_completed()
-
-
-@ffmpeg.on('error')
-def on_error(code):
-    if code == -1:
-        on_completed()
-    else:
-        sys.stderr.write(f'{_log_prefix} Recording FAILED error={code}: {_log_suffix}')
-        _cleanup()
+def get_vod_url(channel_id, program_id):
+    params = (f'action=getCatchUpUrl&extInfoID={program_id}&channelID={channel_id}'
+              f'&service=hd&mode=1')
+    try:
+        resp = httpx.get(f'{MVTV_URL}?{params}', headers={'User-Agent': UA}).json()
+        return resp['resultData']['url']
+    except httpx.ConnectError:
+        return None
 
 
 @ffmpeg.on('completed')
@@ -232,14 +220,26 @@ def on_completed():
     _cleanup()
 
 
-def get_vod_url(channel_id, program_id):
-    params = (f'action=getCatchUpUrl&extInfoID={program_id}&channelID={channel_id}'
-              f'&service=hd&mode=1')
-    try:
-        resp = httpx.get(f'{MVTV_URL}?{params}', headers={'User-Agent': UA}).json()
-        return resp['resultData']['url']
-    except httpx.ConnectError:
-        return None
+@ffmpeg.on('error')
+def on_error(code):
+    if code == -1:
+        on_completed()
+    else:
+        sys.stderr.write(f'{_log_prefix} Recording FAILED error={code}: {_log_suffix}')
+        _cleanup()
+
+
+@ffmpeg.on('stderr')
+def on_stderr(line):
+    if line.startswith('frame='):
+        return
+    sys.stderr.write(f'{_log_prefix} [ffmpeg] {line}\n')
+
+
+@ffmpeg.on('terminated')
+def on_terminated():
+    sys.stderr.write(f'{_log_prefix} [ffmpeg] TERMINATED: {_log_suffix}')
+    on_completed()
 
 
 def record_stream():

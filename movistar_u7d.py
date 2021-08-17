@@ -51,6 +51,17 @@ app = Sanic('movistar_u7d', log_config=LOG_SETTINGS)
 app.config.update({'REQUEST_TIMEOUT': 1, 'RESPONSE_TIMEOUT': 1})
 
 
+@app.listener('after_server_start')
+async def after_server_start(app, loop):
+    log.debug('after_server_start')
+    global PREFIX, SESSION
+    if __file__.startswith('/app/'):
+        PREFIX = '/app/'
+
+    conn = aiohttp.TCPConnector(keepalive_timeout=YEAR_SECONDS, limit_per_host=1)
+    SESSION = aiohttp.ClientSession(connector=conn)
+
+
 @app.get('/channels.m3u')
 @app.get('/MovistarTV.m3u')
 async def handle_channels(request):
@@ -206,17 +217,6 @@ async def handle_flussonic(request, channel_id, url):
 @app.get('/favicon.ico')
 async def handle_notfound(request):
     return response.json({}, 404)
-
-
-@app.listener('after_server_start')
-async def notify_server_start(app, loop):
-    log.debug('after_server_start')
-    global PREFIX, SESSION
-    if __file__.startswith('/app/'):
-        PREFIX = '/app/'
-
-    conn = aiohttp.TCPConnector(keepalive_timeout=YEAR_SECONDS, limit_per_host=1)
-    SESSION = aiohttp.ClientSession(connector=conn)
 
 
 if __name__ == '__main__':

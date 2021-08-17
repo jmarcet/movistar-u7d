@@ -50,6 +50,73 @@ _epgdata = {}
 _t_epg1 = _t_epg2 = _t_timers = None
 
 
+@app.listener('after_server_start')
+async def after_server_start(app, loop):
+    global PREFIX, _t_epg1, _t_timers
+    if __file__.startswith('/app/'):
+        PREFIX = '/app/'
+
+    await reload_epg()
+    _t_epg1 = asyncio.create_task(update_epg_delayed())
+    if RECORDINGS:
+        try:
+            async with await open_async('/proc/uptime') as f:
+                proc = await f.read()
+            uptime = int(float(proc.split()[1]))
+            if uptime < 300:
+                log.info('Waiting 300s to check timers after rebooting...')
+                await asyncio.sleep(300)
+        except (FileNotFoundError, KeyError):
+            pass
+        if os.path.exists(os.path.join(HOME, 'timers.json')):
+            _ffmpeg = str(await get_ffmpeg_procs())
+            [os.remove(t) for t in glob(f'{RECORDINGS}/**/*{TMP_EXT}')
+             if os.path.basename(t) not in _ffmpeg]
+
+            log.info('Waiting 60s to check timers (ensuring no stale rtsp is present)...')
+            await asyncio.sleep(60)
+            _t_timers = asyncio.create_task(every(900, timers_check))
+        else:
+            log.info('No timers.json found, recordings disabled')
+
+
+@app.listener('after_server_stop')
+async def after_server_stop(app, loop):
+    for task in [_t_epg2, _t_epg1, _t_timers]:
+        if task:
+            task.cancel()
+
+
+async def every(timeout, stuff):
+    log.debug(f'run_every {timeout} {stuff}')
+    while True:
+        await asyncio.gather(asyncio.sleep(timeout), stuff())
+
+
+async def get_ffmpeg_procs():
+    p = await asyncio.create_subprocess_exec('pgrep', '-af', 'ffmpeg.+udp://',
+                                             stdout=asyncio.subprocess.PIPE)
+    stdout, _ = await p.communicate()
+    return [t.rstrip().decode() for t in stdout.splitlines()]
+
+
+def get_recording_path(channel_key, timestamp):
+    if _epgdata[channel_key][timestamp]['is_serie']:
+        path = os.path.join(RECORDINGS,
+                            get_safe_filename(_epgdata[channel_key][timestamp]['serie']))
+    else:
+        path = RECORDINGS
+    filename = os.path.join(path,
+                            get_safe_filename(_epgdata[channel_key][timestamp]['full_title']))
+    return (path, filename)
+
+
+def get_safe_filename(filename):
+    filename = filename.replace(':', ',').replace('...', '…')
+    keepcharacters = (' ', ',', '.', '_', '-', '¡', '!')
+    return "".join(c for c in filename if c.isalnum() or c in keepcharacters).rstrip()
+
+
 @app.get('/channel_address/<channel_id>/')
 async def handle_channel_address(request, channel_id):
     log.debug(f'Searching channel address: {channel_id}')
@@ -125,7 +192,7 @@ async def handle_program_name(request, channel_id, program_id):
         return response.json({'status': f'{channel_id}/{program_id} not found'}, 404)
 
     if request.method == 'GET':
-        (path, filename) = _get_recording_path(channel_key, event)
+        (path, filename) = get_recording_path(channel_key, event)
 
         return response.json({'status': 'OK',
                               'full_title': _epg['full_title'],
@@ -151,7 +218,7 @@ async def handle_program_name(request, channel_id, program_id):
         with open(recordings, 'w') as f:
             ujson.dump(_recordings, f, ensure_ascii=False, indent=4, sort_keys=True)
 
-    asyncio.create_task(handle_timers())
+    asyncio.create_task(timers_check())
 
     log.info(f'Recording DONE: {channel_id} {program_id} "' + _epg['full_title'] + '"')
     return response.json({'status': 'Recorded OK',
@@ -161,10 +228,19 @@ async def handle_program_name(request, channel_id, program_id):
 
 @app.get('/reload_epg')
 async def handle_reload_epg(request):
-    return await handle_reload_epg_task()
+    return await reload_epg()
 
 
-async def handle_reload_epg_task():
+@app.get('/check_timers')
+async def handle_timers_check(request):
+    if timers_lock.locked():
+        return response.json({'status': 'Busy'}, 201)
+
+    asyncio.create_task(timers_check())
+    return response.json({'status': 'Timers check queued'}, 200)
+
+
+async def reload_epg():
     global _channels, _epgdata
     epg_data = os.path.join(HOME, '.xmltv/cache/epg.json')
     epg_metadata = os.path.join(HOME, '.xmltv/cache/epg_metadata.json')
@@ -198,7 +274,7 @@ async def handle_reload_epg_task():
     return response.json({'status': 'EPG Updated'}, 200)
 
 
-async def handle_timers():
+async def timers_check():
     async with timers_lock:
         log.info(f'Processing timers')
 
@@ -242,7 +318,7 @@ async def handle_timers():
                     else:
                         lang = deflang
                     vo = True if lang == 'VO' else False
-                    (_, filename) = _get_recording_path(_key, timestamp)
+                    (_, filename) = get_recording_path(_key, timestamp)
                     filename += TMP_EXT
                     if re.match(timer_match, title) and \
                         (title not in timers_added and
@@ -269,25 +345,8 @@ async def handle_timers():
                             log.warning(f'{ex}')
 
 
-@app.get('/check_timers')
-async def handle_check_timers(request):
-    if timers_lock.locked():
-        return response.json({'status': 'Busy'}, 201)
-
-    asyncio.create_task(handle_timers())
-    return response.json({'status': 'Timers check queued'}, 200)
-
-
-async def delay_update_epg():
-    global _t_epg2
-    delay = 3600 - (time.localtime().tm_min * 60 + time.localtime().tm_sec)
-    log.info(f'Waiting {delay}s to start updating EPG...')
-    await asyncio.sleep(delay)
-    _t_epg2 = asyncio.create_task(run_every(3600, handle_update_epg))
-
-
-async def handle_update_epg():
-    log.info(f'handle_update_epg')
+async def update_epg():
+    log.info(f'update_epg')
     for i in range(5):
         tvgrab = await asyncio.create_subprocess_exec(f'{PREFIX}tv_grab_es_movistartv',
                                                       '--tvheadend', CHANNELS, '--output', GUIDE,
@@ -297,75 +356,16 @@ async def handle_update_epg():
             log.error(f'Waiting 15s before trying again [{i+2}/5] to update EPG')
             await asyncio.sleep(15)
         else:
-            await handle_reload_epg_task()
+            await reload_epg()
             break
 
 
-@app.listener('after_server_start')
-async def notify_server_start(app, loop):
-    global PREFIX, _t_epg1, _t_timers
-    if __file__.startswith('/app/'):
-        PREFIX = '/app/'
-
-    await handle_reload_epg_task()
-    _t_epg1 = asyncio.create_task(delay_update_epg())
-    if RECORDINGS:
-        try:
-            async with await open_async('/proc/uptime') as f:
-                proc = await f.read()
-            uptime = int(float(proc.split()[1]))
-            if uptime < 300:
-                log.info('Waiting 300s to check timers after rebooting...')
-                await asyncio.sleep(300)
-        except (FileNotFoundError, KeyError):
-            pass
-        if os.path.exists(os.path.join(HOME, 'timers.json')):
-            _ffmpeg = str(await get_ffmpeg_procs())
-            [os.remove(t) for t in glob(f'{RECORDINGS}/**/*{TMP_EXT}')
-             if os.path.basename(t) not in _ffmpeg]
-
-            log.info('Waiting 60s to check timers (ensuring no stale rtsp is present)...')
-            await asyncio.sleep(60)
-            _t_timers = asyncio.create_task(run_every(900, handle_timers))
-        else:
-            log.info('No timers.json found, recordings disabled')
-
-
-@app.listener('after_server_stop')
-async def notify_server_stop(app, loop):
-    for task in [_t_epg2, _t_epg1, _t_timers]:
-        if task:
-            task.cancel()
-
-
-async def get_ffmpeg_procs():
-    p = await asyncio.create_subprocess_exec('pgrep', '-af', 'ffmpeg.+udp://',
-                                             stdout=asyncio.subprocess.PIPE)
-    stdout, _ = await p.communicate()
-    return [t.rstrip().decode() for t in stdout.splitlines()]
-
-
-async def run_every(timeout, stuff):
-    log.debug(f'run_every {timeout} {stuff}')
-    while True:
-        await asyncio.gather(asyncio.sleep(timeout), stuff())
-
-
-def safe_filename(filename):
-    filename = filename.replace(':', ',').replace('...', '…')
-    keepcharacters = (' ', ',', '.', '_', '-', '¡', '!')
-    return "".join(c for c in filename if c.isalnum() or c in keepcharacters).rstrip()
-
-
-def _get_recording_path(channel_key, timestamp):
-    if _epgdata[channel_key][timestamp]['is_serie']:
-        path = os.path.join(RECORDINGS,
-                            safe_filename(_epgdata[channel_key][timestamp]['serie']))
-    else:
-        path = RECORDINGS
-    filename = os.path.join(path,
-                            safe_filename(_epgdata[channel_key][timestamp]['full_title']))
-    return (path, filename)
+async def update_epg_delayed():
+    global _t_epg2
+    delay = 3600 - (time.localtime().tm_min * 60 + time.localtime().tm_sec)
+    log.info(f'Waiting {delay}s to start updating EPG...')
+    await asyncio.sleep(delay)
+    _t_epg2 = asyncio.create_task(every(3600, update_epg))
 
 
 if __name__ == '__main__':
