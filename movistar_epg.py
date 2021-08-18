@@ -42,49 +42,42 @@ app = Sanic('movistar_epg')
 app.config.update({'KEEP_ALIVE_TIMEOUT': YEAR_SECONDS})
 
 recordings = os.path.join(HOME, 'recordings.json')
+timers = os.path.join(HOME, 'timers.json')
 recordings_lock = asyncio.Lock()
 timers_lock = asyncio.Lock()
 
 _channels = {}
 _epgdata = {}
-_t_epg1 = _t_epg2 = _t_timers = None
+_t_epg1 = _t_epg2 = _t_timers = _t_timers_d = _t_timers_r = _t_timers_t = tvgrab = None
 
 
 @app.listener('after_server_start')
 async def after_server_start(app, loop):
-    global PREFIX, _t_epg1, _t_timers
+    global PREFIX, _t_epg1, _t_timers_d
     if __file__.startswith('/app/'):
         PREFIX = '/app/'
 
     await reload_epg()
     _t_epg1 = asyncio.create_task(update_epg_delayed())
+
     if RECORDINGS:
-        try:
-            async with await open_async('/proc/uptime') as f:
-                proc = await f.read()
-            uptime = int(float(proc.split()[1]))
-            if uptime < 300:
-                log.info('Waiting 300s to check timers after rebooting...')
-                await asyncio.sleep(300)
-        except (FileNotFoundError, KeyError):
-            pass
-        if os.path.exists(os.path.join(HOME, 'timers.json')):
+        if os.path.exists(timers):
             _ffmpeg = str(await get_ffmpeg_procs())
             [os.remove(t) for t in glob(f'{RECORDINGS}/**/*{TMP_EXT}')
              if os.path.basename(t) not in _ffmpeg]
-
-            log.info('Waiting 60s to check timers (ensuring no stale rtsp is present)...')
-            await asyncio.sleep(60)
-            _t_timers = asyncio.create_task(every(900, timers_check))
+            _t_timers_d = asyncio.create_task(timers_check_delayed())
         else:
             log.info('No timers.json found, recordings disabled')
 
 
 @app.listener('after_server_stop')
 async def after_server_stop(app, loop):
-    for task in [_t_epg2, _t_epg1, _t_timers]:
-        if task:
-            task.cancel()
+    for task in [_t_epg2, _t_epg1, _t_timers, _t_timers_d, _t_timers_r, _t_timers_t, tvgrab]:
+        try:
+            task.kill()
+            await task
+        except (AttributeError, ProcessLookupError):
+            pass
 
 
 async def every(timeout, stuff):
@@ -218,12 +211,12 @@ async def handle_program_name(request, channel_id, program_id):
         with open(recordings, 'w') as f:
             ujson.dump(_recordings, f, ensure_ascii=False, indent=4, sort_keys=True)
 
-    asyncio.create_task(timers_check())
+    global _t_timers_r
+    _t_timers_r = asyncio.create_task(timers_check())
 
     log.info(f'Recording DONE: {channel_id} {program_id} "' + _epg['full_title'] + '"')
-    return response.json({'status': 'Recorded OK',
-                          'full_title': _epg['full_title'],
-                          }, ensure_ascii=False)
+    return response.json({'status': 'Recorded OK', 'full_title': _epg['full_title'],},
+                         ensure_ascii=False)
 
 
 @app.get('/reload_epg')
@@ -233,10 +226,11 @@ async def handle_reload_epg(request):
 
 @app.get('/check_timers')
 async def handle_timers_check(request):
+    global _t_timers_t
     if timers_lock.locked():
         return response.json({'status': 'Busy'}, 201)
 
-    asyncio.create_task(timers_check())
+    _t_timers_t = asyncio.create_task(timers_check())
     return response.json({'status': 'Timers check queued'}, 200)
 
 
@@ -276,11 +270,19 @@ async def reload_epg():
 
 async def timers_check():
     async with timers_lock:
+        try:
+            async with await open_async('/proc/uptime') as f:
+                proc = await f.read()
+            uptime = int(float(proc.split()[1]))
+            if uptime < 300:
+                log.info('Waiting 300s to check timers after rebooting...')
+                await asyncio.sleep(300)
+        except (FileNotFoundError, KeyError):
+            pass
+
         log.info(f'Processing timers')
 
         _recordings = _timers = {}
-        timers = os.path.join(HOME, 'timers.json')
-
         try:
             async with await open_async(timers) as f:
                 _timers = ujson.loads(await f.read())
@@ -345,7 +347,15 @@ async def timers_check():
                             log.warning(f'{ex}')
 
 
+async def timers_check_delayed():
+    global _t_timers
+    log.info('Waiting 60s to check timers (ensuring no stale rtsp is present)...')
+    await asyncio.sleep(60)
+    _t_timers = asyncio.create_task(every(900, timers_check))
+
+
 async def update_epg():
+    global tvgrab
     log.info(f'update_epg')
     for i in range(5):
         tvgrab = await asyncio.create_subprocess_exec(f'{PREFIX}tv_grab_es_movistartv',
