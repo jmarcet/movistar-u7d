@@ -183,15 +183,15 @@ async def handle_flussonic(request, channel_id, url):
             cmd += ' --mp4 1'
         if request.args.get('vo', False):
             cmd += ' --vo 1'
+
         log.info(f'[{request.ip}] {request.raw_url} -> Recording [{record_time}s] {vod_msg}')
+        subprocess.Popen(cmd.split())
+        return response.json({'status': 'OK',
+                              'channel_id': channel_id, 'program_id': program_id,
+                              'offset': offset, 'time': record_time})
 
     try:
-        vod = await asyncio.create_subprocess_exec(*(cmd.split()))
-        if record:
-            return response.json({'status': 'OK',
-                                  'channel_id': channel_id, 'program_id': program_id,
-                                  'offset': offset, 'time': record_time})
-
+        vod = await asyncio.create_subprocess_exec(*(cmd.split()), pass_fds=[])
         with closing(await asyncio_dgram.bind((IPTV, client_port))) as stream:
             log.info(f'[{request.ip}] {request.raw_url} -> Playing {vod_msg}')
             try:
