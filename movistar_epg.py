@@ -61,11 +61,6 @@ async def after_server_start(app, loop):
     _t_epg1 = asyncio.create_task(update_epg_delayed())
 
     if RECORDINGS:
-        if os.path.exists(f'{recordings}.lock'):
-            os.remove(f'{recordings}.lock')
-        if os.path.exists(f'{timers}.lock'):
-            os.remove(f'{timers}.lock')
-
         if os.path.exists(timers):
             _ffmpeg = str(await get_ffmpeg_procs())
             [os.remove(t) for t in glob(f'{RECORDINGS}/**/*{TMP_EXT}')
