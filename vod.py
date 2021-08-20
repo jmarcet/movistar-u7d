@@ -3,7 +3,6 @@
 import argparse
 import asyncio
 import httpx
-import multiprocessing
 import os
 import re
 import signal
@@ -198,8 +197,7 @@ def on_completed():
         command += ['-v', 'panic', '-y', '-f', 'mp4']
         command += [filename + VID_EXT]
 
-        proc = multiprocessing.Process(target=subprocess.run, args=(command, ))
-        proc.start()
+        proc = subprocess.Popen(command)
 
         if len(subs):
             track, lang = re.search(r"^#([0-9:]+)[^:]*\((\w+)\):", subs[0]).groups()
@@ -211,7 +209,7 @@ def on_completed():
             command += ['-y', f'{filename}.{lang}.sub']
             subprocess.run(command)
 
-        proc.join()
+        proc.wait()
 
     if _check_recording():
         save_metadata()
