@@ -40,7 +40,7 @@ UA = 'MICA-IP-STB'
 Request = namedtuple('Request', ['request', 'response'])
 Response = namedtuple('Response', ['version', 'status', 'url', 'headers', 'body'])
 
-ffmpeg = FFmpeg().option('y')
+ffmpeg = FFmpeg().option('y').option('xerror')
 _ffmpeg = _log_prefix = _log_suffix = args = epg_url = filename = full_title = path = None
 needs_position = False
 
@@ -180,7 +180,6 @@ def on_completed():
 
     if not args.mp4:
         command += ['mkvmerge', '-q', '-o', filename + VID_EXT]
-        command += ['--default-language', 'spa']
         if args.vo:
             command += ['--track-order', '0:2,0:1,0:4,0:3,0:6,0:5']
             command += ['--default-track', '2:1']
@@ -283,7 +282,7 @@ def record_stream():
              seek2any='1',
              max_error_rate='0.0',
              t=str(args.time + 300),
-             v='panic',
+             v='info',
              vsync='2',
              f='matroska')
 
