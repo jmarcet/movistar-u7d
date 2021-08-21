@@ -192,7 +192,7 @@ async def handle_flussonic(request, channel_id, url):
                               'offset': offset, 'time': record_time})
 
     try:
-        vod = await asyncio.create_subprocess_exec(*(cmd.split()), pass_fds=[])
+        vod = await asyncio.create_subprocess_exec(*(cmd.split()),)
         with closing(await asyncio_dgram.bind((IPTV, client_port))) as stream:
             log.info(f'[{request.ip}] {request.raw_url} -> Playing {vod_msg}')
             try:
@@ -206,7 +206,10 @@ async def handle_flussonic(request, channel_id, url):
                     await _response.send((await stream.recv())[0])
             finally:
                 log.debug(f'[{request.ip}] {request.raw_url} -> Stopped {vod_msg}')
-                await _response.eof()
+                try:
+                    await _response.eof()
+                except AttributeError:
+                    pass
     finally:
         try:
             await vod.terminate()
