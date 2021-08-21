@@ -207,11 +207,10 @@ async def handle_flussonic(request, channel_id, url):
                 log.debug(f'[{request.ip}] {request.raw_url} -> Stopped {vod_msg}')
                 await _response.eof()
     finally:
-        if not record:
-            try:
-                await vod.terminate()
-            except (ProcessLookupError, TypeError):
-                pass
+        try:
+            await vod.terminate()
+        except (ProcessLookupError, TypeError):
+            pass
 
 
 @app.get('/favicon.ico')
