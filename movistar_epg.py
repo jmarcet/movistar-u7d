@@ -329,7 +329,7 @@ async def timers_check():
                             (channel not in _recordings or
                              (title not in repr(_recordings[channel]) and
                               timestamp not in _recordings[channel]))):
-                        log.info(f'Found match! {channel} {timestamp} "{title}"')
+                        log.info(f'Found match! {channel} {timestamp} {vo} "{title}"')
                         sanic_url = f'{SANIC_URL}/{channel}/{timestamp}.mp4'
                         sanic_url += f'?record=1'
                         if vo:
