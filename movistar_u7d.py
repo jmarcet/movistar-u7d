@@ -185,6 +185,7 @@ async def handle_flussonic(request, channel_id, url):
             cmd += ' --vo 1'
 
         log.info(f'[{request.ip}] {request.raw_url} -> Recording [{record_time}s] {vod_msg}')
+        signal.signal(signal.SIGCHLD, signal.SIG_IGN)
         subprocess.Popen(cmd.split())
         return response.json({'status': 'OK',
                               'channel_id': channel_id, 'program_id': program_id,
