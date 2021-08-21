@@ -381,7 +381,7 @@ async def update_epg_delayed():
 if __name__ == '__main__':
     try:
         app.run(host='127.0.0.1', port=8889,
-                access_log=False, auto_reload=True, debug=False, workers=1)
+                access_log=False, auto_reload=False, debug=False, workers=1)
     except KeyboardInterrupt:
         sys.exit(1)
     except Exception as ex:

@@ -225,7 +225,7 @@ async def handle_notfound(request):
 if __name__ == '__main__':
     try:
         app.run(host=SANIC_HOST, port=SANIC_PORT,
-                access_log=False, auto_reload=True, debug=False, workers=SANIC_THREADS)
+                access_log=False, auto_reload=False, debug=False, workers=SANIC_THREADS)
     except KeyboardInterrupt:
         sys.exit(1)
     except Exception as ex:
