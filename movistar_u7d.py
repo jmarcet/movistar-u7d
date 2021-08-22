@@ -172,11 +172,12 @@ async def handle_flussonic(request, channel_id, url):
     cmd = f'{PREFIX}vod.py {channel_id} {program_id} -s {offset}'
     cmd += f' -p {client_port} -i {request.ip}'
     remaining = str(int(duration) - int(offset))
+    record = int(request.args.get('record', 0))
     vod_msg = '"%s" %s [%s/%s]' % (name, program_id, offset, duration)
 
     if request.method == 'HEAD':
         return response.HTTPResponse(content_type=MIME_TS, status=200)
-    elif record := int(request.args.get('record', 0)):
+    elif record:
         record_time = record if record > 1 else remaining
         cmd += f' -t {record_time} -w'
         if MP4_OUTPUT or request.args.get('mp4', False):

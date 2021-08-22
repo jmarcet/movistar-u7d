@@ -981,7 +981,8 @@ class MulticastIPTV:
                 else:
                     x = re.search(r"(.+(?!T\d))(?: +T(\d+))? *Ep?.? *(\d+)[ -]*(.*)",
                                   full_title)
-                if x := x and x.groups():
+                if x and x.groups():
+                    x = x.groups()
                     serie = x[0].strip() if x[0] else \
                         full_title.split('-')[0].strip() if '-' in full_title else full_title
                     season = int(x[1]) if x[1] else season

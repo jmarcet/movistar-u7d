@@ -338,7 +338,8 @@ def main():
     describe['Accept'] = 'application/sdp'
     setup['Transport'] = f'MP2T/H2221/UDP;unicast;client_port={args.client_port}'
 
-    if not (url := get_vod_url(args.channel, args.broadcast)):
+    url = get_vod_url(args.channel, args.broadcast)
+    if not url:
         sys.stderr.write(f'{_log_prefix} Error: {ex}\n')
         sys.exit(1)
 

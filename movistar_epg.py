@@ -295,7 +295,8 @@ async def timers_check():
                 return
 
         _ffmpeg = await get_ffmpeg_procs()
-        if not (nr_procs := len(_ffmpeg)) < PARALLEL_RECORDINGS:
+        nr_procs = len(_ffmpeg)
+        if not nr_procs < PARALLEL_RECORDINGS:
             log.info(f'Already recording {nr_procs} streams')
             return
 
@@ -340,7 +341,8 @@ async def timers_check():
                             log.info(f'{sanic_url} => {r}')
                             if r.status_code == 200:
                                 timers_added.append(title)
-                                if not (nr_procs := nr_procs + 1) < PARALLEL_RECORDINGS:
+                                nr_procs += 1
+                                if not nr_procs < PARALLEL_RECORDINGS:
                                     log.info(f'Already recording {nr_procs} streams')
                                     return
                         except Exception as ex:
