@@ -107,16 +107,16 @@ class RtspClient(object):
 
     def print(self, req):
         return req.response
-        resp = req.response
-        _req = req.request.split('\r\n')[0].split(' ')
-        if 'TEARDOWN' not in _req:
-            return resp
-        tmp = _req[1].split('/')
-        _req[1] = (f'{tmp[0]}//{str(tmp[2])[:40]} '
-                   f'{args.channel} {args.broadcast} '
-                   f'-s {args.start} -p {args.client_port}')
-        sys.stdout.write(f'[{args.client_ip}][VOD] Req: {_req[0]} [{_req[1]}] '
-                         f'{_req[2]} => {resp.status}\n')
+        # resp = req.response
+        # _req = req.request.split('\r\n')[0].split(' ')
+        # if 'TEARDOWN' not in _req:
+        #     return resp
+        # tmp = _req[1].split('/')
+        # _req[1] = (f'{tmp[0]}//{str(tmp[2])[:40]} '
+        #            f'{args.channel} {args.broadcast} '
+        #            f'-s {args.start} -p {args.client_port}')
+        # sys.stdout.write(f'[{args.client_ip}][VOD] Req: {_req[0]} [{_req[1]}] '
+        #                  f'{_req[2]} => {resp.status}\n')
         # headers = self.serialize_headers(resp.headers)
         # sys.stderr.write('-' * WIDTH + '\n')
         # sys.stderr.write('Request: ' + req.request.split('\n')[0] + '\n')
@@ -124,7 +124,7 @@ class RtspClient(object):
         # if resp.body:
         #     sys.stderr.write(f'\n{resp.body.rstrip()}\n')
         # sys.stderr.write('-' * WIDTH + '\n')
-        return resp
+        # return resp
 
 
 def _check_recording():

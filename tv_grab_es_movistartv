@@ -33,8 +33,7 @@ import socket
 import struct
 import sys
 import time
-import traceback
-import ujson
+import ujson as json
 import xml.etree.ElementTree as ElTr
 
 from datetime import date, datetime, timedelta
@@ -332,7 +331,7 @@ class Cache:
             if os.path.isfile(fp):
                 try:
                     with open(fp) as fd:
-                        _data = ujson.loads(fd.read())['data']
+                        _data = json.loads(fd.read())['data']
                     _exp_date = int(_data['endTime'] / 1000)
                     if _exp_date < deadline:
                         logger.debug(f'Caché: {f} caducado [{time.ctime(_exp_date)}]')
@@ -344,7 +343,7 @@ class Cache:
     def __load(cfile):
         try:
             with open(f'{app_dir}/cache/{cfile}', 'r') as fp:
-                content = ujson.load(fp)
+                content = json.load(fp)
                 return content['data']
         except IOError:
             return None
@@ -352,7 +351,7 @@ class Cache:
     @staticmethod
     def __save(cfile, data):
         with open(f'{app_dir}/cache/{cfile}', 'w') as fp:
-            ujson.dump({'data': data}, fp, ensure_ascii=False, indent=4, sort_keys=True)
+            json.dump({'data': data}, fp, ensure_ascii=False, indent=4, sort_keys=True)
         # logger.debug(f'Cache: {cfile} guardado')
 
     def load_cookie(self):
@@ -838,7 +837,7 @@ class MulticastIPTV:
             sorted_new_epg = sorted(new_epg[channel])
             for i in range(len(sorted_new_epg) - 1):
                 _end = new_epg[channel][sorted_new_epg[i]]['end']
-                _next = new_epg[channel][sorted_new_epg[i + 1]]['start'] 
+                _next = new_epg[channel][sorted_new_epg[i + 1]]['start']
                 if _end > _next:
                     logger.error(f'{channel} {sorted_new_epg[i]} end={_end} >> next={_next}')
                     new_epg[channel][sorted_new_epg[i]]['end'] = _next
@@ -906,7 +905,7 @@ class MulticastIPTV:
         _t = 5
         for t in range(_t):
             xml = self.__get_xml_files(mcast_grp, mcast_port)
-            _msg = '[' + " ".join(sorted(xml)) + '] / [2_0 5_0 6_0]' 
+            _msg = '[' + " ".join(sorted(xml)) + '] / [2_0 5_0 6_0]'
             if '2_0' in xml and '5_0' in xml and '6_0' in xml:
                 logger.info(f'Ficheros XML descargados: {_msg}')
                 break
@@ -1071,8 +1070,8 @@ class XMLTV:
     def generate_xml(self, parsed_epg):
         logger.info('Generando la guía XMLTV: descargando info extendida')
         root = ElTr.Element('tv', {
-                'date': datetime.now().strftime('%Y%m%d%H%M%S'),
-                'generator_info_url': 'http://wiki.xmltv.org/index.php/XMLTVFormat'})
+            'date': datetime.now().strftime('%Y%m%d%H%M%S'),
+            'generator_info_url': 'http://wiki.xmltv.org/index.php/XMLTVFormat'})
         tz = int(abs(time.timezone / 3600)) + time.localtime().tm_isdst
         services = self.__get_client_channels()
         for channel_id in sorted(services, key=lambda key: int(services[key])):
@@ -1150,7 +1149,7 @@ class XMLTV:
             if ext_info and 'originalTitle' in ext_info else None
         if orig_title and \
                 orig_title not in program['full_title'] and not orig_title.startswith('Episod'):
-            tag_desc.text += f'«{orig_title}» ' 
+            tag_desc.text += f'«{orig_title}» '
         gens = self.__get_genre_and_subgenre(program['genre'])
         keys = self.__get_key_and_subkey(program['genre'], config['genres'])
         # Series
@@ -1196,7 +1195,7 @@ class XMLTV:
                         tag_actor = ElTr.SubElement(tag_credits, 'actor')
                         tag_actor.text = actor.strip()
             ElTr.SubElement(tag_programme, 'icon', {
-                    'src': f'http://{sanic}/Covers/' + ext_info['cover']})
+                'src': f'http://{sanic}/Covers/' + ext_info['cover']})
             tag_desc.text += '\n\n' + ext_info['description']
         tag_rating = ElTr.SubElement(tag_programme, 'rating', {'system': 'pl'})
         tag_value = ElTr.SubElement(tag_rating, 'value')
@@ -1243,7 +1242,7 @@ class XMLTV:
                 if channel_number == '0':
                     channel_number = '999'
                 channel_logo = f'http://{sanic}/Logos/' + \
-                                         self.__channels[channel_id]['logo_uri']
+                    self.__channels[channel_id]['logo_uri']
                 if 'replacement' in self.__channels[channel_id]:
                     channel_key = \
                         self.__channels[self.__channels[channel_id]['replacement']]['id']
@@ -1278,7 +1277,7 @@ def create_logger(argv):
     log_path = f'{app_dir}/{log_file}'
     handler = RotatingFileHandler(log_path,
                                   mode='a',
-                                  maxBytes=log_size*1048576,
+                                  maxBytes=log_size * 1048576,
                                   backupCount=2,
                                   encoding=None,
                                   delay=0)
@@ -1428,6 +1427,4 @@ try:
 
 except Exception as e:
     logger.critical(f'{e}')
-    # print(u'Excepción:\n\n\t %s\n\nTraceback:\n\n\t%s'
-    #       % (repr(e), traceback.format_exc()))
     sys.exit(1)

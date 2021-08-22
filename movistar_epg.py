@@ -12,10 +12,9 @@ from asyncio.subprocess import DEVNULL
 from datetime import datetime
 from glob import glob
 from setproctitle import setproctitle
-from sanic import Sanic, exceptions, response
+from sanic import Sanic, response
 from sanic.compat import open_async
-from sanic.log import logger as log
-from sanic.log import LOGGING_CONFIG_DEFAULTS
+from sanic.log import logger as log, LOGGING_CONFIG_DEFAULTS
 from vod import TMP_EXT
 
 
@@ -215,7 +214,7 @@ async def handle_program_name(request, channel_id, program_id):
     _t_timers_r = asyncio.create_task(timers_check())
 
     log.info(f'Recording DONE: {channel_id} {program_id} "' + _epg['full_title'] + '"')
-    return response.json({'status': 'Recorded OK', 'full_title': _epg['full_title'],},
+    return response.json({'status': 'Recorded OK', 'full_title': _epg['full_title'], },
                          ensure_ascii=False)
 
 

@@ -4,19 +4,15 @@ import aiohttp
 import asyncio
 import asyncio_dgram
 import os
-import re
 import signal
 import socket
-import struct
 import subprocess
 import sys
 
 from contextlib import closing
 from setproctitle import setproctitle
-from sanic import Sanic, exceptions, response
-from sanic.log import logger as log
-from sanic.log import LOGGING_CONFIG_DEFAULTS
-from threading import Thread
+from sanic import Sanic, response
+from sanic.log import logger as log, LOGGING_CONFIG_DEFAULTS
 from vod import find_free_port, COVER_URL, IMAGENIO_URL
 
 
