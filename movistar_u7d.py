@@ -164,7 +164,7 @@ async def handle_flussonic(request, channel_id, url):
     if not program_id:
         return response.json({'status': f'{channel_id}/{url} not found'}, 404)
 
-    client_port = find_free_port()
+    client_port = find_free_port(IPTV)
     cmd = f'{PREFIX}vod.py {channel_id} {program_id} -s {offset}'
     cmd += f' -p {client_port} -i {request.ip}'
     remaining = str(int(duration) - int(offset))

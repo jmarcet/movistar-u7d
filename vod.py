@@ -154,9 +154,9 @@ def _cleanup():
         os.remove(filename + TMP_EXT)
 
 
-def find_free_port():
+def find_free_port(iface=''):
     with closing(socket.socket(socket.AF_INET, socket.SOCK_DGRAM)) as s:
-        s.bind(('', 0))
+        s.bind((iface, 0))
         s.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
         return s.getsockname()[1]
 
@@ -414,7 +414,7 @@ if __name__ == '__main__':
     args = parser.parse_args()
 
     if not args.client_port:
-        args.client_port = find_free_port()
+        args.client_port = find_free_port(IPTV)
 
     _log_prefix = f"{'[' + args.client_ip + '] ' if args.client_ip else ''}[VOD:{os.getpid()}]"
     _log_suffix = f'{args.channel} {args.broadcast}'
