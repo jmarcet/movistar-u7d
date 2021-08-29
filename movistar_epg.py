@@ -40,6 +40,8 @@ PREFIX = ''
 app = Sanic('movistar_epg')
 app.config.update({'KEEP_ALIVE_TIMEOUT': YEAR_SECONDS})
 
+epg_data = os.path.join(HOME, '.xmltv/cache/epg.json')
+epg_metadata = os.path.join(HOME, '.xmltv/cache/epg_metadata.json')
 recordings = os.path.join(HOME, 'recordings.json')
 timers = os.path.join(HOME, 'timers.json')
 recordings_lock = asyncio.Lock()
@@ -56,7 +58,11 @@ async def after_server_start(app, loop):
     if __file__.startswith('/app/'):
         PREFIX = '/app/'
 
-    await reload_epg()
+    if not os.path.exists(epg_data):
+        log.info('No epg.json found. Need to download the entire EPG. Please be patient...')
+        await update_epg()
+    else:
+        await reload_epg()
     _t_epg1 = asyncio.create_task(update_epg_delayed())
 
     if RECORDINGS:
@@ -235,8 +241,6 @@ async def handle_timers_check(request):
 
 async def reload_epg():
     global _channels, _epgdata
-    epg_data = os.path.join(HOME, '.xmltv/cache/epg.json')
-    epg_metadata = os.path.join(HOME, '.xmltv/cache/epg_metadata.json')
 
     try:
         async with await open_async(epg_data) as f:
