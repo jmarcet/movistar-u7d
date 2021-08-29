@@ -239,7 +239,7 @@ async def reload_epg():
     global _channels, _epgdata
 
     if not os.path.exists(epg_data) or not os.path.exists(epg_metadata):
-        log.info('Need to download the entire EPG. Please be patient...')
+        log.warning('No EPG found!. Need to download it. Please be patient...')
         await update_epg()
 
     try:
