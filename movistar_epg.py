@@ -58,11 +58,7 @@ async def after_server_start(app, loop):
     if __file__.startswith('/app/'):
         PREFIX = '/app/'
 
-    if not os.path.exists(epg_data):
-        log.info('No epg.json found. Need to download the entire EPG. Please be patient...')
-        await update_epg()
-    else:
-        await reload_epg()
+    await reload_epg()
     _t_epg1 = asyncio.create_task(update_epg_delayed())
 
     if RECORDINGS:
@@ -242,6 +238,10 @@ async def handle_timers_check(request):
 async def reload_epg():
     global _channels, _epgdata
 
+    if not os.path.exists(epg_data) or not os.path.exists(epg_metadata):
+        log.info('Need to download the entire EPG. Please be patient...')
+        await update_epg()
+
     try:
         async with await open_async(epg_data) as f:
             epgdata = ujson.loads(await f.read())['data']
@@ -249,8 +249,9 @@ async def reload_epg():
         log.info('Loaded fresh EPG data')
     except (FileNotFoundError, TypeError, ValueError) as ex:
         log.error(f'Failed to load EPG data {ex}')
-        if not _epgdata:
-            raise
+        if os.path.exists(epg_data):
+            os.remove(epg_data)
+        return await reload_epg()
 
     try:
         async with await open_async(epg_metadata) as f:
@@ -259,8 +260,9 @@ async def reload_epg():
         log.info('Loaded Channels metadata')
     except (FileNotFoundError, TypeError, ValueError) as ex:
         log.error(f'Failed to load Channels metadata {ex}')
-        if not _channels:
-            raise
+        if os.path.exists(epg_metadata):
+            os.remove(epg_metadata)
+        return await reload_epg()
 
     log.info(f'Total Channels: {len(_epgdata)}')
     nr_epg = 0
