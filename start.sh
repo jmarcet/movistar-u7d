@@ -2,6 +2,8 @@
 
 [ -n "${U7D_UID}" ] && _SUDO="s6-setuidgid ${U7D_UID}"
 
+echo "nameserver 172.26.23.3" > /etc/resolv.conf
+
 _ping()
 {
     while ! ping -q -c 1 -W 1 $1 >/dev/null; do echo "$2"; sleep 1; done
