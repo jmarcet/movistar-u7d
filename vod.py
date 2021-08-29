@@ -317,9 +317,10 @@ def save_metadata():
                              f'.{image_ext}')
                 with open(_img_name, 'wb') as f:
                     f.write(resp.read())
-        metadata['name'] = full_title
+        metadata['title'] = full_title
         metadata.pop('covers', None)
         metadata.pop('logos', None)
+        metadata.pop('name', None)
         with open(filename + NFO_EXT, 'w') as f:
             f.write(json2xml.Json2xml(metadata, attr_type=False,
                                       pretty=True, wrapper='metadata').to_xml())
