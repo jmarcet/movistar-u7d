@@ -148,6 +148,8 @@ systemctl start movistar_u7d
 
  - Sin systemd, tendremos que lanzar directamente los dos `movistar_u7d.py` y `movistar_epg.py`.
 
+ - En cualquier caso, si lo usas sin docker, es importante que el proxy tenga acceso a las DNS de Movistar, 172.26.23.3
+
  - La primera vez tendremos que esperar a que termine de descargar la guía, ya que sin EPG no funcionará nada.
 
  - Puede ser necesario establecer algunas variables de entorno. Lás principales son `LAN_IP` e `IPTV_ADDRESS`. `LAN_IP` es la ip donde queremos alojar el servicio, por defecto escuchará en todos los interfaces de red. `IPTV_ADDRESS` corresponde a la ip de la vlan2 de Movistar, la que tiene el tráfico iptv; en caso de hacerlo funcionar dentro del propio router, será imprescindible.
