@@ -58,6 +58,11 @@ async def after_server_start(app, loop):
     if __file__.startswith('/app/'):
         PREFIX = '/app/'
 
+    while not os.path.exists(CHANNELS):
+        tvgrab = await asyncio.create_subprocess_exec(f'{PREFIX}tv_grab_es_movistartv',
+                                                      '--m3u', CHANNELS)
+        await tvgrab.wait()
+
     await reload_epg()
     _t_epg1 = asyncio.create_task(update_epg_delayed())
 
