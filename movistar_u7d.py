@@ -70,6 +70,7 @@ async def handle_channels(request):
     return await response.file(CHANNELS)
 
 
+@app.get('/guia.xml')
 @app.get('/guide.xml')
 async def handle_guide(request):
     log.info(f'[{request.ip}] {request.method} {request.url}')
