@@ -23,6 +23,8 @@ while ! test -e "${HOME:-/home}/MovistarTV.m3u"; do
     ${_SUDO} /app/tv_grab_es_movistartv --m3u "${HOME:-/home}/MovistarTV.m3u"
     sleep 15
 done
+test -e "${HOME:-/home}/canales.m3u"  || ln -s MovistarTV.m3u "${HOME:-/home}/canales.m3u"
+test -e "${HOME:-/home}/channels.m3u" || ln -s MovistarTV.m3u "${HOME:-/home}/channels.m3u"
 
 while ! test -e "${HOME:-/home}/guide.xml"; do
     ${_SUDO} /app/tv_grab_es_movistartv \

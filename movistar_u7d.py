@@ -60,6 +60,7 @@ async def after_server_start(app, loop):
     SESSION = aiohttp.ClientSession(connector=conn)
 
 
+@app.get('/canales.m3u')
 @app.get('/channels.m3u')
 @app.get('/MovistarTV.m3u')
 async def handle_channels(request):
