@@ -59,6 +59,7 @@ async def after_server_start(app, loop):
         PREFIX = '/app/'
 
     while not os.path.exists(CHANNELS):
+        log.warning('No channel list found. Creating m3u playlist, please be patient...')
         tvgrab = await asyncio.create_subprocess_exec(f'{PREFIX}tv_grab_es_movistartv',
                                                       '--m3u', CHANNELS)
         await tvgrab.wait()
