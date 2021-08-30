@@ -16,7 +16,16 @@ Ofrece compatibilidad completa con:
 
 Una vez instalado el servicio, tendremos las siguientes URLs disponibles, donde 192.168.1.1 será la IP donde funcione este proxy:
 
- - Canales: `http://192.168.1.1:8888/channels.m3u` o `http://192.168.1.1:8888/MovistarTV.m3u`
+ - Canales: `http://192.168.1.1:8888/MovistarTV.m3u` `http://192.168.1.1:8888/canales.m3u` o `http://192.168.1.1:8888/channels.m3u`
+
+Recuerda que si no usas docker, necesitar generar la lista de canales manualmente:
+
+```
+tv_grab_es_movistartv --m3u "${HOME:-/home}/MovistarTV.m3u"
+ln -s MovistarTV.m3u "${HOME:-/home}/canales.m3u"
+ln -s MovistarTV.m3u "${HOME:-/home}/channels.m3u"
+```
+
 
  - Guía de programación (EPG): `http://192.168.1.1:8888/guide.xml`
 
