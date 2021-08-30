@@ -19,20 +19,6 @@ else
     _ping `hostname` "Waiting for `hostname` to be pingable..."
 fi
 
-while ! test -e "${HOME:-/home}/MovistarTV.m3u"; do
-    ${_SUDO} /app/tv_grab_es_movistartv --m3u "${HOME:-/home}/MovistarTV.m3u"
-    sleep 15
-done
-test -e "${HOME:-/home}/canales.m3u"  || ln -s MovistarTV.m3u "${HOME:-/home}/canales.m3u"
-test -e "${HOME:-/home}/channels.m3u" || ln -s MovistarTV.m3u "${HOME:-/home}/channels.m3u"
-
-while ! test -e "${HOME:-/home}/guide.xml"; do
-    ${_SUDO} /app/tv_grab_es_movistartv \
-        --tvheadend "${HOME:-/home}/MovistarTV.m3u" \
-        --output "${HOME:-/home}/guide.xml"
-    sleep 15
-done
-
 ( while (true); do nice -n -10 ionice -c 2 -n 0 ${_SUDO} /app/movistar_epg.py; sleep 1; done ) &
 ( while (true); do nice -n -15 ionice -c 1 -n 0 ${_SUDO} /app/movistar_u7d.py; sleep 1; done ) &
 

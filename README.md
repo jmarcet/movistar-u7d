@@ -22,10 +22,7 @@ Recuerda que si no usas docker, necesitar generar la lista de canales manualment
 
 ```
 tv_grab_es_movistartv --m3u "${HOME:-/home}/MovistarTV.m3u"
-ln -s MovistarTV.m3u "${HOME:-/home}/canales.m3u"
-ln -s MovistarTV.m3u "${HOME:-/home}/channels.m3u"
 ```
-
 
  - Guía de programación (EPG): `http://192.168.1.1:8888/guide.xml`
 

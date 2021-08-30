@@ -238,7 +238,8 @@ async def handle_timers_check(request):
 async def reload_epg():
     global _channels, _epgdata
 
-    if not os.path.exists(epg_data) or not os.path.exists(epg_metadata):
+    if not os.path.exists(epg_data) or not os.path.exists(epg_metadata) \
+            or not os.path.exists(GUIDE):
         log.warning('No EPG found!. Need to download it. Please be patient...')
         await update_epg()
 

@@ -59,14 +59,17 @@ async def after_server_start(app, loop):
     conn = aiohttp.TCPConnector(keepalive_timeout=YEAR_SECONDS, limit_per_host=1)
     SESSION = aiohttp.ClientSession(connector=conn)
 
+    if not os.path.exists(CHANNELS):
+        tvgrab = await asyncio.create_subprocess_exec(f'{PREFIX}tv_grab_es_movistartv',
+                                                      '--m3u', CHANNELS)
+        await tvgrab.wait()
+
 
 @app.get('/canales.m3u')
 @app.get('/channels.m3u')
 @app.get('/MovistarTV.m3u')
 async def handle_channels(request):
     log.info(f'[{request.ip}] {request.method} {request.url}')
-    if not os.path.exists(CHANNELS):
-        return response.json({}, 404)
     return await response.file(CHANNELS)
 
 
