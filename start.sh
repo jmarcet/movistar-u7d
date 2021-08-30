@@ -3,7 +3,7 @@
 [ -n "${U7D_UID}" ] && _SUDO="s6-setuidgid ${U7D_UID}"
 
 grep -q '172.26.23.3' /etc/resolv.conf || \
-    sed "/nameserver/i nameserver 172.26.23.3" -i /etc/resolv.conf
+    sed "1 i nameserver 172.26.23.3" -i /etc/resolv.conf
 
 _ping()
 {
