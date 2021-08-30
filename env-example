@@ -2,7 +2,8 @@
 # HOME=/home                         # directorio donde quedará guardada la caché de tv_grab_es_movistartv
 # IPTV_ADDRESS=                      # ip de la vlan2 de movistar, la de iptv
 # LAN_IP=                            # ip donde queremos tener el proxy funcionando
-# MP4_OUTPUT=1                       # Get split mp4 + vobsub files for existing subs
+# EPG_THREADS=3                      # número de hilos para la descarga de la epg
+# MP4_OUTPUT=                        # hacer grabaciones a fichero .mp4 y .sub por separado
 # PARALLEL_RECORDINGS=4              # número de grabaciones simultáneas
 # RECORDIGS=/home/recordings         # directorio para grabaciones
 # SANIC_PORT=8888                    # puerto del proxy

@@ -61,6 +61,7 @@ else:
 EPG_CHANNELS = ['1', '2', '3', '4', '5', '6', '477', '578', '582', '597', '657',
                 '663', '717', '743', '744', '745', '844', '884', '934', '935',
                 '1221', '2843', '2863', '3184', '3186', '3325', '3443', '3603', '4911']
+EPG_THREADS = int(os.getenv('EPG_THREADS', '3'))
 SANIC_PORT = int(os.getenv('SANIC_PORT', '8888'))
 
 sanic = f'{LAN_IP}:{SANIC_PORT}'
@@ -794,7 +795,7 @@ class MulticastIPTV:
 
     def __get_bin_epg_threaded(self):
         queue = Queue()
-        threads = 8
+        threads = EPG_THREADS
         day = -1
         self.__epg = [{} for r in range(0, len(self.__xml_data['segments']))]
         logger.info(f'Multithread: {threads} descargas simultáneas')
