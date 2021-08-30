@@ -18,12 +18,6 @@ Una vez instalado el servicio, tendremos las siguientes URLs disponibles, donde 
 
  - Canales: `http://192.168.1.1:8888/MovistarTV.m3u` `http://192.168.1.1:8888/canales.m3u` o `http://192.168.1.1:8888/channels.m3u`
 
-Recuerda que si no usas docker, necesitar generar la lista de canales manualmente:
-
-```
-tv_grab_es_movistartv --m3u "${HOME:-/home}/MovistarTV.m3u"
-```
-
  - Guía de programación (EPG): `http://192.168.1.1:8888/guide.xml`
 
 Con configurar esas dos cosas debería ser suficiente. Aseguráos de que el cliente que uséis guarda al menos 8 días de historial del EPG. En el caso del `Kodi IPTV Simple`, además de añadir la lista de canales y la guía (sin caché) en los ajustes del addon, deberemos activar el Timeshift y el Catchup. Éste último en modo Default con 8 días de catchup y la opción de Reproducir desde la EPG en modo Live TV. De esta manera conseguiremos una experiencia de uso prácticamente idéntica a la del `TiviMate`, manteniendo la interfaz de LiveTV con el Catchup, con reproducción continua, etc.
