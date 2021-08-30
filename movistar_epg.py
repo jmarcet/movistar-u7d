@@ -59,7 +59,7 @@ async def after_server_start(app, loop):
         PREFIX = '/app/'
 
     while not os.path.exists(CHANNELS):
-        log.warning(f'No {CHANNELS} found. Generating it, please be patient...')
+        log.warning(f'No {CHANNELS} found. Generating it. Please be patient...')
         tvgrab = await asyncio.create_subprocess_exec(f'{PREFIX}tv_grab_es_movistartv',
                                                       '--m3u', CHANNELS)
         await tvgrab.wait()
@@ -246,7 +246,7 @@ async def reload_epg():
 
     if not os.path.exists(epg_data) or not os.path.exists(epg_metadata) \
             or not os.path.exists(GUIDE):
-        log.warning('No EPG found!. Need to download it. Please be patient...')
+        log.warning(f'No {GUIDE} found!. Need to download it. Please be patient...')
         await update_epg()
 
     try:
