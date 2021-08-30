@@ -152,8 +152,7 @@ systemctl start movistar_u7d
 
  - La primera vez tendremos que esperar a que termine de descargar la guía, ya que sin EPG no funcionará nada.
 
- - Puede ser necesario establecer algunas variables de entorno. Lás principales son `LAN_IP` e `IPTV_ADDRESS`. `LAN_IP` es la ip donde queremos alojar el servicio, por defecto escuchará en todos los interfaces de red. `IPTV_ADDRESS` corresponde a la ip de la vlan2 de Movistar, la que tiene el tráfico iptv; en caso de hacerlo funcionar dentro del propio router, será imprescindible.
-
+ - Puede ser necesario establecer alguna variable de entorno. La más importante es `LAN_IP`, que corresponde a la ip que tendrán los canales de tv, por defecto usa la ip local principal.
 
 Instalación en el propio router con docker-compose
 --------------------------------------------------

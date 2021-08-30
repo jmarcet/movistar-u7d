@@ -20,7 +20,6 @@ services:
     #environment:
     # - U7D_UID=${U7D_UID}
     # - U7D_GID=${U7D_GID}
-    # - IPTV_ADDRESS=${IPTV_ADDRESS}
     # - LAN_IP=${LAN_IP}
     # - EPG_THREADS=${EPG_THREADS}
     # - PARALLEL_RECORDINGS=${PARALLEL_RECORDINGS}

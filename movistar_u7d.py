@@ -18,13 +18,6 @@ from vod import find_free_port, COVER_URL, IMAGENIO_URL
 
 setproctitle('movistar_u7d')
 
-if 'IPTV_ADDRESS' in os.environ:
-    IPTV = os.getenv('IPTV_ADDRESS')
-else:
-    s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
-    s.connect(("172.26.23.3", 53))
-    IPTV = s.getsockname()[0]
-
 SANIC_EPG_URL = 'http://127.0.0.1:8889'
 SANIC_HOST = os.getenv('LAN_IP', '0.0.0.0')
 SANIC_PORT = int(os.getenv('SANIC_PORT', '8888'))
@@ -35,8 +28,7 @@ GUIDE = os.path.join(HOME, 'guide.xml')
 CHANNELS = os.path.join(HOME, 'MovistarTV.m3u')
 MIME_TS = 'video/MP2T;audio/mp3'
 MP4_OUTPUT = bool(os.getenv('MP4_OUTPUT', False))
-SESSION = None
-SESSION_LOGOS = None
+IPTV = SESSION = SESSION_LOGOS = None
 YEAR_SECONDS = 365 * 24 * 60 * 60
 
 LOG_SETTINGS = LOGGING_CONFIG_DEFAULTS
@@ -52,9 +44,14 @@ app.config.update({'REQUEST_TIMEOUT': 1, 'RESPONSE_TIMEOUT': 1})
 @app.listener('after_server_start')
 async def after_server_start(app, loop):
     log.debug('after_server_start')
-    global PREFIX, SESSION
+    global IPTV, PREFIX, SESSION
     if __file__.startswith('/app/'):
         PREFIX = '/app/'
+
+    s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+    s.connect(("172.26.23.3", 53))
+    IPTV = s.getsockname()[0]
+    s.close()
 
     conn = aiohttp.TCPConnector(keepalive_timeout=YEAR_SECONDS, limit_per_host=1)
     SESSION = aiohttp.ClientSession(connector=conn)
@@ -170,7 +167,7 @@ async def handle_flussonic(request, channel_id, url):
 
     client_port = find_free_port(IPTV)
     cmd = f'{PREFIX}vod.py {channel_id} {program_id} -s {offset}'
-    cmd += f' -p {client_port} -i {request.ip}'
+    cmd += f' -p {client_port} -i {request.ip} -a {IPTV}'
     remaining = str(int(duration) - int(offset))
     record = int(request.args.get('record', 0))
     vod_msg = '"%s" %s [%s/%s]' % (name, program_id, offset, duration)

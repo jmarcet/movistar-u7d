@@ -20,13 +20,6 @@ from json2xml import json2xml
 from threading import Thread
 
 
-if 'IPTV_ADDRESS' in os.environ:
-    IPTV = os.getenv('IPTV_ADDRESS')
-else:
-    s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
-    s.connect(("172.26.23.3", 53))
-    IPTV = s.getsockname()[0]
-
 CACHE_DIR = os.path.join(os.getenv('HOME', '/home'), '.xmltv/cache/programs')
 IMAGENIO_URL = 'http://html5-static.svc.imagenio.telefonica.net/appclientv/nux/incoming/epg'
 COVER_URL = f'{IMAGENIO_URL}/covers/programmeImages/portrait/290x429'
@@ -275,7 +268,7 @@ def record_stream():
     _log_suffix += f' [{args.time}s] "{filename[20:]}"\n'
 
     ffmpeg.input(
-        f'udp://@{IPTV}:{args.client_port}',
+        f'udp://@{args.iptv_ip}:{args.client_port}',
         fifo_size=5572,
         pkt_size=1316,
         timeout=500000
@@ -406,6 +399,7 @@ if __name__ == '__main__':
     parser = argparse.ArgumentParser('Stream content from the Movistar VOD service.')
     parser.add_argument('channel', help='channel id')
     parser.add_argument('broadcast', help='broadcast id')
+    parser.add_argument('--iptv_ip', '-a', help='iptv address')
     parser.add_argument('--client_ip', '-i', help='client ip address')
     parser.add_argument('--client_port', '-p', help='client udp port', type=int)
     parser.add_argument('--start', '-s', help='stream start offset', type=int)
@@ -416,8 +410,14 @@ if __name__ == '__main__':
 
     args = parser.parse_args()
 
+    if not args.iptv_ip:
+        s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+        s.connect(("172.26.23.3", 53))
+        args.iptv_ip = s.getsockname()[0]
+        s.close
+
     if not args.client_port:
-        args.client_port = find_free_port(IPTV)
+        args.client_port = find_free_port(args.iptv_ip)
 
     _log_prefix = f"{'[' + args.client_ip + '] ' if args.client_ip else ''}[VOD:{os.getpid()}]"
     _log_suffix = f'{args.channel} {args.broadcast}'
