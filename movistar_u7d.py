@@ -21,7 +21,9 @@ setproctitle('movistar_u7d')
 if 'IPTV_ADDRESS' in os.environ:
     IPTV = os.getenv('IPTV_ADDRESS')
 else:
-    IPTV = socket.gethostbyname(socket.gethostname())
+    s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+    s.connect(("172.26.23.3", 53))
+    IPTV = s.getsockname()[0]
 
 SANIC_EPG_URL = 'http://127.0.0.1:8889'
 SANIC_HOST = os.getenv('LAN_IP', '0.0.0.0')

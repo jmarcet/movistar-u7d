@@ -23,7 +23,9 @@ from threading import Thread
 if 'IPTV_ADDRESS' in os.environ:
     IPTV = os.getenv('IPTV_ADDRESS')
 else:
-    IPTV = socket.gethostbyname(socket.gethostname())
+    s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+    s.connect(("172.26.23.3", 53))
+    IPTV = s.getsockname()[0]
 
 CACHE_DIR = os.path.join(os.getenv('HOME', '/home'), '.xmltv/cache/programs')
 IMAGENIO_URL = 'http://html5-static.svc.imagenio.telefonica.net/appclientv/nux/incoming/epg'

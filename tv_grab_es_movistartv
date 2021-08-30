@@ -49,7 +49,9 @@ setproctitle('tv_grab_es_movistartv')
 if 'IPTV_ADDRESS' in os.environ:
     IPTV = os.getenv('IPTV_ADDRESS')
 else:
-    IPTV = socket.gethostbyname(socket.gethostname())
+    s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+    s.connect(("172.26.23.3", 53))
+    IPTV = s.getsockname()[0]
 
 if 'LAN_IP' in os.environ:
     LAN_IP = os.getenv('LAN_IP')
