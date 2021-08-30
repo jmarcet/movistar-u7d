@@ -353,7 +353,11 @@ class Cache:
     @staticmethod
     def __save(cfile, data):
         with open(f'{app_dir}/cache/{cfile}', 'w') as fp:
-            json.dump({'data': data}, fp, ensure_ascii=False, indent=4, sort_keys=True)
+            try:
+                json.dump({'data': data}, fp, ensure_ascii=False, indent=4, sort_keys=True)
+            except AttributeError:
+                json.dump({'data': data}, fp, ensure_ascii=False, sort_keys=True)
+
         # logger.debug(f'Cache: {cfile} guardado')
 
     def load_cookie(self):
