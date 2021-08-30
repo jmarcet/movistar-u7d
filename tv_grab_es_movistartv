@@ -406,12 +406,6 @@ class Cache:
     def save_service_provider_data(self, data):
         self.__save('provider.json', data)
 
-    def load_epg_data(self):
-        data = self.__load('epg_metadata.json')
-        if not data:
-            logger.debug('Caché: metadatos de la EPG no encontrados')
-        return data
-
     def save_epg_data(self, data):
         self.__save('epg_metadata.json', data)
 
@@ -914,14 +908,11 @@ class MulticastIPTV:
             else:
                 logger.info(f'Ficheros XML incompletos [{t+1}/{_t}]: {_msg}')
                 time.sleep(10)
-        data = cache.load_epg_data()
-        logger.info('Canales: %i' % len(data['channels']))
-        logger.info('Paquetes: %i' % len(data['packages']))
-        self.__xml_data = data
         logger.info('Descargando canales y paquetes')
-        self.__xml_data = {
-            'channels': self.__get_channels(xml['2_0']),
-            'packages': self.__get_packages(xml['5_0'])}
+        self.__xml_data['channels'] = self.__get_channels(xml['2_0'])
+        logger.info('Canales: %i' % len(self.__xml_data['channels']))
+        self.__xml_data['packages'] = self.__get_packages(xml['5_0'])
+        logger.info('Paquetes: %i' % len(self.__xml_data['packages']))
         logger.info('Descargando índices')
         self.__xml_data['segments'] = self.__get_segments(xml['6_0'])
         cache.save_epg_data(self.__xml_data)
