@@ -21,12 +21,12 @@ from vod import TMP_EXT
 setproctitle('movistar_epg')
 
 HOME = os.getenv('HOME', '/home/')
-GUIDE = os.path.join(HOME, 'guide.xml')
 CHANNELS = os.path.join(HOME, 'MovistarTV.m3u')
+GUIDE = os.path.join(HOME, 'guide.xml')
 SANIC_HOST = os.getenv('LAN_IP', '127.0.0.1')
 SANIC_PORT = int(os.getenv('SANIC_PORT', '8888'))
 SANIC_URL = f'http://{SANIC_HOST}:{SANIC_PORT}'
-PARALLEL_RECORDINGS = int(os.getenv('PARALLEL_RECORDINGS', '4'))
+RECORDING_THREADS = int(os.getenv('RECORDING_THREADS', '4'))
 RECORDINGS = os.getenv('RECORDINGS', '/tmp')
 
 YEAR_SECONDS = 365 * 24 * 60 * 60
@@ -308,7 +308,7 @@ async def timers_check():
 
         _ffmpeg = await get_ffmpeg_procs()
         nr_procs = len(_ffmpeg)
-        if not nr_procs < PARALLEL_RECORDINGS:
+        if not nr_procs < RECORDING_THREADS:
             log.info(f'Already recording {nr_procs} streams')
             return
 
@@ -354,7 +354,7 @@ async def timers_check():
                             if r.status_code == 200:
                                 timers_added.append(title)
                                 nr_procs += 1
-                                if not nr_procs < PARALLEL_RECORDINGS:
+                                if not nr_procs < RECORDING_THREADS:
                                     log.info(f'Already recording {nr_procs} streams')
                                     return
                         except Exception as ex:

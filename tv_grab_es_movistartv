@@ -46,27 +46,9 @@ from xml.sax.saxutils import unescape
 
 setproctitle('tv_grab_es_movistartv')
 
-EPG_CHANNELS = ['1', '2', '3', '4', '5', '6', '477', '578', '582', '597', '657',
+epg_channels = ['1', '2', '3', '4', '5', '6', '477', '578', '582', '597', '657',
                 '663', '717', '743', '744', '745', '844', '884', '934', '935',
                 '1221', '2843', '2863', '3184', '3186', '3325', '3443', '3603', '4911']
-EPG_THREADS = int(os.getenv('EPG_THREADS', '4'))
-SANIC_PORT = int(os.getenv('SANIC_PORT', '8888'))
-
-s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
-s.connect(("172.26.23.3", 53))
-IPTV = s.getsockname()[0]
-s.close()
-
-if 'LAN_IP' in os.environ:
-    LAN_IP = os.getenv('LAN_IP')
-else:
-    LAN_IP = [l for l in ([ip for ip in socket.gethostbyname_ex(socket.gethostname())[2]
-        if not ip.startswith("127.")][:1], [[(s.connect(('8.8.8.8', 53)), s.getsockname()[0],
-        s.close()) for s in [socket.socket(socket.AF_INET, socket.SOCK_DGRAM)]][0][1]])
-        if l][0][0]
-
-sanic = f'{LAN_IP}:{SANIC_PORT}'
-
 
 demarcations = {
     'Andalucia': 15,
@@ -643,9 +625,9 @@ class MulticastIPTV:
             sock.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
             sock.settimeout(3)
             sock.bind((mc_grp, int(mc_port)))
-            sock.setsockopt(socket.SOL_IP, socket.IP_MULTICAST_IF, socket.inet_aton(IPTV))
+            sock.setsockopt(socket.SOL_IP, socket.IP_MULTICAST_IF, socket.inet_aton(_iptv))
             sock.setsockopt(socket.SOL_IP, socket.IP_ADD_MEMBERSHIP,
-                            socket.inet_aton(mc_grp) + socket.inet_aton(IPTV))
+                            socket.inet_aton(mc_grp) + socket.inet_aton(_iptv))
             # Wait for an end chunk to start by the beginning
             while not (chunk["end"]):
                 chunk = self.__parse_chunk(sock.recv(1500))
@@ -796,7 +778,7 @@ class MulticastIPTV:
 
     def __get_bin_epg_threaded(self):
         queue = Queue()
-        threads = EPG_THREADS
+        threads = epg_threads
         day = -1
         self.__epg = [{} for r in range(0, len(self.__xml_data['segments']))]
         logger.info(f'Multithread: {threads} descargas simultáneas')
@@ -818,7 +800,7 @@ class MulticastIPTV:
     def __drop_encrypted_channels(epg):
         if not epg:
             return None
-        channels = [channel for channel in epg if channel in EPG_CHANNELS]
+        channels = [channel for channel in epg if channel in epg_channels]
         logger.info(f'Conservando {len(channels)} canales en abierto')
         clean_channels = {}
         for channel in channels:
@@ -1084,7 +1066,7 @@ class XMLTV:
             if channel_id in self.__channels:
                 chid = self.__channels[channel_id]['replacement'] \
                     if 'replacement' in self.__channels[channel_id] else channel_id
-                if chid not in EPG_CHANNELS:
+                if chid not in epg_channels:
                     logger.info(f'XML: Saltando canal encriptado {chid}')
                     continue
                 if chid in parsed_epg:
@@ -1243,7 +1225,7 @@ class XMLTV:
                 if 'replacement' in self.__channels[channel_id]:
                     channel_key = \
                         self.__channels[self.__channels[channel_id]['replacement']]['id']
-                if channel_key not in EPG_CHANNELS:
+                if channel_key not in epg_channels:
                     logger.info('M3U: Saltando canal encriptado '
                                 f'{channel_name} '
                                 f'{channel_id} '
@@ -1351,6 +1333,27 @@ def export_channels(m3u_file):
     xmltv.write_m3u(m3u_file)
     logger.info(f'Lista de canales exportada: {m3u_file}')
 
+
+# Determina la primera IP de rango local
+if 'LAN_IP' in os.environ:
+    lan_ip = os.getenv('LAN_IP')
+else:
+    lan_ip = [l for l in ([ip for ip in socket.gethostbyname_ex(socket.gethostname())[2]
+        if not ip.startswith("127.")][:1], [[(s.connect(('8.8.8.8', 53)), s.getsockname()[0],
+        s.close()) for s in [socket.socket(socket.AF_INET, socket.SOCK_DGRAM)]][0][1]])
+        if l][0][0]
+
+# Endpoint del backend principal
+sanic = f'{lan_ip}:' + os.getenv('SANIC_PORT', '8888')
+
+# Determina la dirección IP para el IPTV
+s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+s.connect(("172.26.23.3", 53))
+_iptv = s.getsockname()[0]
+s.close()
+
+# Número de hilos para descarga de la EPG
+epg_threads = int(os.getenv('EPG_THREADS', '4'))
 
 # Guarda el timestamp de inicio
 time_start = int(time.time())

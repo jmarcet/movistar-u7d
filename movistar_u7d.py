@@ -18,17 +18,16 @@ from vod import find_free_port, COVER_URL, IMAGENIO_URL
 
 setproctitle('movistar_u7d')
 
+HOME = os.getenv('HOME', '/home')
+CHANNELS = os.path.join(HOME, 'MovistarTV.m3u')
+GUIDE = os.path.join(HOME, 'guide.xml')
+MIME_TS = 'video/MP2T;audio/mp3'
+MP4_OUTPUT = bool(os.getenv('MP4_OUTPUT', False))
 SANIC_EPG_URL = 'http://127.0.0.1:8889'
 SANIC_HOST = os.getenv('LAN_IP', '0.0.0.0')
 SANIC_PORT = int(os.getenv('SANIC_PORT', '8888'))
 SANIC_THREADS = int(os.getenv('SANIC_THREADS', '4'))
 
-HOME = os.getenv('HOME', '/home')
-GUIDE = os.path.join(HOME, 'guide.xml')
-CHANNELS = os.path.join(HOME, 'MovistarTV.m3u')
-MIME_TS = 'video/MP2T;audio/mp3'
-MP4_OUTPUT = bool(os.getenv('MP4_OUTPUT', False))
-IPTV = SESSION = SESSION_LOGOS = None
 YEAR_SECONDS = 365 * 24 * 60 * 60
 
 LOG_SETTINGS = LOGGING_CONFIG_DEFAULTS
@@ -40,21 +39,23 @@ PREFIX = ''
 app = Sanic('movistar_u7d', log_config=LOG_SETTINGS)
 app.config.update({'REQUEST_TIMEOUT': 1, 'RESPONSE_TIMEOUT': 1})
 
+_iptv = _session = _session_logos = None
+
 
 @app.listener('after_server_start')
 async def after_server_start(app, loop):
     log.debug('after_server_start')
-    global IPTV, PREFIX, SESSION
+    global PREFIX, _iptv, _session
     if __file__.startswith('/app/'):
         PREFIX = '/app/'
 
     s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
     s.connect(("172.26.23.3", 53))
-    IPTV = s.getsockname()[0]
+    _iptv = s.getsockname()[0]
     s.close()
 
     conn = aiohttp.TCPConnector(keepalive_timeout=YEAR_SECONDS, limit_per_host=1)
-    SESSION = aiohttp.ClientSession(connector=conn)
+    _session = aiohttp.ClientSession(connector=conn)
 
 
 @app.get('/canales.m3u')
@@ -91,12 +92,12 @@ async def handle_logos(request, cover=None, logo=None, path=None):
     if request.method == 'HEAD':
         return response.HTTPResponse(content_type='image/jpeg', status=200)
 
-    global SESSION_LOGOS
-    if not SESSION_LOGOS:
+    global _session_logos
+    if not _session_logos:
         headers = {'User-Agent': 'MICA-IP-STB'}
-        SESSION_LOGOS = aiohttp.ClientSession(headers=headers)
+        _session_logos = aiohttp.ClientSession(headers=headers)
 
-    async with SESSION_LOGOS.get(orig_url) as r:
+    async with _session_logos.get(orig_url) as r:
         if r.status == 200:
             logo_data = await r.read()
             headers = {}
@@ -114,7 +115,7 @@ async def handle_logos(request, cover=None, logo=None, path=None):
 async def handle_channel(request, channel_id):
     try:
         epg_url = f'{SANIC_EPG_URL}/channel_address/{channel_id}'
-        async with SESSION.get(epg_url) as r:
+        async with _session.get(epg_url) as r:
             if r.status != 200:
                 return response.json({'status': f'{channel_id} not found'}, 404)
             r = await r.json()
@@ -132,9 +133,9 @@ async def handle_channel(request, channel_id):
         sock.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
         sock.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEPORT, 1)
         sock.bind((mc_grp, int(mc_port)))
-        sock.setsockopt(socket.SOL_IP, socket.IP_MULTICAST_IF, socket.inet_aton(IPTV))
+        sock.setsockopt(socket.SOL_IP, socket.IP_MULTICAST_IF, socket.inet_aton(_iptv))
         sock.setsockopt(socket.SOL_IP, socket.IP_ADD_MEMBERSHIP,
-                        socket.inet_aton(mc_grp) + socket.inet_aton(IPTV))
+                        socket.inet_aton(mc_grp) + socket.inet_aton(_iptv))
 
         with closing(await asyncio_dgram.from_socket(sock)) as stream:
             log.info(f'[{request.ip}] {request.raw_url} -> Playing "{name}"')
@@ -153,7 +154,7 @@ async def handle_flussonic(request, channel_id, url):
     program_id = None
     epg_url = f'{SANIC_EPG_URL}/program_id/{channel_id}/{url}'
     try:
-        async with SESSION.get(epg_url) as r:
+        async with _session.get(epg_url) as r:
             if r.status != 200:
                 return response.json({'status': f'{url} not found'}, 404)
             r = await r.json()
@@ -165,9 +166,9 @@ async def handle_flussonic(request, channel_id, url):
     if not program_id:
         return response.json({'status': f'{channel_id}/{url} not found'}, 404)
 
-    client_port = find_free_port(IPTV)
+    client_port = find_free_port(_iptv)
     cmd = f'{PREFIX}vod.py {channel_id} {program_id} -s {offset}'
-    cmd += f' -p {client_port} -i {request.ip} -a {IPTV}'
+    cmd += f' -p {client_port} -i {request.ip} -a {_iptv}'
     remaining = str(int(duration) - int(offset))
     record = int(request.args.get('record', 0))
     vod_msg = '"%s" %s [%s/%s]' % (name, program_id, offset, duration)
@@ -191,7 +192,7 @@ async def handle_flussonic(request, channel_id, url):
 
     try:
         vod = await asyncio.create_subprocess_exec(*(cmd.split()),)
-        with closing(await asyncio_dgram.bind((IPTV, client_port))) as stream:
+        with closing(await asyncio_dgram.bind((_iptv, client_port))) as stream:
             log.info(f'[{request.ip}] {request.raw_url} -> Playing {vod_msg}')
             try:
                 _response = await request.respond(content_type=MIME_TS)

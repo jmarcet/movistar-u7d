@@ -21,11 +21,13 @@ from threading import Thread
 
 
 CACHE_DIR = os.path.join(os.getenv('HOME', '/home'), '.xmltv/cache/programs')
+RECORDINGS = os.getenv('RECORDINGS', '/tmp')
+SANIC_EPG_URL = 'http://127.0.0.1:8889'
+
 IMAGENIO_URL = 'http://html5-static.svc.imagenio.telefonica.net/appclientv/nux/incoming/epg'
 COVER_URL = f'{IMAGENIO_URL}/covers/programmeImages/portrait/290x429'
 MVTV_URL = 'http://www-60.svc.imagenio.telefonica.net:2001/appserver/mvtv.do'
-RECORDINGS = os.getenv('RECORDINGS', '/tmp')
-SANIC_EPG_URL = 'http://127.0.0.1:8889'
+
 NFO_EXT = '-movistar.nfo'
 TMP_EXT = '.tmp'
 VID_EXT = '.mkv'
