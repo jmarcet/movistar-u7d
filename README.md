@@ -14,26 +14,38 @@ Ofrece compatibilidad completa con:
 
 - Multiplataforma: [Kodi](https://kodi.tv/) con [IPTV Simple PVR](https://github.com/kodi-pvr/pvr.iptvsimple)
 
-Una vez instalado el servicio, tendremos las siguientes URLs disponibles, donde 192.168.1.1 será la IP donde funcione este proxy:
+Una vez instalado el servicio, tendremos las siguientes URLs disponibles, donde 192.168.1.10 sería la IP donde está funcionando el proxy:
 
- - Canales: `http://192.168.1.1:8888/MovistarTV.m3u` `http://192.168.1.1:8888/canales.m3u` o `http://192.168.1.1:8888/channels.m3u`
+ - Canales: `http://192.168.1.10:8888/MovistarTV.m3u` `http://192.168.1.10:8888/canales.m3u` o `http://192.168.1.10:8888/channels.m3u`
 
- - Guía de programación (EPG): `http://192.168.1.1:8888/guia.xml` o `http://192.168.1.1:8888/guide.xml`
+ - Guía de programación (EPG): `http://192.168.1.10:8888/guia.xml` o `http://192.168.1.10:8888/guide.xml`
 
-Con configurar esas dos cosas debería ser suficiente. Aseguráos de que el cliente que uséis guarda al menos 8 días de historial del EPG. En el caso del `Kodi IPTV Simple`, además de añadir la lista de canales y la guía (sin caché) en los ajustes del addon, deberemos activar el Timeshift y el Catchup. Éste último en modo Default con 8 días de catchup y la opción de Reproducir desde la EPG en modo Live TV. De esta manera conseguiremos una experiencia de uso prácticamente idéntica a la del `TiviMate`, manteniendo la interfaz de LiveTV con el Catchup, con reproducción continua, etc.
+Con configurar esas dos cosas debería ser suficiente.
 
- - Los canales serán accesibles en URLs como: `http://192.168.1.1:8888/{canal}/live`
+ - Los canales serán accesibles en URLs como: `http://192.168.1.10:8888/{canal}/live`
 
 Donde `canal` es el id del canal según la EPG. Podemos verlos en la lista de canales.
 
- - Se podrá acceder a cualquier instante de los últimos 7 días en `http://192.168.137.1:8888/{canal}/{timestamp}.{extension}`
+ - Se podrá acceder a cualquier instante de los últimos 7 días abriendo URLs como `http://192.168.1.10:8888/{canal}/{timestamp}.{extension}`
 
-Opcionalmente, el timestamp puede ir precedido de una palabra y/o seguido de una duración en segundos: `http://192.168.137.1:8888/{canal}/video-{timestamp}-{duracion}.{extension}`. Esto ha cambiado para tener mayor compatibilidad con diferentes clientes.
+Opcionalmente, el timestamp puede ir precedido de una palabra y/o seguido de una duración en segundos: `http://192.168.1.10:8888/{canal}/{palabra}-{timestamp}-{duracion}.{extension}`. Esto ha cambiado para tener mayor compatibilidad con diferentes clientes.
 
-El timestamp es en el que queremos iniciar la reproducción, la duración no se usa, puede ser **0**, y la extensión puede tener cualquier valor. `OTT Nagivator IPTV` y `TiviMate` usan **.m3u8** mientras VLC necesita que sea **.mpeg** por ejemplo, o no reproduce bien los streams.
+El timestamp es en el que queremos iniciar la reproducción, la duración no se usa, puede ser **0**, y la extensión puede tener cualquier valor. `TiviMate` usa **.m3u8**, `OTT Nagivator IPTV` depende de cómo lo configuremos, en modo flussonic-ts, usa **.ts**, mientras que VLC necesita que las URLs terminen en **.mpeg** o no reproducirá bien los streams.
 
 
-Qué es y de dónde nace
+Configuración de clientes
+-------------------------
+
+ - A la hora de configurar cualquier cliente (TiviMate, OTT, Kodi, o el que sea) para acceder a los últimos 7 días, e incluso para los directos, es recomendable que en los ajustes del mismo desactivéis cualquier tipo de buffer de red que tenga, lo dejéis a 0.
+
+ - De igual manera, es importante que lo configuréis para que la guía se recarge con la mayor frecuencia posible, y que no use caché si la ofrece (como el Kodi). El backend la actualiza todas las horas.
+
+ - Por último, aseguráos de que el cliente que uséis guarda al menos 8 días de historial del EPG.
+
+  - En el caso del `Kodi IPTV Simple`, además de añadir la lista de canales y la guía (sin caché) en los ajustes del addon, deberemos activar el Timeshift y el Catchup. Éste último en modo Default con 8 días de catchup y la opción de Reproducir desde la EPG en modo Live TV. De esta manera conseguiremos una experiencia de uso prácticamente idéntica a la del `TiviMate`, manteniendo la interfaz de LiveTV con el Catchup, con reproducción continua, etc.
+
+
+ Qué es y de dónde nace
 ----------------------
 
 Este proyecto nació del descontento de acceder a los canales de TV de Movistar a través de su [app de Movistar](https://play.google.com/store/apps/details?id=es.plus.yomvi), que dicho de forma elegante, está muy por detrás de la competencia.
@@ -67,7 +79,7 @@ Pasó a ser mi modo favorito de acceder a los canales, nada se le acercaba. Es s
 
 Tan contento con él estaba que tenía que poder usar el resto de funcionalidad. Daba acceso a servicios de catchup (últimos 7 días), y lo hacía de dos maneras diferentes. Después de hacer pruebas, monitorear qué conexiones realizaba cuando intentabas ver algo de los últimos 7 días, ...
 
-Se me ocurrió que podía hacer algún tipo de proxy entre dicho TiviMate con catchup flussonic y la IPTV de Movistar (de las variantes de catchup que soporta es el que más extendido he encontrado y a la vez es el más sencillo e intuitivo de implementar).
+Se me ocurrió que podía hacer algún tipo de proxy entre dicho TiviMate con catchup flussonic (de las variantes de catchup que soporta es el que más extendido he encontrado y a la vez es el más sencillo e intuitivo de implementar) y la IPTV de Movistar.
 
 El resultado es algo así (el funcionamiento real es fluido todo el tiempo, el video se llega a atascar en los momentos de mayor tráfico de datos):
 
@@ -75,45 +87,35 @@ El resultado es algo así (el funcionamiento real es fluido todo el tiempo, el v
 
  - [TiviMate_Movistar_20210320_U7D-2.mp4](https://openwrt.marcet.info/u7d/TiviMate_Movistar_20210320_U7D-2.mp4)
 
+A día de doy alterno constantemente entre clientes, cada uno tiene sus pros y sus contras, ninguno es perfecto. Lo ideal de este proxy es que te abre un mundo de posibilidades para acceder a la IPTV, de forma estable y sin cortes.
 
 Componentes
 -----------
 
 El resultado son dos microservicios escritos en python asíncrono, con [Sanic](https://github.com/sanic-org/sanic):
 
- - `movistar_u7d.py`: el proxy principal con el que se comunica el cliente final, como el TiviMate.
+ - [movistar_u7d.py](movistar_u7d.py): el proxy principal con el que se comunica el cliente final, como el TiviMate.
 
- - `movistar_epg.py`: otro miscroservicio en python asíncrono. Encargado de actualizar la EPG y de localizar el programa correspondiente al punto temporal que solicita el cliente. Mantiene el estado necesario para el servicio, permitiendo que el microservicio principal no tenga estado y pueda trabajar en múltiples hilos sin problemas.
+ - [movistar_epg.py](movistar_epg.py): otro miscroservicio en python asíncrono. Encargado de actualizar la EPG y de localizar el programa correspondiente al punto temporal que solicita el cliente. Mantiene el estado necesario para el servicio, permitiendo que el microservicio principal no tenga estado y pueda trabajar en múltiples hilos sin problemas.
 
- - `vod.py`: pequeño script que mantiene abierta la reproducción de los programas bajo demanda (los últimos 7 días), habrá uno en ejecución por cada programa que se esté visionando. Encargado también de realizar las grabaciones con ffmpeg.
+ - [vod.py](vod.py): script que mantiene abierta la reproducción de los programas bajo demanda (los últimos 7 días), habrá uno en ejecución por cada programa que se esté visionando. Encargado también de realizar las grabaciones con ffmpeg.
 
- - `tv_grab_es_movistartv`: encargado de generar la lista de canales y la programación, así como de guardar una caché de los últimos 8 días de programas, de manera que necesita ser ejecutado de forma recurrente (cada 2h). Esta información es imprescindible para que todo el proceso funcione bien. Tanto TiviMate como cualquier repdoductor con catchup flussonic sólo se preocupan por canal y un timestamp, que define un momento preciso en el tiempo. El proxy es el encargado de encontrar qué programa de la EPG corresponde a ese canal en ese momento y negociar con Movistar la reproducción.
+ - [tv_grab_es_movistartv](tv_grab_es_movistartv): encargado de generar la lista de canales y la programación, así como de guardar una caché de los últimos 8 días de programas, de manera que necesita ser ejecutado de forma recurrente (cada 2h). Esta información es imprescindible para que todo el proceso funcione bien. Tanto TiviMate como cualquier repdoductor con catchup flussonic sólo se preocupan por canal y un timestamp, que define un momento preciso en el tiempo. El proxy es el encargado de encontrar qué programa de la EPG corresponde a ese canal en ese momento y negociar con Movistar la reproducción.
 
 Para Systemd:
 
- - `movistar_u7d.service`: script para el microservicio principal
+ - [movistar_u7d.service](movistar_u7d.service): script para el microservicio principal
 
- - `movistar_epg.service`: script para el microservicio que mantiene el estado (la EPG)
-
+ - [movistar_epg.service](movistar_epg.service): script para el microservicio que mantiene el estado (la EPG)
 
 Para docker:
- - `env-example`: fichero con variables de entorno por si queremos modificar alguno de los valores por defecto o queremos hacerlo funcionar en el propio router. Con docker-compsoe lo copiamos a `.env` y hacemos los cambios necesarios.
-
-
-Observaciones
--------------
-
- - Sólo hace falta tener contratada la fibra de Movista con acceso a la TDT, no es necesario ningún paquete de televisión.
-
- - La funcionalidad que más trabajo me dio conseguir y que más agradezco a la hora de usarlo es la reproducción continua. ¿Que qué es eso? Pues dado que Movistar da acceso a la programación de los últimos 7 días a partir de un identificador de canal y un identificador de programa, ambos incluidos en la EPG, a la hora de reproducir cualquier momento de la última semana se establece una negociación que te da acceso a reproducir **ese** programa, no el siguiente. De esta manera, tanto en la app oficial como en el addon cerrado, reproduces un programa y al acabar (normalmente sobre 1 o 2 minutos después del final) se detiene.
-
-Con este servicio, en lugar de cortarse, se produce una mínima pausa, durante la que se detiene el sonido y la imagen queda congelada. Es durante un mínimo instante de tiempo, un par de segundos, por lo que aunque te das cuenta de que ha habido un cambio de programa, no molesta lo más mínimo. Así puedes ver toda la programación de un canal en diferido, el tiempo que quieras dentro de la última semana, sin más que iniciar la reproducción en el instante deseado.
+ - [env-example](env-example): fichero con variables de entorno por si queremos modificar alguno de los valores por defecto o queremos hacerlo funcionar en el propio router. Con docker-compsoe lo copiamos a `.env` y hacemos los cambios necesarios.
 
 
 Instalación
 -----------
 
-Si tenemos una máquina conectada por cable al router, podemos ejecutarlo sin mayores complicaciones.
+Desde un dispositivo conectado directamente al router, podemos ejecutarlo sin mayores complicaciones.
 
  - Tenemos la opción de utilizar docker y docker-compose. Dentro del container queda casi todo lo necesario:
 
@@ -123,13 +125,13 @@ docker-copose up -d && docker-copose logs -f
 
 Si, por el contrario, preferimos instalarlo y usarlo directamente:
 
- - Primero instalamos las dependencias de Python 3.8+:
+ - Primero instalamos las dependencias de Python3:
 
 ```
 pip3 install -r requirements.txt
 ```
 
- - Copiamos `movistar_u7d.py`, `movistar_epg.py`, `tv_grab_es_movistartv` y `vod.py` a alguna ruta que tengamos en el PATH:
+ - Copiamos [movistar_u7d.service](movistar_u7d.service), [movistar_epg.service](movistar_epg.service), [tv_grab_es_movistartv](tv_grab_es_movistartv) y [vod.py](vod.py) a alguna ruta que tengamos en el PATH:
 
 ```
 cp movistar_u7d.py movistar_epg.py tv_grab_es_movistartv vod.py /usr/local/bin/
@@ -146,27 +148,43 @@ systemctl start movistar_epg
 systemctl start movistar_u7d
 ```
 
- - Sin systemd, tendremos que lanzar directamente los dos `movistar_u7d.py` y `movistar_epg.py`.
+ - Sin systemd, tendremos que lanzar directamente los dos [movistar_u7d.service](movistar_u7d.service) y [movistar_epg.service](movistar_epg.service).
 
  - En cualquier caso, si lo usas sin docker, es importante que el proxy tenga acceso a las DNS de Movistar, 172.26.23.3
 
- - La primera vez tendremos que esperar a que termine de descargar la guía, ya que sin EPG no funcionará nada.
-
- - Puede ser necesario establecer alguna variable de entorno. La más importante es `LAN_IP`, que corresponde a la ip que tendrán los canales de tv, por defecto usa la ip local principal.
 
 Instalación en el propio router con docker-compose
 --------------------------------------------------
 
-Si queremos usarlo dentro del propio router, con su propia subred y con acceso a la VLAN de televisión, se complica todo un poco. De interesaros esta opción, [aquí](https://openwrt.marcet.info/latest/targets/x86/64/) podeís encontrar builds de openwrt para x86-64 con todo lo necesario para desplegar lo siguiente. Los actualizo cada pocos días.
+Si queremos usarlo dentro del propio router, también podemos, aunque se complica todo un poco. De interesaros esta opción, [aquí](https://openwrt.marcet.info/latest/targets/x86/64/) podeís encontrar builds de openwrt para x86-64 con todo lo necesario para desplegar todo esto. Los actualizo cada pocos días.
 
 
-Cualquier duda o consulta no dudéis en abrir una [incidencia](https://github.com/jmarcet/movistar_u7d/issues) [aquí](https://github.com/jmarcet/movistar_u7d) en Github.
+Observaciones
+-------------
+
+ - La primera vez tendremos que esperar a que se genere la lista de canales y a que se descargue la guía. Sin playlist no hay canales y sin EPG no hay catchup. Tardará unos minutos.
+
+ - Puede ser necesario establecer alguna variable de entorno:
+
+   - La más importante es `LAN_IP`, que corresponde a la ip que tendrán los canales de tv. Por defecto usa la ip local principal.
+
+   - Con `EPG_THREADS` podéis modificar el número de descargas paralelas al generar la EPG. Yo lo uso con 8 hilos, pero con instalaciones de serie puede dar problemas, así que por defecto usa 4.
+
+   - Para el resto, mirad el fichero [env-example](env-example).
+
+ - Sólo hace falta tener contratada la fibra de Movista con acceso a la TDT, no es necesario ningún paquete de televisión.
+
+ - La funcionalidad que más trabajo me dio conseguir y que más agradezco a la hora de usarlo es la reproducción continua. ¿Que qué es eso? Pues dado que Movistar da acceso a la programación de los últimos 7 días a partir de un identificador de canal y un identificador de programa, ambos incluidos en la EPG, a la hora de reproducir cualquier momento de la última semana se establece una negociación que te da acceso a reproducir **ese** programa, no el siguiente. De esta manera, tanto en la app oficial como en el addon cerrado, reproduces un programa y al acabar (normalmente sobre 1 o 2 minutos después del final) se detiene.
+
+Con este proxy, en lugar de cortarse se produce una mínima pausa, durante la que se detiene el sonido y la imagen queda congelada. Es durante un mínimo instante de tiempo, en torno a 1 segundo, por lo que aunque te das cuenta de que ha habido un cambio de programa, no molesta lo más mínimo. Así puedes ver toda la programación de un canal en diferido, el tiempo que quieras, sin más que iniciar la reproducción en el instante deseado dentro de la última semana.
 
 
 Posibles problemas
 ------------------
 
-A veces se desincroniza la guía entre el cliente (TiviMate) y el proxy, mostrando `Error 404` en todo o en casi todo. La solución pasa por ir a los ajustes del cliente (TiviMate), borrar la EPG y cargarla de nuevo.
+- A veces se desincroniza la guía entre el cliente y el proxy, mostrando `Error 404` en todo o en casi todo. La solución pasa por ir a los ajustes del cliente, borrar la EPG y cargarla de nuevo.
+
+- Cualquier duda o consulta, o si os encontrais con un cliente con catchup que os parece que debería funcionar con este proxy pero no lo hace (pienso en clientes incluidos en SmartTVs modernos), no dudéis en abrir una incidencia, ya sea [en Github](https://github.com/jmarcet/movistar_u7d) o [en Gitlab](https://gitlab.marcet.info/javier/movistar-u7d).
 
 
 Agradecimientos
