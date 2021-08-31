@@ -12,6 +12,8 @@ services:
       - SYS_NICE
     restart: on-failure
     network_mode: host
+    dns: 172.26.23.3
+    dns_search: telefonica.net
     volumes:
       - /etc/localtime:/etc/localtime
     # - ./:/app
