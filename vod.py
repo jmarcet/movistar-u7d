@@ -127,7 +127,7 @@ class RtspClient(object):
 def _check_recording():
     if not os.path.exists(filename + VID_EXT):
         sys.stderr.write(f'{_log_prefix} Recording CANNOT FIND: {_log_suffix}')
-        return 0
+        return False
 
     command = ['ffprobe', '-v', 'quiet', '-print_format', 'json', '-show_format']
     command += [filename + VID_EXT]
@@ -136,14 +136,14 @@ def _check_recording():
         duration = int(float(probe['format']['duration']))
     except KeyError:
         sys.stderr.write(f'{_log_prefix} Recording CANNOT PARSE: {_log_suffix}')
-        return 0
+        return False
 
     _bad = (duration + 30) < args.time
     sys.stderr.write(f"{_log_prefix} Recording {'INCOMPLETE:' if _bad else 'COMPLETE:'} "
                      f'[{duration}s] -> '
                      f'{_log_suffix}')
 
-    return 0 if _bad else 1
+    return not _bad
 
 
 def _cleanup():
