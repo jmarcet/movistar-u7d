@@ -216,11 +216,7 @@ def on_completed():
 
 @ffmpeg.on('error')
 def on_error(code):
-    if code == -1:
-        on_completed()
-    else:
-        sys.stderr.write(f'{_log_prefix} Recording FAILED error={code}: {_log_suffix}')
-        _cleanup()
+    on_completed()
 
 
 @ffmpeg.on('stderr')
