@@ -76,7 +76,7 @@ app_dir = os.path.join(os.environ.get('HOME'), '.xmltv')
 use_multithread = True
 
 log_file = 'tv_grab_es_movistartv.log'
-log_level = logging.DEBUG
+log_level = logging.INFO
 log_size = 5  # MB
 
 cookie_file = 'tv_grab_es_movistartv.cookie'
@@ -320,7 +320,7 @@ class Cache:
                         _data = json.loads(fd.read())['data']
                     _exp_date = int(_data['endTime'] / 1000)
                     if _exp_date < deadline:
-                        logger.debug(f'Caché: {f} caducado [{time.ctime(_exp_date)}]')
+                        logger.info(f'Caché: {f} caducado [{time.ctime(_exp_date)}]')
                         os.remove(fp)
                 except Exception as ex:
                     logger.error(f'{ex}')
@@ -342,7 +342,7 @@ class Cache:
             except AttributeError:
                 json.dump({'data': data}, fp, ensure_ascii=False, sort_keys=True)
 
-        # logger.debug(f'Cache: {cfile} guardado')
+        logger.debug(f'Cache: {cfile} guardado')
 
     def load_cookie(self):
         data = self.__load(cookie_file)
@@ -350,15 +350,15 @@ class Cache:
         return data
 
     def save_cookie(self, data):
-        # logger.info(f'Set-Cookie: {data}')
+        logger.debug(f'Set-Cookie: {data}')
         self.__save(cookie_file, data)
 
     def load_end_points(self):
         if not self.__end_points:
-            logger.debug('End Points: buscando')
+            logger.info('End Points: buscando')
             self.__end_points = self.__load(end_points_file)
         if not self.__end_points:
-            logger.debug('End Points: por defecto')
+            logger.warning('End Points: por defecto')
             return end_points
         return self.__end_points
 
@@ -379,7 +379,7 @@ class Cache:
     def load_config(self):
         data = self.__load('config.json')
         if not data:
-            logger.debug('Caché: configuración no encontrada')
+            logger.warning()('Caché: configuración no encontrada')
         return data
 
     def save_config(self, data):
@@ -388,7 +388,7 @@ class Cache:
     def load_service_provider_data(self):
         data = self.__load('provider.json')
         if not data:
-            logger.debug('Caché: datos del Proveedor de Servicios no encontrados')
+            logger.warning('Caché: datos del Proveedor de Servicios no encontrados')
         return data
 
     def save_service_provider_data(self, data):
@@ -400,7 +400,7 @@ class Cache:
     def load_epg(self):
         data = self.__load('epg.json')
         if not data:
-            logger.debug('Caché: EPG no encontrada')
+            logger.warning('Caché: EPG no encontrada')
         return data
 
     def save_epg(self, data):
@@ -470,14 +470,14 @@ class MovistarTV:
 
     def get_epg_extended_info(self, pid, channel_id):
         try:
-            # logger.debug(f'Descargando info extendida: {pid}')
+            logger.debug(f'Descargando info extendida: {pid}')
             data = cache.load_epg_extended_info(pid)
         except Exception as ex:
             logger.error(f'{ex}')
             pass
         try:
             if not data:
-                # logger.debug(f'Descargando info extendida: {pid}')
+                logger.debug(f'Descargando info extendida: {pid}')
                 print('.', flush=True, end='')
                 data = self.__get_service_data(f'epgInfov2&productID={pid}'
                                                f'&channelID={channel_id}'
@@ -620,7 +620,7 @@ class MulticastIPTV:
             max_files = 1000
             _files = {}
             first_file = ''
-            logger.debug(f'Descargando XML de {mc_grp}:{mc_port}')
+            logger.info(f'Descargando XML de {mc_grp}:{mc_port}')
             sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM, socket.IPPROTO_UDP)
             sock.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
             sock.settimeout(3)
@@ -645,7 +645,7 @@ class MulticastIPTV:
                 # Discard last 4bytes binary footer?
                 xmldata += body[:-4]
                 _files[str(chunk["filetype"]) + "_" + str(chunk["fileid"])] = xmldata
-                # logger.debug('XML: %s_%s' % (chunk["filetype"], chunk["fileid"]))
+                logger.debug('XML: %s_%s' % (chunk["filetype"], chunk["fileid"]))
                 print('.', flush=True, end='')
                 max_files -= 1
                 if str(chunk["filetype"]) + "_" + str(chunk["fileid"]) == first_file \
@@ -823,18 +823,18 @@ class MulticastIPTV:
                 _end = new_epg[channel][sorted_new_epg[i]]['end']
                 _next = new_epg[channel][sorted_new_epg[i + 1]]['start']
                 if _end > _next:
-                    logger.error(f'{channel} {sorted_new_epg[i]} end={_end} >> next={_next}')
+                    logger.debug(f'{channel} {sorted_new_epg[i]} end={_end} >> next={_next}')
                     new_epg[channel][sorted_new_epg[i]]['end'] = _next
                     fixed += 1
         if fixed:
-            logger.error(f'NUEVO EPG CONTENíA ERRORES DE PROGRAMAS QUE SE PISABAN')
-            logger.error(f'{fixed} programas acababan después de que el siguiente empezara')
+            logger.debug(f'NUEVO EPG CONTENíA ERRORES DE PROGRAMAS QUE SE PISABAN')
+            logger.debug(f'{fixed} programas acababan después de que el siguiente empezara')
 
         if not cached_epg:
-            logger.info('Sin caché de EPG guardada')
+            logger.warning('Sin caché de EPG guardada')
             return new_epg
 
-        logger.debug(f'Fecha de caducidad: [{time.ctime(deadline)}]')
+        logger.info(f'Fecha de caducidad: [{time.ctime(deadline)}]')
 
         broken = 0
         expired = 0
@@ -872,8 +872,9 @@ class MulticastIPTV:
             new_nr_entries = len(cached_epg[channel])
             if new_nr_entries != nr_entries:
                 _broken = nr_entries - new_nr_entries
+                _s = 's' if _broken > 1 else ''
                 logger.info(f'[{channel}] {nr_entries} => {new_nr_entries}: '
-                            f'{_broken} Eventos de EPG rotos eliminados')
+                            f'{_broken} Evento{_s} de EPG roto{_s} eliminado{_s}')
                 broken += _broken
 
         logger.info(f'Canales con EPG: {len(cached_epg)}')
@@ -1035,7 +1036,7 @@ class MulticastIPTV:
                     programs[str(head['service_id'])] \
                         = self.__parse_bin_epg_body(head['data'])
             self.__merge_dicts(merged_epg, programs)
-        logger.debug(f'Canales con EPG: {len(merged_epg)}')
+        logger.info(f'Canales con EPG: {len(merged_epg)}')
         cache.save_epg(merged_epg)
         return merged_epg
 
