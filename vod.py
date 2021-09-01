@@ -210,6 +210,8 @@ def on_completed():
     if _check_recording():
         save_metadata()
         httpx.put(epg_url)
+    else:
+        os.remove(filename + VID_EXT)
 
     _cleanup()
 
