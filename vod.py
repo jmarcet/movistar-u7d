@@ -377,8 +377,6 @@ def main():
 
             if args.write_to_file:
                 record_stream()
-                signal.signal(signal.SIGALRM, _handle_cleanup)
-                signal.alarm(args.time + 300)
 
             while True:
                 time.sleep(30)
