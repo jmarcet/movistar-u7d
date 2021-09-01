@@ -23,6 +23,7 @@
 
 import argparse
 import codecs
+import fcntl
 import httpx
 import logging
 import os
@@ -1334,6 +1335,14 @@ def export_channels(m3u_file):
     xmltv.write_m3u(m3u_file)
     logger.info(f'Lista de canales exportada: {m3u_file}')
 
+
+# Sólo una instancia ejecutándose
+fh = open(os.path.realpath(__file__))
+try:
+    fcntl.flock(fh, fcntl.LOCK_EX | fcntl.LOCK_NB)
+except BlockingIOError:
+    sys.stderr.write(f'{__file__} ya se está ejecutando\n')
+    sys.exit(0)
 
 # Determina la primera IP de rango local
 if 'LAN_IP' in os.environ:
