@@ -273,12 +273,10 @@ def record_stream():
         pkt_size=1316,
         timeout=500000
     ).output(filename + TMP_EXT, _options,
-             fflags='+genpts+igndts',
-             seek2any='1',
-             max_error_rate='0.0',
+             fflags='+igndts',
              t=str(args.time + 300),
              v='info',
-             vsync='2',
+             vsync='0',
              f='matroska')
 
     _ffmpeg = Thread(target=asyncio.run, args=(ffmpeg.execute(),))
