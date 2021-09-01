@@ -182,7 +182,11 @@ Con este proxy, en lugar de cortarse se produce una mínima pausa, durante la qu
 Posibles problemas
 ------------------
 
-- A veces se desincroniza la guía entre el cliente y el proxy, mostrando `Error 404` en todo o en casi todo. La solución pasa por ir a los ajustes del cliente, borrar la EPG y cargarla de nuevo.
+- En ocasiones, mientras se ve un diferido reciente, la transmisión da un salto temporal de forma repentina. La razón es un cambio en la programación que el cliente desconoce, debido a que actualiza la guía con muy poca frecuencia. El proxy descarga la EPG cada hora en punto, lo que parece ser suficiente, o en lugar de un salto la transmisión se detendría. Por tanto, lo ideal sería actualizar la EPG cada 20-30 minutos aunque no siempre es posible. Muchos clientes sólo permiten actualizarla cada 4 o más horas, así que están expuestos a sufrir la molestia.
+
+  - Solución rápida: ir a los ajustes, borrar y recargar la guía.
+
+  - Solución idónea: buscar que al cliente le añadan la posibilidad de actulizar la guía con mayor frecuencia.
 
 - Cualquier duda o consulta, o si os encontrais con un cliente con catchup que os parece que debería funcionar con este proxy pero no lo hace (pienso en clientes incluidos en SmartTVs modernos), no dudéis en abrir una incidencia, ya sea [en Github](https://github.com/jmarcet/movistar_u7d) o [en Gitlab](https://gitlab.marcet.info/javier/movistar-u7d).
 
