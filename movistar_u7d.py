@@ -8,6 +8,7 @@ import signal
 import socket
 import subprocess
 import sys
+import timeit
 
 from contextlib import closing
 from setproctitle import setproctitle
@@ -39,13 +40,13 @@ PREFIX = ''
 app = Sanic('movistar_u7d', log_config=LOG_SETTINGS)
 app.config.update({'REQUEST_TIMEOUT': 1, 'RESPONSE_TIMEOUT': 1})
 
-_iptv = _session = _session_logos = None
+_channels = _iptv = _session = _session_logos = None
 
 
 @app.listener('after_server_start')
 async def after_server_start(app, loop):
     log.debug('after_server_start')
-    global PREFIX, _iptv, _session
+    global PREFIX, _channels, _iptv, _session
     if __file__.startswith('/app/'):
         PREFIX = '/app/'
 
@@ -56,6 +57,14 @@ async def after_server_start(app, loop):
 
     conn = aiohttp.TCPConnector(keepalive_timeout=YEAR_SECONDS, limit_per_host=1)
     _session = aiohttp.ClientSession(connector=conn)
+
+    while True:
+        async with _session.get(f'{SANIC_EPG_URL}/channels/') as r:
+            if r.status == 200:
+                _channels = await r.json()
+                break
+            else:
+                await asyncio.sleep(5)
 
 
 @app.get('/canales.m3u')
@@ -114,15 +123,9 @@ async def handle_logos(request, cover=None, logo=None, path=None):
 @app.route('/<channel_id>/live', methods=['GET', 'HEAD'])
 async def handle_channel(request, channel_id):
     try:
-        epg_url = f'{SANIC_EPG_URL}/channel_address/{channel_id}'
-        async with _session.get(epg_url) as r:
-            if r.status != 200:
-                return response.json({'status': f'{channel_id} not found'}, 404)
-            r = await r.json()
-            mc_grp, name, mc_port = [r[t] for t in ['address', 'name', 'port']]
-    except Exception as ex:
-        log.error(f"[{request.ip}] get('{epg_url}') {ex}")
-        return response.json({'status': f'{channel_id}/live not found'}, 404)
+        name, mc_grp, mc_port = [_channels[channel_id][t] for t in ['name', 'address', 'port']]
+    except (AttributeError, KeyError):
+        return response.json({'status': f'{channel_id} not found'}, 404)
 
     if request.method == 'HEAD':
         return response.HTTPResponse(content_type=MIME_TS, status=200)
@@ -145,38 +148,35 @@ async def handle_channel(request, channel_id):
                     await _response.send((await stream.recv())[0][28:])
             finally:
                 log.info(f'[{request.ip}] {request.raw_url} -> Stopped "{name}"')
-                await _response.eof()
+                try:
+                    await _response.eof()
+                except AttributeError:
+                    pass
 
 
 @app.route('/<channel_id>/<url>', methods=['GET', 'HEAD'])
 async def handle_flussonic(request, channel_id, url):
+    _start = timeit.default_timer()
     log.debug(f'[{request.ip}] {request.method} {request.raw_url}')
-    program_id = None
-    epg_url = f'{SANIC_EPG_URL}/program_id/{channel_id}/{url}'
     try:
-        async with _session.get(epg_url) as r:
-            if r.status != 200:
-                return response.json({'status': f'{url} not found'}, 404)
-            r = await r.json()
-            name, program_id, duration, offset = [r[t] for t in ['name', 'program_id',
-                                                                 'duration', 'offset']]
-    except Exception as ex:
-        log.error(f'{request.ip}] {ex}')
-
-    if not program_id:
-        return response.json({'status': f'{channel_id}/{url} not found'}, 404)
+        async with _session.get(f'{SANIC_EPG_URL}/program_id/{channel_id}/{url}') as r:
+            name, program_id, duration, offset = (await r.json()).values()
+        if request.method == 'HEAD':
+            return response.HTTPResponse(content_type=MIME_TS, status=200)
+    except (AttributeError, KeyError) as ex:
+        log.error(f'{repr(ex)}')
+        return response.json({'status': f'{channel_id}/{url} not found {repr(ex)}'}, 404)
 
     client_port = find_free_port(_iptv)
-    cmd = f'{PREFIX}vod.py {channel_id} {program_id} -s {offset}'
-    cmd += f' -p {client_port} -i {request.ip} -a {_iptv}'
-    remaining = str(int(duration) - int(offset))
-    record = int(request.args.get('record', 0))
-    vod_msg = '"%s" %s [%s/%s]' % (name, program_id, offset, duration)
+    cmd = f'{PREFIX}vod.py {channel_id} {program_id} -s {offset}' \
+        f' -p {client_port} -i {request.ip} -a {_iptv}'
+    vod_msg = f'"{name}" {program_id} [{offset}/{duration}]'
 
-    if request.method == 'HEAD':
-        return response.HTTPResponse(content_type=MIME_TS, status=200)
-    elif record:
-        record_time = record if record > 1 else remaining
+    record = request.args.get('record', 0)
+    if record:
+        record = int(record)
+        record_time = record if record > 1 else duration - offset
+
         cmd += f' -t {record_time} -w'
         if MP4_OUTPUT or request.args.get('mp4', False):
             cmd += ' --mp4 1'
@@ -189,7 +189,6 @@ async def handle_flussonic(request, channel_id, url):
         return response.json({'status': 'OK',
                               'channel_id': channel_id, 'program_id': program_id,
                               'offset': offset, 'time': record_time})
-
     try:
         vod = await asyncio.create_subprocess_exec(*(cmd.split()),)
         with closing(await asyncio_dgram.bind((_iptv, client_port))) as stream:
@@ -200,11 +199,13 @@ async def handle_flussonic(request, channel_id, url):
             except asyncio.exceptions.TimeoutError:
                 log.error(f'NOT_AVAILABLE: {vod_msg}')
                 return response.empty(404)
+            _stop = timeit.default_timer()
+            log.info(f'{url} took {_stop - _start}')
             try:
                 while True:
                     await _response.send((await stream.recv())[0])
             finally:
-                log.debug(f'[{request.ip}] {request.raw_url} -> Stopped {vod_msg}')
+                log.info(f'[{request.ip}] {request.raw_url} -> Stopped {vod_msg}')
                 try:
                     await _response.eof()
                 except AttributeError:

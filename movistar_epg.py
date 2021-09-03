@@ -39,6 +39,7 @@ PREFIX = ''
 
 app = Sanic('movistar_epg')
 app.config.update({'KEEP_ALIVE_TIMEOUT': YEAR_SECONDS})
+flussonic_regex = re.compile(r"\w*-?(\d{10})-?(\d+){0,1}\.\w+")
 
 epg_data = os.path.join(HOME, '.xmltv/cache/epg.json')
 epg_metadata = os.path.join(HOME, '.xmltv/cache/epg_metadata.json')
@@ -117,61 +118,38 @@ def get_safe_filename(filename):
     return "".join(c for c in filename if c.isalnum() or c in keepcharacters).rstrip()
 
 
-@app.get('/channel_address/<channel_id>/')
-async def handle_channel_address(request, channel_id):
-    log.debug(f'Searching channel address: {channel_id}')
-
-    if channel_id not in _channels:
-        return response.json({'status': f'{channel_id} not found'}, 404)
-
-    address, name, port = [_channels[channel_id][t] for t in ['address', 'name', 'port']]
-    return response.json({'status': 'OK', 'address': address, 'name': name, 'port': port})
+@app.get('/channels/')
+async def handle_channels(request):
+    return response.json(_channels)
 
 
 @app.get('/program_id/<channel_id>/<url>')
 async def handle_program_id(request, channel_id, url):
     log.debug(f'Searching EPG: /{channel_id}/{url}')
+    try:
+        channel_key = _channels[channel_id]['replacement'] \
+            if 'replacement' in _channels[channel_id] else channel_id
+        x = flussonic_regex.match(url)
 
-    x = re.search(r"\w*-?(\d{10})-?(\d+){0,1}\.\w+", url)
-    if not x or not x.groups():
-        return response.json({'status': f'{channel_id}/{url} not found'}, 404)
+        name = _channels[channel_id]['name']
+        start = x.groups()[0]
+        duration = int(x.groups()[1]) if x.groups()[1] else 0
+        new_start = 0
 
-    start = x.groups()[0]
-    duration = int(x.groups()[1]) if x.groups()[1] else 0
-    last_event = program_id = None
-    offset = '0'
-
-    if channel_id not in _channels:
-        return response.json({'status': f'{channel_id}/{url} not found'}, 404)
-
-    channel_key = _channels[channel_id]['replacement'] \
-        if 'replacement' in _channels[channel_id] else channel_id
-
-    if channel_key not in _epgdata or not _epgdata[channel_key]:
-        return response.json({'status': f'{channel_id}/{url} not found'}, 404)
-
-    if start not in _epgdata[channel_key]:
-        for event in sorted(_epgdata[channel_key]):
-            if int(event) > int(start):
-                break
-            last_event = event
-    if last_event:
-        new_start, start = start, last_event
-        offset = str(int(new_start) - int(start))
-    elif start in _epgdata[channel_key]:
-        offset = '0'
-    else:
-        return response.json({'status': f'{channel_id}/{url} not found'}, 404)
-    program_id, end = [str(_epgdata[channel_key][start][t]) for t in ['pid', 'end']]
-    duration = str(int(end) - int(start))
-
-    name = _channels[channel_id]['name']
-    # full_title = _epgdata[channel_key][start]['full_title']
-    # log.info(f'"{name}/{full_title}" '
-    #          f'{channel_id}/{channel_key} {program_id} {start} [{offset}/{duration}]')
-    return response.json({'status': 'OK',
-                          'name': name, 'program_id': program_id,
-                          'duration': duration, 'offset': offset})
+        if start not in _epgdata[channel_key]:
+            for event in _epgdata[channel_key]:
+                if event > start:
+                    break
+                last_event = event
+            start, new_start = last_event, start
+        program_id, end = [_epgdata[channel_key][start][t] for t in ['pid', 'end']]
+        start = int(start)
+        return response.json({'name': name, 'program_id': program_id,
+                              'duration': duration if duration else int(end) - start,
+                              'offset': int(new_start) - start if new_start else 0})
+    except (AttributeError, KeyError) as ex:
+        log.error(f'{repr(ex)}')
+        return response.json({'status': f'{channel_id}/{url} not found {repr(ex)}'}, 404)
 
 
 @app.route('/program_name/<channel_id>/<program_id>', methods=['GET', 'PUT'])
