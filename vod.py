@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
 
+import aiohttp
 import argparse
 import asyncio
 import httpx
@@ -9,10 +10,10 @@ import signal
 import socket
 import subprocess
 import sys
-import time
 import ujson
 import urllib.parse
 
+from asyncio import CancelledError
 from collections import namedtuple
 from contextlib import closing
 from ffmpeg import FFmpeg
@@ -34,23 +35,27 @@ VID_EXT = '.mkv'
 UA = 'MICA-IP-STB'
 # WIDTH = 134
 
+YEAR_SECONDS = 365 * 24 * 60 * 60
+
 Request = namedtuple('Request', ['request', 'response'])
 Response = namedtuple('Response', ['version', 'status', 'url', 'headers', 'body'])
 
 ffmpeg = FFmpeg().option('y').option('xerror')
-_ffmpeg = _log_prefix = _log_suffix = args = epg_url = filename = full_title = path = None
+_ffmpeg = _log_prefix = _log_suffix = args = client = epg_url = filename = \
+    full_title = get_parameter = path = session = vod_client = None
 needs_position = False
 
 
 class RtspClient(object):
-    def __init__(self, sock, url):
-        self.sock = sock
+    def __init__(self, reader, writer, url):
+        self.reader = reader
+        self.writer = writer
         self.url = url
         self.cseq = 1
         self.ip = None
 
-    def read_message(self):
-        resp = self.sock.recv(4096).decode()
+    async def read_message(self):
+        resp = (await self.reader.read(4096)).decode()
         if ' 200 OK' not in resp:
             version, status = resp.rstrip().split('\n')[0].split(' ', 1)
             return Response(version, status, self.url, {}, '')
@@ -74,7 +79,7 @@ class RtspClient(object):
     def serialize_headers(self, headers):
         return '\r\n'.join(map(lambda x: '{0}: {1}'.format(*x), headers.items()))
 
-    def send_request(self, method, headers={}):
+    async def send_request(self, method, headers={}):
         global needs_position
         if method == 'OPTIONS':
             url = '*'
@@ -94,8 +99,8 @@ class RtspClient(object):
         else:
             req = f'{method} {url} RTSP/1.0\r\n{ser_headers}\r\n\r\n'
 
-        self.sock.send(req.encode())
-        resp = self.read_message()
+        self.writer.write(req.encode())
+        resp = await self.read_message()
 
         if resp.status != '200 OK' and method not in ['SETUP', 'TEARDOWN']:
             raise ValueError(f'{method} {resp}')
@@ -123,53 +128,12 @@ class RtspClient(object):
         # sys.stderr.write('-' * WIDTH + '\n')
         # return resp
 
-
-def _check_recording():
-    if not os.path.exists(filename + VID_EXT):
-        sys.stderr.write(f'{_log_prefix} Recording CANNOT FIND: {_log_suffix}')
-        return False
-
-    command = ['ffprobe', '-v', 'quiet', '-print_format', 'json', '-show_format']
-    command += [filename + VID_EXT]
-    try:
-        probe = ujson.loads(subprocess.run(command, capture_output=True).stdout.decode())
-        duration = int(float(probe['format']['duration']))
-    except KeyError:
-        sys.stderr.write(f'{_log_prefix} Recording CANNOT PARSE: {_log_suffix}')
-        return False
-
-    _bad = (duration + 30) < args.time
-    sys.stderr.write(f"{_log_prefix} Recording {'INCOMPLETE:' if _bad else 'COMPLETE:'} "
-                     f'[{duration}s] -> '
-                     f'{_log_suffix}')
-
-    return not _bad
-
-
-def _cleanup():
-    if os.path.exists(filename + TMP_EXT):
-        os.remove(filename + TMP_EXT)
-
-
-def find_free_port(iface=''):
-    with closing(socket.socket(socket.AF_INET, socket.SOCK_DGRAM)) as s:
-        s.bind((iface, 0))
-        s.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
-        return s.getsockname()[1]
-
-
-def get_vod_url(channel_id, program_id):
-    params = (f'action=getCatchUpUrl&extInfoID={program_id}&channelID={channel_id}'
-              f'&service=hd&mode=1')
-    try:
-        resp = httpx.get(f'{MVTV_URL}?{params}', headers={'User-Agent': UA}).json()
-        return resp['resultData']['url']
-    except httpx.ConnectError:
-        return None
+    def close_connection(self):
+        self.writer.close()
 
 
 @ffmpeg.on('completed')
-def on_completed():
+def ffmpeg_completed():
     command = _nice = ['nice', '-n', '10', 'ionice', '-c', '3']
 
     if os.path.exists(filename + VID_EXT):
@@ -196,7 +160,7 @@ def on_completed():
         proc = subprocess.Popen(command)
 
         if len(subs):
-            track, lang = re.search(r"^#([0-9:]+)[^:]*\((\w+)\):", subs[0]).groups()
+            track, lang = re.match(r"^#([0-9:]+)[^:]*\((\w+)\):", subs[0]).groups()
             if lang == 'esp':
                 lang = 'spa'
             command = _nice
@@ -207,7 +171,7 @@ def on_completed():
 
         proc.wait()
 
-    if _check_recording():
+    if check_recording():
         save_metadata()
         httpx.put(epg_url)
     else:
@@ -217,24 +181,74 @@ def on_completed():
 
 
 @ffmpeg.on('error')
-def on_error(code):
-    on_completed()
+def ffmpeg_error(code):
+    ffmpeg_completed()
 
 
-@ffmpeg.on('stderr')
-def on_stderr(line):
-    if line.startswith('frame='):
-        return
-    sys.stderr.write(f'{_log_prefix} [ffmpeg] {line}\n')
+# @ffmpeg.on('stderr')
+# def ffmpeg_stderr(line):
+#     if line.startswith('frame='):
+#         return
+#     sys.stderr.write(f'{_log_prefix} [ffmpeg] {line}\n')
 
 
 @ffmpeg.on('terminated')
-def on_terminated():
+def ffmpeg_terminated():
     sys.stderr.write(f'{_log_prefix} [ffmpeg] TERMINATED: {_log_suffix}')
-    on_completed()
+    ffmpeg_completed()
 
 
-def record_stream():
+def _cleanup():
+    if os.path.exists(filename + TMP_EXT):
+        os.remove(filename + TMP_EXT)
+
+
+def _handle_cleanup(signum, frame):
+    raise TimeoutError()
+
+
+def check_recording():
+    if not os.path.exists(filename + VID_EXT):
+        sys.stderr.write(f'{_log_prefix} Recording CANNOT FIND: {_log_suffix}')
+        return False
+
+    command = ['ffprobe', '-v', 'quiet', '-print_format', 'json', '-show_format']
+    command += [filename + VID_EXT]
+    try:
+        probe = ujson.loads(subprocess.run(command, capture_output=True).stdout.decode())
+        duration = int(float(probe['format']['duration']))
+    except KeyError:
+        sys.stderr.write(f'{_log_prefix} Recording CANNOT PARSE: {_log_suffix}')
+        return False
+
+    _bad = (duration + 30) < args.time
+    sys.stderr.write(f"{_log_prefix} Recording {'INCOMPLETE:' if _bad else 'COMPLETE:'} "
+                     f'[{duration}s] -> '
+                     f'{_log_suffix}')
+
+    return not _bad
+
+
+def find_free_port(iface=''):
+    with closing(socket.socket(socket.AF_INET, socket.SOCK_DGRAM)) as s:
+        s.bind((iface, 0))
+        s.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+        return s.getsockname()[1]
+
+
+async def get_vod_url(channel_id, program_id):
+    global vod_client
+    params = f'action=getCatchUpUrl&extInfoID={program_id}&channelID={channel_id}' \
+             f'&service=hd&mode=1'
+    try:
+        async with vod_client.get(f'{MVTV_URL}?{params}') as r:
+            resp = await r.json()
+        return resp['resultData']['url']
+    except KeyError:
+        return None
+
+
+async def record_stream():
     global _ffmpeg, _log_suffix, ffmpeg, filename, full_title, path
     _options = {
         'map': '0',
@@ -250,7 +264,8 @@ def record_stream():
         'metadata:s:s:1': 'language=eng'
     }
 
-    resp = httpx.get(epg_url)
+    async with httpx.AsyncClient() as client:
+        resp = await client.get(epg_url)
     if resp.status_code == 200:
         data = resp.json()
         # sys.stderr.write(f'{data}\n')
@@ -306,8 +321,8 @@ def save_metadata():
                 if resp.status_code != 200:
                     continue
                 image_ext = os.path.basename(_cover).split('.')[-1]
-                _img_name = (f'{path}/metadata/{os.path.basename(filename)}-{_img}'
-                             f'.{image_ext}')
+                _img_name = f'{path}/metadata/{os.path.basename(filename)}-{_img}' \
+                            f'.{image_ext}'
                 with open(_img_name, 'wb') as f:
                     f.write(resp.read())
         metadata['title'] = full_title
@@ -322,76 +337,106 @@ def save_metadata():
         sys.stderr.write(f'{_log_prefix} No metadata found {ex}\n')
 
 
-def main():
-    global epg_url, needs_position
+async def VodInit(VodArgs, client):
+    global args, vod_client
+    args = VodArgs
 
-    client = s = None
+    vod_client = client
+    try:
+        await VodSetup()
+    except (CancelledError, TimeoutError, ValueError):
+        pass
+
+
+async def VodLoop():
+    global vod_client
+    try:
+        if __name__ == '__main__':
+            conn = aiohttp.TCPConnector()
+            vod_client = aiohttp.ClientSession(connector=conn, headers={'User-Agent': UA})
+            await VodSetup()
+
+            if args.write_to_file:
+                await record_stream()
+
+        while True:
+            await asyncio.sleep(30)
+            if __name__ == '__main__':
+                if args.write_to_file and _ffmpeg and not _ffmpeg.is_alive():
+                    break
+            client.print(await client.send_request('GET_PARAMETER', get_parameter))
+
+    except (AttributeError, CancelledError, TimeoutError, TypeError, ValueError):
+        pass
+    except Exception as ex:
+        sys.stderr.write(f'{_log_prefix} Error: {ex}\n')
+
+    finally:
+        try:
+            client.print(await client.send_request('TEARDOWN', session))
+        except (AttributeError, OSError, RuntimeError):
+            pass
+        try:
+            client.close_connection()
+        except AttributeError:
+            pass
+        if __name__ == '__main__':
+            if _ffmpeg:
+                _ffmpeg.join()
+            await vod_client.close()
+
+
+async def VodSetup():
+    global _log_prefix, _log_suffix, client, get_parameter, epg_url, needs_position, session
+
+    _log_prefix = f"{'[' + args.client_ip + '] ' if args.client_ip else ''}[VOD:{os.getpid()}]"
+    _log_suffix = f'{args.channel} {args.broadcast}'
+
+    client = None
     headers = {'CSeq': '', 'User-Agent': UA}
 
     setup = session = play = describe = headers.copy()
     describe['Accept'] = 'application/sdp'
     setup['Transport'] = f'MP2T/H2221/UDP;unicast;client_port={args.client_port}'
 
-    url = get_vod_url(args.channel, args.broadcast)
+    url = await get_vod_url(args.channel, args.broadcast)
     if not url:
-        sys.stderr.write(f'{_log_prefix} Error: {ex}\n')
-        sys.exit(1)
+        sys.stderr.write(f'{_log_prefix} Error: {repr(url)}\n')
+        raise ValueError()
 
     uri = urllib.parse.urlparse(url)
     epg_url = (f'{SANIC_EPG_URL}/program_name/{args.channel}/{args.broadcast}')
 
-    def _handle_cleanup(signum, frame):
-        raise TimeoutError()
+    reader, writer = await asyncio.open_connection(uri.hostname, uri.port)
+
     signal.signal(signal.SIGHUP, _handle_cleanup)
     signal.signal(signal.SIGTERM, _handle_cleanup)
 
-    with closing(socket.socket(socket.AF_INET, socket.SOCK_STREAM)) as s:
-        try:
-            s.connect((uri.hostname, uri.port))
-            s.settimeout(10)
+    client = RtspClient(reader, writer, url)
+    client.print(await client.send_request('OPTIONS', headers))
+    client.print(await client.send_request('DESCRIBE', describe))
 
-            client = RtspClient(s, url)
-            client.print(client.send_request('OPTIONS', headers))
-            client.print(client.send_request('DESCRIBE', describe))
+    r = client.print(await client.send_request('SETUP', setup))
+    if r.status != '200 OK':
+        needs_position = True
+        r = client.print(await client.send_request('SETUP2', setup))
+        if r.status != '200 OK':
+            sys.stderr.write(f'{r}\n')
+            return
 
-            r = client.print(client.send_request('SETUP', setup))
-            if r.status != '200 OK':
-                needs_position = True
-                r = client.print(client.send_request('SETUP2', setup))
-                if r.status != '200 OK':
-                    sys.stderr.write(f'{r}\n')
-                    return
+    play['Range'] = f'npt={args.start}-end'
+    play.update({'Scale': '1.000', 'x-playNow': '', 'x-noFlush': ''})
+    play['Session'] = session['Session'] = r.headers['Session'].split(';')[0]
 
-            play['Range'] = f'npt={args.start}-end'
-            play.update({'Scale': '1.000', 'x-playNow': '', 'x-noFlush': ''})
-            play['Session'] = session['Session'] = r.headers['Session'].split(';')[0]
+    get_parameter = session.copy()
+    if needs_position:
+        get_parameter.update({'Content-type': 'text/parameters',
+                              'Content-length': 10})
 
-            get_parameter = session.copy()
-            if needs_position:
-                get_parameter.update({'Content-type': 'text/parameters',
-                                      'Content-length': 10})
-
-            client.print(client.send_request('PLAY', play))
-
-            if args.write_to_file:
-                record_stream()
-
-            while True:
-                time.sleep(30)
-                if args.write_to_file and _ffmpeg and not _ffmpeg.is_alive():
-                    break
-                client.print(client.send_request('GET_PARAMETER', get_parameter))
-
-        except (TimeoutError, ValueError):
-            pass
-
-        finally:
-            if client and 'Session' in session:
-                client.print(client.send_request('TEARDOWN', session))
+    client.print(await client.send_request('PLAY', play))
 
 
 if __name__ == '__main__':
-
     parser = argparse.ArgumentParser('Stream content from the Movistar VOD service.')
     parser.add_argument('channel', help='channel id')
     parser.add_argument('broadcast', help='broadcast id')
@@ -415,11 +460,8 @@ if __name__ == '__main__':
     if not args.client_port:
         args.client_port = find_free_port(args.iptv_ip)
 
-    _log_prefix = f"{'[' + args.client_ip + '] ' if args.client_ip else ''}[VOD:{os.getpid()}]"
-    _log_suffix = f'{args.channel} {args.broadcast}'
-
     try:
-        main()
+        asyncio.run(VodLoop())
         sys.exit(0)
     except (KeyboardInterrupt, TimeoutError):
         sys.exit(1)

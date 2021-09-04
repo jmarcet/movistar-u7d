@@ -82,8 +82,8 @@ async def after_server_start(app, loop):
 async def after_server_stop(app, loop):
     for task in [_t_epg2, _t_epg1, _t_timers, _t_timers_d, _t_timers_r, _t_timers_t, tvgrab]:
         try:
-            task.kill()
-            await task
+            task.cancel()
+            await asyncio.wait({task})
         except (AttributeError, ProcessLookupError):
             pass
 

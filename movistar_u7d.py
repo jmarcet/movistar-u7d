@@ -8,13 +8,13 @@ import signal
 import socket
 import subprocess
 import sys
-import timeit
 
+from collections import namedtuple
 from contextlib import closing
 from setproctitle import setproctitle
 from sanic import Sanic, response
 from sanic.log import logger as log, LOGGING_CONFIG_DEFAULTS
-from vod import find_free_port, COVER_URL, IMAGENIO_URL
+from vod import VodInit, VodLoop, find_free_port, COVER_URL, IMAGENIO_URL, MVTV_URL, UA
 
 
 setproctitle('movistar_u7d')
@@ -39,6 +39,10 @@ PREFIX = ''
 
 app = Sanic('movistar_u7d', log_config=LOG_SETTINGS)
 app.config.update({'REQUEST_TIMEOUT': 1, 'RESPONSE_TIMEOUT': 1})
+app.ctx.vod_client = None
+
+VodArgs = namedtuple('Vod', ['channel', 'broadcast', 'iptv_ip',
+                             'client_ip', 'client_port', 'start'])
 
 _channels = _iptv = _session = _session_logos = None
 
@@ -58,13 +62,22 @@ async def after_server_start(app, loop):
     conn = aiohttp.TCPConnector(keepalive_timeout=YEAR_SECONDS, limit_per_host=1)
     _session = aiohttp.ClientSession(connector=conn)
 
+    await asyncio.sleep(0.001)
     while True:
-        async with _session.get(f'{SANIC_EPG_URL}/channels/') as r:
-            if r.status == 200:
-                _channels = await r.json()
-                break
-            else:
-                await asyncio.sleep(5)
+        try:
+            async with _session.get(f'{SANIC_EPG_URL}/channels/') as r:
+                if r.status == 200:
+                    _channels = await r.json()
+                    break
+                else:
+                    await asyncio.sleep(5)
+        except (ConnectionRefusedError, aiohttp.client_exceptions.ClientConnectorError):
+            await asyncio.sleep(5)
+
+    if not app.ctx.vod_client:
+        conn_vod = aiohttp.TCPConnector(keepalive_timeout=YEAR_SECONDS)
+        app.ctx.vod_client = aiohttp.ClientSession(connector=conn_vod,
+                                                   headers={'User-Agent': UA})
 
 
 @app.get('/canales.m3u')
@@ -123,7 +136,8 @@ async def handle_logos(request, cover=None, logo=None, path=None):
 @app.route('/<channel_id>/live', methods=['GET', 'HEAD'])
 async def handle_channel(request, channel_id):
     try:
-        name, mc_grp, mc_port = [_channels[channel_id][t] for t in ['name', 'address', 'port']]
+        name, mc_grp, mc_port = [_channels[channel_id][t]
+                                 for t in ['name', 'address', 'port']]
     except (AttributeError, KeyError):
         return response.json({'status': f'{channel_id} not found'}, 404)
 
@@ -144,6 +158,7 @@ async def handle_channel(request, channel_id):
             log.info(f'[{request.ip}] {request.raw_url} -> Playing "{name}"')
             try:
                 _response = await request.respond(content_type=MIME_TS)
+                await _response.send((await stream.recv())[0][28:])
                 while True:
                     await _response.send((await stream.recv())[0][28:])
             finally:
@@ -156,24 +171,24 @@ async def handle_channel(request, channel_id):
 
 @app.route('/<channel_id>/<url>', methods=['GET', 'HEAD'])
 async def handle_flussonic(request, channel_id, url):
-    _start = timeit.default_timer()
     log.debug(f'[{request.ip}] {request.method} {request.raw_url}')
     try:
         async with _session.get(f'{SANIC_EPG_URL}/program_id/{channel_id}/{url}') as r:
             name, program_id, duration, offset = (await r.json()).values()
-        if request.method == 'HEAD':
-            return response.HTTPResponse(content_type=MIME_TS, status=200)
-    except (AttributeError, KeyError) as ex:
+    except (AttributeError, KeyError, ValueError) as ex:
         log.error(f'{repr(ex)}')
         return response.json({'status': f'{channel_id}/{url} not found {repr(ex)}'}, 404)
 
+    if request.method == 'HEAD':
+        return response.HTTPResponse(content_type=MIME_TS, status=200)
+
     client_port = find_free_port(_iptv)
-    cmd = f'{PREFIX}vod.py {channel_id} {program_id} -s {offset}' \
-        f' -p {client_port} -i {request.ip} -a {_iptv}'
     vod_msg = f'"{name}" {program_id} [{offset}/{duration}]'
 
     record = request.args.get('record', 0)
     if record:
+        cmd = f'{PREFIX}vod.py {channel_id} {program_id} -s {offset}' \
+              f' -p {client_port} -i {request.ip} -a {_iptv}'
         record = int(record)
         record_time = record if record > 1 else duration - offset
 
@@ -189,8 +204,11 @@ async def handle_flussonic(request, channel_id, url):
         return response.json({'status': 'OK',
                               'channel_id': channel_id, 'program_id': program_id,
                               'offset': offset, 'time': record_time})
+
+    await VodInit(VodArgs(channel_id, program_id, _iptv, request.ip,
+                          client_port, offset), app.ctx.vod_client)
+    vod = asyncio.create_task(VodLoop())
     try:
-        vod = await asyncio.create_subprocess_exec(*(cmd.split()),)
         with closing(await asyncio_dgram.bind((_iptv, client_port))) as stream:
             log.info(f'[{request.ip}] {request.raw_url} -> Playing {vod_msg}')
             try:
@@ -199,8 +217,6 @@ async def handle_flussonic(request, channel_id, url):
             except asyncio.exceptions.TimeoutError:
                 log.error(f'NOT_AVAILABLE: {vod_msg}')
                 return response.empty(404)
-            _stop = timeit.default_timer()
-            log.info(f'{url} took {_stop - _start}')
             try:
                 while True:
                     await _response.send((await stream.recv())[0])
@@ -212,7 +228,8 @@ async def handle_flussonic(request, channel_id, url):
                     pass
     finally:
         try:
-            await vod.terminate()
+            vod.cancel()
+            await asyncio.wait({vod})
         except (ProcessLookupError, TypeError):
             pass
 
@@ -226,7 +243,7 @@ if __name__ == '__main__':
     try:
         app.run(host=SANIC_HOST, port=SANIC_PORT,
                 access_log=False, auto_reload=False, debug=False, workers=SANIC_THREADS)
-    except KeyboardInterrupt:
+    except (KeyboardInterrupt, TimeoutError):
         sys.exit(1)
     except Exception as ex:
         log.critical(f'{ex}')
