@@ -13,8 +13,11 @@ from collections import namedtuple
 from contextlib import closing
 from setproctitle import setproctitle
 from sanic import Sanic, response
-from sanic.log import logger as log, LOGGING_CONFIG_DEFAULTS
-from vod import VodInit, VodLoop, find_free_port, COVER_URL, IMAGENIO_URL, MVTV_URL, UA
+from sanic.log import error_logger, logger as log, LOGGING_CONFIG_DEFAULTS
+from sanic.server import HttpProtocol
+from sanic.models.server_types import ConnInfo
+from sanic.touchup.meta import TouchUpMeta
+from vod import VodInit, VodLoop, find_free_port, COVER_URL, IMAGENIO_URL, UA
 
 
 setproctitle('movistar_u7d')
@@ -171,7 +174,6 @@ async def handle_channel(request, channel_id):
 
 @app.route('/<channel_id>/<url>', methods=['GET', 'HEAD'])
 async def handle_flussonic(request, channel_id, url):
-    log.debug(f'[{request.ip}] {request.method} {request.raw_url}')
     try:
         async with _session.get(f'{SANIC_EPG_URL}/program_id/{channel_id}/{url}') as r:
             name, program_id, duration, offset = (await r.json()).values()
@@ -239,9 +241,25 @@ async def handle_notfound(request):
     return response.json({}, 404)
 
 
+class VodHttpProtocol(HttpProtocol, metaclass=TouchUpMeta):
+    def connection_made(self, transport):
+        """
+        HTTP-protocol-specific new connection handler tuned for VOD.
+        """
+        try:
+            transport.set_write_buffer_limits(low=188, high=1316)
+            self.connections.add(self)
+            self.transport = transport
+            self._task = self.loop.create_task(self.connection_task())
+            self.recv_buffer = bytearray()
+            self.conn_info = ConnInfo(self.transport, unix=self._unix)
+        except Exception:
+            error_logger.exception("protocol.connect_made")
+
+
 if __name__ == '__main__':
     try:
-        app.run(host=SANIC_HOST, port=SANIC_PORT,
+        app.run(host=SANIC_HOST, port=SANIC_PORT, protocol=VodHttpProtocol,
                 access_log=False, auto_reload=False, debug=False, workers=SANIC_THREADS)
     except (KeyboardInterrupt, TimeoutError):
         sys.exit(1)
