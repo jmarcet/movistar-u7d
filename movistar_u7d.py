@@ -8,6 +8,7 @@ import signal
 import socket
 import subprocess
 import sys
+import timeit
 
 from collections import namedtuple
 from contextlib import closing
@@ -138,6 +139,7 @@ async def handle_logos(request, cover=None, logo=None, path=None):
 
 @app.route('/<channel_id>/live', methods=['GET', 'HEAD'])
 async def handle_channel(request, channel_id):
+    _start = timeit.default_timer()
     try:
         name, mc_grp, mc_port = [_channels[channel_id][t]
                                  for t in ['name', 'address', 'port']]
@@ -162,6 +164,8 @@ async def handle_channel(request, channel_id):
             try:
                 _response = await request.respond(content_type=MIME_TS)
                 await _response.send((await stream.recv())[0][28:])
+                _stop = timeit.default_timer()
+                log.info(f'[{request.ip}] {request.raw_url} -> {_stop - _start}s')
                 while True:
                     await _response.send((await stream.recv())[0][28:])
             finally:
@@ -174,6 +178,7 @@ async def handle_channel(request, channel_id):
 
 @app.route('/<channel_id>/<url>', methods=['GET', 'HEAD'])
 async def handle_flussonic(request, channel_id, url):
+    _start = timeit.default_timer()
     try:
         async with _session.get(f'{SANIC_EPG_URL}/program_id/{channel_id}/{url}') as r:
             name, program_id, duration, offset = (await r.json()).values()
@@ -216,6 +221,8 @@ async def handle_flussonic(request, channel_id, url):
             try:
                 _response = await request.respond(content_type=MIME_TS)
                 await _response.send((await asyncio.wait_for(stream.recv(), 1))[0])
+                _stop = timeit.default_timer()
+                log.info(f'[{request.ip}] {request.raw_url} -> {_stop - _start}s')
             except asyncio.exceptions.TimeoutError:
                 log.error(f'NOT_AVAILABLE: {vod_msg}')
                 return response.empty(404)
