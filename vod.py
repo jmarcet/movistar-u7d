@@ -335,7 +335,7 @@ def save_metadata():
                                       pretty=True, wrapper='metadata').to_xml())
 
     except (FileNotFoundError, TypeError, ValueError) as ex:
-        sys.stderr.write(f'{_log_prefix} No metadata found {ex}\n')
+        sys.stderr.write(f'{_log_prefix} No metadata found {repr(ex)}\n')
 
 
 async def VodInit(VodArgs, client):
@@ -370,7 +370,7 @@ async def VodLoop():
     except (AttributeError, CancelledError, TimeoutError, TypeError, ValueError):
         pass
     except Exception as ex:
-        sys.stderr.write(f'{_log_prefix} Error: {ex}\n')
+        sys.stderr.write(f'{_log_prefix} Error: {repr(ex)}\n')
 
     finally:
         try:
@@ -467,5 +467,5 @@ if __name__ == '__main__':
     except (KeyboardInterrupt, TimeoutError):
         sys.exit(1)
     except Exception as ex:
-        sys.stderr.write(f'{ex}\n')
+        sys.stderr.write(f'{repr(ex)}\n')
         sys.exit(1)

@@ -271,5 +271,5 @@ if __name__ == '__main__':
     except (KeyboardInterrupt, TimeoutError):
         sys.exit(1)
     except Exception as ex:
-        log.critical(f'{ex}')
+        log.critical(f'{repr(ex)}')
         sys.exit(1)

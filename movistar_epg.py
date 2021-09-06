@@ -233,7 +233,7 @@ async def reload_epg():
         _epgdata = epgdata
         log.info('Loaded fresh EPG data')
     except (FileNotFoundError, TypeError, ValueError) as ex:
-        log.error(f'Failed to load EPG data {ex}')
+        log.error(f'Failed to load EPG data {repr(ex)}')
         if os.path.exists(epg_data):
             os.remove(epg_data)
         return await reload_epg()
@@ -244,7 +244,7 @@ async def reload_epg():
         _channels = channels
         log.info('Loaded Channels metadata')
     except (FileNotFoundError, TypeError, ValueError) as ex:
-        log.error(f'Failed to load Channels metadata {ex}')
+        log.error(f'Failed to load Channels metadata {repr(ex)}')
         if os.path.exists(epg_metadata):
             os.remove(epg_metadata)
         return await reload_epg()
@@ -281,7 +281,7 @@ async def timers_check():
                     _recordings = ujson.loads(await f.read())
         except (FileNotFoundError, TypeError, ValueError) as ex:
             if not _timers:
-                log.error(f'handle_timers: {ex}')
+                log.error(f'handle_timers: {repr(ex)}')
                 return
 
         _ffmpeg = await get_ffmpeg_procs()
@@ -336,7 +336,7 @@ async def timers_check():
                                     log.info(f'Already recording {nr_procs} streams')
                                     return
                         except Exception as ex:
-                            log.warning(f'{ex}')
+                            log.warning(f'{repr(ex)}')
 
 
 async def timers_check_delayed():
@@ -377,5 +377,5 @@ if __name__ == '__main__':
     except KeyboardInterrupt:
         sys.exit(1)
     except Exception as ex:
-        log.critical(f'{ex}')
+        log.critical(f'{repr(ex)}')
         sys.exit(1)
