@@ -289,7 +289,8 @@ async def record_stream():
         timeout=500000
     ).output(filename + TMP_EXT, _options,
              fflags='+igndts',
-             t=str(args.time + 300),
+             t=str(args.time + 600 if args.time > 7200 else args.time + 300
+                   if args.time > 1800 else args.time + 60),
              v='info',
              vsync='0',
              f='matroska')
