@@ -18,7 +18,7 @@ from sanic.log import error_logger, logger as log, LOGGING_CONFIG_DEFAULTS
 from sanic.server import HttpProtocol
 from sanic.models.server_types import ConnInfo
 from sanic.touchup.meta import TouchUpMeta
-from vod import VodInit, VodLoop, find_free_port, COVER_URL, IMAGENIO_URL, UA
+from vod import VodData, VodLoop, VodSetup, find_free_port, COVER_URL, IMAGENIO_URL, UA
 
 
 setproctitle('movistar_u7d')
@@ -66,7 +66,6 @@ async def after_server_start(app, loop):
     conn = aiohttp.TCPConnector(keepalive_timeout=YEAR_SECONDS, limit_per_host=1)
     _session = aiohttp.ClientSession(connector=conn)
 
-    await asyncio.sleep(0.001)
     while True:
         try:
             async with _session.get(f'{SANIC_EPG_URL}/channels/') as r:
@@ -212,9 +211,9 @@ async def handle_flussonic(request, channel_id, url):
                               'channel_id': channel_id, 'program_id': program_id,
                               'offset': offset, 'time': record_time})
 
-    await VodInit(VodArgs(channel_id, program_id, _iptv, request.ip,
-                          client_port, offset), app.ctx.vod_client)
-    vod = asyncio.create_task(VodLoop())
+    _args = VodArgs(channel_id, program_id, _iptv, request.ip, client_port, offset)
+    vod_data = await VodSetup(_args, app.ctx.vod_client)
+    vod = asyncio.create_task(VodLoop(_args, vod_data))
     try:
         with closing(await asyncio_dgram.bind((_iptv, client_port))) as stream:
             log.info(f'[{request.ip}] {request.raw_url} -> Playing {vod_msg}')

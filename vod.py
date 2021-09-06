@@ -39,11 +39,10 @@ YEAR_SECONDS = 365 * 24 * 60 * 60
 
 Request = namedtuple('Request', ['request', 'response'])
 Response = namedtuple('Response', ['version', 'status', 'url', 'headers', 'body'])
+VodData = namedtuple('VodData', ['client', 'get_parameter', 'session'])
 
 ffmpeg = FFmpeg().option('y').option('xerror')
-_ffmpeg = _log_prefix = _log_suffix = args = client = epg_url = filename = \
-    full_title = get_parameter = path = session = vod_client = None
-needs_position = False
+_ffmpeg = _log_prefix = _log_suffix = args = epg_url = filename = full_title = path = None
 
 
 class RtspClient(object):
@@ -53,6 +52,7 @@ class RtspClient(object):
         self.url = url
         self.cseq = 1
         self.ip = None
+        self.needs_position = False
 
     async def read_message(self):
         resp = (await self.reader.read(4096)).decode()
@@ -80,7 +80,6 @@ class RtspClient(object):
         return '\r\n'.join(map(lambda x: '{0}: {1}'.format(*x), headers.items()))
 
     async def send_request(self, method, headers={}):
-        global needs_position
         if method == 'OPTIONS':
             url = '*'
         elif method == 'SETUP2':
@@ -94,7 +93,7 @@ class RtspClient(object):
         ser_headers = self.serialize_headers(headers)
         self.cseq += 1
 
-        if method == 'GET_PARAMETER' and needs_position:
+        if method == 'GET_PARAMETER' and self.needs_position:
             req = f'{method} {url} RTSP/1.0\r\n{ser_headers}\r\n\r\nposition\r\n\r\n'
         else:
             req = f'{method} {url} RTSP/1.0\r\n{ser_headers}\r\n\r\n'
@@ -130,6 +129,12 @@ class RtspClient(object):
 
     def close_connection(self):
         self.writer.close()
+
+    def get_needs_position(self):
+        return self.needs_position
+
+    def needs_position(self):
+        self.needs_position = True
 
 
 @ffmpeg.on('completed')
@@ -236,8 +241,7 @@ def find_free_port(iface=''):
         return s.getsockname()[1]
 
 
-async def get_vod_url(channel_id, program_id):
-    global vod_client
+async def get_vod_url(channel_id, program_id, vod_client):
     params = f'action=getCatchUpUrl&extInfoID={program_id}&channelID={channel_id}' \
              f'&service=hd&mode=1'
     try:
@@ -338,24 +342,12 @@ def save_metadata():
         sys.stderr.write(f'{_log_prefix} No metadata found {repr(ex)}\n')
 
 
-async def VodInit(VodArgs, client):
-    global args, vod_client
-    args = VodArgs
-
-    vod_client = client
-    try:
-        await VodSetup()
-    except (CancelledError, TimeoutError, ValueError):
-        pass
-
-
-async def VodLoop():
-    global vod_client
+async def VodLoop(args, vod_data=None):
     try:
         if __name__ == '__main__':
             conn = aiohttp.TCPConnector()
             vod_client = aiohttp.ClientSession(connector=conn, headers={'User-Agent': UA})
-            await VodSetup()
+            vod_data = await VodSetup(args, vod_client)
 
             if args.write_to_file:
                 await record_stream()
@@ -365,7 +357,8 @@ async def VodLoop():
             if __name__ == '__main__':
                 if args.write_to_file and _ffmpeg and not _ffmpeg.is_alive():
                     break
-            client.print(await client.send_request('GET_PARAMETER', get_parameter))
+            vod_data.client.print(await vod_data.client.send_request('GET_PARAMETER',
+                                  vod_data.get_parameter))
 
     except (AttributeError, CancelledError, TimeoutError, TypeError, ValueError):
         pass
@@ -374,11 +367,12 @@ async def VodLoop():
 
     finally:
         try:
-            client.print(await client.send_request('TEARDOWN', session))
+            vod_data.client.print(await vod_data.client.send_request('TEARDOWN',
+                                  vod_data.session))
         except (AttributeError, OSError, RuntimeError):
             pass
         try:
-            client.close_connection()
+            vod_data.client.close_connection()
         except AttributeError:
             pass
         if __name__ == '__main__':
@@ -387,8 +381,8 @@ async def VodLoop():
             await vod_client.close()
 
 
-async def VodSetup():
-    global _log_prefix, _log_suffix, client, get_parameter, epg_url, needs_position, session
+async def VodSetup(args, vod_client):
+    global _log_prefix, _log_suffix, epg_url
 
     _log_prefix = f"{'[' + args.client_ip + '] ' if args.client_ip else ''}[VOD:{os.getpid()}]"
     _log_suffix = f'{args.channel} {args.broadcast}'
@@ -400,7 +394,7 @@ async def VodSetup():
     describe['Accept'] = 'application/sdp'
     setup['Transport'] = f'MP2T/H2221/UDP;unicast;client_port={args.client_port}'
 
-    url = await get_vod_url(args.channel, args.broadcast)
+    url = await get_vod_url(args.channel, args.broadcast, vod_client)
     if not url:
         sys.stderr.write(f'{_log_prefix} Error: {repr(url)}\n')
         raise ValueError()
@@ -419,7 +413,7 @@ async def VodSetup():
 
     r = client.print(await client.send_request('SETUP', setup))
     if r.status != '200 OK':
-        needs_position = True
+        client.needs_position()
         r = client.print(await client.send_request('SETUP2', setup))
         if r.status != '200 OK':
             sys.stderr.write(f'{r}\n')
@@ -430,11 +424,13 @@ async def VodSetup():
     play['Session'] = session['Session'] = r.headers['Session'].split(';')[0]
 
     get_parameter = session.copy()
-    if needs_position:
+    if client.get_needs_position():
         get_parameter.update({'Content-type': 'text/parameters',
                               'Content-length': 10})
 
     client.print(await client.send_request('PLAY', play))
+
+    return VodData(client, get_parameter, session)
 
 
 if __name__ == '__main__':
@@ -462,7 +458,7 @@ if __name__ == '__main__':
         args.client_port = find_free_port(args.iptv_ip)
 
     try:
-        asyncio.run(VodLoop())
+        asyncio.run(VodLoop(args))
         sys.exit(0)
     except (KeyboardInterrupt, TimeoutError):
         sys.exit(1)
