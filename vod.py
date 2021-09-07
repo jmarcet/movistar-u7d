@@ -43,6 +43,7 @@ VodData = namedtuple('VodData', ['client', 'get_parameter', 'session'])
 
 ffmpeg = FFmpeg().option('y').option('xerror')
 _ffmpeg = _log_prefix = _log_suffix = args = epg_url = filename = full_title = path = None
+_nice = ('nice', '-n', '15', 'ionice', '-c', '3')
 
 
 class RtspClient(object):
@@ -139,7 +140,7 @@ class RtspClient(object):
 
 @ffmpeg.on('completed')
 def ffmpeg_completed():
-    command = _nice = ['nice', '-n', '10', 'ionice', '-c', '3']
+    command = list(_nice)
 
     if os.path.exists(filename + VID_EXT):
         os.remove(filename + VID_EXT)
@@ -168,7 +169,7 @@ def ffmpeg_completed():
             track, lang = re.match(r"^#([0-9:]+)[^:]*\((\w+)\):", subs[0]).groups()
             if lang == 'esp':
                 lang = 'spa'
-            command = _nice
+            command = list(_nice)
             command += ['ffmpeg', '-i', filename + TMP_EXT, '-map', track]
             command += ['-c:s', 'dvbsub', '-f', 'mpegts', '-v', 'panic']
             command += ['-y', f'{filename}.{lang}.sub']
@@ -217,7 +218,8 @@ def check_recording():
         sys.stderr.write(f'{_log_prefix} Recording CANNOT FIND: {_log_suffix}')
         return False
 
-    command = ['ffprobe', '-v', 'quiet', '-print_format', 'json', '-show_format']
+    command = list(_nice)
+    command += ['ffprobe', '-v', 'quiet', '-print_format', 'json', '-show_format']
     command += [filename + VID_EXT]
     try:
         probe = ujson.loads(subprocess.run(command, capture_output=True).stdout.decode())
