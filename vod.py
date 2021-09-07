@@ -224,7 +224,7 @@ def check_recording():
     try:
         probe = ujson.loads(subprocess.run(command, capture_output=True).stdout.decode())
         duration = int(float(probe['format']['duration']))
-    except KeyError:
+    except (KeyError, ValueError):
         sys.stderr.write(f'{_log_prefix} Recording CANNOT PARSE: {_log_suffix}')
         return False
 
