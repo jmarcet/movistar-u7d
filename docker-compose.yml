@@ -20,13 +20,13 @@ services:
     # - ${HOME}:/home
     # - ${RECORDINGS}:${RECORDINGS}
     #environment:
-    # - U7D_UID=${U7D_UID}
-    # - U7D_GID=${U7D_GID}
-    # - LAN_IP=${LAN_IP}
     # - EPG_THREADS=${EPG_THREADS}
-    # - PARALLEL_RECORDINGS=${PARALLEL_RECORDINGS}
+    # - IPTV_BW=${IPTV_BW}
+    # - LAN_IP=${LAN_IP}
+    # - RECORDING_THREADS=${RECORDING_THREADS}
     # - RECORDINGS=${RECORDINGS}
     # - SANIC_PORT=${SANIC_PORT}
+    # - U7D_UID=${U7D_UID}
     # devices:
     #   - /dev/dri:/dev/dri
     # cpu_shares: 2048

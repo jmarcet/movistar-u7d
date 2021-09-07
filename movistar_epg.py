@@ -50,6 +50,7 @@ timers_lock = asyncio.Lock()
 
 _channels = {}
 _epgdata = {}
+_network_fsignal = '/tmp/.u7d_bw'
 _t_epg1 = _t_epg2 = _t_timers = _t_timers_d = _t_timers_r = _t_timers_t = tvgrab = None
 
 
@@ -286,7 +287,7 @@ async def timers_check():
 
         _ffmpeg = await get_ffmpeg_procs()
         nr_procs = len(_ffmpeg)
-        if not nr_procs < RECORDING_THREADS:
+        if RECORDING_THREADS and not nr_procs < RECORDING_THREADS:
             log.info(f'Already recording {nr_procs} streams')
             return
 
@@ -332,17 +333,23 @@ async def timers_check():
                             if r.status_code == 200:
                                 timers_added.append(title)
                                 nr_procs += 1
-                                if not nr_procs < RECORDING_THREADS:
+                                if RECORDING_THREADS and not nr_procs < RECORDING_THREADS:
                                     log.info(f'Already recording {nr_procs} streams')
                                     return
+                                await asyncio.sleep(3)
+                            elif r.status_code == 503:
+                                return
                         except Exception as ex:
                             log.warning(f'{repr(ex)}')
 
 
 async def timers_check_delayed():
-    global _t_timers
+    global RECORDING_THREADS, _t_timers
     log.info('Waiting 60s to check timers (ensuring no stale rtsp is present)...')
     await asyncio.sleep(60)
+    if os.path.exists(_network_fsignal):
+        log.info('Ignoring RECORDING_THREADS, using dynamic limit')
+        RECORDING_THREADS = 0
     _t_timers = asyncio.create_task(every(900, timers_check))
 
 

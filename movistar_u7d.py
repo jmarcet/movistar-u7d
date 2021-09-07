@@ -14,11 +14,12 @@ from collections import namedtuple
 from contextlib import closing
 from setproctitle import setproctitle
 from sanic import Sanic, response
+from sanic.compat import open_async
 from sanic.log import error_logger, logger as log, LOGGING_CONFIG_DEFAULTS
 from sanic.server import HttpProtocol
 from sanic.models.server_types import ConnInfo
 from sanic.touchup.meta import TouchUpMeta
-from vod import VodData, VodLoop, VodSetup, find_free_port, COVER_URL, IMAGENIO_URL, UA
+from vod import VodLoop, VodSetup, find_free_port, COVER_URL, IMAGENIO_URL, UA
 
 
 setproctitle('movistar_u7d')
@@ -26,6 +27,10 @@ setproctitle('movistar_u7d')
 HOME = os.getenv('HOME', '/home')
 CHANNELS = os.path.join(HOME, 'MovistarTV.m3u')
 GUIDE = os.path.join(HOME, 'guide.xml')
+IPTV_BW = int(os.getenv('IPTV_BW', '85000'))
+IPTV_BW = 85000 if IPTV_BW > 90000 else IPTV_BW
+IPTV_BW_RECS = int(os.getenv('IPTV_BW_RECS', '75000'))
+IPTV_BW_RECS = 85000 if IPTV_BW_RECS > 90000 else IPTV_BW_RECS
 MIME_TS = 'video/MP2T;audio/mp3'
 MP4_OUTPUT = bool(os.getenv('MP4_OUTPUT', False))
 SANIC_EPG_URL = 'http://127.0.0.1:8889'
@@ -48,13 +53,15 @@ app.ctx.vod_client = None
 VodArgs = namedtuple('Vod', ['channel', 'broadcast', 'iptv_ip',
                              'client_ip', 'client_port', 'start'])
 
-_channels = _iptv = _session = _session_logos = None
+_channels = _iptv = _session = _session_logos = _t_tp = None
+_network_fsignal = '/tmp/.u7d_bw'
+_network_high = _network_saturated = False
 
 
 @app.listener('after_server_start')
 async def after_server_start(app, loop):
     log.debug('after_server_start')
-    global PREFIX, _channels, _iptv, _session
+    global PREFIX, _channels, _iptv, _session, _t_tp
     if __file__.startswith('/app/'):
         PREFIX = '/app/'
 
@@ -81,6 +88,36 @@ async def after_server_start(app, loop):
         conn_vod = aiohttp.TCPConnector(keepalive_timeout=YEAR_SECONDS)
         app.ctx.vod_client = aiohttp.ClientSession(connector=conn_vod,
                                                    headers={'User-Agent': UA})
+
+    if os.path.exists('/proc/net/route'):
+        async with await open_async('/proc/net/route') as f:
+            _route = await f.read()
+
+        try:
+            iface = list(set([u[0] for u in
+                              [t.split()[0:3] for t in _route.splitlines()]
+                              if u[2] == '0100400A']))[0]  # gw=10.64.0.1
+        except (AttributeError, KeyError):
+            return
+
+        # let's control dynamically the number of allowed clients
+        iface_rx = f'/sys/class/net/{iface}/statistics/rx_bytes'
+        if os.path.exists(iface_rx):
+            log.info('Setting dynamic limit of clients '
+                     'from ' + iface_rx.split('/')[4] + ' bw')
+            _t_tp = app.add_task(throughput(iface_rx))
+            if not os.path.exists(_network_fsignal):
+                with open(_network_fsignal, 'w') as f:
+                    f.write('')
+
+
+@app.listener('after_server_stop')
+async def after_server_stop(app, loop):
+    try:
+        _t_tp.cancel()
+        await asyncio.wait({_t_tp})
+    except (AttributeError, ProcessLookupError):
+        pass
 
 
 @app.get('/canales.m3u')
@@ -139,6 +176,9 @@ async def handle_logos(request, cover=None, logo=None, path=None):
 @app.route('/<channel_id>/live', methods=['GET', 'HEAD'])
 async def handle_channel(request, channel_id):
     _start = timeit.default_timer()
+    if _network_saturated:
+        log.warning(f'[{request.ip}] {request.raw_url} -> Network Saturated')
+        return response.json({'status': 'Network Saturated'}, 503)
     try:
         name, mc_grp, mc_port = [_channels[channel_id][t]
                                  for t in ['name', 'address', 'port']]
@@ -178,6 +218,9 @@ async def handle_channel(request, channel_id):
 @app.route('/<channel_id>/<url>', methods=['GET', 'HEAD'])
 async def handle_flussonic(request, channel_id, url):
     _start = timeit.default_timer()
+    if _network_saturated:
+        log.warning(f'[{request.ip}] {request.raw_url} -> Network Saturated')
+        return response.json({'status': 'Network Saturated'}, 503)
     try:
         async with _session.get(f'{SANIC_EPG_URL}/program_id/{channel_id}/{url}') as r:
             name, program_id, duration, offset = (await r.json()).values()
@@ -193,6 +236,9 @@ async def handle_flussonic(request, channel_id, url):
 
     record = request.args.get('record', 0)
     if record:
+        if _network_high:
+            log.warning(f'[{request.ip}] {request.raw_url} -> Network High')
+            return response.json({'status': 'Network Saturated'}, 503)
         cmd = f'{PREFIX}vod.py {channel_id} {program_id} -s {offset}' \
               f' -p {client_port} -i {request.ip} -a {_iptv}'
         record = int(record)
@@ -245,6 +291,20 @@ async def handle_flussonic(request, channel_id, url):
 @app.get('/favicon.ico')
 async def handle_notfound(request):
     return response.json({}, 404)
+
+
+async def throughput(iface_rx):
+    global _network_high, _network_saturated
+    cur = last = 0
+    while True:
+        async with await open_async(iface_rx) as f:
+            cur = int((await f.read())[:-1])
+            if last:
+                tp = int((cur - last) * 8 / 1000 / 3)
+                _network_high = tp > IPTV_BW_RECS
+                _network_saturated = tp > IPTV_BW
+            last = cur
+            await asyncio.sleep(3)
 
 
 class VodHttpProtocol(HttpProtocol, metaclass=TouchUpMeta):

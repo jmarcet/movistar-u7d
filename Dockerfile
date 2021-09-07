@@ -22,3 +22,4 @@ COPY . .
 RUN if [ "$TARGETARCH" = "amd64" ] ; then apk add wrk && pip install ipython; fi
 
 CMD /app/start.sh
+
