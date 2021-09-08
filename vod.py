@@ -462,7 +462,7 @@ if __name__ == '__main__':
     try:
         asyncio.run(VodLoop(args))
         sys.exit(0)
-    except (KeyboardInterrupt, TimeoutError):
+    except (AttributeError, KeyboardInterrupt, TimeoutError, ValueError):
         sys.exit(1)
     except Exception as ex:
         sys.stderr.write(f'{repr(ex)}\n')

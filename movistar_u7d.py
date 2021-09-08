@@ -19,7 +19,9 @@ from sanic.log import error_logger, logger as log, LOGGING_CONFIG_DEFAULTS
 from sanic.server import HttpProtocol
 from sanic.models.server_types import ConnInfo
 from sanic.touchup.meta import TouchUpMeta
-from vod import VodLoop, VodSetup, find_free_port, COVER_URL, IMAGENIO_URL, UA
+
+from movistar_epg import get_ffmpeg_procs
+from vod import VodLoop, VodSetup, find_free_port, COVER_URL, IMAGENIO_URL, RECORDINGS, UA
 
 
 setproctitle('movistar_u7d')
@@ -29,8 +31,6 @@ CHANNELS = os.path.join(HOME, 'MovistarTV.m3u')
 GUIDE = os.path.join(HOME, 'guide.xml')
 IPTV_BW = int(os.getenv('IPTV_BW', '85000'))
 IPTV_BW = 85000 if IPTV_BW > 90000 else IPTV_BW
-IPTV_BW_RECS = int(os.getenv('IPTV_BW_RECS', '75000'))
-IPTV_BW_RECS = 85000 if IPTV_BW_RECS > 90000 else IPTV_BW_RECS
 MIME_TS = 'video/MP2T;audio/mp3'
 MP4_OUTPUT = bool(os.getenv('MP4_OUTPUT', False))
 SANIC_EPG_URL = 'http://127.0.0.1:8889'
@@ -55,7 +55,7 @@ VodArgs = namedtuple('Vod', ['channel', 'broadcast', 'iptv_ip',
 
 _channels = _iptv = _session = _session_logos = _t_tp = None
 _network_fsignal = '/tmp/.u7d_bw'
-_network_high = _network_saturated = False
+_network_saturated = False
 
 
 @app.listener('after_server_start')
@@ -177,8 +177,14 @@ async def handle_logos(request, cover=None, logo=None, path=None):
 async def handle_channel(request, channel_id):
     _start = timeit.default_timer()
     if _network_saturated:
-        log.warning(f'[{request.ip}] {request.raw_url} -> Network Saturated')
-        return response.json({'status': 'Network Saturated'}, 503)
+        procs = await get_ffmpeg_procs()
+        if procs:
+            os.kill(int(procs[-1].split()[0]), signal.SIGINT)
+            log.warning(f'[{request.ip}] {request.raw_url} -> Killed '
+                        'ffmpeg "' + procs[-1].split(RECORDINGS)[1] + '"')
+        else:
+            log.warning(f'[{request.ip}] {request.raw_url} -> Network Saturated')
+            return response.json({'status': 'Network Saturated'}, 503)
     try:
         name, mc_grp, mc_port = [_channels[channel_id][t]
                                  for t in ['name', 'address', 'port']]
@@ -218,9 +224,12 @@ async def handle_channel(request, channel_id):
 @app.route('/<channel_id>/<url>', methods=['GET', 'HEAD'])
 async def handle_flussonic(request, channel_id, url):
     _start = timeit.default_timer()
+    procs = None
     if _network_saturated:
-        log.warning(f'[{request.ip}] {request.raw_url} -> Network Saturated')
-        return response.json({'status': 'Network Saturated'}, 503)
+        procs = await get_ffmpeg_procs()
+        if not procs:
+            log.warning(f'[{request.ip}] {request.raw_url} -> Network Saturated')
+            return response.json({'status': 'Network Saturated'}, 503)
     try:
         async with _session.get(f'{SANIC_EPG_URL}/program_id/{channel_id}/{url}') as r:
             name, program_id, duration, offset = (await r.json()).values()
@@ -235,10 +244,15 @@ async def handle_flussonic(request, channel_id, url):
     vod_msg = f'"{name}" {program_id} [{offset}/{duration}]'
 
     record = request.args.get('record', 0)
-    if record:
-        if _network_high:
-            log.warning(f'[{request.ip}] {request.raw_url} -> Network High')
+    if procs:
+        if record:
+            log.warning(f'[{request.ip}] {request.raw_url} -> Network Saturated')
             return response.json({'status': 'Network Saturated'}, 503)
+        else:
+            os.kill(int(procs[-1].split()[0]), signal.SIGINT)
+            log.warning(f'[{request.ip}] {request.raw_url} -> Killed '
+                        'ffmpeg "' + procs[-1].split(RECORDINGS)[1] + '"')
+    elif record:
         cmd = f'{PREFIX}vod.py {channel_id} {program_id} -s {offset}' \
               f' -p {client_port} -i {request.ip} -a {_iptv}'
         record = int(record)
@@ -294,14 +308,13 @@ async def handle_notfound(request):
 
 
 async def throughput(iface_rx):
-    global _network_high, _network_saturated
+    global _network_saturated
     cur = last = 0
     while True:
         async with await open_async(iface_rx) as f:
             cur = int((await f.read())[:-1])
             if last:
                 tp = int((cur - last) * 8 / 1000 / 3)
-                _network_high = tp > IPTV_BW_RECS
                 _network_saturated = tp > IPTV_BW
             last = cur
             await asyncio.sleep(3)
