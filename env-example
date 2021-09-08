@@ -5,6 +5,6 @@
 # EPG_THREADS=4                      # número de hilos para la descarga de la epg
 # MP4_OUTPUT=                        # hacer grabaciones a fichero .mp4 y .sub por separado
 # RECORDING_THREADS=4                # número de grabaciones simultáneas
-# RECORDINGS=/home/recordings        # directorio para grabaciones
+# RECORDINGS=                        # directorio para grabaciones, si se establece se activará la comprobación periódica de timers.json
 # SANIC_PORT=8888                    # puerto del proxy
 # SANIC_THREADS=4                    # número de hilos de ejecución de movistar_u7d.py

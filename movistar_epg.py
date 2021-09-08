@@ -27,7 +27,7 @@ SANIC_HOST = os.getenv('LAN_IP', '127.0.0.1')
 SANIC_PORT = int(os.getenv('SANIC_PORT', '8888'))
 SANIC_URL = f'http://{SANIC_HOST}:{SANIC_PORT}'
 RECORDING_THREADS = int(os.getenv('RECORDING_THREADS', '4'))
-RECORDINGS = os.getenv('RECORDINGS', '/tmp')
+RECORDINGS = os.getenv('RECORDINGS', None)
 
 YEAR_SECONDS = 365 * 24 * 60 * 60
 
