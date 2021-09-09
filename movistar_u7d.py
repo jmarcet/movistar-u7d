@@ -47,7 +47,9 @@ LOG_SETTINGS['formatters']['generic']['datefmt'] = \
 PREFIX = ''
 
 app = Sanic('movistar_u7d', log_config=LOG_SETTINGS)
-app.config.update({'REQUEST_TIMEOUT': 1, 'RESPONSE_TIMEOUT': 1})
+app.config.update({'GRACEFUL_SHUTDOWN_TIMEOUT': 0,
+                   'REQUEST_TIMEOUT': 1,
+                   'RESPONSE_TIMEOUT': 1})
 app.ctx.vod_client = None
 
 VodArgs = namedtuple('Vod', ['channel', 'broadcast', 'iptv_ip',
