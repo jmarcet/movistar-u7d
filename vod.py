@@ -55,6 +55,36 @@ class RtspClient(object):
         self.ip = None
         self.needs_position = False
 
+    def close_connection(self):
+        self.writer.close()
+
+    def get_needs_position(self):
+        return self.needs_position
+
+    def needs_position(self):
+        self.needs_position = True
+
+    def print(self, req):
+        return req.response
+        # resp = req.response
+        # _req = req.request.split('\r\n')[0].split(' ')
+        # if 'TEARDOWN' not in _req:
+        #     return resp
+        # tmp = _req[1].split('/')
+        # _req[1] = (f'{tmp[0]}//{str(tmp[2])[:40]} '
+        #            f'{args.channel} {args.broadcast} '
+        #            f'-s {args.start} -p {args.client_port}')
+        # sys.stdout.write(f'[{args.client_ip}][VOD] Req: {_req[0]} [{_req[1]}] '
+        #                  f'{_req[2]} => {resp.status}\n')
+        # headers = self.serialize_headers(resp.headers)
+        # sys.stderr.write('-' * WIDTH + '\n')
+        # sys.stderr.write('Request: ' + req.request.split('\n')[0] + '\n')
+        # sys.stderr.write(f'Response: {resp.version} {resp.status}\n{headers}\n')
+        # if resp.body:
+        #     sys.stderr.write(f'\n{resp.body.rstrip()}\n')
+        # sys.stderr.write('-' * WIDTH + '\n')
+        # return resp
+
     async def read_message(self):
         resp = (await self.reader.read(4096)).decode()
         if ' 200 OK' not in resp:
@@ -76,9 +106,6 @@ class RtspClient(object):
             body = ''
 
         return Response(version, status, self.url, headers, body)
-
-    def serialize_headers(self, headers):
-        return '\r\n'.join(map(lambda x: '{0}: {1}'.format(*x), headers.items()))
 
     async def send_request(self, method, headers={}):
         if method == 'OPTIONS':
@@ -107,35 +134,8 @@ class RtspClient(object):
 
         return Request(req, resp)
 
-    def print(self, req):
-        return req.response
-        # resp = req.response
-        # _req = req.request.split('\r\n')[0].split(' ')
-        # if 'TEARDOWN' not in _req:
-        #     return resp
-        # tmp = _req[1].split('/')
-        # _req[1] = (f'{tmp[0]}//{str(tmp[2])[:40]} '
-        #            f'{args.channel} {args.broadcast} '
-        #            f'-s {args.start} -p {args.client_port}')
-        # sys.stdout.write(f'[{args.client_ip}][VOD] Req: {_req[0]} [{_req[1]}] '
-        #                  f'{_req[2]} => {resp.status}\n')
-        # headers = self.serialize_headers(resp.headers)
-        # sys.stderr.write('-' * WIDTH + '\n')
-        # sys.stderr.write('Request: ' + req.request.split('\n')[0] + '\n')
-        # sys.stderr.write(f'Response: {resp.version} {resp.status}\n{headers}\n')
-        # if resp.body:
-        #     sys.stderr.write(f'\n{resp.body.rstrip()}\n')
-        # sys.stderr.write('-' * WIDTH + '\n')
-        # return resp
-
-    def close_connection(self):
-        self.writer.close()
-
-    def get_needs_position(self):
-        return self.needs_position
-
-    def needs_position(self):
-        self.needs_position = True
+    def serialize_headers(self, headers):
+        return '\r\n'.join(map(lambda x: '{0}: {1}'.format(*x), headers.items()))
 
 
 @ffmpeg.on('completed')
@@ -210,7 +210,10 @@ def _cleanup():
 
 
 def _handle_cleanup(signum, frame):
-    raise TimeoutError()
+    if __name__ == '__main__':
+        raise TimeoutError()
+    else:
+        return
 
 
 def check_recording():
@@ -274,18 +277,19 @@ async def record_stream():
         resp = await client.get(epg_url)
     if resp.status_code == 200:
         data = resp.json()
-        # sys.stderr.write(f'{data}\n')
 
         if not args.time:
             args.time = int(data['duration']) - args.start
+
         full_title, path, filename = [data[t] for t in ['full_title', 'path', 'filename']]
         _options['metadata:s:v'] = f'title={full_title}'
+
         if not os.path.exists(path):
             sys.stderr.write(f'{_log_prefix} Creating recording subdir {path}\n')
             os.mkdir(path)
     else:
-        filename = os.path.join(RECORDINGS,
-                                f'{args.channel}-{args.broadcast}')
+        filename = os.path.join(RECORDINGS, f'{args.channel}-{args.broadcast}')
+
     _log_suffix += f' [{args.time}s] "{filename[20:]}"\n'
 
     ffmpeg.input(
@@ -354,6 +358,9 @@ async def VodLoop(args, vod_data=None):
             if args.write_to_file:
                 await record_stream()
 
+        elif not vod_data:
+            raise ValueError()
+
         while True:
             await asyncio.sleep(30)
             if __name__ == '__main__':
@@ -362,7 +369,7 @@ async def VodLoop(args, vod_data=None):
             vod_data.client.print(await vod_data.client.send_request('GET_PARAMETER',
                                   vod_data.get_parameter))
 
-    except (AttributeError, CancelledError, TimeoutError, TypeError, ValueError):
+    except (AttributeError, TimeoutError, TypeError, ValueError):
         pass
     except Exception as ex:
         sys.stderr.write(f'{_log_prefix} Error: {repr(ex)}\n')
@@ -373,10 +380,12 @@ async def VodLoop(args, vod_data=None):
                                   vod_data.session))
         except (AttributeError, OSError, RuntimeError):
             pass
+
         try:
             vod_data.client.close_connection()
         except AttributeError:
             pass
+
         if __name__ == '__main__':
             if _ffmpeg:
                 _ffmpeg.join()
@@ -398,7 +407,7 @@ async def VodSetup(args, vod_client):
 
     url = await get_vod_url(args.channel, args.broadcast, vod_client)
     if not url:
-        sys.stderr.write(f'{_log_prefix} Error: {repr(url)}\n')
+        sys.stderr.write(f'{_log_prefix} Could not get uri for: {_log_suffix}\n')
         raise ValueError()
 
     uri = urllib.parse.urlparse(url)

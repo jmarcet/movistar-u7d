@@ -15,6 +15,7 @@ from setproctitle import setproctitle
 from sanic import Sanic, response
 from sanic.compat import open_async
 from sanic.log import logger as log, LOGGING_CONFIG_DEFAULTS
+
 from vod import TMP_EXT
 
 
@@ -90,7 +91,6 @@ async def after_server_stop(app, loop):
 
 
 async def every(timeout, stuff):
-    log.debug(f'run_every {timeout} {stuff}')
     while True:
         await asyncio.gather(asyncio.sleep(timeout), stuff())
 
@@ -126,7 +126,6 @@ async def handle_channels(request):
 
 @app.get('/program_id/<channel_id>/<url>')
 async def handle_program_id(request, channel_id, url):
-    log.debug(f'Searching EPG: /{channel_id}/{url}')
     try:
         channel_key = _channels[channel_id]['replacement'] \
             if 'replacement' in _channels[channel_id] else channel_id
@@ -210,16 +209,6 @@ async def handle_reload_epg(request):
     return await reload_epg()
 
 
-@app.get('/check_timers')
-async def handle_timers_check(request):
-    global _t_timers_t
-    if timers_lock.locked():
-        return response.json({'status': 'Busy'}, 201)
-
-    _t_timers_t = asyncio.create_task(timers_check())
-    return response.json({'status': 'Timers check queued'}, 200)
-
-
 async def reload_epg():
     global _channels, _epgdata
 
@@ -259,6 +248,16 @@ async def reload_epg():
     return response.json({'status': 'EPG Updated'}, 200)
 
 
+@app.get('/timers_check')
+async def handle_timers_check(request):
+    global _t_timers_t
+    if timers_lock.locked():
+        return response.json({'status': 'Busy'}, 201)
+
+    _t_timers_t = asyncio.create_task(timers_check())
+    return response.json({'status': 'Timers check queued'}, 200)
+
+
 async def timers_check():
     async with timers_lock:
         try:
@@ -271,7 +270,7 @@ async def timers_check():
         except (FileNotFoundError, KeyError):
             pass
 
-        log.info(f'Processing timers')
+        log.info('Processing timers')
 
         _recordings = _timers = {}
         try:
@@ -308,22 +307,19 @@ async def timers_check():
                     'language' in _timers and 'default' in _timers['language']) else ''
                 for timer_match in _timers['match'][channel]:
                     if ' ## ' in timer_match:
-                            timer_match, lang = timer_match.split(' ## ')
+                        timer_match, lang = timer_match.split(' ## ')
                     else:
                         lang = deflang
                     vo = True if lang == 'VO' else False
                     (_, filename) = get_recording_path(_key, timestamp)
                     filename += TMP_EXT
-                    if re.match(timer_match, title) and \
-                        (title not in timers_added and
-                            filename not in str(_ffmpeg) and
-                            not os.path.exists(filename) and
-                            (channel not in _recordings or
-                             (title not in repr(_recordings[channel]) and
-                              timestamp not in _recordings[channel]))):
+                    if re.match(timer_match, title) and (title not in timers_added and filename
+                            not in str(_ffmpeg) and not os.path.exists(filename) and (channel
+                            not in _recordings or (title not in repr(_recordings[channel])
+                            and timestamp not in _recordings[channel]))):
                         log.info(f'Found match! {channel} {timestamp} {vo} "{title}"')
                         sanic_url = f'{SANIC_URL}/{channel}/{timestamp}.mp4'
-                        sanic_url += f'?record=1'
+                        sanic_url += '?record=1'
                         if vo:
                             sanic_url += '&vo=1'
                         try:
@@ -355,14 +351,13 @@ async def timers_check_delayed():
 
 async def update_epg():
     global tvgrab
-    log.info(f'update_epg')
     for i in range(5):
         tvgrab = await asyncio.create_subprocess_exec(f'{PREFIX}tv_grab_es_movistartv',
                                                       '--tvheadend', CHANNELS, '--output', GUIDE,
                                                       stdin=DEVNULL, stdout=DEVNULL, stderr=DEVNULL)
         await tvgrab.wait()
         if tvgrab.returncode != 0:
-            log.error(f'Waiting 15s before trying again [{i+2}/5] to update EPG')
+            log.error(f'Waiting 15s before trying to update EPG again [{i+2}/5]')
             await asyncio.sleep(15)
         else:
             await reload_epg()
@@ -381,7 +376,7 @@ if __name__ == '__main__':
     try:
         app.run(host='127.0.0.1', port=8889,
                 access_log=False, auto_reload=False, debug=False, workers=1)
-    except KeyboardInterrupt:
+    except (KeyboardInterrupt, TimeoutError):
         sys.exit(1)
     except Exception as ex:
         log.critical(f'{repr(ex)}')
