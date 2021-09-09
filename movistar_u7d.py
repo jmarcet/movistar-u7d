@@ -58,6 +58,18 @@ VodArgs = namedtuple('Vod', ['channel', 'broadcast', 'iptv_ip',
 _channels = _iptv = _session = _session_logos = _t_tp = None
 _network_fsignal = '/tmp/.u7d_bw'
 _network_saturated = False
+_responses = []
+
+
+@app.listener('before_server_stop')
+async def before_server_stop(app, loop):
+    global _responses
+    for req, resp, vod_msg in _responses:
+        try:
+            await resp.eof()
+            log.info(f'[{req.ip}] {req.raw_url} -> Stopped 2 {vod_msg}')
+        except AttributeError:
+            pass
 
 
 @app.listener('after_server_start')
@@ -281,27 +293,26 @@ async def handle_flussonic(request, channel_id, url):
             log.info(f'[{request.ip}] {request.raw_url} -> Playing {vod_msg}')
             try:
                 _response = await request.respond(content_type=MIME_TS)
+                global _responses
+                _responses.append((request, _response, vod_msg))
                 await _response.send((await asyncio.wait_for(stream.recv(), 1))[0])
                 _stop = timeit.default_timer()
                 log.info(f'[{request.ip}] {request.raw_url} -> {_stop - _start}s')
             except asyncio.exceptions.TimeoutError:
                 log.error(f'NOT_AVAILABLE: {vod_msg}')
                 return response.empty(404)
-            try:
-                while True:
-                    await _response.send((await stream.recv())[0])
-            finally:
-                log.info(f'[{request.ip}] {request.raw_url} -> Stopped {vod_msg}')
-                try:
-                    await _response.eof()
-                except AttributeError:
-                    pass
+
+            while True:
+                await _response.send((await stream.recv())[0])
     finally:
         try:
             vod.cancel()
             await asyncio.wait({vod})
         except (ProcessLookupError, TypeError):
             pass
+        _responses.remove((request, _response, vod_msg))
+        log.info(f'[{request.ip}] {request.raw_url} -> Stopped 1 {vod_msg}')
+        await _response.eof()
 
 
 @app.get('/favicon.ico')
