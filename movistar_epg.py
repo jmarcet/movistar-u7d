@@ -134,13 +134,15 @@ async def handle_program_id(request, channel_id, url):
         name = _channels[channel_id]['name']
         start = x.groups()[0]
         duration = int(x.groups()[1]) if x.groups()[1] else 0
-        new_start = 0
+        last_event = new_start = 0
 
         if start not in _epgdata[channel_key]:
             for event in _epgdata[channel_key]:
                 if event > start:
                     break
                 last_event = event
+            if not last_event:
+                return response.json({'status': f'{channel_id}/{url} not found'}, 404)
             start, new_start = last_event, start
         program_id, end = [_epgdata[channel_key][start][t] for t in ['pid', 'end']]
         start = int(start)

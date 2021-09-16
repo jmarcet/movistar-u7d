@@ -433,11 +433,11 @@ class MovistarTV:
     def __get_platform_profile(self):
         # noinspection PyBroadException
         try:
-            logger.info('Descargando pefil del servicio')
+            logger.info('Descargando perfil del servicio')
             return self.__get_service_data('getPlatformProfile')['resultData']
         except Exception as ex:
             logger.error(f'{ex}')
-            logger.error('Usando el pefil del servicio por defecto')
+            logger.error('Usando el perfil del servicio por defecto')
             return {
                 'RES_BASE_URI': 'http://www-60.svc.imagenio.telefonica.net:2001'
                                 '/appclientv/nux/',
@@ -471,24 +471,22 @@ class MovistarTV:
 
     def get_epg_extended_info(self, pid, channel_id):
         try:
-            logger.debug(f'Descargando info extendida: {pid}')
             data = cache.load_epg_extended_info(pid)
         except Exception as ex:
-            logger.error(f'{ex}')
+            logger.warning(f'{ex}')
             pass
-        try:
-            if not data:
-                logger.debug(f'Descargando info extendida: {pid}')
+        if not data:
+            logger.debug(f'Descargando info extendida: {pid}')
+            try:
                 print('.', flush=True, end='')
                 data = self.__get_service_data(f'epgInfov2&productID={pid}'
                                                f'&channelID={channel_id}'
                                                f'&extra=1')['resultData']
                 cache.save_epg_extended_info(data)
-            return data
-        except Exception as ex:
-            logger.error(f'{ex}')
-            logger.error(f'Información extendida no encontrada: {pid} {ex}')
-            return None
+            except Exception as ex:
+                logger.error(f'Información extendida no encontrada: {pid} {ex}')
+                return None
+        return data
 
     @staticmethod
     def __get_end_points():
@@ -615,26 +613,29 @@ class MulticastIPTV:
             raise MulticastError(f'get_chunk: error al analizar los datos {ex}')
 
     def __get_xml_files(self, mc_grp, mc_port):
-        try:
-            loop = True
-            chunk = {"end": 0}
-            max_files = 1000
-            _files = {}
-            first_file = ''
-            logger.info(f'Descargando XML de {mc_grp}:{mc_port}')
-            sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM, socket.IPPROTO_UDP)
-            sock.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
-            sock.settimeout(3)
-            sock.bind((mc_grp, int(mc_port)))
-            sock.setsockopt(socket.SOL_IP, socket.IP_MULTICAST_IF, socket.inet_aton(_iptv))
-            sock.setsockopt(socket.SOL_IP, socket.IP_ADD_MEMBERSHIP,
-                            socket.inet_aton(mc_grp) + socket.inet_aton(_iptv))
-            # Wait for an end chunk to start by the beginning
-            while not (chunk["end"]):
+        loop = True
+        max_files = 1000
+        _files = {}
+        first_file = ''
+        sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM, socket.IPPROTO_UDP)
+        sock.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+        sock.settimeout(3)
+        sock.bind((mc_grp, int(mc_port)))
+        sock.setsockopt(socket.SOL_IP, socket.IP_MULTICAST_IF, socket.inet_aton(_iptv))
+        sock.setsockopt(socket.SOL_IP, socket.IP_ADD_MEMBERSHIP,
+                        socket.inet_aton(mc_grp) + socket.inet_aton(_iptv))
+        # Wait for an end chunk to start by the beginning
+        while True:
+            try:
                 chunk = self.__parse_chunk(sock.recv(1500))
-                first_file = str(chunk["filetype"]) + "_" + str(chunk["fileid"])
-            # Loop until firstfile
-            while loop:
+                if (chunk["end"]):
+                    first_file = str(chunk["filetype"]) + "_" + str(chunk["fileid"])
+                    break
+            except Exception as ex:
+                logger.warning(f'Error al descargar los archivos XML: {ex}')
+        # Loop until firstfile
+        while loop:
+            try:
                 xmldata = ""
                 chunk = self.__parse_chunk(sock.recv(1500))
                 # Discard headers
@@ -651,13 +652,12 @@ class MulticastIPTV:
                 max_files -= 1
                 if str(chunk["filetype"]) + "_" + str(chunk["fileid"]) == first_file \
                         or max_files == 0:
+                    logger.info(f'{mc_grp}:{mc_port} -> XML descargado')
                     loop = False
-            sock.close()
-            print('', flush=True)
-            return _files
-        except Exception as ex:
-            logger.error(f'Error al descargar los archivos XML: {ex}')
-            raise
+            except Exception as ex:
+                logger.warning(f'Error al descargar los archivos XML: {ex}')
+        sock.close()
+        return _files
 
     @staticmethod
     def __get_channels(xml_channels):
@@ -727,7 +727,7 @@ class MulticastIPTV:
                     segment_list[source]['Segments'][segment_id] = \
                         segment.attrib['Version']
             except KeyError:
-                logger.error(f'El segment {source} no tiene la estructura correcta')
+                logger.warning(f'El segmento {source} no tiene la estructura correcta')
         logger.info('Días de EPG: %i' % len(segment_list))
         return segment_list
 
@@ -774,7 +774,8 @@ class MulticastIPTV:
             )
 
     def get_day(self, mcast_grp, mcast_port, source, day):
-        logger.info(f'Descargando {source}')
+        logger.info('Descargando XML ' + source.split('.')[0] +
+                    f' -> {mcast_grp}:{mcast_port}')
         self.__epg[day] = self.__get_xml_files(mcast_grp, mcast_port)
 
     def __get_bin_epg_threaded(self):
@@ -888,15 +889,15 @@ class MulticastIPTV:
         return cached_epg
 
     def __get_epg_data(self, mcast_grp, mcast_port):
-        _t = 5
-        for t in range(_t):
+        while True:
             xml = self.__get_xml_files(mcast_grp, mcast_port)
             _msg = '[' + " ".join(sorted(xml)) + '] / [2_0 5_0 6_0]'
             if '2_0' in xml and '5_0' in xml and '6_0' in xml:
+                print('', flush=True)
                 logger.info(f'Ficheros XML descargados: {_msg}')
                 break
             else:
-                logger.info(f'Ficheros XML incompletos [{t+1}/{_t}]: {_msg}')
+                logger.warning(f'Ficheros XML incompletos [{t+1}/{_t}]: {_msg}')
                 time.sleep(10)
         logger.info('Descargando canales y paquetes')
         self.__xml_data['channels'] = self.__get_channels(xml['2_0'])

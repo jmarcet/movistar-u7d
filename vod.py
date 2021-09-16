@@ -354,12 +354,15 @@ async def VodLoop(args, vod_data=None):
             conn = aiohttp.TCPConnector()
             vod_client = aiohttp.ClientSession(connector=conn, headers={'User-Agent': UA})
             vod_data = await VodSetup(args, vod_client)
+            if not vod_data:
+                sys.stderr.write(f'{_log_prefix} Could not get uri for: {_log_suffix}\n')
+                return
 
             if args.write_to_file:
                 await record_stream()
 
         elif not vod_data:
-            raise ValueError()
+            return
 
         while True:
             await asyncio.sleep(30)
@@ -408,7 +411,7 @@ async def VodSetup(args, vod_client):
     url = await get_vod_url(args.channel, args.broadcast, vod_client)
     if not url:
         sys.stderr.write(f'{_log_prefix} Could not get uri for: {_log_suffix}\n')
-        raise ValueError()
+        return
 
     uri = urllib.parse.urlparse(url)
     epg_url = (f'{SANIC_EPG_URL}/program_name/{args.channel}/{args.broadcast}')

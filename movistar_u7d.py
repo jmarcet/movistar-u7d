@@ -248,8 +248,8 @@ async def handle_flussonic(request, channel_id, url):
         async with _session.get(f'{SANIC_EPG_URL}/program_id/{channel_id}/{url}') as r:
             name, program_id, duration, offset = (await r.json()).values()
     except (AttributeError, KeyError, ValueError) as ex:
-        log.error(f'{repr(ex)}')
-        return response.json({'status': f'{channel_id}/{url} not found {repr(ex)}'}, 404)
+        log.error(f'{channel_id}/{url} not found')
+        return response.json({'status': f'{channel_id}/{url} not found'}, 404)
 
     if request.method == 'HEAD':
         return response.HTTPResponse(content_type=MIME_TS, status=200)
@@ -287,6 +287,9 @@ async def handle_flussonic(request, channel_id, url):
 
     _args = VodArgs(channel_id, program_id, _iptv, request.ip, client_port, offset)
     vod_data = await VodSetup(_args, app.ctx.vod_client)
+    if not vod_data:
+        log.error(f'{channel_id}/{url} not found')
+        return response.json({'status': f'{channel_id}/{url} not found'}, 404)
     vod = asyncio.create_task(VodLoop(_args, vod_data))
     try:
         with closing(await asyncio_dgram.bind((_iptv, client_port))) as stream:
