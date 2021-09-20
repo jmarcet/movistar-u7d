@@ -13,7 +13,6 @@ import sys
 import ujson
 import urllib.parse
 
-from asyncio import CancelledError
 from collections import namedtuple
 from contextlib import closing
 from ffmpeg import FFmpeg
@@ -474,7 +473,7 @@ if __name__ == '__main__':
     try:
         asyncio.run(VodLoop(args))
         sys.exit(0)
-    except (AttributeError, KeyboardInterrupt, TimeoutError, ValueError):
+    except (AttributeError, KeyboardInterrupt, FileNotFoundError, TimeoutError, ValueError):
         sys.exit(1)
     except Exception as ex:
         sys.stderr.write(f'{repr(ex)}\n')

@@ -12,7 +12,7 @@ from asyncio.subprocess import DEVNULL
 from datetime import datetime
 from glob import glob
 from setproctitle import setproctitle
-from sanic import Sanic, response
+from sanic import Sanic, exceptions, response
 from sanic.compat import open_async
 from sanic.log import logger as log, LOGGING_CONFIG_DEFAULTS
 
@@ -39,7 +39,8 @@ LOG_SETTINGS['formatters']['generic']['datefmt'] = \
 PREFIX = ''
 
 app = Sanic('movistar_epg')
-app.config.update({'KEEP_ALIVE_TIMEOUT': YEAR_SECONDS})
+app.config.update({'FALLBACK_ERROR_FORMAT': 'json',
+                   'KEEP_ALIVE_TIMEOUT': YEAR_SECONDS})
 flussonic_regex = re.compile(r"\w*-?(\d{10})-?(\d+){0,1}\.\w+")
 
 epg_data = os.path.join(HOME, '.xmltv/cache/epg.json')
@@ -142,7 +143,7 @@ async def handle_program_id(request, channel_id, url):
                     break
                 last_event = event
             if not last_event:
-                return response.json({'status': f'{channel_id}/{url} not found'}, 404)
+                raise exceptions.NotFound(f'Requested URL {request.raw_url.decode()} not found')
             start, new_start = last_event, start
         program_id, end = [_epgdata[channel_key][start][t] for t in ['pid', 'end']]
         start = int(start)
@@ -150,14 +151,13 @@ async def handle_program_id(request, channel_id, url):
                               'duration': duration if duration else int(end) - start,
                               'offset': int(new_start) - start if new_start else 0})
     except (AttributeError, KeyError) as ex:
-        log.error(f'{repr(ex)}')
-        return response.json({'status': f'{channel_id}/{url} not found {repr(ex)}'}, 404)
+        raise exceptions.NotFound(f'Requested URL {request.raw_url.decode()} not found')
 
 
 @app.route('/program_name/<channel_id>/<program_id>', methods=['GET', 'PUT'])
 async def handle_program_name(request, channel_id, program_id):
     if channel_id not in _channels:
-        return response.json({'status': f'{channel_id}/{program_id} not found'}, 404)
+        raise exceptions.NotFound(f'Requested URL {request.raw_url.decode()} not found')
 
     channel_key = _channels[channel_id]['replacement'] \
         if 'replacement' in _channels[channel_id] else channel_id
@@ -169,7 +169,7 @@ async def handle_program_name(request, channel_id, program_id):
             break
 
     if not _found:
-        return response.json({'status': f'{channel_id}/{program_id} not found'}, 404)
+        raise exceptions.NotFound(f'Requested URL {request.raw_url.decode()} not found')
 
     if request.method == 'GET':
         (path, filename) = get_recording_path(channel_key, event)

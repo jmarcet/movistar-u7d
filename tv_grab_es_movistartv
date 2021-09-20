@@ -897,7 +897,7 @@ class MulticastIPTV:
                 logger.info(f'Ficheros XML descargados: {_msg}')
                 break
             else:
-                logger.warning(f'Ficheros XML incompletos [{t+1}/{_t}]: {_msg}')
+                logger.warning(f'Ficheros XML incompletos: {_msg}')
                 time.sleep(10)
         logger.info('Descargando canales y paquetes')
         self.__xml_data['channels'] = self.__get_channels(xml['2_0'])

@@ -13,7 +13,7 @@ import timeit
 from collections import namedtuple
 from contextlib import closing
 from setproctitle import setproctitle
-from sanic import Sanic, response
+from sanic import Sanic, exceptions, response
 from sanic.compat import open_async
 from sanic.log import error_logger, logger as log, LOGGING_CONFIG_DEFAULTS
 from sanic.server import HttpProtocol
@@ -48,6 +48,7 @@ PREFIX = ''
 
 app = Sanic('movistar_u7d', log_config=LOG_SETTINGS)
 app.config.update({'GRACEFUL_SHUTDOWN_TIMEOUT': 0,
+                   'FALLBACK_ERROR_FORMAT': 'json',
                    'REQUEST_TIMEOUT': 1,
                    'RESPONSE_TIMEOUT': 1})
 app.ctx.vod_client = None
@@ -67,7 +68,7 @@ async def before_server_stop(app, loop):
     for req, resp, vod_msg in _responses:
         try:
             await resp.eof()
-            log.info(f'[{req.ip}] {req.raw_url} -> Stopped 2 {vod_msg}')
+            log.info(f'[{req.ip}] {req.raw_url.decode()} -> Stopped 2 {vod_msg}')
         except AttributeError:
             pass
 
@@ -140,7 +141,7 @@ async def after_server_stop(app, loop):
 async def handle_channels(request):
     log.info(f'[{request.ip}] {request.method} {request.url}')
     if not os.path.exists(CHANNELS):
-        return response.json({}, 404)
+        raise exceptions.NotFound(f'Requested URL {request.raw_url.decode()} not found')
     return await response.file(CHANNELS)
 
 
@@ -149,21 +150,21 @@ async def handle_channels(request):
 async def handle_guide(request):
     log.info(f'[{request.ip}] {request.method} {request.url}')
     if not os.path.exists(GUIDE):
-        return response.json({}, 404)
+        raise exceptions.NotFound(f'Requested URL {request.raw_url.decode()} not found')
     log.debug(f'[{request.ip}] Return: {request.method} {request.url}')
     return await response.file(GUIDE)
 
 
-@app.route('/Covers/<path>/<cover>', methods=['GET', 'HEAD'])
+@app.route('/Covers/<path:int>/<cover>', methods=['GET', 'HEAD'])
 @app.route('/Logos/<logo>', methods=['GET', 'HEAD'])
 async def handle_logos(request, cover=None, logo=None, path=None):
     log.debug(f'[{request.ip}] {request.method} {request.url}')
-    if logo:
+    if logo and logo.split('.')[0].isdigit():
         orig_url = f'{IMAGENIO_URL}/channelLogo/{logo}'
-    elif path and cover:
+    elif path and cover and cover.split('.')[0].isdigit():
         orig_url = f'{COVER_URL}/{path}/{cover}'
     else:
-        return response.json({'status': f'{request.url} not found'}, 404)
+        raise exceptions.NotFound(f'Requested URL {request.raw_url.decode()} not found')
 
     if request.method == 'HEAD':
         return response.HTTPResponse(content_type='image/jpeg', status=200)
@@ -184,26 +185,26 @@ async def handle_logos(request, cover=None, logo=None, path=None):
                                          headers=headers,
                                          status=200)
         else:
-            return response.json({'status': f'{orig_url} not found'}, 404)
+            raise exceptions.NotFound(f'Requested URL {request.raw_url.decode()} not found')
 
 
-@app.route('/<channel_id>/live', methods=['GET', 'HEAD'])
+@app.route('/<channel_id:int>/live', methods=['GET', 'HEAD'])
 async def handle_channel(request, channel_id):
     _start = timeit.default_timer()
     if _network_saturated:
         procs = await get_ffmpeg_procs()
         if procs:
             os.kill(int(procs[-1].split()[0]), signal.SIGINT)
-            log.warning(f'[{request.ip}] {request.raw_url} -> Killed '
+            log.warning(f'[{request.ip}] {request.raw_url.decode()} -> Killed '
                         'ffmpeg "' + procs[-1].split(RECORDINGS)[1] + '"')
         else:
-            log.warning(f'[{request.ip}] {request.raw_url} -> Network Saturated')
-            return response.json({'status': 'Network Saturated'}, 503)
+            log.warning(f'[{request.ip}] {request.raw_url.decode()} -> Network Saturated')
+            raise exceptions.ServiceUnavailable('Network Saturated')
     try:
-        name, mc_grp, mc_port = [_channels[channel_id][t]
+        name, mc_grp, mc_port = [_channels[str(channel_id)][t]
                                  for t in ['name', 'address', 'port']]
     except (AttributeError, KeyError):
-        return response.json({'status': f'{channel_id} not found'}, 404)
+        raise exceptions.NotFound(f'Requested URL {request.raw_url.decode()} not found')
 
     if request.method == 'HEAD':
         return response.HTTPResponse(content_type=MIME_TS, status=200)
@@ -219,37 +220,37 @@ async def handle_channel(request, channel_id):
                         socket.inet_aton(mc_grp) + socket.inet_aton(_iptv))
 
         with closing(await asyncio_dgram.from_socket(sock)) as stream:
-            log.info(f'[{request.ip}] {request.raw_url} -> Playing "{name}"')
+            log.info(f'[{request.ip}] {request.raw_url.decode()} -> Playing "{name}"')
             try:
                 _response = await request.respond(content_type=MIME_TS)
                 await _response.send((await stream.recv())[0][28:])
                 _stop = timeit.default_timer()
-                log.info(f'[{request.ip}] {request.raw_url} -> {_stop - _start}s')
+                log.info(f'[{request.ip}] {request.raw_url.decode()} -> {_stop - _start}s')
                 while True:
                     await _response.send((await stream.recv())[0][28:])
             finally:
-                log.info(f'[{request.ip}] {request.raw_url} -> Stopped "{name}"')
+                log.info(f'[{request.ip}] {request.raw_url.decode()} -> Stopped "{name}"')
                 try:
                     await _response.eof()
                 except AttributeError:
                     pass
 
 
-@app.route('/<channel_id>/<url>', methods=['GET', 'HEAD'])
+@app.route('/<channel_id:int>/<url>', methods=['GET', 'HEAD'])
 async def handle_flussonic(request, channel_id, url):
     _start = timeit.default_timer()
     procs = None
     if _network_saturated:
         procs = await get_ffmpeg_procs()
         if not procs:
-            log.warning(f'[{request.ip}] {request.raw_url} -> Network Saturated')
-            return response.json({'status': 'Network Saturated'}, 503)
+            log.warning(f'[{request.ip}] {request.raw_url.decode()} -> Network Saturated')
+            raise exceptions.ServiceUnavailable('Network Saturated')
     try:
         async with _session.get(f'{SANIC_EPG_URL}/program_id/{channel_id}/{url}') as r:
             name, program_id, duration, offset = (await r.json()).values()
-    except (AttributeError, KeyError, ValueError) as ex:
+    except (AttributeError, KeyError, ValueError):
         log.error(f'{channel_id}/{url} not found')
-        return response.json({'status': f'{channel_id}/{url} not found'}, 404)
+        raise exceptions.NotFound(f'Requested URL {request.raw_url.decode()} not found')
 
     if request.method == 'HEAD':
         return response.HTTPResponse(content_type=MIME_TS, status=200)
@@ -260,11 +261,11 @@ async def handle_flussonic(request, channel_id, url):
     record = request.args.get('record', 0)
     if procs:
         if record:
-            log.warning(f'[{request.ip}] {request.raw_url} -> Network Saturated')
-            return response.json({'status': 'Network Saturated'}, 503)
+            log.warning(f'[{request.ip}] {request.raw_url.decode()} -> Network Saturated')
+            raise exceptions.ServiceUnavailable('Network Saturated')
         else:
             os.kill(int(procs[-1].split()[0]), signal.SIGINT)
-            log.warning(f'[{request.ip}] {request.raw_url} -> Killed '
+            log.warning(f'[{request.ip}] {request.raw_url.decode()} -> Killed '
                         'ffmpeg "' + procs[-1].split(RECORDINGS)[1] + '"')
     elif record:
         cmd = f'{PREFIX}vod.py {channel_id} {program_id} -s {offset}' \
@@ -278,7 +279,7 @@ async def handle_flussonic(request, channel_id, url):
         if request.args.get('vo', False):
             cmd += ' --vo 1'
 
-        log.info(f'[{request.ip}] {request.raw_url} -> Recording [{record_time}s] {vod_msg}')
+        log.info(f'[{request.ip}] {request.raw_url.decode()} -> Recording [{record_time}s] {vod_msg}')
         signal.signal(signal.SIGCHLD, signal.SIG_IGN)
         subprocess.Popen(cmd.split())
         return response.json({'status': 'OK',
@@ -289,21 +290,21 @@ async def handle_flussonic(request, channel_id, url):
     vod_data = await VodSetup(_args, app.ctx.vod_client)
     if not vod_data:
         log.error(f'{channel_id}/{url} not found')
-        return response.json({'status': f'{channel_id}/{url} not found'}, 404)
+        raise exceptions.NotFound(f'Requested URL {request.raw_url.decode()} not found')
     vod = asyncio.create_task(VodLoop(_args, vod_data))
     try:
         with closing(await asyncio_dgram.bind((_iptv, client_port))) as stream:
-            log.info(f'[{request.ip}] {request.raw_url} -> Playing {vod_msg}')
+            log.info(f'[{request.ip}] {request.raw_url.decode()} -> Playing {vod_msg}')
             try:
                 _response = await request.respond(content_type=MIME_TS)
                 global _responses
                 _responses.append((request, _response, vod_msg))
                 await _response.send((await asyncio.wait_for(stream.recv(), 1))[0])
                 _stop = timeit.default_timer()
-                log.info(f'[{request.ip}] {request.raw_url} -> {_stop - _start}s')
+                log.info(f'[{request.ip}] {request.raw_url.decode()} -> {_stop - _start}s')
             except asyncio.exceptions.TimeoutError:
                 log.error(f'NOT_AVAILABLE: {vod_msg}')
-                return response.empty(404)
+                raise exceptions.NotFound(f'Requested URL {request.raw_url.decode()} not found')
 
             while True:
                 await _response.send((await stream.recv())[0])
@@ -314,7 +315,7 @@ async def handle_flussonic(request, channel_id, url):
         except (ProcessLookupError, TypeError):
             pass
         _responses.remove((request, _response, vod_msg))
-        log.info(f'[{request.ip}] {request.raw_url} -> Stopped 1 {vod_msg}')
+        log.info(f'[{request.ip}] {request.raw_url.decode()} -> Stopped 1 {vod_msg}')
         await _response.eof()
 
 
