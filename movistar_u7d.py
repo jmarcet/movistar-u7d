@@ -8,12 +8,14 @@ import signal
 import socket
 import subprocess
 import sys
+import tempfile
 import timeit
 
 from collections import namedtuple
 from contextlib import closing
 from setproctitle import setproctitle
 from sanic import Sanic, exceptions, response
+from sanic_prometheus import monitor
 from sanic.compat import open_async
 from sanic.log import error_logger, logger as log, LOGGING_CONFIG_DEFAULTS
 from sanic.server import HttpProtocol
@@ -134,6 +136,12 @@ async def after_server_stop(app, loop):
     except (AttributeError, ProcessLookupError):
         pass
 
+    try:
+        import shutil
+        shutil.rmtree(_prom_tempdir.name)
+    except FileNotFoundError:
+        pass
+
 
 @app.get('/canales.m3u')
 @app.get('/channels.m3u')
@@ -227,6 +235,7 @@ async def handle_channel(request, channel_id):
                 _response = await request.respond(content_type=MIME_TS)
                 await _response.send((await stream.recv())[0][28:])
                 _lat = timeit.default_timer() - _start
+                request.app.metrics['RQS_LATENCY'].labels('live', name, 200).observe(_lat)
                 log.info(f'[{request.ip}] {_raw_url} -> {_lat}s')
                 while True:
                     await _response.send((await stream.recv())[0][28:])
@@ -304,6 +313,8 @@ async def handle_flussonic(request, channel_id, url):
                 _responses.append((request, _response, vod_msg))
                 await _response.send((await asyncio.wait_for(stream.recv(), 1))[0])
                 _lat = timeit.default_timer() - _start
+                request.app.metrics['RQS_LATENCY'].labels('catchup',
+                    _channels[str(channel_id)]['name'], 200).observe(_lat)
                 log.info(f'[{request.ip}] {_raw_url} -> {_lat}s')
             except asyncio.exceptions.TimeoutError:
                 log.error(f'NOT_AVAILABLE: {vod_msg}')
@@ -318,7 +329,7 @@ async def handle_flussonic(request, channel_id, url):
         except (ProcessLookupError, TypeError):
             pass
         _responses.remove((request, _response, vod_msg))
-        log.info(f'[{request.ip}] {_raw_url} -> Stopped 1 {vod_msg}')
+        log.info(f'[{request.ip}] {_raw_url} -> Stopped {vod_msg}')
         await _response.eof()
 
 
@@ -358,6 +369,9 @@ class VodHttpProtocol(HttpProtocol, metaclass=TouchUpMeta):
 
 if __name__ == '__main__':
     try:
+        _prom_tempdir = tempfile.TemporaryDirectory()
+        os.environ['prometheus_multiproc_dir'] = _prom_tempdir.name
+        monitor(app, latency_buckets=[1], is_middleware=False).expose_endpoint()
         app.run(host=SANIC_HOST, port=SANIC_PORT, protocol=VodHttpProtocol,
                 access_log=False, auto_reload=False, debug=False, workers=SANIC_THREADS)
     except (KeyboardInterrupt, TimeoutError):
