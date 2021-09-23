@@ -1,7 +1,7 @@
 FROM python:3.9-alpine
 
 RUN apk update
-RUN apk add build-base
+RUN apk add build-base linux-headers
 RUN apk add bash ffmpeg git htop mkvtoolnix s6 vim
 
 ARG TARGETARCH
@@ -15,7 +15,7 @@ WORKDIR /app
 
 COPY requirements.txt .
 RUN pip install -r requirements.txt
-RUN apk del build-base
+RUN apk del build-base linux-headers
 
 COPY . .
 
