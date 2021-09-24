@@ -63,16 +63,15 @@
             }
           },
           "mappings": [],
+          "max": 1,
+          "min": 0,
+          "noValue": "-",
           "thresholds": {
             "mode": "absolute",
             "steps": [
               {
                 "color": "green",
                 "value": null
-              },
-              {
-                "color": "red",
-                "value": 700
               }
             ]
           },
@@ -81,7 +80,7 @@
         "overrides": []
       },
       "gridPos": {
-        "h": 25,
+        "h": 24,
         "w": 12,
         "x": 0,
         "y": 0
@@ -90,10 +89,7 @@
       "options": {
         "legend": {
           "calcs": [
-            "min",
-            "mean",
-            "max",
-            "lastNotNull"
+            "firstNotNull"
           ],
           "displayMode": "table",
           "placement": "bottom"
@@ -112,7 +108,7 @@
           "refId": "A"
         }
       ],
-      "title": "Movistar U7D Catchup Response times",
+      "title": "Movistar U7D Response times / Catchup streams",
       "type": "timeseries"
     },
     {
@@ -154,6 +150,8 @@
             }
           },
           "mappings": [],
+          "max": 0.1,
+          "min": 0,
           "thresholds": {
             "mode": "absolute",
             "steps": [
@@ -172,7 +170,7 @@
         "overrides": []
       },
       "gridPos": {
-        "h": 25,
+        "h": 24,
         "w": 12,
         "x": 12,
         "y": 0
@@ -181,10 +179,7 @@
       "options": {
         "legend": {
           "calcs": [
-            "min",
-            "mean",
-            "max",
-            "lastNotNull"
+            "firstNotNull"
           ],
           "displayMode": "table",
           "placement": "bottom"
@@ -204,7 +199,7 @@
           "refId": "A"
         }
       ],
-      "title": "Movistar U7D Live Response times",
+      "title": "Movistar U7D Response times / Live streams",
       "type": "timeseries"
     }
   ],
@@ -216,12 +211,12 @@
     "list": []
   },
   "time": {
-    "from": "now-3h",
+    "from": "now-1h",
     "to": "now"
   },
   "timepicker": {},
   "timezone": "",
   "title": "Movistar U7D",
   "uid": "rmpMlvN7k",
-  "version": 8
+  "version": 15
 }

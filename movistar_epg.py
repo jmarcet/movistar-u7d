@@ -13,6 +13,7 @@ from datetime import datetime
 from glob import glob
 from setproctitle import setproctitle
 from sanic import Sanic, exceptions, response
+from sanic_prometheus import monitor
 from sanic.compat import open_async
 from sanic.log import logger as log, LOGGING_CONFIG_DEFAULTS
 
@@ -206,6 +207,29 @@ async def handle_program_name(request, channel_id, program_id):
                          ensure_ascii=False)
 
 
+@app.post('/prom_event/add')
+async def handle_prom_event_add(request):
+    try:
+        request.app.metrics['RQS_LATENCY'].labels(request.json['method'],
+            request.json['endpoint'],
+            request.json['id']).observe(float(request.json['lat']))
+        log.info(request.json['msg'])
+    except KeyError:
+        return response.empty(404)
+    return response.empty(200)
+
+
+@app.post('/prom_event/remove')
+async def handle_prom_event_remove(request):
+    try:
+        request.app.metrics['RQS_LATENCY'].remove(request.json['method'],
+            request.json['endpoint'], request.json['id'])
+        log.info(request.json['msg'])
+    except KeyError:
+        return response.empty(404)
+    return response.empty(200)
+
+
 @app.get('/reload_epg')
 async def handle_reload_epg(request):
     return await reload_epg()
@@ -376,6 +400,8 @@ async def update_epg_delayed():
 
 if __name__ == '__main__':
     try:
+        monitor(app, is_middleware=False, latency_buckets=[1.0], mmc_period_sec=None,
+                multiprocess_mode='livesum').expose_endpoint()
         app.run(host='127.0.0.1', port=8889,
                 access_log=False, auto_reload=False, debug=False, workers=1)
     except (KeyboardInterrupt, TimeoutError):

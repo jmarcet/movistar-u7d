@@ -8,14 +8,13 @@ import signal
 import socket
 import subprocess
 import sys
-import tempfile
 import timeit
+import ujson
 
 from collections import namedtuple
 from contextlib import closing
 from setproctitle import setproctitle
 from sanic import Sanic, exceptions, response
-from sanic_prometheus import monitor
 from sanic.compat import open_async
 from sanic.log import error_logger, logger as log, LOGGING_CONFIG_DEFAULTS
 from sanic.server import HttpProtocol
@@ -77,7 +76,7 @@ async def after_server_start(app, loop):
     s.close()
 
     conn = aiohttp.TCPConnector(keepalive_timeout=YEAR_SECONDS, limit_per_host=1)
-    _session = aiohttp.ClientSession(connector=conn)
+    _session = aiohttp.ClientSession(connector=conn, json_serialize=ujson.dumps)
 
     while True:
         try:
@@ -134,12 +133,6 @@ async def after_server_stop(app, loop):
         _t_tp.cancel()
         await asyncio.wait({_t_tp})
     except (AttributeError, ProcessLookupError):
-        pass
-
-    try:
-        import shutil
-        shutil.rmtree(_prom_tempdir.name)
-    except FileNotFoundError:
         pass
 
 
@@ -230,21 +223,25 @@ async def handle_channel(request, channel_id):
                         socket.inet_aton(mc_grp) + socket.inet_aton(_iptv))
 
         with closing(await asyncio_dgram.from_socket(sock)) as stream:
-            log.info(f'[{request.ip}] {_raw_url} -> Playing "{name}"')
             try:
                 _response = await request.respond(content_type=MIME_TS)
                 await _response.send((await stream.recv())[0][28:])
                 _lat = timeit.default_timer() - _start
-                request.app.metrics['RQS_LATENCY'].labels('live', name, 200).observe(_lat)
-                log.info(f'[{request.ip}] {_raw_url} -> {_lat}s')
+                asyncio.create_task(_session.post(f'{SANIC_EPG_URL}/prom_event/add',
+                    json={'method': 'live',
+                          'endpoint': f'{name}:{request.ip}',
+                          'msg': f'[{request.ip}] -> Playing "{name}" {_lat}s',
+                          'id': _start,
+                          'lat': _lat}))
                 while True:
                     await _response.send((await stream.recv())[0][28:])
             finally:
-                log.info(f'[{request.ip}] {_raw_url} -> Stopped "{name}"')
-                try:
-                    await _response.eof()
-                except AttributeError:
-                    pass
+                asyncio.create_task(_session.post(f'{SANIC_EPG_URL}/prom_event/remove',
+                    json={'method': 'live',
+                          'endpoint': f'{name}:{request.ip}',
+                          'msg': f'[{request.ip}] -> Stopped "{name}" {_raw_url}',
+                          'id': _start}))
+                await _response.eof()
 
 
 @app.route('/<channel_id:int>/<url>', methods=['GET', 'HEAD'])
@@ -304,18 +301,21 @@ async def handle_flussonic(request, channel_id, url):
         log.error(f'{_raw_url} not found')
         raise exceptions.NotFound(f'Requested URL {_raw_url} not found')
     vod = asyncio.create_task(VodLoop(_args, vod_data))
+    _endpoint = _channels[str(channel_id)]['name'] + f':{request.ip}:/{url}'
     try:
         with closing(await asyncio_dgram.bind((_iptv, client_port))) as stream:
-            log.info(f'[{request.ip}] {_raw_url} -> Playing {vod_msg}')
             try:
                 _response = await request.respond(content_type=MIME_TS)
                 global _responses
                 _responses.append((request, _response, vod_msg))
                 await _response.send((await asyncio.wait_for(stream.recv(), 1))[0])
                 _lat = timeit.default_timer() - _start
-                request.app.metrics['RQS_LATENCY'].labels('catchup',
-                    _channels[str(channel_id)]['name'], 200).observe(_lat)
-                log.info(f'[{request.ip}] {_raw_url} -> {_lat}s')
+                asyncio.create_task(_session.post(f'{SANIC_EPG_URL}/prom_event/add',
+                    json={'method': 'catchup',
+                          'endpoint': _endpoint,
+                          'msg': f'[{request.ip}] -> Playing {vod_msg} {_lat}s',
+                          'id': _start,
+                          'lat': _lat}))
             except asyncio.exceptions.TimeoutError:
                 log.error(f'NOT_AVAILABLE: {vod_msg}')
                 raise exceptions.NotFound(f'Requested URL {_raw_url} not found')
@@ -328,14 +328,24 @@ async def handle_flussonic(request, channel_id, url):
             await asyncio.wait({vod})
         except (ProcessLookupError, TypeError):
             pass
+        asyncio.create_task(_session.post(f'{SANIC_EPG_URL}/prom_event/remove',
+            json={'method': 'catchup',
+                  'endpoint': _endpoint,
+                  'msg': f'[{request.ip}] -> Stopped {vod_msg} {_raw_url}',
+                  'id': _start}))
         _responses.remove((request, _response, vod_msg))
-        log.info(f'[{request.ip}] {_raw_url} -> Stopped {vod_msg}')
         await _response.eof()
 
 
 @app.get('/favicon.ico')
 async def handle_notfound(request):
-    return response.json({}, 404)
+    return response.empty(404)
+
+
+@app.get('/metrics')
+async def handle_prometheus(request):
+    async with _session.get(f'{SANIC_EPG_URL}/metrics') as r:
+        return response.text((await r.read()).decode())
 
 
 async def throughput(iface_rx):
@@ -369,9 +379,6 @@ class VodHttpProtocol(HttpProtocol, metaclass=TouchUpMeta):
 
 if __name__ == '__main__':
     try:
-        _prom_tempdir = tempfile.TemporaryDirectory()
-        os.environ['prometheus_multiproc_dir'] = _prom_tempdir.name
-        monitor(app, latency_buckets=[1], is_middleware=False).expose_endpoint()
         app.run(host=SANIC_HOST, port=SANIC_PORT, protocol=VodHttpProtocol,
                 access_log=False, auto_reload=False, debug=False, workers=SANIC_THREADS)
     except (KeyboardInterrupt, TimeoutError):
