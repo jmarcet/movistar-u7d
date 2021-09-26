@@ -219,15 +219,19 @@ async def handle_program_name(request, channel_id, program_id):
 @app.post('/prom_event/add')
 async def handle_prom_event_add(request):
     try:
-        _epg, _, _, = get_epg(
+        _event = get_program_id(
             request.json['channel_id'],
-            request.json['program_id'] if 'program_id' in request.json
-            else get_program_id(request.json['channel_id'])['program_id'])
+            request.json['url'] if 'url' in request.json else None)
+        _epg, _, _, = get_epg(request.json['channel_id'], _event['program_id'])
+        _offset = '[' + str(_event['offset']) + '/' + str(_event['duration']) + ']'
         request.app.metrics['RQS_LATENCY'].labels(
             request.json['method'],
-            request.json['endpoint'] + _epg['full_title'],
+            request.json['endpoint'] + _epg['full_title'] + f' _ {_offset}',
             request.json['id']).observe(float(request.json['lat']))
-        log.info(request.json['msg'] + '"' + _epg['full_title'] + '"')
+        _msg = request.json['msg'] + '"' + _epg['full_title'] + '"'
+        if request.json['method'] == 'live':
+            _msg += f' _ {_offset}'
+        log.info(_msg)
     except KeyError:
         return response.empty(404)
     return response.empty(200)
@@ -236,15 +240,24 @@ async def handle_prom_event_add(request):
 @app.post('/prom_event/remove')
 async def handle_prom_event_remove(request):
     try:
-        _epg, _, _, = get_epg(
+        _event = get_program_id(
             request.json['channel_id'],
-            request.json['program_id'] if 'program_id' in request.json
-            else get_program_id(request.json['channel_id'])['program_id'])
-        request.app.metrics['RQS_LATENCY'].remove(
-            request.json['method'],
-            request.json['endpoint'] + _epg['full_title'],
-            request.json['id'])
-        log.info(request.json['msg'] + '"' + _epg['full_title'] + '"')
+            request.json['url'] if 'url' in request.json else None)
+        _epg, _, _, = get_epg(request.json['channel_id'], _event['program_id'])
+        _offset = '[' + str(_event['offset']) + '/' + str(_event['duration']) + ']'
+        _msg = request.json['msg'] + '"' + _epg['full_title'] + '"'
+        if request.json['method'] == 'catchup':
+            request.app.metrics['RQS_LATENCY'].remove(
+                request.json['method'],
+                request.json['endpoint'] + _epg['full_title'] + f' _ {_offset}',
+                request.json['id'])
+        else:
+            for _metric in request.app.metrics['RQS_LATENCY']._metrics:
+                if request.json['method'] in _metric and str(request.json['id']) in _metric:
+                    break
+            request.app.metrics['RQS_LATENCY'].remove(*_metric)
+            _msg += f' _ {_offset}'
+        log.info(_msg)
     except KeyError:
         return response.empty(404)
     return response.empty(200)

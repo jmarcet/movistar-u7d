@@ -325,7 +325,7 @@ async def handle_flussonic(request, channel_id, url):
                         'method': 'catchup',
                         'endpoint': _endpoint,
                         'channel_id': str(channel_id),
-                        'program_id': program_id,
+                        'url': url,
                         'msg': f'[{request.ip}] -> Playing {vod_msg} {_lat}s ',
                         'id': _start,
                         'lat': _lat}))
@@ -349,7 +349,7 @@ async def handle_flussonic(request, channel_id, url):
                 'method': 'catchup',
                 'endpoint': _endpoint,
                 'channel_id': str(channel_id),
-                'program_id': program_id,
+                'url': url,
                 'msg': f'[{request.ip}] -> Stopped {vod_msg} {_raw_url} ',
                 'id': _start})
 
