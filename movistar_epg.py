@@ -104,6 +104,46 @@ async def get_ffmpeg_procs():
     return [t.rstrip().decode() for t in stdout.splitlines()]
 
 
+def get_epg(channel_id, program_id):
+    if channel_id not in _channels:
+        log.error(f'{type(channel_id)} not found')
+        return
+
+    channel_key = _channels[channel_id]['replacement'] \
+        if 'replacement' in _channels[channel_id] else channel_id
+    for event in sorted(_epgdata[channel_key]):
+        _epg = _epgdata[channel_key][event]
+        if int(program_id) == _epg['pid']:
+            return _epg, channel_key, event
+
+
+def get_program_id(channel_id, url=None):
+    channel_key = _channels[channel_id]['replacement'] \
+        if 'replacement' in _channels[channel_id] else channel_id
+    if not url:
+        url = f'{int(time.time())}.ts'
+    x = flussonic_regex.match(url)
+
+    name = _channels[channel_id]['name']
+    start = x.groups()[0]
+    duration = int(x.groups()[1]) if x.groups()[1] else 0
+    last_event = new_start = 0
+
+    if start not in _epgdata[channel_key]:
+        for event in _epgdata[channel_key]:
+            if event > start:
+                break
+            last_event = event
+        if not last_event:
+            return
+        start, new_start = last_event, start
+    program_id, end = [_epgdata[channel_key][start][t] for t in ['pid', 'end']]
+    start = int(start)
+    return {'name': name, 'program_id': program_id,
+            'duration': duration if duration else int(end) - start,
+            'offset': int(new_start) - start if new_start else 0}
+
+
 def get_recording_path(channel_key, timestamp):
     if _epgdata[channel_key][timestamp]['is_serie']:
         path = os.path.join(RECORDINGS,
@@ -129,47 +169,16 @@ async def handle_channels(request):
 @app.get('/program_id/<channel_id>/<url>')
 async def handle_program_id(request, channel_id, url):
     try:
-        channel_key = _channels[channel_id]['replacement'] \
-            if 'replacement' in _channels[channel_id] else channel_id
-        x = flussonic_regex.match(url)
-
-        name = _channels[channel_id]['name']
-        start = x.groups()[0]
-        duration = int(x.groups()[1]) if x.groups()[1] else 0
-        last_event = new_start = 0
-
-        if start not in _epgdata[channel_key]:
-            for event in _epgdata[channel_key]:
-                if event > start:
-                    break
-                last_event = event
-            if not last_event:
-                raise exceptions.NotFound(f'Requested URL {request.raw_url.decode()} not found')
-            start, new_start = last_event, start
-        program_id, end = [_epgdata[channel_key][start][t] for t in ['pid', 'end']]
-        start = int(start)
-        return response.json({'name': name, 'program_id': program_id,
-                              'duration': duration if duration else int(end) - start,
-                              'offset': int(new_start) - start if new_start else 0})
-    except (AttributeError, KeyError) as ex:
+        return response.json(get_program_id(channel_id, url))
+    except (AttributeError, KeyError):
         raise exceptions.NotFound(f'Requested URL {request.raw_url.decode()} not found')
 
 
 @app.route('/program_name/<channel_id>/<program_id>', methods=['GET', 'PUT'])
 async def handle_program_name(request, channel_id, program_id):
-    if channel_id not in _channels:
-        raise exceptions.NotFound(f'Requested URL {request.raw_url.decode()} not found')
-
-    channel_key = _channels[channel_id]['replacement'] \
-        if 'replacement' in _channels[channel_id] else channel_id
-    _found = False
-    for event in sorted(_epgdata[channel_key]):
-        _epg = _epgdata[channel_key][event]
-        if int(program_id) == _epg['pid']:
-            _found = True
-            break
-
-    if not _found:
+    try:
+        _epg, channel_key, event = get_epg(channel_id, program_id)
+    except TypeError:
         raise exceptions.NotFound(f'Requested URL {request.raw_url.decode()} not found')
 
     if request.method == 'GET':
@@ -186,7 +195,7 @@ async def handle_program_name(request, channel_id, program_id):
         try:
             async with await open_async(recordings) as f:
                 _recordings = ujson.loads(await f.read())
-        except (FileNotFoundError, TypeError, ValueError) as ex:
+        except (FileNotFoundError, TypeError, ValueError):
             _recordings = {}
 
     if channel_id not in _recordings:
@@ -210,10 +219,15 @@ async def handle_program_name(request, channel_id, program_id):
 @app.post('/prom_event/add')
 async def handle_prom_event_add(request):
     try:
-        request.app.metrics['RQS_LATENCY'].labels(request.json['method'],
-            request.json['endpoint'],
+        _epg, _, _, = get_epg(
+            request.json['channel_id'],
+            request.json['program_id'] if 'program_id' in request.json
+            else get_program_id(request.json['channel_id'])['program_id'])
+        request.app.metrics['RQS_LATENCY'].labels(
+            request.json['method'],
+            request.json['endpoint'] + _epg['full_title'],
             request.json['id']).observe(float(request.json['lat']))
-        log.info(request.json['msg'])
+        log.info(request.json['msg'] + '"' + _epg['full_title'] + '"')
     except KeyError:
         return response.empty(404)
     return response.empty(200)
@@ -222,9 +236,15 @@ async def handle_prom_event_add(request):
 @app.post('/prom_event/remove')
 async def handle_prom_event_remove(request):
     try:
-        request.app.metrics['RQS_LATENCY'].remove(request.json['method'],
-            request.json['endpoint'], request.json['id'])
-        log.info(request.json['msg'])
+        _epg, _, _, = get_epg(
+            request.json['channel_id'],
+            request.json['program_id'] if 'program_id' in request.json
+            else get_program_id(request.json['channel_id'])['program_id'])
+        request.app.metrics['RQS_LATENCY'].remove(
+            request.json['method'],
+            request.json['endpoint'] + _epg['full_title'],
+            request.json['id'])
+        log.info(request.json['msg'] + '"' + _epg['full_title'] + '"')
     except KeyError:
         return response.empty(404)
     return response.empty(200)
@@ -378,9 +398,10 @@ async def timers_check_delayed():
 async def update_epg():
     global tvgrab
     for i in range(5):
-        tvgrab = await asyncio.create_subprocess_exec(f'{PREFIX}tv_grab_es_movistartv',
-                                                      '--tvheadend', CHANNELS, '--output', GUIDE,
-                                                      stdin=DEVNULL, stdout=DEVNULL, stderr=DEVNULL)
+        tvgrab = await asyncio.create_subprocess_exec(
+            f'{PREFIX}tv_grab_es_movistartv',
+            '--tvheadend', CHANNELS, '--output', GUIDE,
+            stdin=DEVNULL, stdout=DEVNULL, stderr=DEVNULL)
         await tvgrab.wait()
         if tvgrab.returncode != 0:
             log.error(f'Waiting 15s before trying to update EPG again [{i+2}/5]')

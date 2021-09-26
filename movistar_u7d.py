@@ -22,7 +22,8 @@ from sanic.models.server_types import ConnInfo
 from sanic.touchup.meta import TouchUpMeta
 
 from movistar_epg import get_ffmpeg_procs
-from vod import VodLoop, VodSetup, find_free_port, COVER_URL, IMAGENIO_URL, RECORDINGS, UA
+from vod import VodLoop, VodSetup, find_free_port, \
+    COVER_URL, IMAGENIO_URL, RECORDINGS, UA
 
 
 setproctitle('movistar_u7d')
@@ -48,8 +49,8 @@ LOG_SETTINGS['formatters']['generic']['datefmt'] = \
 PREFIX = ''
 
 app = Sanic('movistar_u7d', log_config=LOG_SETTINGS)
-app.config.update({'GRACEFUL_SHUTDOWN_TIMEOUT': 0,
-                   'FALLBACK_ERROR_FORMAT': 'json',
+app.config.update({'FALLBACK_ERROR_FORMAT': 'json',
+                   'GRACEFUL_SHUTDOWN_TIMEOUT': 0,
                    'REQUEST_TIMEOUT': 1,
                    'RESPONSE_TIMEOUT': 1})
 app.ctx.vod_client = None
@@ -142,7 +143,8 @@ async def after_server_stop(app, loop):
 async def handle_channels(request):
     log.info(f'[{request.ip}] {request.method} {request.url}')
     if not os.path.exists(CHANNELS):
-        raise exceptions.NotFound(f'Requested URL {request.raw_url.decode()} not found')
+        raise exceptions.NotFound(
+            f'Requested URL {request.raw_url.decode()} not found')
     return await response.file(CHANNELS)
 
 
@@ -151,7 +153,8 @@ async def handle_channels(request):
 async def handle_guide(request):
     log.info(f'[{request.ip}] {request.method} {request.url}')
     if not os.path.exists(GUIDE):
-        raise exceptions.NotFound(f'Requested URL {request.raw_url.decode()} not found')
+        raise exceptions.NotFound(
+            f'Requested URL {request.raw_url.decode()} not found')
     log.debug(f'[{request.ip}] Return: {request.method} {request.url}')
     return await response.file(GUIDE)
 
@@ -165,7 +168,8 @@ async def handle_logos(request, cover=None, logo=None, path=None):
     elif path and cover and cover.split('.')[0].isdigit():
         orig_url = f'{COVER_URL}/{path}/{cover}'
     else:
-        raise exceptions.NotFound(f'Requested URL {request.raw_url.decode()} not found')
+        raise exceptions.NotFound(
+            f'Requested URL {request.raw_url.decode()} not found')
 
     if request.method == 'HEAD':
         return response.HTTPResponse(content_type='image/jpeg', status=200)
@@ -186,7 +190,8 @@ async def handle_logos(request, cover=None, logo=None, path=None):
                                          headers=headers,
                                          status=200)
         else:
-            raise exceptions.NotFound(f'Requested URL {request.raw_url.decode()} not found')
+            raise exceptions.NotFound(
+                f'Requested URL {request.raw_url.decode()} not found')
 
 
 @app.route('/<channel_id:int>/live', methods=['GET', 'HEAD'])
@@ -222,26 +227,31 @@ async def handle_channel(request, channel_id):
         sock.setsockopt(socket.SOL_IP, socket.IP_ADD_MEMBERSHIP,
                         socket.inet_aton(mc_grp) + socket.inet_aton(_iptv))
 
-        with closing(await asyncio_dgram.from_socket(sock)) as stream:
-            try:
+        try:
+            with closing(await asyncio_dgram.from_socket(sock)) as stream:
                 _response = await request.respond(content_type=MIME_TS)
                 await _response.send((await stream.recv())[0][28:])
                 _lat = timeit.default_timer() - _start
-                asyncio.create_task(_session.post(f'{SANIC_EPG_URL}/prom_event/add',
-                    json={'method': 'live',
-                          'endpoint': f'{name}:{request.ip}',
-                          'msg': f'[{request.ip}] -> Playing "{name}" {_lat}s',
-                          'id': _start,
-                          'lat': _lat}))
+                asyncio.create_task(
+                    _session.post(f'{SANIC_EPG_URL}/prom_event/add', json={
+                        'method': 'live',
+                        'endpoint': f'{name} _ {request.ip} _ ',
+                        'channel_id': str(channel_id),
+                        'msg': f'[{request.ip}] -> Playing "{name}" {_lat}s ',
+                        'id': _start,
+                        'lat': _lat}))
                 while True:
                     await _response.send((await stream.recv())[0][28:])
-            finally:
-                asyncio.create_task(_session.post(f'{SANIC_EPG_URL}/prom_event/remove',
-                    json={'method': 'live',
-                          'endpoint': f'{name}:{request.ip}',
-                          'msg': f'[{request.ip}] -> Stopped "{name}" {_raw_url}',
-                          'id': _start}))
+        finally:
+            try:
                 await _response.eof()
+            finally:
+                await _session.post(f'{SANIC_EPG_URL}/prom_event/remove', json={
+                    'method': 'live',
+                    'endpoint': f'{name} _ {request.ip} _ ',
+                    'channel_id': str(channel_id),
+                    'msg': f'[{request.ip}] -> Stopped "{name}" {_raw_url} ',
+                    'id': _start})
 
 
 @app.route('/<channel_id:int>/<url>', methods=['GET', 'HEAD'])
@@ -301,7 +311,7 @@ async def handle_flussonic(request, channel_id, url):
         log.error(f'{_raw_url} not found')
         raise exceptions.NotFound(f'Requested URL {_raw_url} not found')
     vod = asyncio.create_task(VodLoop(_args, vod_data))
-    _endpoint = _channels[str(channel_id)]['name'] + f':{request.ip}:/{url}'
+    _endpoint = _channels[str(channel_id)]['name'] + f' _ {request.ip} _ '
     try:
         with closing(await asyncio_dgram.bind((_iptv, client_port))) as stream:
             try:
@@ -310,12 +320,15 @@ async def handle_flussonic(request, channel_id, url):
                 _responses.append((request, _response, vod_msg))
                 await _response.send((await asyncio.wait_for(stream.recv(), 1))[0])
                 _lat = timeit.default_timer() - _start
-                asyncio.create_task(_session.post(f'{SANIC_EPG_URL}/prom_event/add',
-                    json={'method': 'catchup',
-                          'endpoint': _endpoint,
-                          'msg': f'[{request.ip}] -> Playing {vod_msg} {_lat}s',
-                          'id': _start,
-                          'lat': _lat}))
+                asyncio.create_task(
+                    _session.post(f'{SANIC_EPG_URL}/prom_event/add', json={
+                        'method': 'catchup',
+                        'endpoint': _endpoint,
+                        'channel_id': str(channel_id),
+                        'program_id': program_id,
+                        'msg': f'[{request.ip}] -> Playing {vod_msg} {_lat}s ',
+                        'id': _start,
+                        'lat': _lat}))
             except asyncio.exceptions.TimeoutError:
                 log.error(f'NOT_AVAILABLE: {vod_msg}')
                 raise exceptions.NotFound(f'Requested URL {_raw_url} not found')
@@ -324,17 +337,21 @@ async def handle_flussonic(request, channel_id, url):
                 await _response.send((await stream.recv())[0])
     finally:
         try:
-            vod.cancel()
-            await asyncio.wait({vod})
-        except (ProcessLookupError, TypeError):
-            pass
-        asyncio.create_task(_session.post(f'{SANIC_EPG_URL}/prom_event/remove',
-            json={'method': 'catchup',
-                  'endpoint': _endpoint,
-                  'msg': f'[{request.ip}] -> Stopped {vod_msg} {_raw_url}',
-                  'id': _start}))
-        _responses.remove((request, _response, vod_msg))
-        await _response.eof()
+            await _response.eof()
+        finally:
+            _responses.remove((request, _response, vod_msg))
+            try:
+                vod.cancel()
+                await asyncio.wait({vod})
+            except (ProcessLookupError, TypeError):
+                pass
+            await _session.post(f'{SANIC_EPG_URL}/prom_event/remove', json={
+                'method': 'catchup',
+                'endpoint': _endpoint,
+                'channel_id': str(channel_id),
+                'program_id': program_id,
+                'msg': f'[{request.ip}] -> Stopped {vod_msg} {_raw_url} ',
+                'id': _start})
 
 
 @app.get('/favicon.ico')

@@ -21,7 +21,7 @@
   "editable": false,
   "gnetId": null,
   "graphTooltip": 0,
-  "id": 83,
+  "id": 85,
   "links": [],
   "panels": [
     {
@@ -52,7 +52,7 @@
             "scaleDistribution": {
               "type": "linear"
             },
-            "showPoints": "never",
+            "showPoints": "auto",
             "spanNulls": false,
             "stacking": {
               "group": "A",
@@ -91,7 +91,7 @@
           "calcs": [
             "firstNotNull"
           ],
-          "displayMode": "table",
+          "displayMode": "list",
           "placement": "bottom"
         },
         "tooltip": {
@@ -139,7 +139,7 @@
             "scaleDistribution": {
               "type": "linear"
             },
-            "showPoints": "never",
+            "showPoints": "auto",
             "spanNulls": false,
             "stacking": {
               "group": "A",
@@ -158,10 +158,6 @@
               {
                 "color": "green",
                 "value": null
-              },
-              {
-                "color": "red",
-                "value": 80
               }
             ]
           },
@@ -181,7 +177,7 @@
           "calcs": [
             "firstNotNull"
           ],
-          "displayMode": "table",
+          "displayMode": "list",
           "placement": "bottom"
         },
         "tooltip": {
@@ -211,12 +207,12 @@
     "list": []
   },
   "time": {
-    "from": "now-1h",
+    "from": "now-3h",
     "to": "now"
   },
   "timepicker": {},
   "timezone": "",
   "title": "Movistar U7D",
   "uid": "rmpMlvN7k",
-  "version": 15
+  "version": 2
 }

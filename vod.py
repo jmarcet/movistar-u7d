@@ -253,7 +253,7 @@ async def get_vod_url(channel_id, program_id, vod_client):
             resp = await r.json()
         return resp['resultData']['url']
     except KeyError:
-        return None
+        return
 
 
 async def record_stream():
