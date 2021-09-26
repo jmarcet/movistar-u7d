@@ -342,7 +342,6 @@ async def handle_flussonic(request, channel_id, url):
             _responses.remove((request, _response, vod_msg))
             try:
                 vod.cancel()
-                await asyncio.wait({vod})
             except (ProcessLookupError, TypeError):
                 pass
             await _session.post(f'{SANIC_EPG_URL}/prom_event/remove', json={
@@ -351,7 +350,9 @@ async def handle_flussonic(request, channel_id, url):
                 'channel_id': str(channel_id),
                 'url': url,
                 'msg': f'[{request.ip}] -> Stopped {vod_msg} {_raw_url} ',
-                'id': _start})
+                'id': _start,
+                'offset': timeit.default_timer() - _start})
+            await asyncio.wait({vod})
 
 
 @app.get('/favicon.ico')
