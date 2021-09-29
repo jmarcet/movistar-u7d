@@ -32,11 +32,9 @@ NFO_EXT = '-movistar.nfo'
 TMP_EXT = '.tmp'
 VID_EXT = '.mkv'
 UA = 'MICA-IP-STB'
-# WIDTH = 134
 
 YEAR_SECONDS = 365 * 24 * 60 * 60
 
-Request = namedtuple('Request', ['request', 'response'])
 Response = namedtuple('Response', ['version', 'status', 'url', 'headers', 'body'])
 VodData = namedtuple('VodData', ['client', 'get_parameter', 'session'])
 
@@ -63,26 +61,15 @@ class RtspClient(object):
     def needs_position(self):
         self.needs_position = True
 
-    def print(self, req):
-        return req.response
-        # resp = req.response
-        # _req = req.request.split('\r\n')[0].split(' ')
-        # if 'TEARDOWN' not in _req:
-        #     return resp
-        # tmp = _req[1].split('/')
-        # _req[1] = (f'{tmp[0]}//{str(tmp[2])[:40]} '
-        #            f'{args.channel} {args.broadcast} '
-        #            f'-s {args.start} -p {args.client_port}')
-        # sys.stdout.write(f'[{args.client_ip}][VOD] Req: {_req[0]} [{_req[1]}] '
-        #                  f'{_req[2]} => {resp.status}\n')
-        # headers = self.serialize_headers(resp.headers)
-        # sys.stderr.write('-' * WIDTH + '\n')
-        # sys.stderr.write('Request: ' + req.request.split('\n')[0] + '\n')
-        # sys.stderr.write(f'Response: {resp.version} {resp.status}\n{headers}\n')
-        # if resp.body:
-        #     sys.stderr.write(f'\n{resp.body.rstrip()}\n')
-        # sys.stderr.write('-' * WIDTH + '\n')
-        # return resp
+    async def print(self, req, resp):
+        WIDTH = 134
+        headers = self.serialize_headers(resp.headers)
+        sys.stderr.write('-' * WIDTH + '\n')
+        sys.stderr.write('Request: ' + req.split('\n')[0] + '\n')
+        sys.stderr.write(f'Response: {resp.version} {resp.status}\n{headers}\n')
+        if resp.body:
+            sys.stderr.write(f'\n{resp.body.rstrip()}\n')
+        sys.stderr.write('-' * WIDTH + '\n')
 
     async def read_message(self):
         resp = (await self.reader.read(4096)).decode()
@@ -127,11 +114,12 @@ class RtspClient(object):
 
         self.writer.write(req.encode())
         resp = await self.read_message()
+        # asyncio.create_task(self.print(req, resp))
 
         if resp.status != '200 OK' and method not in ['SETUP', 'TEARDOWN']:
             raise ValueError(f'{method} {resp}')
 
-        return Request(req, resp)
+        return resp
 
     def serialize_headers(self, headers):
         return '\r\n'.join(map(lambda x: '{0}: {1}'.format(*x), headers.items()))
@@ -245,13 +233,14 @@ def find_free_port(iface=''):
         return s.getsockname()[1]
 
 
-async def get_vod_url(channel_id, program_id, vod_client):
-    params = f'action=getCatchUpUrl&extInfoID={program_id}&channelID={channel_id}' \
-             f'&service=hd&mode=1'
+async def get_vod_info(channel_id, program_id, recording, vod_client):
+    params = 'action=getRecordingData' if recording else 'action=getCatchUpUrl'
+    params += f'&extInfoID={program_id}&channelID={channel_id}&mode=1'
+
     try:
         async with vod_client.get(f'{MVTV_URL}?{params}') as r:
             resp = await r.json()
-        return resp['resultData']['url']
+        return resp['resultData']
     except KeyError:
         return
 
@@ -276,9 +265,6 @@ async def record_stream():
         resp = await client.get(epg_url)
     if resp.status_code == 200:
         data = resp.json()
-
-        if not args.time:
-            args.time = int(data['duration']) - args.start
 
         full_title, path, filename = [data[t] for t in ['full_title', 'path', 'filename']]
         _options['metadata:s:v'] = f'title={full_title}'
@@ -368,8 +354,7 @@ async def VodLoop(args, vod_data=None):
             if __name__ == '__main__':
                 if args.write_to_file and _ffmpeg and not _ffmpeg.is_alive():
                     break
-            vod_data.client.print(await vod_data.client.send_request('GET_PARAMETER',
-                                  vod_data.get_parameter))
+            await vod_data.client.send_request('GET_PARAMETER', vod_data.get_parameter)
 
     except (AttributeError, TimeoutError, TypeError, ValueError):
         pass
@@ -378,8 +363,7 @@ async def VodLoop(args, vod_data=None):
 
     finally:
         try:
-            vod_data.client.print(await vod_data.client.send_request('TEARDOWN',
-                                  vod_data.session))
+            await vod_data.client.send_request('TEARDOWN', vod_data.session)
         except (AttributeError, OSError, RuntimeError):
             pass
 
@@ -407,27 +391,26 @@ async def VodSetup(args, vod_client):
     describe['Accept'] = 'application/sdp'
     setup['Transport'] = f'MP2T/H2221/UDP;unicast;client_port={args.client_port}'
 
-    url = await get_vod_url(args.channel, args.broadcast, vod_client)
-    if not url:
+    vod_info = await get_vod_info(args.channel, args.broadcast, args.recording, vod_client)
+    if not vod_info:
         sys.stderr.write(f'{_log_prefix} Could not get uri for: {_log_suffix}\n')
         return
 
-    uri = urllib.parse.urlparse(url)
-    epg_url = (f'{SANIC_EPG_URL}/program_name/{args.channel}/{args.broadcast}')
-
+    uri = urllib.parse.urlparse(vod_info['url'])
     reader, writer = await asyncio.open_connection(uri.hostname, uri.port)
+    epg_url = (f'{SANIC_EPG_URL}/program_name/{args.channel}/{args.broadcast}')
 
     signal.signal(signal.SIGHUP, _handle_cleanup)
     signal.signal(signal.SIGTERM, _handle_cleanup)
 
-    client = RtspClient(reader, writer, url)
-    client.print(await client.send_request('OPTIONS', headers))
-    client.print(await client.send_request('DESCRIBE', describe))
+    client = RtspClient(reader, writer, vod_info['url'])
+    await client.send_request('OPTIONS', headers)
+    await client.send_request('DESCRIBE', describe)
 
-    r = client.print(await client.send_request('SETUP', setup))
+    r = await client.send_request('SETUP', setup)
     if r.status != '200 OK':
         client.needs_position()
-        r = client.print(await client.send_request('SETUP2', setup))
+        r = await client.send_request('SETUP2', setup)
         if r.status != '200 OK':
             sys.stderr.write(f'{r}\n')
             return
@@ -441,7 +424,11 @@ async def VodSetup(args, vod_client):
         get_parameter.update({'Content-type': 'text/parameters',
                               'Content-length': 10})
 
-    client.print(await client.send_request('PLAY', play))
+    await client.send_request('PLAY', play)
+
+    if __name__ == '__main__':
+        if args.write_to_file and not args.time:
+            args.time = vod_info['duration']
 
     return VodData(client, get_parameter, session)
 
@@ -456,6 +443,7 @@ if __name__ == '__main__':
     parser.add_argument('--start', '-s', help='stream start offset', type=int)
     parser.add_argument('--time', '-t', help='recording time in seconds', type=int)
     parser.add_argument('--mp4', help='output split mp4 and vobsub files', type=bool, default=False)
+    parser.add_argument('--recording', help='the event is from a cloud recording', type=bool, default=False)
     parser.add_argument('--vo', help='set 2nd language as main one', type=bool, default=False)
     parser.add_argument('--write_to_file', '-w', help='record', action='store_true')
 
