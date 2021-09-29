@@ -42,7 +42,7 @@ PREFIX = ''
 app = Sanic('movistar_epg')
 app.config.update({'FALLBACK_ERROR_FORMAT': 'json',
                    'KEEP_ALIVE_TIMEOUT': YEAR_SECONDS})
-flussonic_regex = re.compile(r"\w*-?(\d{10})-?(\d+){0,1}\.\w+")
+flussonic_regex = re.compile(r"\w*-?(\d{10})-?(\d+){0,1}\.?\w*")
 
 epg_data = os.path.join(HOME, '.xmltv/cache/epg.json')
 epg_metadata = os.path.join(HOME, '.xmltv/cache/epg_metadata.json')
@@ -121,7 +121,7 @@ def get_program_id(channel_id, url=None):
     channel_key = _channels[channel_id]['replacement'] \
         if 'replacement' in _channels[channel_id] else channel_id
     if not url:
-        url = f'{int(time.time())}.ts'
+        url = f'{int(time.time())}'
     x = flussonic_regex.match(url)
 
     name = _channels[channel_id]['name']
