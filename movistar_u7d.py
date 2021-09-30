@@ -56,7 +56,7 @@ app.config.update({'FALLBACK_ERROR_FORMAT': 'json',
 app.ctx.vod_client = None
 
 VodArgs = namedtuple('Vod', ['channel', 'broadcast', 'iptv_ip',
-                             'client_ip', 'client_port', 'start'])
+                             'client_ip', 'client_port', 'start', 'recording'])
 
 _channels = _iptv = _session = _session_logos = _t_tp = None
 _network_fsignal = '/tmp/.u7d_bw'
@@ -255,7 +255,7 @@ async def handle_channel(request, channel_id):
 
 
 @app.route('/<channel_id:int>/<url>', methods=['GET', 'HEAD'])
-async def handle_flussonic(request, channel_id, url):
+async def handle_flussonic(request, channel_id, url, recording=False):
     _start = timeit.default_timer()
     _raw_url = request.raw_url.decode()
     procs = None
@@ -297,6 +297,8 @@ async def handle_flussonic(request, channel_id, url):
             cmd += ' --mp4 1'
         if request.args.get('vo', False):
             cmd += ' --vo 1'
+        if recording:
+            cmd += ' --recording 1'
 
         log.info(f'[{request.ip}] {_raw_url} -> Recording [{record_time}s] {vod_msg}')
         signal.signal(signal.SIGCHLD, signal.SIG_IGN)
@@ -305,7 +307,7 @@ async def handle_flussonic(request, channel_id, url):
                               'channel_id': channel_id, 'program_id': program_id,
                               'offset': offset, 'time': record_time})
 
-    _args = VodArgs(channel_id, program_id, _iptv, request.ip, client_port, offset)
+    _args = VodArgs(channel_id, program_id, _iptv, request.ip, client_port, offset, recording)
     vod_data = await VodSetup(_args, app.ctx.vod_client)
     if not vod_data:
         log.error(f'{_raw_url} not found')
@@ -353,6 +355,11 @@ async def handle_flussonic(request, channel_id, url):
                 'id': _start,
                 'offset': timeit.default_timer() - _start})
             await asyncio.wait({vod})
+
+
+@app.route('/recording/<channel_id:int>/<url>', methods=['GET', 'HEAD'])
+async def handle_flussonic_recording(request, channel_id, url):
+    return await handle_flussonic(request, channel_id, url, True)
 
 
 @app.get('/favicon.ico')
