@@ -17,14 +17,16 @@ from sanic_prometheus import monitor
 from sanic.compat import open_async
 from sanic.log import logger as log, LOGGING_CONFIG_DEFAULTS
 
-from vod import TMP_EXT
+from vod import MVTV_URL, TMP_EXT
 
 
 setproctitle('movistar_epg')
 
 HOME = os.getenv('HOME', '/home/')
 CHANNELS = os.path.join(HOME, 'MovistarTV.m3u')
+CHANNELS_CLOUD = os.path.join(HOME, 'cloud.m3u')
 GUIDE = os.path.join(HOME, 'guide.xml')
+GUIDE_CLOUD = os.path.join(HOME, 'cloud.xml')
 SANIC_HOST = os.getenv('LAN_IP', '127.0.0.1')
 SANIC_PORT = int(os.getenv('SANIC_PORT', '8888'))
 SANIC_URL = f'http://{SANIC_HOST}:{SANIC_PORT}'
@@ -44,22 +46,27 @@ app.config.update({'FALLBACK_ERROR_FORMAT': 'json',
                    'KEEP_ALIVE_TIMEOUT': YEAR_SECONDS})
 flussonic_regex = re.compile(r"\w*-?(\d{10})-?(\d+){0,1}\.?\w*")
 
+cloud_data = os.path.join(HOME, '.xmltv/cache/cloud.json')
 epg_data = os.path.join(HOME, '.xmltv/cache/epg.json')
 epg_metadata = os.path.join(HOME, '.xmltv/cache/epg_metadata.json')
 recordings = os.path.join(HOME, 'recordings.json')
 timers = os.path.join(HOME, 'timers.json')
+epg_lock = asyncio.Lock()
 recordings_lock = asyncio.Lock()
 timers_lock = asyncio.Lock()
+tvgrab_lock = asyncio.Lock()
 
+_cloud = {}
 _channels = {}
 _epgdata = {}
 _network_fsignal = '/tmp/.u7d_bw'
-_t_epg1 = _t_epg2 = _t_timers = _t_timers_d = _t_timers_r = _t_timers_t = tvgrab = None
+_t_cloud1 = _t_cloud2 = _t_epg1 = _t_epg2 = _t_timers = _t_timers_d = \
+    _t_timers_r = _t_timers_t = tv_cloud1 = tv_cloud2 = tvgrab = None
 
 
 @app.listener('after_server_start')
 async def after_server_start(app, loop):
-    global PREFIX, _t_epg1, _t_timers_d
+    global PREFIX, _t_cloud1, _t_epg1, _t_timers_d
     if __file__.startswith('/app/'):
         PREFIX = '/app/'
 
@@ -71,6 +78,7 @@ async def after_server_start(app, loop):
 
     await reload_epg()
     _t_epg1 = asyncio.create_task(update_epg_delayed())
+    _t_cloud1 = asyncio.create_task(update_cloud_delayed())
 
     if RECORDINGS:
         if os.path.exists(timers):
@@ -84,7 +92,8 @@ async def after_server_start(app, loop):
 
 @app.listener('after_server_stop')
 async def after_server_stop(app, loop):
-    for task in [_t_epg2, _t_epg1, _t_timers, _t_timers_d, _t_timers_r, _t_timers_t, tvgrab]:
+    for task in [_t_cloud1, _t_cloud2, _t_epg2, _t_epg1, _t_timers, _t_timers_d,
+                 _t_timers_r, _t_timers_t, tv_cloud1, tv_cloud2, tvgrab]:
         try:
             task.cancel()
             await asyncio.wait({task})
@@ -271,41 +280,43 @@ async def handle_reload_epg(request):
 
 
 async def reload_epg():
-    global _channels, _epgdata
+    global _channels, _cloud, _epgdata
 
     if not os.path.exists(epg_data) or not os.path.exists(epg_metadata) \
             or not os.path.exists(GUIDE):
         log.warning(f'No {GUIDE} found!. Need to download it. Please be patient...')
         await update_epg()
 
-    try:
-        async with await open_async(epg_data) as f:
-            epgdata = ujson.loads(await f.read())['data']
-        _epgdata = epgdata
-        log.info('Loaded fresh EPG data')
-    except (FileNotFoundError, TypeError, ValueError) as ex:
-        log.error(f'Failed to load EPG data {repr(ex)}')
-        if os.path.exists(epg_data):
-            os.remove(epg_data)
-        return await reload_epg()
+    async with epg_lock:
+        try:
+            async with await open_async(epg_data) as f:
+                _epgdata = ujson.loads(await f.read())['data']
+            log.info('Loaded fresh EPG data')
+        except (FileNotFoundError, TypeError, ValueError) as ex:
+            log.error(f'Failed to load EPG data {repr(ex)}')
+            if os.path.exists(epg_data):
+                os.remove(epg_data)
+            return await reload_epg()
 
-    try:
-        async with await open_async(epg_metadata) as f:
-            channels = ujson.loads(await f.read())['data']['channels']
-        _channels = channels
-        log.info('Loaded Channels metadata')
-    except (FileNotFoundError, TypeError, ValueError) as ex:
-        log.error(f'Failed to load Channels metadata {repr(ex)}')
-        if os.path.exists(epg_metadata):
-            os.remove(epg_metadata)
-        return await reload_epg()
+        try:
+            async with await open_async(epg_metadata) as f:
+                channels = ujson.loads(await f.read())['data']['channels']
+            _channels = channels
+            log.info('Loaded Channels metadata')
+        except (FileNotFoundError, TypeError, ValueError) as ex:
+            log.error(f'Failed to load Channels metadata {repr(ex)}')
+            if os.path.exists(epg_metadata):
+                os.remove(epg_metadata)
+            return await reload_epg()
 
-    log.info(f'Total Channels: {len(_epgdata)}')
-    nr_epg = 0
-    for channel in _epgdata:
-        nr_epg += len(_epgdata[channel])
-    log.info(f'Total EPG entries: {nr_epg}')
-    log.info('EPG Updated')
+        await update_cloud(forced=True)
+
+        log.info(f'Total Channels: {len(_epgdata)}')
+        nr_epg = 0
+        for channel in _epgdata:
+            nr_epg += len(_epgdata[channel])
+        log.info(f'Total EPG entries: {nr_epg}')
+        log.info('EPG Updated')
     return response.json({'status': 'EPG Updated'}, 200)
 
 
@@ -410,14 +421,108 @@ async def timers_check_delayed():
     _t_timers = asyncio.create_task(every(900, timers_check))
 
 
+async def update_cloud(forced=False):
+    global cloud_data, tv_cloud1, tv_cloud2, _cloud, _epgdata
+
+    try:
+        async with await open_async(cloud_data) as f:
+            clouddata = ujson.loads(await f.read())['data']
+        _cloud = clouddata
+    except (FileNotFoundError, TypeError, ValueError):
+        if os.path.exists(cloud_data):
+            os.remove(cloud_data)
+
+    async with httpx.AsyncClient() as client:
+        try:
+            r = await client.get(
+                f'{MVTV_URL}?action=recordingList&mode=0&state=2&firstItem=0&numItems=999')
+            cloud_recordings = r.json()['resultData']['result']
+        except KeyError:
+            cloud_recordings = None
+    if not cloud_recordings:
+        log.info('No cloud recordings found')
+        return
+
+    new_cloud = {}
+    for event in cloud_recordings:
+        channel_id = str(event['serviceUID'])
+        channel_key = _channels[channel_id]['replacement'] \
+            if 'replacement' in _channels[channel_id] else channel_id
+        _start = str(int(event['beginTime'] / 1000))
+        if channel_id not in new_cloud:
+            new_cloud[channel_id] = {}
+        if _start not in new_cloud[channel_id]:
+            if channel_key in _epgdata and _start in _epgdata[channel_key]:
+                new_cloud[channel_id][_start] = _epgdata[channel_key][_start]
+            else:
+                new_cloud[channel_id][_start] = event
+                log.warning(f'{_start} ' + str(event['productID']) + ' not found'
+                            f' in {channel_id}/{channel_key}')
+    updated = False
+    if new_cloud and (not _cloud or set(new_cloud) != set(_cloud)):
+        updated = True
+    else:
+        for id in new_cloud:
+            if set(new_cloud[id]) != set(_cloud[id]):
+                updated = True
+                break
+
+    if updated or forced:
+        def merge():
+            global _cloud
+            for channel_id in new_cloud:
+                channel_key = _channels[channel_id]['replacement'] \
+                    if 'replacement' in _channels[channel_id] else channel_id
+                for event in list(
+                        set(new_cloud[channel_id]) - set(_epgdata[channel_key])):
+                    _epgdata[channel_key][event] = new_cloud[channel_id][event]
+            if not forced:
+                for channel_id in _cloud:
+                    channel_key = _channels[channel_id]['replacement'] \
+                        if 'replacement' in _channels[channel_id] else channel_id
+                    for event in list(
+                            set(_cloud[channel_id]) - set(new_cloud[channel_id])):
+                        if event in _epgdata[channel_key]:
+                            del _epgdata[channel_key][event]
+        if forced:
+            merge()
+        else:
+            async with epg_lock:
+                merge()
+
+    if updated:
+        _cloud = new_cloud
+        with open(cloud_data, 'w') as fp:
+            ujson.dump({'data': _cloud}, fp,
+                       ensure_ascii=False, indent=6, sort_keys=True)
+        # log.info(ujson.dumps(_cloud, ensure_ascii=False, indent=4, sort_keys=True))
+        log.info('Updated Cloud Recordings data')
+
+    if updated or not os.path.exists(CHANNELS_CLOUD) or not os.path.exists(GUIDE_CLOUD):
+        tv_cloud1 = await asyncio.create_subprocess_exec(
+            f'{PREFIX}tv_grab_es_movistartv', '--cloud_m3u', CHANNELS_CLOUD)
+        async with tvgrab_lock:
+            tv_cloud2 = await asyncio.create_subprocess_exec(
+                f'{PREFIX}tv_grab_es_movistartv', '--cloud_recordings', GUIDE_CLOUD)
+    if forced and not updated:
+        log.info('Loaded Cloud Recordings data')
+
+
+async def update_cloud_delayed():
+    global _t_cloud2
+    await asyncio.sleep(300)
+    _t_cloud2 = asyncio.create_task(every(300, update_cloud))
+
+
 async def update_epg():
     global tvgrab
     for i in range(5):
-        tvgrab = await asyncio.create_subprocess_exec(
-            f'{PREFIX}tv_grab_es_movistartv',
-            '--tvheadend', CHANNELS, '--output', GUIDE,
-            stdin=DEVNULL, stdout=DEVNULL, stderr=DEVNULL)
-        await tvgrab.wait()
+        async with tvgrab_lock:
+            tvgrab = await asyncio.create_subprocess_exec(
+                f'{PREFIX}tv_grab_es_movistartv',
+                '--tvheadend', CHANNELS, '--output', GUIDE,
+                stdin=DEVNULL, stdout=DEVNULL, stderr=DEVNULL)
+            await tvgrab.wait()
         if tvgrab.returncode != 0:
             log.error(f'Waiting 15s before trying to update EPG again [{i+2}/5]')
             await asyncio.sleep(15)

@@ -398,6 +398,9 @@ class Cache:
     def save_epg_data(self, data):
         self.__save('epg_metadata.json', data)
 
+    def load_cloud_epg(self):
+        return self.__load('cloud.json')
+
     def load_epg(self):
         data = self.__load('epg.json')
         if not data:
@@ -809,6 +812,9 @@ class MulticastIPTV:
             clean_channels[channel] = epg[channel]
         return clean_channels
 
+    def get_cloud_epg(self):
+        return cache.load_cloud_epg()
+
     def get_epg(self):
         cached_epg = self.__drop_encrypted_channels(cache.load_epg())
         if use_multithread:
@@ -1195,8 +1201,8 @@ class XMLTV:
                 tag_subkeyword.text = keys['sub-key']
         return tag_programme
 
-    def write_m3u(self, file_path):
-        m3u = self.__generate_m3u()
+    def write_m3u(self, file_path, cloud=None):
+        m3u = self.__generate_m3u(cloud)
         self.__write_to_disk(file_path, m3u)
 
     def __get_client_channels(self):
@@ -1207,19 +1213,32 @@ class XMLTV:
                 services.update(self.__packages[package]['services'])
         return services
 
-    def __generate_m3u(self):
-        m3u = ('#EXTM3U name="MovistarTV" catchup="flussonic" catchup-days=8 '
-               f'dlna_extras=mpeg_ps_pal url-tvg="http://{sanic}/guide.xml"\n')
+    def __generate_m3u(self, cloud=None):
+        m3u = '#EXTM3U name="'
+        m3u += 'Cloud ' if cloud else ''
+        m3u += 'MovistarTV" catchup="flussonic" catchup-days='
+        m3u += '365 ' if cloud else '8 '
+        m3u += f'dlna_extras=mpeg_ps_pal url-tvg="http://{sanic}/'
+        m3u += 'cloud.xml' if cloud else 'guide.xml'
+        m3u += '"\n'
         services = self.__get_client_channels()
+        if cloud:
+            cloud_services = {}
+            for (id, channel) in services.items():
+                if id in cloud:
+                    cloud_services[id] = channel
+            services = cloud_services
         channels = sorted(services, key=lambda key: int(services[key]))
-        first = channels[0]
-        channels = channels[1:]
-        channels.append(first)
+        if not cloud:
+            first = channels[0]
+            channels = channels[1:]
+            channels.append(first)
         for channel_id in channels:
             if channel_id in self.__channels:
                 channel_name = self.__channels[channel_id]['name']
                 channel_key = channel_id
-                channel_tag = 'IPTV - TDT Movistar.es'
+                channel_tag = 'Cloud' if cloud else 'IPTV'
+                channel_tag += ' - TDT Movistar.es'
                 channel_number = services[channel_id]
                 if channel_number == '0':
                     channel_number = '999'
@@ -1238,12 +1257,16 @@ class XMLTV:
                 m3u += f'tvg-id="{channel_id}.movistar.tv" '
                 m3u += f'group-title="{channel_tag}" '
                 m3u += f'tvg-logo="{channel_logo}" '
-                m3u += f'catchup-source="http://{sanic}/{channel_id}' + '/{utc}-{duration}.ts"'
+                m3u += f'catchup-source="http://{sanic}'
+                m3u += '/cloud' if cloud else ''
+                m3u += f'/{channel_id}' + '/{utc}-{duration}.ts"'
                 m3u += f',{channel_name}\n'
                 m3u += '#KODIPROP:inputstream=inputstream.ffmpegdirect\n'
                 m3u += '#KODIPROP:inputstream.ffmpegdirect.stream_mode=timeshift\n'
                 m3u += '#KODIPROP:inputstream.ffmpegdirect.is_realtime_stream=true\n'
-                m3u += f'http://{sanic}/{channel_id}/live\n'
+                m3u += f'http://{sanic}'
+                m3u += '/cloud' if cloud else ''
+                m3u += f'/{channel_id}/live\n'
         return m3u
 
     @staticmethod
@@ -1284,33 +1307,22 @@ def create_args_parser():
         (now + timedelta(days=6)).strftime('%d/%m/%Y'))
     parser = argparse.ArgumentParser(description=desc)
     parser.add_argument('--description',
-                        help="Show 'Spain (MovistarTV)'",
-                        action='store_true')
+                        help="Show 'Spain (MovistarTV)'")
     parser.add_argument('--capabilities',
-                        help='Show xmltv capabilities',
-                        action='store_true')
+                        help='Show xmltv capabilities')
+    parser.add_argument('--m3u',
+                        help='Dump channels in m3u format to the specified file.')
+    parser.add_argument('--tvheadend',
+                        help="Grab EPG and dump channels in m3u format to the specified file.")
     parser.add_argument('--output',
                         help='Redirect the xmltv output to the specified file. '
-                             'Otherwise output goes to stdout.',
-                        action='store',
-                        dest='filename',
-                        default='')
-    parser.add_argument('--m3u',
-                        help='Dump channels in m3u format to the specified file.',
-                        action='store',
-                        dest='output',
-                        default='')
-    parser.add_argument('--tvheadend',
-                        help="Grab EPG and dump channels in m3u format to CHANNELS "
-                             "file (use this argument in TVHeadend grabber's "
-                             "configuration page to update both: the EPG guide and the "
-                             "m3u channel list)",
-                        action='store',
-                        dest='channels',
-                        default='')
+                             'Otherwise output goes to stdout.')
+    parser.add_argument('--cloud_m3u',
+                        help='Dump channels with Cloud Recordings in m3u format to the specified file.')
+    parser.add_argument('--cloud_recordings',
+                        help='Write xmltv for Cloud Recordings to the specified file.')
     parser.add_argument('--reset',
-                        help='Delete saved configuration, log file and caches.',
-                        action='store_true')
+                        help='Delete saved configuration, log file and caches.')
     return parser
 
 
@@ -1332,18 +1344,12 @@ def reset():
     sys.exit(0)
 
 
-def export_channels(m3u_file):
-    xmltv.write_m3u(m3u_file)
-    logger.info(f'Lista de canales exportada: {m3u_file}')
+def export_channels(m3u_file, cloud=None):
+    xmltv.write_m3u(m3u_file, cloud)
+    logger.info(f'Lista de canales '
+                f'{"de Grabaciones en la Nube " if cloud else ""}'
+                f'exportada: {m3u_file}')
 
-
-# Sólo una instancia ejecutándose
-fh = open(os.path.realpath(__file__))
-try:
-    fcntl.flock(fh, fcntl.LOCK_EX | fcntl.LOCK_NB)
-except BlockingIOError:
-    sys.stderr.write(f'{__file__} ya se está ejecutando\n')
-    sys.exit(0)
 
 # Determina la primera IP de rango local
 if 'LAN_IP' in os.environ:
@@ -1387,6 +1393,15 @@ try:
     if args.reset:
         reset()
 
+    if not args.m3u and not args.cloud_m3u:
+        # Sólo una instancia ejecutándose
+        fh = open(os.path.realpath(__file__))
+        try:
+            fcntl.flock(fh, fcntl.LOCK_EX | fcntl.LOCK_NB)
+        except BlockingIOError:
+            sys.stderr.write(f'{__file__} ya se está ejecutando\n')
+            sys.exit(0)
+
     # Crea la caché
     cache = Cache()
 
@@ -1402,12 +1417,23 @@ try:
     # Crea el objeto XMLTV a partir de los datos descargados del Proveedor de Servicios
     xmltv = XMLTV(xdata)
 
-    if args.output:
-        export_channels(args.output)
+    if args.m3u:
+        export_channels(args.m3u)
         sys.exit(0)
 
     # Descarga los segments de cada EPG_X_BIN.imagenio.es y devuelve la guía decodificada
-    epg = iptv.get_epg()
+    if args.cloud_m3u or args.cloud_recordings:
+        _epg = cache.load_cloud_epg()
+        if args.cloud_m3u:
+            export_channels(args.cloud_m3u, list(_epg.keys()))
+            sys.exit(0)
+        epg = {}
+        for channel_id in _epg:
+            channel_key = xdata['channels'][channel_id]['replacement'] \
+                if 'replacement' in xdata['channels'][channel_id] else channel_id
+            epg[channel_key] = _epg[channel_id]
+    else:
+        epg = iptv.get_epg()
 
     # Genera el árbol XMLTV de los paquetes contratados
     epg_x = xmltv.generate_xml(epg)
@@ -1415,24 +1441,29 @@ try:
     _saved = None
     xml = epg_x.getroot()
     ElTr.indent(xml)
-    if args.filename:
-        logger.info(f'Guardando la guía XMLTV: {args.filename}')
+    if args.cloud_recordings:
+        logger.info(
+            f'Guía XMLTV de Grabaciones en la Nube guardada: {args.cloud_recordings}')
         _saved = sys.stdout
-        sys.stdout = open(args.filename, 'w')
-    else:
-        if args.channels:
-            export_channels(args.channels)
+        sys.stdout = open(args.cloud_recordings, 'w')
+    if args.output:
+        logger.info(f'Guía XMLTV guardada: {args.output}')
+        _saved = sys.stdout
+        sys.stdout = open(args.output, 'w')
+    if args.tvheadend:
+        export_channels(args.tvheadend)
     print("<?xml version='1.0' encoding='UTF-8'?>", flush=True)
     ElTr.dump(xml)
     if _saved:
         sys.stdout = _saved
 
-    total = (int(time.time()) - time_start) / 60
-    logger.info('EPG de %i canales y %i días %s' % (
-        len(epg),
-        len(xdata['segments']),
-        'descargada en %i minutos' % total if total != 0 else
-        'generada en %i segundos' % (int(time.time()) - time_start)))
+    if not args.cloud_recordings:
+        total = (int(time.time()) - time_start) / 60
+        logger.info('EPG de %i canales y %i días %s' % (
+            len(epg),
+            len(xdata['segments']),
+            'descargada en %i minutos' % total if total != 0 else
+            'generada en %i segundos' % (int(time.time()) - time_start)))
 
     sys.exit(0)
 

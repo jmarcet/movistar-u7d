@@ -30,7 +30,9 @@ setproctitle('movistar_u7d')
 
 HOME = os.getenv('HOME', '/home')
 CHANNELS = os.path.join(HOME, 'MovistarTV.m3u')
+CHANNELS_CLOUD = os.path.join(HOME, 'cloud.m3u')
 GUIDE = os.path.join(HOME, 'guide.xml')
+GUIDE_CLOUD = os.path.join(HOME, 'cloud.xml')
 IPTV_BW = int(os.getenv('IPTV_BW', '85000'))
 IPTV_BW = 85000 if IPTV_BW > 90000 else IPTV_BW
 MIME_TS = 'video/MP2T;audio/mp3'
@@ -146,6 +148,26 @@ async def handle_channels(request):
         raise exceptions.NotFound(
             f'Requested URL {request.raw_url.decode()} not found')
     return await response.file(CHANNELS)
+
+
+@app.get('/cloud.m3u')
+@app.get('/nube.m3u')
+async def handle_cloud_channels(request):
+    log.info(f'[{request.ip}] {request.method} {request.url}')
+    if not os.path.exists(CHANNELS_CLOUD):
+        raise exceptions.NotFound(
+            f'Requested URL {request.raw_url.decode()} not found')
+    return await response.file(CHANNELS_CLOUD)
+
+
+@app.get('/cloud.xml')
+@app.get('/nube.xml')
+async def handle_cloud_guide(request):
+    log.info(f'[{request.ip}] {request.method} {request.url}')
+    if not os.path.exists(GUIDE_CLOUD):
+        raise exceptions.NotFound(
+            f'Requested URL {request.raw_url.decode()} not found')
+    return await response.file(GUIDE_CLOUD)
 
 
 @app.get('/guia.xml')
@@ -357,8 +379,10 @@ async def handle_flussonic(request, channel_id, url, recording=False):
             await asyncio.wait({vod})
 
 
-@app.route('/recording/<channel_id:int>/<url>', methods=['GET', 'HEAD'])
-async def handle_flussonic_recording(request, channel_id, url):
+@app.route('/cloud/<channel_id:int>/<url>', methods=['GET', 'HEAD'])
+async def handle_flussonic_cloud(request, channel_id, url):
+    if url == 'live':
+        return await handle_channel(request, channel_id)
     return await handle_flussonic(request, channel_id, url, True)
 
 
