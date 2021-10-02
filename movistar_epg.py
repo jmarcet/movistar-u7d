@@ -249,7 +249,8 @@ async def handle_prom_event_remove(request):
             for _metric in request.app.metrics['RQS_LATENCY']._metrics:
                 if request.json['method'] in _metric and str(request.json['id']) in _metric:
                     break
-            request.app.metrics['RQS_LATENCY'].remove(*_metric)
+            if _metric:
+                request.app.metrics['RQS_LATENCY'].remove(*_metric)
         else:
             request.app.metrics['RQS_LATENCY'].remove(
                 request.json['method'],

@@ -369,8 +369,11 @@ async def handle_notfound(request):
 
 @app.get('/metrics')
 async def handle_prometheus(request):
-    async with _session.get(f'{SANIC_EPG_URL}/metrics') as r:
-        return response.text((await r.read()).decode())
+    try:
+        async with _session.get(f'{SANIC_EPG_URL}/metrics') as r:
+            return response.text((await r.read()).decode())
+    except aiohttp.client_exceptions.ClientConnectorError:
+        raise exceptions.ServiceUnavailable('Not available')
 
 
 async def throughput(iface_rx):
