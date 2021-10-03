@@ -24,6 +24,7 @@
 import argparse
 import codecs
 import fcntl
+import glob
 import httpx
 import logging
 import os
@@ -314,35 +315,32 @@ class Cache:
 
     @staticmethod
     def __clean():
-        for f in os.listdir(f'{app_dir}/cache/programs'):
-            fp = f'{app_dir}/cache/programs/{f}'
-            if os.path.isfile(fp):
-                try:
-                    with open(fp) as fd:
-                        _data = json.loads(fd.read())['data']
-                    _exp_date = int(_data['endTime'] / 1000)
-                    if _exp_date < deadline:
-                        logger.info(f'Caché: {f} caducado [{time.ctime(_exp_date)}]')
-                        os.remove(fp)
-                except Exception as ex:
-                    logger.error(f'{ex}')
+        for file in glob.glob(f'{app_dir}/cache/programs/*.json'):
+            try:
+                with open(file) as f:
+                    _data = json.load(f)['data']
+                _exp_date = int(_data['endTime'] / 1000)
+                if _exp_date < deadline:
+                    logger.info(f'Caché: {file} caducado [{time.ctime(_exp_date)}]')
+                    os.remove(file)
+            except (IOError, KeyError, ValueError):
+                pass
 
     @staticmethod
     def __load(cfile):
         try:
-            with open(f'{app_dir}/cache/{cfile}', 'r') as fp:
-                content = json.load(fp)
-                return content['data']
-        except IOError:
+            with open(f'{app_dir}/cache/{cfile}', 'r') as f:
+                return json.load(f)['data']
+        except (IOError, KeyError, ValueError):
             return None
 
     @staticmethod
     def __save(cfile, data):
-        with open(f'{app_dir}/cache/{cfile}', 'w') as fp:
+        with open(f'{app_dir}/cache/{cfile}', 'w') as f:
             try:
-                json.dump({'data': data}, fp, ensure_ascii=False, indent=4, sort_keys=True)
+                json.dump({'data': data}, f, ensure_ascii=False, indent=4, sort_keys=True)
             except AttributeError:
-                json.dump({'data': data}, fp, ensure_ascii=False, sort_keys=True)
+                json.dump({'data': data}, f, ensure_ascii=False, sort_keys=True)
 
         logger.debug(f'Cache: {cfile} guardado')
 
@@ -425,7 +423,7 @@ class MovistarTV:
             logger.info('Descargando configuración del cliente')
             return self.__get_service_data('getClientProfile')['resultData']
         except Exception as ex:
-            logger.error(f'{ex}')
+            logger.error(f'__get_client_profile: {repr(ex)}')
             logger.error('Usando la configuración de cliente por defecto: %i|ALL|1'
                          % default_demarcation)
             return {
@@ -440,7 +438,7 @@ class MovistarTV:
             logger.info('Descargando perfil del servicio')
             return self.__get_service_data('getPlatformProfile')['resultData']
         except Exception as ex:
-            logger.error(f'{ex}')
+            logger.error(f'__get_platform_profile: {repr(ex)}')
             logger.error('Usando el perfil del servicio por defecto')
             return {
                 'RES_BASE_URI': 'http://www-60.svc.imagenio.telefonica.net:2001'
@@ -455,7 +453,7 @@ class MovistarTV:
             logger.info('Descargando parámetros de configuración')
             return self.__get_service_data('getConfigurationParams')['resultData']
         except Exception as ex:
-            logger.error(f'{ex}')
+            logger.error(f'__get_config_params: {repr(ex)}')
             logger.error('Usando los parámetros de configuración por defecto')
             return {
                 'tvChannelLogoPath': 'incoming/epg/channelLogo/',
@@ -470,14 +468,14 @@ class MovistarTV:
             return self.__get_service_data('getEpgSubGenres&tvWholesaler='
                                            f'{tv_wholesaler}')['resultData']
         except Exception as ex:
-            logger.error(f'Mapa de géneros no encontrado: {ex}')
+            logger.error(f'Mapa de géneros no encontrado: {repr(ex)}')
             return None
 
     def get_epg_extended_info(self, pid, channel_id):
         try:
             data = cache.load_epg_extended_info(pid)
         except Exception as ex:
-            logger.warning(f'{ex}')
+            logger.warning(f'get_epg_extended_info {repr(ex)}')
             pass
         if not data:
             logger.debug(f'Descargando info extendida: {pid}')
@@ -488,7 +486,7 @@ class MovistarTV:
                                                f'&extra=1')['resultData']
                 cache.save_epg_extended_info(data)
             except Exception as ex:
-                logger.error(f'Información extendida no encontrada: {pid} {ex}')
+                logger.error(f'Información extendida no encontrada: {pid} {repr(ex)}')
                 return None
         return data
 
@@ -496,7 +494,7 @@ class MovistarTV:
     def __get_end_points():
         try:
             return config['end_points']
-        except (NameError, KeyError):
+        except KeyError:
             return cache.load_end_points()
 
     def get_end_point(self, last_used=None):
@@ -588,7 +586,7 @@ class MovistarTV:
                         return content
                     raise ValueError(f'{response}')
                 except Exception as ex:
-                    logger.debug(f'{ex}')
+                    logger.debug(f'__get_service_data: {repr(ex)}')
                     __attempts -= 1
                     logger.warning(f'Timeout: {ep}, reintentos: {__attempts}')
                     continue
@@ -614,7 +612,7 @@ class MulticastIPTV:
             }
             return chunk
         except Exception as ex:
-            raise MulticastError(f'get_chunk: error al analizar los datos {ex}')
+            raise MulticastError(f'get_chunk: error al analizar los datos {repr(ex)}')
 
     def __get_xml_files(self, mc_grp, mc_port):
         loop = True
@@ -636,7 +634,7 @@ class MulticastIPTV:
                     first_file = str(chunk["filetype"]) + "_" + str(chunk["fileid"])
                     break
             except Exception as ex:
-                logger.warning(f'Error al descargar los archivos XML: {ex}')
+                logger.warning(f'Error al descargar los archivos XML: {repr(ex)}')
         # Loop until firstfile
         while loop:
             try:
@@ -659,7 +657,7 @@ class MulticastIPTV:
                     logger.info(f'{mc_grp}:{mc_port} -> XML descargado')
                     loop = False
             except Exception as ex:
-                logger.warning(f'Error al descargar los archivos XML: {ex}')
+                logger.warning(f'Error al descargar los archivos XML: {repr(ex)}')
         sock.close()
         return _files
 
@@ -685,7 +683,7 @@ class MulticastIPTV:
                     channel_list[channel_id]['replacement'] = \
                         i[2][4][0].attrib['ServiceName']
             except (KeyError, IndexError) as ex:
-                logger.debug(f'El canal {channel_id} no tiene la estructura correcta: {ex}')
+                logger.debug(f'El canal {channel_id} no tiene la estructura correcta: {repr(ex)}')
         logger.info('Canales: %i' % len(channel_list))
         return channel_list
 
@@ -708,7 +706,7 @@ class MulticastIPTV:
                         package_list[package_name]['services'][service_id] = \
                             service[1].text
             except (KeyError, ElTr.ParseError) as ex:
-                logger.error(f'El paquete {package_name} no tiene la estructura correcta: {ex}')
+                logger.error(f'El paquete {package_name} no tiene la estructura correcta: {repr(ex)}')
         logger.info(f'Paquetes: {len(package_list)}')
         return package_list
 
@@ -761,8 +759,8 @@ class MulticastIPTV:
             logger.info('Proveedor de Servicios de %s: %s'
                         % (self.__get_demarcation_name(), data['mcast_grp']))
             return data
-        except Exception:
-            logger.error('Usando el Proveedor de Servicios por defecto: 239.0.2.150')
+        except Exception as ex:
+            logger.error(f'Usando el Proveedor de Servicios por defecto: 239.0.2.150 {repr(ex)}')
             return {
                 'mcast_grp': '239.0.2.150',
                 'mcast_port': '3937'
@@ -949,7 +947,7 @@ class MulticastIPTV:
                 'data': data[body:]
             }
         except Exception as ex:
-            logger.error(f'Error al procesar la cabecera: {ex}')
+            logger.error(f'Error al procesar la cabecera: {repr(ex)}')
             raise
 
     @staticmethod
@@ -1030,7 +1028,7 @@ class MulticastIPTV:
                     = epg_dt[struct.unpack('B', epg_dt[cut + 3:cut + 4])[0] + cut + 4:]
             return programs
         except Exception as ex:
-            logger.error(f'Error al procesar la guía: {ex}')
+            logger.error(f'Error al procesar la guía: {repr(ex)}')
             raise
 
     def __merge_dicts(self, dict1, dict2, path=None):
@@ -1042,7 +1040,7 @@ class MulticastIPTV:
                 elif dict1[key] == dict2[key]:
                     pass
                 else:
-                    raise Exception('Conflicto en %s' % '.'.join(path + [str(key)]))
+                    raise ValueError('Conflicto en %s' % '.'.join(path + [str(key)]))
             else:
                 dict1[key] = dict2[key]
         return dict1
@@ -1069,7 +1067,7 @@ class XMLTV:
         self.__packages = data['packages']
 
     def generate_xml(self, parsed_epg):
-        logger.info('Generando la guía XMLTV: descargando info extendida')
+        logger.info('Generando la guía XMLTV...')
         root = ElTr.Element('tv', {
             'date': datetime.now().strftime('%Y%m%d%H%M%S'),
             'generator_info_url': 'http://wiki.xmltv.org/index.php/XMLTVFormat'})
@@ -1240,9 +1238,7 @@ class XMLTV:
             services = cloud_services
         channels = sorted(services, key=lambda key: int(services[key]))
         if not cloud:
-            first = channels[0]
-            channels = channels[1:]
-            channels.append(first)
+            channels = channels[1:] + channels[:1]
         for channel_id in channels:
             if channel_id in self.__channels:
                 channel_name = self.__channels[channel_id]['name']
@@ -1281,7 +1277,7 @@ class XMLTV:
 
 
 def create_logger(argv):
-    if not os.path.isdir(app_dir):
+    if not os.path.exists(app_dir):
         os.mkdir(app_dir)
     log_path = f'{app_dir}/{log_file}'
     handler = RotatingFileHandler(log_path,
@@ -1439,6 +1435,6 @@ try:
 
     sys.exit(0)
 
-except Exception as e:
-    logger.critical(f'{e}')
+except Exception as ex:
+    logger.critical(f'{repr(ex)}')
     sys.exit(1)
