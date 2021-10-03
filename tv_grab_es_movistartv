@@ -47,9 +47,10 @@ from xml.sax.saxutils import unescape
 
 setproctitle('tv_grab_es_movistartv')
 
-epg_channels = ['1', '2', '3', '4', '5', '6', '477', '578', '582', '597', '657',
-                '663', '717', '743', '744', '745', '844', '884', '934', '935',
-                '1221', '2843', '2863', '3184', '3186', '3325', '3443', '3603', '4911']
+epg_channels = [
+    '2543', '4455', '2524', '1825', '1826', '2526', '4913', '4912', '884', '4714',
+    '3223', '844', '1221', '4063', '2544', '3063', '657', '663', '4716', '4715',
+    '3185', '1616', '578', '4467', '743', '582', '3603', '3443', '3103']
 
 demarcations = {
     'Andalucia': 15,
@@ -803,25 +804,37 @@ class MulticastIPTV:
 
     @staticmethod
     def __drop_encrypted_channels(epg):
-        if not epg:
-            return None
-        channels = [channel for channel in epg if channel in epg_channels]
-        logger.info(f'Conservando {len(channels)} canales en abierto')
         clean_channels = {}
-        for channel in channels:
+        for channel in list(set(epg) & set(epg_channels)):
             clean_channels[channel] = epg[channel]
+        logger.info(f'Conservando {len(clean_channels)} canales en abierto')
         return clean_channels
 
+    def __get_sane_epg(self, epg):
+        sane_epg = {}
+        for channel_key in epg:
+            _channels = self.__xml_data['channels']
+            for channel_id in _channels:
+                if 'replacement' in _channels[channel_id] and \
+                        _channels[channel_id]['replacement'] == channel_key:
+                    sane_epg[channel_id] = epg[channel_key]
+                    break
+            if channel_id not in sane_epg:
+                sane_epg[channel_key] = epg[channel_key]
+        return sane_epg
+
     def get_cloud_epg(self):
-        return cache.load_cloud_epg()
+        return self.__drop_encrypted_channels(cache.load_cloud_epg())
 
     def get_epg(self):
-        cached_epg = self.__drop_encrypted_channels(cache.load_epg())
+        cached_epg = cache.load_epg()
+        cached_epg = self.__drop_encrypted_channels(self.__get_sane_epg(cached_epg)) \
+            if '1' in cached_epg else self.__drop_encrypted_channels(cached_epg)
         if use_multithread:
             self.__get_bin_epg_threaded()
         else:
             self.__get_bin_epg()
-        new_epg = self.__drop_encrypted_channels(self.__parse_bin_epg())
+        new_epg = self.__drop_encrypted_channels(self.__get_sane_epg(self.__parse_bin_epg()))
 
         fixed = 0
         logger.info('Comprobando si el nuevo EPG necesita arreglos...')
@@ -1072,17 +1085,14 @@ class XMLTV:
             else:
                 logger.debug(f'El canal {channel_id} no tiene EPG')
         for channel_id in sorted(services, key=lambda key: int(services[key])):
-            if channel_id in self.__channels:
-                chid = self.__channels[channel_id]['replacement'] \
-                    if 'replacement' in self.__channels[channel_id] else channel_id
-                if chid not in epg_channels:
-                    logger.info(f'XML: Saltando canal encriptado {chid}')
+            if channel_id in self.__channels and channel_id in parsed_epg:
+                if channel_id not in epg_channels:
+                    logger.info(f'XML: Saltando canal encriptado {channel_id}')
                     continue
-                if chid in parsed_epg:
-                    for program in sorted(parsed_epg[chid]):
-                        root.append(self.__build_programme_tag(channel_id,
-                                                               parsed_epg[chid][program],
-                                                               tz))
+                for program in sorted(parsed_epg[channel_id]):
+                    root.append(self.__build_programme_tag(channel_id,
+                                                           parsed_epg[channel_id][program],
+                                                           tz))
         print('', flush=True)
         return ElTr.ElementTree(root)
 
@@ -1236,7 +1246,6 @@ class XMLTV:
         for channel_id in channels:
             if channel_id in self.__channels:
                 channel_name = self.__channels[channel_id]['name']
-                channel_key = channel_id
                 channel_tag = 'Cloud' if cloud else 'IPTV'
                 channel_tag += ' - TDT Movistar.es'
                 channel_number = services[channel_id]
@@ -1244,14 +1253,9 @@ class XMLTV:
                     channel_number = '999'
                 channel_logo = f'http://{sanic}/Logos/' + \
                     self.__channels[channel_id]['logo_uri']
-                if 'replacement' in self.__channels[channel_id]:
-                    channel_key = \
-                        self.__channels[self.__channels[channel_id]['replacement']]['id']
-                if channel_key not in epg_channels:
+                if channel_id not in epg_channels:
                     logger.info('M3U: Saltando canal encriptado '
-                                f'{channel_name} '
-                                f'{channel_id} '
-                                f'{channel_key}')
+                                f'"{channel_name}" {channel_id}')
                     continue
                 m3u += f'#EXTINF:-1 tvg-chnum="{channel_number}" '
                 m3u += f'tvg-id="{channel_id}.movistar.tv" '
@@ -1396,15 +1400,10 @@ try:
 
     # Descarga los segments de cada EPG_X_BIN.imagenio.es y devuelve la guía decodificada
     if args.cloud_m3u or args.cloud_recordings:
-        _epg = cache.load_cloud_epg()
+        epg = cache.load_cloud_epg()
         if args.cloud_m3u:
-            export_channels(args.cloud_m3u, list(_epg.keys()))
+            export_channels(args.cloud_m3u, list(epg))
             sys.exit(0)
-        epg = {}
-        for channel_id in _epg:
-            channel_key = xdata['channels'][channel_id]['replacement'] \
-                if 'replacement' in xdata['channels'][channel_id] else channel_id
-            epg[channel_key] = _epg[channel_id]
     else:
         epg = iptv.get_epg()
 
