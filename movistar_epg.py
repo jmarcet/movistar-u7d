@@ -70,12 +70,6 @@ async def after_server_start(app, loop):
     if __file__.startswith('/app/'):
         PREFIX = '/app/'
 
-    while not os.path.exists(CHANNELS):
-        log.warning(f'No {CHANNELS} found. Generating it. Please be patient...')
-        tvgrab = await asyncio.create_subprocess_exec(f'{PREFIX}tv_grab_es_movistartv',
-                                                      '--m3u', CHANNELS)
-        await tvgrab.wait()
-
     await reload_epg()
     _t_epg1 = asyncio.create_task(update_epg_delayed())
     _t_cloud1 = asyncio.create_task(update_cloud_delayed())
@@ -279,8 +273,8 @@ async def reload_epg():
     global _channels, _cloud, _epgdata
 
     if not os.path.exists(epg_data) or not os.path.exists(epg_metadata) \
-            or not os.path.exists(GUIDE):
-        log.warning(f'No {GUIDE} found!. Need to download it. Please be patient...')
+            or not os.path.exists(CHANNELS) or not os.path.exists(GUIDE):
+        log.warning(f'Missing channels data!. Need to download it. Please be patient...')
         await update_epg()
 
     async with epg_lock:
