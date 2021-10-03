@@ -1326,24 +1326,6 @@ def create_args_parser():
     return parser
 
 
-def show_description():
-    logger.info('Terminado: descripción del grabber')
-    print('Spain (MovistarTV)')
-    sys.exit(0)
-
-
-def show_capabilities():
-    logger.info('Terminado: capabilities del grabber')
-    print('baseline cache')
-    sys.exit(0)
-
-
-def reset():
-    logger.info('Terminado: eliminado el log, la configuración y la caché')
-    shutil.rmtree(app_dir, ignore_errors=True)
-    sys.exit(0)
-
-
 def export_channels(m3u_file, cloud=None):
     xmltv.write_m3u(m3u_file, cloud)
     logger.info(f'Lista de canales '
@@ -1383,15 +1365,6 @@ logger = create_logger(sys.argv)
 try:
     # Obtiene los argumentos de entrada
     args = create_args_parser().parse_args()
-
-    if args.description:
-        show_description()
-
-    if args.capabilities:
-        show_capabilities()
-
-    if args.reset:
-        reset()
 
     if not args.m3u and not args.cloud_m3u:
         # Sólo una instancia ejecutándose
