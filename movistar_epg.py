@@ -7,6 +7,7 @@ import re
 import sys
 import time
 import ujson
+import urllib.parse
 
 from asyncio.subprocess import DEVNULL
 from datetime import datetime
@@ -25,6 +26,7 @@ setproctitle('movistar_epg')
 HOME = os.getenv('HOME', '/home/')
 CHANNELS = os.path.join(HOME, 'MovistarTV.m3u')
 CHANNELS_CLOUD = os.path.join(HOME, 'cloud.m3u')
+CHANNELS_RECORDINGS = os.path.join(HOME, 'recordings.m3u')
 GUIDE = os.path.join(HOME, 'guide.xml')
 GUIDE_CLOUD = os.path.join(HOME, 'cloud.xml')
 SANIC_HOST = os.getenv('LAN_IP', '127.0.0.1')
@@ -60,17 +62,20 @@ _cloud = {}
 _channels = {}
 _epgdata = {}
 _network_fsignal = '/tmp/.u7d_bw'
-_t_cloud1 = _t_cloud2 = _t_epg1 = _t_epg2 = _t_timers = _t_timers_d = \
-    _t_timers_r = _t_timers_t = tv_cloud1 = tv_cloud2 = tvgrab = None
+_t_cloud1 = _t_cloud2 = _t_epg1 = _t_epg2 = _t_recordings = \
+    _t_timers = _t_timers_d = _t_timers_r = _t_timers_t = \
+    tv_cloud1 = tv_cloud2 = tvgrab = None
 
 
 @app.listener('after_server_start')
 async def after_server_start(app, loop):
-    global PREFIX, _t_cloud1, _t_epg1, _t_timers_d
+    global PREFIX, _t_cloud1, _t_epg1, _t_recordings, _t_timers_d
     if __file__.startswith('/app/'):
         PREFIX = '/app/'
 
     await reload_epg()
+    if RECORDINGS:
+        _t_recordings = asyncio.create_task(every(300, update_recordings))
     _t_epg1 = asyncio.create_task(update_epg_delayed())
     _t_cloud1 = asyncio.create_task(update_cloud_delayed())
 
@@ -86,8 +91,10 @@ async def after_server_start(app, loop):
 
 @app.listener('after_server_stop')
 async def after_server_stop(app, loop):
-    for task in [_t_cloud1, _t_cloud2, _t_epg2, _t_epg1, _t_timers, _t_timers_d,
-                 _t_timers_r, _t_timers_t, tv_cloud1, tv_cloud2, tvgrab]:
+    for task in [
+            _t_cloud1, _t_cloud2, _t_epg2, _t_epg1, _t_recordings,
+            _t_timers, _t_timers_d, _t_timers_r, _t_timers_t,
+            tv_cloud1, tv_cloud2, tvgrab]:
         try:
             task.cancel()
             await asyncio.wait({task})
@@ -519,6 +526,34 @@ async def update_epg_delayed():
     log.info(f'Waiting {delay}s to start updating EPG...')
     await asyncio.sleep(delay)
     _t_epg2 = asyncio.create_task(every(3600, update_epg))
+
+
+async def update_recordings():
+    m3u = '#EXTM3U name="Recordings" dlna_extras=mpeg_ps_pal\n'
+    for pair in sorted([tuple(file.split(RECORDINGS)[1].split('/')[1:])
+                        for file in glob(f'{RECORDINGS}/**', recursive=True)
+                        if os.path.splitext(file)[1] in
+                        ('.avi', '.mkv', '.mp4', '.mpeg', '.mpg', '.ts')]):
+        (path, file) = pair if len(pair) == 2 else (None, pair[0])
+        name, ext = os.path.splitext(file)
+        _file = f'{(path + "/") if path else ""}{name}'
+        if os.path.exists(os.path.join(RECORDINGS, f'{_file}.jpg')):
+            logo = f'{_file}.jpg'
+        else:
+            _logo = glob(os.path.join(RECORDINGS, f'{_file}*.jpg'))
+            if len(_logo) and os.path.isfile(_logo[0]):
+                logo = f'{_logo[0].split(RECORDINGS)[1][1:]}'
+            else:
+                logo = ''
+        m3u += '#EXTINF:-1 tvg-id=""'
+        m3u += f' tvg-logo="{SANIC_URL}/recording/?' if logo else ''
+        m3u += (urllib.parse.quote(f'{logo}') + '"') if logo else ''
+        m3u += f' group-title="{path if path else "#"}",{name}\n'
+        m3u += f'{SANIC_URL}/recording/?'
+        m3u += urllib.parse.quote(_file + ext) + '\n'
+    log.info('Local Recordings Updated')
+    with open(CHANNELS_RECORDINGS, 'w') as f:
+        f.write(m3u)
 
 
 if __name__ == '__main__':

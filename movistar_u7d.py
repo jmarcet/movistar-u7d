@@ -10,20 +10,21 @@ import subprocess
 import sys
 import timeit
 import ujson
+import urllib.parse
 
 from collections import namedtuple
 from contextlib import closing
 from setproctitle import setproctitle
 from sanic import Sanic, exceptions, response
-from sanic.compat import open_async
+from sanic.compat import open_async, stat_async
+from sanic.handlers import ContentRangeHandler
 from sanic.log import error_logger, logger as log, LOGGING_CONFIG_DEFAULTS
-from sanic.server import HttpProtocol
 from sanic.models.server_types import ConnInfo
+from sanic.server import HttpProtocol
 from sanic.touchup.meta import TouchUpMeta
 
 from movistar_epg import get_ffmpeg_procs
-from vod import VodLoop, VodSetup, find_free_port, \
-    COVER_URL, IMAGENIO_URL, RECORDINGS, UA
+from vod import VodLoop, VodSetup, find_free_port, COVER_URL, IMAGENIO_URL, UA
 
 
 setproctitle('movistar_u7d')
@@ -31,12 +32,15 @@ setproctitle('movistar_u7d')
 HOME = os.getenv('HOME', '/home')
 CHANNELS = os.path.join(HOME, 'MovistarTV.m3u')
 CHANNELS_CLOUD = os.path.join(HOME, 'cloud.m3u')
+CHANNELS_RECORDINGS = os.path.join(HOME, 'recordings.m3u')
 GUIDE = os.path.join(HOME, 'guide.xml')
 GUIDE_CLOUD = os.path.join(HOME, 'cloud.xml')
 IPTV_BW = int(os.getenv('IPTV_BW', '85000'))
 IPTV_BW = 85000 if IPTV_BW > 90000 else IPTV_BW
 MIME_TS = 'video/MP2T;audio/mp3'
+MIME_WEBM = 'video/webm'
 MP4_OUTPUT = bool(os.getenv('MP4_OUTPUT', False))
+RECORDINGS = os.getenv('RECORDINGS', None)
 SANIC_EPG_URL = 'http://127.0.0.1:8889'
 SANIC_HOST = os.getenv('LAN_IP', '0.0.0.0')
 SANIC_PORT = int(os.getenv('SANIC_PORT', '8888'))
@@ -152,7 +156,7 @@ async def handle_channels(request):
 
 @app.get('/cloud.m3u')
 @app.get('/nube.m3u')
-async def handle_cloud_channels(request):
+async def handle_channels_cloud(request):
     log.info(f'[{request.ip}] {request.method} {request.url}')
     if not os.path.exists(CHANNELS_CLOUD):
         raise exceptions.NotFound(
@@ -160,14 +164,14 @@ async def handle_cloud_channels(request):
     return await response.file(CHANNELS_CLOUD)
 
 
-@app.get('/cloud.xml')
-@app.get('/nube.xml')
-async def handle_cloud_guide(request):
+@app.get('/grabaciones.m3u')
+@app.get('/recordings.m3u')
+async def handle_channels_recordings(request):
     log.info(f'[{request.ip}] {request.method} {request.url}')
-    if not os.path.exists(GUIDE_CLOUD):
+    if not os.path.exists(CHANNELS_RECORDINGS):
         raise exceptions.NotFound(
             f'Requested URL {request.raw_url.decode()} not found')
-    return await response.file(GUIDE_CLOUD)
+    return await response.file(CHANNELS_RECORDINGS)
 
 
 @app.get('/guia.xml')
@@ -179,6 +183,16 @@ async def handle_guide(request):
             f'Requested URL {request.raw_url.decode()} not found')
     log.debug(f'[{request.ip}] Return: {request.method} {request.url}')
     return await response.file(GUIDE)
+
+
+@app.get('/cloud.xml')
+@app.get('/nube.xml')
+async def handle_guide_cloud(request):
+    log.info(f'[{request.ip}] {request.method} {request.url}')
+    if not os.path.exists(GUIDE_CLOUD):
+        raise exceptions.NotFound(
+            f'Requested URL {request.raw_url.decode()} not found')
+    return await response.file(GUIDE_CLOUD)
 
 
 @app.route('/Covers/<path:int>/<cover>', methods=['GET', 'HEAD'])
@@ -384,6 +398,35 @@ async def handle_flussonic_cloud(request, channel_id, url):
     if url == 'live':
         return await handle_channel(request, channel_id)
     return await handle_flussonic(request, channel_id, url, True)
+
+
+@app.route('/recording/', methods=['GET', 'HEAD'])
+async def handle_recording(request):
+    if not RECORDINGS:
+        raise exceptions.NotFound(
+            f'Requested URL {request.raw_url.decode()} not found')
+
+    _path = urllib.parse.unquote(request.raw_url.decode().split('/recording/')[1])
+    file = os.path.join(RECORDINGS, _path[1:])
+    if os.path.exists(file):
+        if request.method == 'HEAD':
+            return response.HTTPResponse(status=200)
+
+        ext = os.path.splitext(file)[1]
+        if ext == '.jpg':
+            return await response.file(file)
+
+        elif ext in ('.avi', '.mkv', '.mp4', '.mpeg', '.mpg', '.ts'):
+            try:
+                _range = ContentRangeHandler(request, await stat_async(file))
+            except exceptions.HeaderNotFound:
+                _range = None
+
+            return await response.file_stream(
+                file, mime_type=MIME_WEBM, _range=_range)
+
+    raise exceptions.NotFound(
+        f'Requested URL {request.raw_url.decode()} not found')
 
 
 @app.get('/favicon.ico')
