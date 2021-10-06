@@ -233,8 +233,8 @@ def find_free_port(iface=''):
         return s.getsockname()[1]
 
 
-async def get_vod_info(channel_id, program_id, recording, vod_client):
-    params = 'action=getRecordingData' if recording else 'action=getCatchUpUrl'
+async def get_vod_info(channel_id, program_id, cloud, vod_client):
+    params = 'action=getRecordingData' if cloud else 'action=getCatchUpUrl'
     params += f'&extInfoID={program_id}&channelID={channel_id}&mode=1'
 
     try:
@@ -391,7 +391,7 @@ async def VodSetup(args, vod_client):
     describe['Accept'] = 'application/sdp'
     setup['Transport'] = f'MP2T/H2221/UDP;unicast;client_port={args.client_port}'
 
-    vod_info = await get_vod_info(args.channel, args.broadcast, args.recording, vod_client)
+    vod_info = await get_vod_info(args.channel, args.broadcast, args.cloud, vod_client)
     if not vod_info:
         sys.stderr.write(f'{_log_prefix} Could not get uri for: {_log_suffix}\n')
         return
@@ -443,7 +443,7 @@ if __name__ == '__main__':
     parser.add_argument('--start', '-s', help='stream start offset', type=int)
     parser.add_argument('--time', '-t', help='recording time in seconds', type=int)
     parser.add_argument('--mp4', help='output split mp4 and vobsub files', type=bool, default=False)
-    parser.add_argument('--recording', help='the event is from a cloud recording', type=bool, default=False)
+    parser.add_argument('--cloud', help='the event is from a cloud recording', type=bool, default=False)
     parser.add_argument('--vo', help='set 2nd language as main one', type=bool, default=False)
     parser.add_argument('--write_to_file', '-w', help='record', action='store_true')
 

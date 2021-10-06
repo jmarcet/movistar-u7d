@@ -125,7 +125,7 @@ def get_epg(channel_id, program_id):
             return _epg, event
 
 
-def get_program_id(channel_id, url=None):
+def get_program_id(channel_id, url=None, cloud=False):
     if not url:
         url = f'{int(time.time())}'
     x = flussonic_regex.match(url)
@@ -135,15 +135,28 @@ def get_program_id(channel_id, url=None):
     duration = int(x.groups()[1]) if x.groups()[1] else 0
     last_event = new_start = 0
 
-    if start not in _epgdata[channel_id]:
-        for event in _epgdata[channel_id]:
-            if event > start:
-                break
-            last_event = event
-        if not last_event:
+    if not cloud:
+        if start not in _epgdata[channel_id]:
+            for event in _epgdata[channel_id]:
+                if event > start:
+                    break
+                last_event = event
+            if not last_event:
+                return
+            start, new_start = last_event, start
+        program_id, end = [_epgdata[channel_id][start][t] for t in ['pid', 'end']]
+    else:
+        if channel_id not in _cloud:
             return
-        start, new_start = last_event, start
-    program_id, end = [_epgdata[channel_id][start][t] for t in ['pid', 'end']]
+        if start not in _cloud[channel_id]:
+            for event in _cloud[channel_id]:
+                _start, _event = int(start), int(event)
+                if _start > _event and _start < _event + duration:
+                    start, new_start = event, start
+            if not new_start:
+                return
+        program_id, end = [_cloud[channel_id][start][t] for t in ['pid', 'end']]
+
     start = int(start)
     return {'name': name, 'program_id': program_id,
             'duration': duration if duration else int(end) - start,
@@ -175,7 +188,8 @@ async def handle_channels(request):
 @app.get('/program_id/<channel_id>/<url>')
 async def handle_program_id(request, channel_id, url):
     try:
-        return response.json(get_program_id(channel_id, url))
+        return response.json(get_program_id(
+            channel_id, url, bool(request.args.get('cloud'))))
     except (AttributeError, KeyError):
         raise exceptions.NotFound(f'Requested URL {request.raw_url.decode()} not found')
 
@@ -226,7 +240,8 @@ async def handle_prom_event_add(request):
     try:
         _event = get_program_id(
             request.json['channel_id'],
-            request.json['url'] if 'url' in request.json else None)
+            request.json['url'] if 'url' in request.json else None,
+            request.json['cloud'] if 'cloud' in request.json else False)
         _epg, _, = get_epg(request.json['channel_id'], _event['program_id'])
         _offset = '[' + str(_event['offset']) + '/' + str(_event['duration']) + ']'
         request.app.metrics['RQS_LATENCY'].labels(
@@ -247,7 +262,8 @@ async def handle_prom_event_remove(request):
     try:
         _event = get_program_id(
             request.json['channel_id'],
-            request.json['url'] if 'url' in request.json else None)
+            request.json['url'] if 'url' in request.json else None,
+            request.json['cloud'] if 'cloud' in request.json else False)
         _epg, _, = get_epg(request.json['channel_id'], _event['program_id'])
         _msg = request.json['msg'] + '"' + _epg['full_title'] + '"'
         _offset = '[' + str(_event['offset']) + '/' + str(_event['duration']) + ']'
@@ -383,7 +399,8 @@ async def timers_check():
                     if re.match(timer_match, title) and (title not in timers_added and filename
                             not in str(_ffmpeg) and not os.path.exists(filename) and (channel_id
                             not in _recordings or (title not in repr(_recordings[channel_id])
-                            and timestamp not in _recordings[channel_id]))):
+                            and timestamp not in _recordings[channel_id]
+                            and timestamp not in _cloud[channel_id]))):
                         log.info(f'Found match! {channel_id} {timestamp} {vo} "{title}"')
                         sanic_url = f'{SANIC_URL}/{channel_id}/{timestamp}.mp4'
                         sanic_url += '?record=1'
@@ -450,9 +467,35 @@ async def update_cloud(forced=False):
             elif channel_id in _cloud and _start in _cloud[channel_id]:
                 new_cloud[channel_id][_start] = _cloud[channel_id][_start]
             else:
-                new_cloud[channel_id][_start] = event
-                log.warning(f'{_start} ' + str(event['productID']) + ' not found'
-                            f' in {channel_id}')
+                product_id = event['productID']
+                try:
+                    async with httpx.AsyncClient() as client:
+                        r = await client.get(
+                            f'{MVTV_URL}?action=epgInfov2&'
+                            f'productID={product_id}&channelID={channel_id}')
+                        _data = r.json()['resultData']
+                        new_cloud[channel_id][_start] = {
+                            'age_rating': _data['ageRatingID'],
+                            'duration': _data['duration'],
+                            'end': int(str(_data['endTime'])[:-3]),
+                            'episode': _data['episode'],
+                            'episode_title': _data['episodeName'],
+                            'full_title': get_safe_filename(_data['name']),
+                            'genre': "06",  # _data['genre'],
+                            'is_serie': 'seriesID' in _data,
+                            'pid': product_id,
+                            'season': _data['season'],
+                            'start': int(_start),
+                            'year': _data['productionDate']
+                        }
+                        if 'seriesID' in _data:
+                            new_cloud[channel_id][_start]['serie'] = \
+                                _data['seriesName']
+                            new_cloud[channel_id][_start]['serie_id'] = \
+                                _data['seriesID']
+                except Exception as ex:
+                    log.warning(
+                        f'{channel_id} {product_id} not located in Cloud {repr(ex)}')
     updated = False
     if new_cloud and (not _cloud or set(new_cloud) != set(_cloud)):
         updated = True

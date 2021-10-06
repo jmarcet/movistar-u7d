@@ -62,7 +62,7 @@ app.config.update({'FALLBACK_ERROR_FORMAT': 'json',
 app.ctx.vod_client = None
 
 VodArgs = namedtuple('Vod', ['channel', 'broadcast', 'iptv_ip',
-                             'client_ip', 'client_port', 'start', 'recording'])
+                             'client_ip', 'client_port', 'start', 'cloud'])
 
 _channels = _iptv = _session = _session_logos = _t_tp = None
 _network_fsignal = '/tmp/.u7d_bw'
@@ -291,7 +291,7 @@ async def handle_channel(request, channel_id):
 
 
 @app.route('/<channel_id:int>/<url>', methods=['GET', 'HEAD'])
-async def handle_flussonic(request, channel_id, url, recording=False):
+async def handle_flussonic(request, channel_id, url, cloud=False):
     _start = timeit.default_timer()
     _raw_url = request.raw_url.decode()
     procs = None
@@ -301,7 +301,9 @@ async def handle_flussonic(request, channel_id, url, recording=False):
             log.warning(f'[{request.ip}] {_raw_url} -> Network Saturated')
             raise exceptions.ServiceUnavailable('Network Saturated')
     try:
-        async with _session.get(f'{SANIC_EPG_URL}/program_id/{channel_id}/{url}') as r:
+        async with _session.get(
+            f'{SANIC_EPG_URL}/program_id/{channel_id}/{url}'
+            + ('?cloud=1' if cloud else '')) as r:
             name, program_id, duration, offset = (await r.json()).values()
     except (AttributeError, KeyError, ValueError):
         log.error(f'{_raw_url} not found')
@@ -333,8 +335,8 @@ async def handle_flussonic(request, channel_id, url, recording=False):
             cmd += ' --mp4 1'
         if request.args.get('vo', False):
             cmd += ' --vo 1'
-        if recording:
-            cmd += ' --recording 1'
+        if cloud:
+            cmd += ' --cloud 1'
 
         log.info(f'[{request.ip}] {_raw_url} -> Recording [{record_time}s] {vod_msg}')
         signal.signal(signal.SIGCHLD, signal.SIG_IGN)
@@ -343,7 +345,7 @@ async def handle_flussonic(request, channel_id, url, recording=False):
                               'channel_id': channel_id, 'program_id': program_id,
                               'offset': offset, 'time': record_time})
 
-    _args = VodArgs(channel_id, program_id, _iptv, request.ip, client_port, offset, recording)
+    _args = VodArgs(channel_id, program_id, _iptv, request.ip, client_port, offset, cloud)
     vod_data = await VodSetup(_args, app.ctx.vod_client)
     if not vod_data:
         log.error(f'{_raw_url} not found')
@@ -366,6 +368,7 @@ async def handle_flussonic(request, channel_id, url, recording=False):
                         'url': url,
                         'msg': f'[{request.ip}] -> Playing {vod_msg} {_lat}s ',
                         'id': _start,
+                        'cloud': cloud,
                         'lat': _lat}))
             except asyncio.exceptions.TimeoutError:
                 log.error(f'NOT_AVAILABLE: {vod_msg}')
@@ -389,6 +392,7 @@ async def handle_flussonic(request, channel_id, url, recording=False):
                 'url': url,
                 'msg': f'[{request.ip}] -> Stopped {vod_msg} {_raw_url} ',
                 'id': _start,
+                'cloud': cloud,
                 'offset': timeit.default_timer() - _start})
             await asyncio.wait({vod})
 
