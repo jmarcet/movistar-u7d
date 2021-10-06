@@ -560,7 +560,7 @@ async def update_recordings():
              ('.avi', '.mkv', '.mp4', '.mpeg', '.mpg', '.ts')]
 
     files.sort(key=os.path.getmtime, reverse=True)
-    m3u = dump_files(m3u, files[0:100], latest=True)
+    m3u = dump_files(m3u, files, latest=True)
     m3u = dump_files(m3u, sorted(files))
 
     log.info('Local Recordings Updated')
