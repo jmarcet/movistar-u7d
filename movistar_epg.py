@@ -447,6 +447,8 @@ async def update_cloud(forced=False):
         if _start not in new_cloud[channel_id]:
             if channel_id in _epgdata and _start in _epgdata[channel_id]:
                 new_cloud[channel_id][_start] = _epgdata[channel_id][_start]
+            elif channel_id in _cloud and _start in _cloud[channel_id]:
+                new_cloud[channel_id][_start] = _cloud[channel_id][_start]
             else:
                 new_cloud[channel_id][_start] = event
                 log.warning(f'{_start} ' + str(event['productID']) + ' not found'
