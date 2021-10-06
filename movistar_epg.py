@@ -532,27 +532,37 @@ async def update_epg_delayed():
 
 async def update_recordings():
     m3u = '#EXTM3U name="Recordings" dlna_extras=mpeg_ps_pal\n'
-    for pair in sorted([tuple(file.split(RECORDINGS)[1].split('/')[1:])
-                        for file in glob(f'{RECORDINGS}/**', recursive=True)
-                        if os.path.splitext(file)[1] in
-                        ('.avi', '.mkv', '.mp4', '.mpeg', '.mpg', '.ts')]):
-        (path, file) = pair if len(pair) == 2 else (None, pair[0])
-        name, ext = os.path.splitext(file)
-        _file = f'{(path + "/") if path else ""}{name}'
-        if os.path.exists(os.path.join(RECORDINGS, f'{_file}.jpg')):
-            logo = f'{_file}.jpg'
-        else:
-            _logo = glob(os.path.join(RECORDINGS, f'{_file}*.jpg'))
-            if len(_logo) and os.path.isfile(_logo[0]):
-                logo = f'{_logo[0].split(RECORDINGS)[1][1:]}'
+
+    def dump_files(m3u, files, latest=False):
+        for pair in [tuple(file.split(RECORDINGS)[1].split('/')[1:]) for file in files]:
+            (path, file) = pair if len(pair) == 2 else (None, pair[0])
+            name, ext = os.path.splitext(file)
+            _file = f'{(path + "/") if path else ""}{name}'
+            if os.path.exists(os.path.join(RECORDINGS, f'{_file}.jpg')):
+                logo = f'{_file}.jpg'
             else:
-                logo = ''
-        m3u += '#EXTINF:-1 tvg-id=""'
-        m3u += f' tvg-logo="{SANIC_URL}/recording/?' if logo else ''
-        m3u += (urllib.parse.quote(f'{logo}') + '"') if logo else ''
-        m3u += f' group-title="{path if path else "#"}",{name}\n'
-        m3u += f'{SANIC_URL}/recording/?'
-        m3u += urllib.parse.quote(_file + ext) + '\n'
+                _logo = glob(os.path.join(RECORDINGS, f'{_file}*.jpg'))
+                if len(_logo) and os.path.isfile(_logo[0]):
+                    logo = f'{_logo[0].split(RECORDINGS)[1][1:]}'
+                else:
+                    logo = ''
+            m3u += '#EXTINF:-1 tvg-id=""'
+            m3u += f' tvg-logo="{SANIC_URL}/recording/?' if logo else ''
+            m3u += (urllib.parse.quote(f'{logo}') + '"') if logo else ''
+            m3u += ' group-title="'
+            m3u += '# Recientes' if latest else path if path else "#"
+            m3u += f'",{name}\n{SANIC_URL}/recording/?'
+            m3u += urllib.parse.quote(_file + ext) + '\n'
+        return m3u
+
+    files = [file for file in glob(f'{RECORDINGS}/**', recursive=True)
+             if os.path.splitext(file)[1] in
+             ('.avi', '.mkv', '.mp4', '.mpeg', '.mpg', '.ts')]
+
+    files.sort(key=os.path.getmtime, reverse=True)
+    m3u = dump_files(m3u, files[0:100], latest=True)
+    m3u = dump_files(m3u, sorted(files))
+
     log.info('Local Recordings Updated')
     with open(CHANNELS_RECORDINGS, 'w') as f:
         f.write(m3u)
