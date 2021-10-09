@@ -282,7 +282,7 @@ class MulticastError(Error):
 class MulticastEPGFetcher(Thread):
 
     def __init__(self, queue):
-        Thread.__init__(self)
+        Thread.__init__(self, daemon=True)
         self.queue = queue
 
     def run(self):
@@ -788,7 +788,6 @@ class MulticastIPTV:
         logger.info(f'Multithread: {threads} descargas simultáneas')
         for n in range(threads):
             process = MulticastEPGFetcher(queue)
-            process.setDaemon(True)
             process.start()
         for key in sorted(self.__xml_data['segments']):
             day += 1
