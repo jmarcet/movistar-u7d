@@ -272,7 +272,7 @@ async def handle_channel(request, channel_id):
                     _session.post(f'{SANIC_EPG_URL}/prom_event/add', json={
                         'method': 'live',
                         'endpoint': f'{name} _ {request.ip} _ ',
-                        'channel_id': str(channel_id),
+                        'channel_id': channel_id,
                         'msg': f'[{request.ip}] -> Playing "{name}" {_lat}s ',
                         'id': _start,
                         'lat': _lat}))
@@ -285,7 +285,7 @@ async def handle_channel(request, channel_id):
                 await _session.post(f'{SANIC_EPG_URL}/prom_event/remove', json={
                     'method': 'live',
                     'endpoint': f'{name} _ {request.ip} _ ',
-                    'channel_id': str(channel_id),
+                    'channel_id': channel_id,
                     'msg': f'[{request.ip}] -> Stopped "{name}" {_raw_url} ',
                     'id': _start})
 
@@ -364,7 +364,7 @@ async def handle_flussonic(request, channel_id, url, cloud=False):
                     _session.post(f'{SANIC_EPG_URL}/prom_event/add', json={
                         'method': 'catchup',
                         'endpoint': _endpoint,
-                        'channel_id': str(channel_id),
+                        'channel_id': channel_id,
                         'url': url,
                         'msg': f'[{request.ip}] -> Playing {vod_msg} {_lat}s ',
                         'id': _start,
@@ -388,7 +388,7 @@ async def handle_flussonic(request, channel_id, url, cloud=False):
             await _session.post(f'{SANIC_EPG_URL}/prom_event/remove', json={
                 'method': 'catchup',
                 'endpoint': _endpoint,
-                'channel_id': str(channel_id),
+                'channel_id': channel_id,
                 'url': url,
                 'msg': f'[{request.ip}] -> Stopped {vod_msg} {_raw_url} ',
                 'id': _start,

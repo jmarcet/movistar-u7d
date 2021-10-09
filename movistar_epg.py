@@ -107,22 +107,22 @@ async def every(timeout, stuff):
         await asyncio.gather(asyncio.sleep(timeout), stuff())
 
 
+def get_epg(channel_id, program_id):
+    if channel_id not in _channels:
+        log.error(f'{channel_id} not found')
+        return
+
+    for event in sorted(_epgdata[channel_id]):
+        _epg = _epgdata[channel_id][event]
+        if program_id == _epg['pid']:
+            return _epg, event
+
+
 async def get_ffmpeg_procs():
     p = await asyncio.create_subprocess_exec('pgrep', '-af', 'ffmpeg.+udp://',
                                              stdout=asyncio.subprocess.PIPE)
     stdout, _ = await p.communicate()
     return [t.rstrip().decode() for t in stdout.splitlines()]
-
-
-def get_epg(channel_id, program_id):
-    if channel_id not in _channels:
-        log.error(f'{type(channel_id)} not found')
-        return
-
-    for event in sorted(_epgdata[channel_id]):
-        _epg = _epgdata[channel_id][event]
-        if int(program_id) == _epg['pid']:
-            return _epg, event
 
 
 def get_program_id(channel_id, url=None, cloud=False):
@@ -131,7 +131,7 @@ def get_program_id(channel_id, url=None, cloud=False):
     x = flussonic_regex.match(url)
 
     name = _channels[channel_id]['name']
-    start = x.groups()[0]
+    start = int(x.groups()[0])
     duration = int(x.groups()[1]) if x.groups()[1] else 0
     last_event = new_start = 0
 
@@ -150,17 +150,15 @@ def get_program_id(channel_id, url=None, cloud=False):
             return
         if start not in _cloud[channel_id]:
             for event in _cloud[channel_id]:
-                _start, _event = int(start), int(event)
-                if _start > _event and _start < _event + duration:
+                if start > event and start < event + duration:
                     start, new_start = event, start
             if not new_start:
                 return
         program_id, end = [_cloud[channel_id][start][t] for t in ['pid', 'end']]
 
-    start = int(start)
     return {'name': name, 'program_id': program_id,
-            'duration': duration if duration else int(end) - start,
-            'offset': int(new_start) - start if new_start else 0}
+            'duration': duration if duration else end - start,
+            'offset': new_start - start if new_start else 0}
 
 
 def get_recording_path(channel_id, timestamp):
@@ -185,7 +183,7 @@ async def handle_channels(request):
     return response.json(_channels)
 
 
-@app.get('/program_id/<channel_id>/<url>')
+@app.get('/program_id/<channel_id:int>/<url>')
 async def handle_program_id(request, channel_id, url):
     try:
         return response.json(get_program_id(
@@ -194,7 +192,7 @@ async def handle_program_id(request, channel_id, url):
         raise exceptions.NotFound(f'Requested URL {request.raw_url.decode()} not found')
 
 
-@app.route('/program_name/<channel_id>/<program_id>', methods=['GET', 'PUT'])
+@app.route('/program_name/<channel_id:int>/<program_id:int>', methods=['GET', 'PUT'])
 async def handle_program_name(request, channel_id, program_id):
     try:
         _epg, event = get_epg(channel_id, program_id)
@@ -243,7 +241,7 @@ async def handle_prom_event_add(request):
             request.json['url'] if 'url' in request.json else None,
             request.json['cloud'] if 'cloud' in request.json else False)
         _epg, _, = get_epg(request.json['channel_id'], _event['program_id'])
-        _offset = '[' + str(_event['offset']) + '/' + str(_event['duration']) + ']'
+        _offset = '[%d/%d]' % (_event['offset'], _event['duration'])
         request.app.metrics['RQS_LATENCY'].labels(
             request.json['method'],
             request.json['endpoint'] + _epg['full_title'] + f' _ {_offset}',
@@ -266,7 +264,7 @@ async def handle_prom_event_remove(request):
             request.json['cloud'] if 'cloud' in request.json else False)
         _epg, _, = get_epg(request.json['channel_id'], _event['program_id'])
         _msg = request.json['msg'] + '"' + _epg['full_title'] + '"'
-        _offset = '[' + str(_event['offset']) + '/' + str(_event['duration']) + ']'
+        _offset = '[%d/%d]' % (_event['offset'], _event['duration'])
         if request.json['method'] == 'live':
             for _metric in request.app.metrics['RQS_LATENCY']._metrics:
                 if request.json['method'] in _metric and str(request.json['id']) in _metric:
@@ -278,9 +276,7 @@ async def handle_prom_event_remove(request):
                 request.json['method'],
                 request.json['endpoint'] + _epg['full_title'] + f' _ {_offset}',
                 request.json['id'])
-            _offset = '[' + str(
-                int(_event['offset'] + request.json['offset'])) + '/' + str(
-                    _event['duration']) + ']'
+            _offset = '[%d/%d]' % (_event['offset'] + request.json['offset'], _event['duration'])
         log.info(f'{_msg} -> {_offset}')
     except KeyError:
         return response.empty(404)
@@ -303,7 +299,13 @@ async def reload_epg():
     async with epg_lock:
         try:
             async with await open_async(epg_data) as f:
-                _epgdata = ujson.loads(await f.read())['data']
+                epgdata = ujson.loads(await f.read())['data']
+            int_epgdata = {}
+            for channel in epgdata:
+                int_epgdata[int(channel)] = {}
+                for event in epgdata[channel]:
+                    int_epgdata[int(channel)][int(event)] = epgdata[channel][event]
+            _epgdata = int_epgdata
             log.info('Loaded fresh EPG data')
         except (FileNotFoundError, TypeError, ValueError) as ex:
             log.error(f'Failed to load EPG data {repr(ex)}')
@@ -314,7 +316,14 @@ async def reload_epg():
         try:
             async with await open_async(epg_metadata) as f:
                 channels = ujson.loads(await f.read())['data']['channels']
-            _channels = channels
+            int_channels = {}
+            for channel in channels:
+                int_channels[int(channel)] = channels[channel]
+                int_channels[int(channel)]['id'] = int(channels[channel]['id'])
+                if 'replacement' in channels[channel]:
+                    int_channels[int(channel)]['replacement'] \
+                        = int(channels[channel]['replacement'])
+            _channels = int_channels
             log.info('Loaded Channels metadata')
         except (FileNotFoundError, TypeError, ValueError) as ex:
             log.error(f'Failed to load Channels metadata {repr(ex)}')
@@ -363,7 +372,13 @@ async def timers_check():
                 _timers = ujson.loads(await f.read())
             async with recordings_lock:
                 async with await open_async(recordings) as f:
-                    _recordings = ujson.loads(await f.read())
+                    recordingsdata = ujson.loads(await f.read())
+                int_recordings = {}
+                for channel in recordingsdata:
+                    int_recordings[int(channel)] = {}
+                    for event in recordingsdata[channel]:
+                        int_recordings[int(channel)][int(event)] = recordingsdata[channel][event]
+                _recordings = int_recordings
         except (FileNotFoundError, TypeError, ValueError) as ex:
             if not _timers:
                 log.error(f'handle_timers: {repr(ex)}')
@@ -376,6 +391,7 @@ async def timers_check():
             return
 
         for channel_id in _timers['match']:
+            channel_id = int(channel_id)
             if channel_id not in _epgdata:
                 log.info(f'Channel {channel_id} not found in EPG')
                 continue
@@ -383,12 +399,12 @@ async def timers_check():
             timers_added = []
             _time_limit = int(datetime.now().timestamp()) - (3600 * 3)
             for timestamp in reversed(_epgdata[channel_id]):
-                if int(timestamp) > _time_limit:
+                if timestamp > _time_limit:
                     continue
                 title = _epgdata[channel_id][timestamp]['full_title']
                 deflang = _timers['language']['default'] if (
                     'language' in _timers and 'default' in _timers['language']) else ''
-                for timer_match in _timers['match'][channel_id]:
+                for timer_match in _timers['match'][str(channel_id)]:
                     if ' ## ' in timer_match:
                         timer_match, lang = timer_match.split(' ## ')
                     else:
@@ -396,11 +412,13 @@ async def timers_check():
                     vo = True if lang == 'VO' else False
                     _, filename = get_recording_path(channel_id, timestamp)
                     filename += TMP_EXT
-                    if re.match(timer_match, title) and (title not in timers_added and filename
-                            not in str(_ffmpeg) and not os.path.exists(filename) and (channel_id
-                            not in _recordings or (title not in repr(_recordings[channel_id])
-                            and timestamp not in _recordings[channel_id]
-                            and timestamp not in _cloud[channel_id]))):
+                    if re.match(timer_match, title) and (
+                            title not in timers_added
+                            and filename not in str(_ffmpeg) and not os.path.exists(filename)
+                            and (channel_id not in _recordings
+                                 or (title not in repr(_recordings[channel_id])
+                                     and timestamp not in _recordings[channel_id]))
+                            and (channel_id not in _cloud or timestamp not in _cloud[channel_id])):
                         log.info(f'Found match! {channel_id} {timestamp} {vo} "{title}"')
                         sanic_url = f'{SANIC_URL}/{channel_id}/{timestamp}.mp4'
                         sanic_url += '?record=1'
@@ -439,7 +457,12 @@ async def update_cloud(forced=False):
     try:
         async with await open_async(cloud_data) as f:
             clouddata = ujson.loads(await f.read())['data']
-        _cloud = clouddata
+        int_clouddata = {}
+        for channel in clouddata:
+            int_clouddata[int(channel)] = {}
+            for event in clouddata[channel]:
+                int_clouddata[int(channel)][int(event)] = clouddata[channel][event]
+        _cloud = int_clouddata
     except (FileNotFoundError, TypeError, ValueError):
         if os.path.exists(cloud_data):
             os.remove(cloud_data)
@@ -457,8 +480,8 @@ async def update_cloud(forced=False):
 
     new_cloud = {}
     for event in cloud_recordings:
-        channel_id = str(event['serviceUID'])
-        _start = str(int(event['beginTime'] / 1000))
+        channel_id = event['serviceUID']
+        _start = int(event['beginTime'] / 1000)
         if channel_id not in new_cloud:
             new_cloud[channel_id] = {}
         if _start not in new_cloud[channel_id]:
