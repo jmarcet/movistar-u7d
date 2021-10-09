@@ -269,8 +269,10 @@ async def handle_prom_event_remove(request):
             for _metric in request.app.metrics['RQS_LATENCY']._metrics:
                 if request.json['method'] in _metric and str(request.json['id']) in _metric:
                     break
-            if _metric:
+            try:
                 request.app.metrics['RQS_LATENCY'].remove(*_metric)
+            except UnboundLocalError:
+                pass
         else:
             request.app.metrics['RQS_LATENCY'].remove(
                 request.json['method'],
