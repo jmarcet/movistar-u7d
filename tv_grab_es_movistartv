@@ -30,7 +30,6 @@ import logging
 import os
 import random
 import re
-import shutil
 import socket
 import struct
 import sys
@@ -43,7 +42,8 @@ from logging.handlers import RotatingFileHandler
 from queue import Queue
 from setproctitle import setproctitle
 from threading import Thread
-from xml.sax.saxutils import unescape
+
+from movistar_epg import get_title_meta
 
 
 setproctitle('tv_grab_es_movistartv')
@@ -949,58 +949,19 @@ class MulticastIPTV:
             logger.error(f'Error al procesar la cabecera: {repr(ex)}')
             raise
 
-    @staticmethod
-    def __sanitize(text):
-        try:
-            _t = unescape(text).replace('\n', ' ').replace('\r', ' ')
-            return _t.replace(' / ', ': ').replace('/', '')
-        except TypeError:
-            _t = text.replace('\n', ' ').replace('\r', ' ')
-            return _t.replace(' / ', ': ').replace('/', '')
-
     def __parse_bin_epg_body(self, data):
         epg_dt = data[:-4]
         try:
             programs = {}
             while epg_dt:
-                is_serie = False
-                episode_title = serie = ''
                 start = struct.unpack('>I', epg_dt[4:8])[0]
                 duration = struct.unpack('>H', epg_dt[8:10])[0]
                 title_end = struct.unpack('B', epg_dt[31:32])[0] + 32
                 episode = struct.unpack('B', epg_dt[title_end + 8:title_end + 9])[0]
                 season = struct.unpack('B', epg_dt[title_end + 11:title_end + 12])[0]
-                full_title = self.__sanitize(self.__decode_string(epg_dt[32:title_end]))
+                full_title = self.__decode_string(epg_dt[32:title_end])
                 serie_id = struct.unpack('>H', epg_dt[title_end + 5:title_end + 7])[0]
-                if re.match(r".+ T\d+ .+", full_title):
-                    x = re.search(r"(.+(?!T\d)) +T(\d+)(?: *Ep?.? *(\d+))?[ -]*(.*)",
-                                  full_title)
-                else:
-                    x = re.search(r"(.+(?!T\d))(?: +T(\d+))? *Ep?.? *(\d+)[ -]*(.*)",
-                                  full_title)
-                if x and x.groups():
-                    x = x.groups()
-                    serie = x[0].strip() if x[0] else \
-                        full_title.split('-')[0].strip() if '-' in full_title else full_title
-                    season = int(x[1]) if x[1] else season
-                    episode = int(x[2]) if x[2] else episode
-                    episode_title = \
-                        x[3].strip().replace('- ',
-                                             '-').replace(' -', '-').replace('-', ' - ')
-                    is_serie = True if (serie and episode) else False
-                    if ': ' in serie and episode and not episode_title:
-                        episode_title = serie.split(':')[1].strip()
-                        serie = serie.split(':')[0].strip()
-                    if serie and season and episode:
-                        full_title = '%s S%02dE%02d' % (serie, season, episode)
-                        if episode_title:
-                            full_title += f' - {episode_title}'
-                elif serie_id:
-                    is_serie = True
-                    if ' - ' in full_title:
-                        serie, episode_title = full_title.split(' - ', 1)
-                    else:
-                        serie = full_title
+                meta_data = get_title_meta(full_title, serie_id)
                 programs[start] = {
                     'pid': struct.unpack('>I', epg_dt[:4])[0],
                     'start': start,
@@ -1008,17 +969,16 @@ class MulticastIPTV:
                     'end': start + duration,
                     'genre': '{:02X}'.format(struct.unpack('B', epg_dt[20:21])[0]),
                     'age_rating': struct.unpack('B', epg_dt[24:25])[0],
-                    'full_title': full_title,
+                    'full_title': meta_data['full_title'],
                     'serie_id': serie_id,
-                    'episode': episode,
-                    'year':
-                        str(struct.unpack('>H', epg_dt[title_end + 9:title_end + 11])[0]),
-                    'serie': serie,
-                    'season': season,
-                    'is_serie': is_serie
+                    'episode': meta_data['episode'] if meta_data['episode'] else episode,
+                    'year': str(struct.unpack('>H', epg_dt[title_end + 9:title_end + 11])[0]),
+                    'serie': meta_data['serie'],
+                    'season': meta_data['season'] if meta_data['season'] else season,
+                    'is_serie': meta_data['is_serie']
                 }
-                if episode_title:
-                    programs[start]['episode_title'] = episode_title
+                if meta_data['episode_title']:
+                    programs[start]['episode_title'] = meta_data['episode_title']
                 pr_title_end = \
                     struct.unpack('B', epg_dt[title_end + 12:title_end + 13])[0] \
                     + title_end + 13

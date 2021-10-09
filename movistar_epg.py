@@ -17,8 +17,9 @@ from sanic import Sanic, exceptions, response
 from sanic_prometheus import monitor
 from sanic.compat import open_async
 from sanic.log import logger as log, LOGGING_CONFIG_DEFAULTS
+from xml.sax.saxutils import unescape
 
-from vod import MVTV_URL, TMP_EXT
+from vod import MVTV_URL, TMP_EXT, VID_EXT
 
 
 setproctitle('movistar_epg')
@@ -47,6 +48,9 @@ app = Sanic('movistar_epg')
 app.config.update({'FALLBACK_ERROR_FORMAT': 'json',
                    'KEEP_ALIVE_TIMEOUT': YEAR_SECONDS})
 flussonic_regex = re.compile(r"\w*-?(\d{10})-?(\d+){0,1}\.?\w*")
+title_select_regex = re.compile(r".+ T\d+ .+")
+title_1_regex = re.compile(r"(.+(?!T\d)) +T(\d+)(?: *Ep?.? *(\d+))?[ -]*(.*)")
+title_2_regex = re.compile(r"(.+(?!T\d))(?: +T(\d+))? *Ep?.? *(\d+)[ -]*(.*)")
 
 cloud_data = os.path.join(HOME, '.xmltv/cache/cloud.json')
 epg_data = os.path.join(HOME, '.xmltv/cache/epg.json')
@@ -54,7 +58,6 @@ epg_metadata = os.path.join(HOME, '.xmltv/cache/epg_metadata.json')
 recordings = os.path.join(HOME, 'recordings.json')
 timers = os.path.join(HOME, 'timers.json')
 epg_lock = asyncio.Lock()
-recordings_lock = asyncio.Lock()
 timers_lock = asyncio.Lock()
 tvgrab_lock = asyncio.Lock()
 
@@ -69,20 +72,31 @@ _t_cloud1 = _t_cloud2 = _t_epg1 = _t_epg2 = _t_recordings = \
 
 @app.listener('after_server_start')
 async def after_server_start(app, loop):
-    global PREFIX, _t_cloud1, _t_epg1, _t_recordings, _t_timers_d
+    global PREFIX, _t_cloud1, _t_epg1, _t_recordings, _t_timers_d, _recordings
     if __file__.startswith('/app/'):
         PREFIX = '/app/'
 
     await reload_epg()
-    if RECORDINGS:
-        _t_recordings = asyncio.create_task(every(300, update_recordings))
     _t_epg1 = asyncio.create_task(update_epg_delayed())
     _t_cloud1 = asyncio.create_task(update_cloud_delayed())
-
     if RECORDINGS:
+        _t_recordings = asyncio.create_task(every(300, update_recordings_m3u))
+        try:
+            async with await open_async(recordings) as f:
+                recordingsdata = ujson.loads(await f.read())
+            int_recordings = {}
+            for channel in recordingsdata:
+                int_recordings[int(channel)] = {}
+                for event in recordingsdata[channel]:
+                    int_recordings[int(channel)][int(event)] = \
+                        recordingsdata[channel][event]
+            _recordings = int_recordings
+        except (FileNotFoundError, TypeError, ValueError) as ex:
+            log.error(f'{repr(ex)}')
+
         if os.path.exists(timers):
             _ffmpeg = str(await get_ffmpeg_procs())
-            [os.remove(t) for t in glob(f'{RECORDINGS}/**/*{TMP_EXT}')
+            [os.remove(t) for t in glob(f'{RECORDINGS}/**/*{TMP_EXT}', recursive=True)
              if os.path.basename(t) not in _ffmpeg]
             _t_timers_d = asyncio.create_task(timers_check_delayed())
         else:
@@ -162,7 +176,7 @@ def get_program_id(channel_id, url=None, cloud=False):
 
 
 def get_recording_path(channel_id, timestamp):
-    if _epgdata[channel_id][timestamp]['is_serie']:
+    if _epgdata[channel_id][timestamp]['serie']:
         path = os.path.join(RECORDINGS,
                             get_safe_filename(_epgdata[channel_id][timestamp]['serie']))
     else:
@@ -176,6 +190,51 @@ def get_safe_filename(filename):
     filename = filename.replace(':', ',').replace('...', '…')
     keepcharacters = (' ', ',', '.', '_', '-', '¡', '!')
     return "".join(c for c in filename if c.isalnum() or c in keepcharacters).rstrip()
+
+
+def get_title_meta(title, serie_id=None):
+    try:
+        _t = unescape(title).replace('\n', ' ').replace('\r', ' ')
+    except TypeError:
+        _t = title.replace('\n', ' ').replace('\r', ' ')
+    full_title = _t.replace(' / ', ': ').replace('/', '')
+
+    if title_select_regex.match(full_title):
+        x = title_1_regex.search(full_title)
+    else:
+        x = title_2_regex.search(full_title)
+
+    is_serie = False
+    season = episode = 0
+    serie = episode_title = ''
+    if x and x.groups():
+        _x = x.groups()
+        serie = _x[0].strip() if _x[0] else \
+            full_title.split(' - ')[0].strip() if ' - ' in full_title else full_title
+        season = int(_x[1]) if _x[1] else season
+        episode = int(_x[2]) if _x[2] else episode
+        episode_title = _x[3].strip() if _x[3] else episode_title
+        if episode_title and '-' in episode_title:
+            episode_title = \
+                episode_title.replace('- ', '-').replace(' -', '-').replace('-', ' - ')
+        is_serie = True if (serie and episode) else False
+        if ': ' in serie and episode and not episode_title:
+            episode_title = serie.split(':')[1].strip()
+            serie = serie.split(':')[0].strip()
+        if serie and season and episode:
+            full_title = '%s S%02dE%02d' % (serie, season, episode)
+            if episode_title:
+                full_title += f' - {episode_title}'
+    elif serie_id:
+        is_serie = True
+        if ' - ' in full_title:
+            serie, episode_title = full_title.split(' - ', 1)
+        else:
+            serie = full_title
+
+    return {'full_title': full_title, 'serie': serie, 'season': season,
+            'episode': episode, 'episode_title': episode_title,
+            'is_serie': is_serie}
 
 
 @app.get('/channels/')
@@ -194,6 +253,7 @@ async def handle_program_id(request, channel_id, url):
 
 @app.route('/program_name/<channel_id:int>/<program_id:int>', methods=['GET', 'PUT'])
 async def handle_program_name(request, channel_id, program_id):
+    global _recordings
     try:
         _epg, event = get_epg(channel_id, program_id)
     except TypeError:
@@ -208,22 +268,16 @@ async def handle_program_name(request, channel_id, program_id):
                               'filename': filename,
                               }, ensure_ascii=False)
 
-    async with recordings_lock:
-        try:
-            async with await open_async(recordings) as f:
-                _recordings = ujson.loads(await f.read())
-        except (FileNotFoundError, TypeError, ValueError):
-            _recordings = {}
-
     if channel_id not in _recordings:
         _recordings[channel_id] = {}
     _recordings[channel_id][program_id] = {
         'full_title': _epg['full_title']
     }
 
-    async with recordings_lock:
-        with open(recordings, 'w') as f:
-            ujson.dump(_recordings, f, ensure_ascii=False, indent=4, sort_keys=True)
+    with open(recordings, 'w') as f:
+        ujson.dump(_recordings, f, ensure_ascii=False, indent=4, sort_keys=True)
+
+    await update_recordings_m3u()
 
     global _t_timers_r
     _t_timers_r = asyncio.create_task(timers_check())
@@ -368,19 +422,10 @@ async def timers_check():
 
         log.info('Processing timers')
 
-        _recordings = _timers = {}
+        _timers = {}
         try:
             async with await open_async(timers) as f:
                 _timers = ujson.loads(await f.read())
-            async with recordings_lock:
-                async with await open_async(recordings) as f:
-                    recordingsdata = ujson.loads(await f.read())
-                int_recordings = {}
-                for channel in recordingsdata:
-                    int_recordings[int(channel)] = {}
-                    for event in recordingsdata[channel]:
-                        int_recordings[int(channel)][int(event)] = recordingsdata[channel][event]
-                _recordings = int_recordings
         except (FileNotFoundError, TypeError, ValueError) as ex:
             if not _timers:
                 log.error(f'handle_timers: {repr(ex)}')
@@ -413,17 +458,19 @@ async def timers_check():
                         lang = deflang
                     vo = True if lang == 'VO' else False
                     _, filename = get_recording_path(channel_id, timestamp)
-                    filename += TMP_EXT
                     if re.match(timer_match, title) and (
-                            title not in timers_added
-                            and filename not in str(_ffmpeg) and not os.path.exists(filename)
-                            and (channel_id not in _recordings
-                                 or (title not in repr(_recordings[channel_id])
-                                     and timestamp not in _recordings[channel_id]))
-                            and (channel_id not in _cloud or timestamp not in _cloud[channel_id])):
-                        log.info(f'Found match! {channel_id} {timestamp} {vo} "{title}"')
-                        sanic_url = f'{SANIC_URL}/{channel_id}/{timestamp}.mp4'
-                        sanic_url += '?record=1'
+                            title not in timers_added and filename.split('/')[-1:][0] not in str(_ffmpeg)):
+                        if channel_id in _recordings:
+                            if (title in str(_recordings[channel_id]) or timestamp
+                                in _recordings[channel_id]) \
+                                    and os.path.exists(filename + VID_EXT):
+                                continue
+                        log.info(f'Found match! {filename + VID_EXT} {channel_id} {timestamp} {vo}')
+                        sanic_url = f'{SANIC_URL}'
+                        if channel_id in _cloud \
+                                and timestamp in _cloud[channel_id]:
+                            sanic_url += '/cloud'
+                        sanic_url += f'/{channel_id}/{timestamp}.mp4?record=1'
                         if vo:
                             sanic_url += '&vo=1'
                         try:
@@ -498,26 +545,34 @@ async def update_cloud(forced=False):
                         r = await client.get(
                             f'{MVTV_URL}?action=epgInfov2&'
                             f'productID={product_id}&channelID={channel_id}')
+                        year = r.json()['resultData']['productionDate']
+                        r = await client.get(
+                            f'{MVTV_URL}?action=getRecordingData&'
+                            f'extInfoID={product_id}&channelID={channel_id}&mode=1')
                         _data = r.json()['resultData']
+                        meta_data = get_title_meta(
+                            _data['name'],
+                            _data['seriesID'] if 'seriesID' in _data else None)
                         new_cloud[channel_id][_start] = {
                             'age_rating': _data['ageRatingID'],
                             'duration': _data['duration'],
                             'end': int(str(_data['endTime'])[:-3]),
-                            'episode': _data['episode'],
-                            'episode_title': _data['episodeName'],
-                            'full_title': get_safe_filename(_data['name']),
-                            'genre': "06",  # _data['genre'],
-                            'is_serie': 'seriesID' in _data,
+                            'episode': meta_data['episode']
+                            if meta_data['episode'] else _data['episode'],
+                            'full_title': meta_data['full_title'],
+                            'genre': _data['theme'],
+                            'is_serie': meta_data['is_serie'],
                             'pid': product_id,
-                            'season': _data['season'],
+                            'season': meta_data['season']
+                            if meta_data['season'] else _data['season'],
                             'start': int(_start),
-                            'year': _data['productionDate']
+                            'year': year,
+                            'serie': meta_data['serie']
+                            if meta_data['serie'] else _data['seriesName'],
+                            'serie_id': _data['seriesID'] if 'seriesID' in _data else None,
                         }
-                        if 'seriesID' in _data:
-                            new_cloud[channel_id][_start]['serie'] = \
-                                _data['seriesName']
-                            new_cloud[channel_id][_start]['serie_id'] = \
-                                _data['seriesID']
+                        if meta_data['episode_title']:
+                            new_cloud[channel_id][_start]['episode_title'] = meta_data['episode_title']
                 except Exception as ex:
                     log.warning(
                         f'{channel_id} {product_id} not located in Cloud {repr(ex)}')
@@ -554,7 +609,6 @@ async def update_cloud(forced=False):
         with open(cloud_data, 'w') as fp:
             ujson.dump({'data': _cloud}, fp,
                        ensure_ascii=False, indent=6, sort_keys=True)
-        # log.info(ujson.dumps(_cloud, ensure_ascii=False, indent=4, sort_keys=True))
         log.info('Updated Cloud Recordings data')
 
     if updated or not os.path.exists(CHANNELS_CLOUD) or not os.path.exists(GUIDE_CLOUD):
@@ -598,7 +652,7 @@ async def update_epg_delayed():
     _t_epg2 = asyncio.create_task(every(3600, update_epg))
 
 
-async def update_recordings():
+async def update_recordings_m3u():
     m3u = '#EXTM3U name="Recordings" dlna_extras=mpeg_ps_pal\n'
 
     def dump_files(m3u, files, latest=False):
