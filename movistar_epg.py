@@ -65,14 +65,13 @@ _cloud = {}
 _channels = {}
 _epgdata = {}
 _network_fsignal = '/tmp/.u7d_bw'
-_t_cloud1 = _t_cloud2 = _t_epg1 = _t_epg2 = _t_recordings = \
-    _t_timers = _t_timers_d = _t_timers_r = _t_timers_t = \
-    tv_cloud1 = tv_cloud2 = tvgrab = None
+_t_cloud1 = _t_cloud2 = _t_epg1 = _t_epg2 = _t_timers = _t_timers_d = \
+    _t_timers_r = _t_timers_t = tv_cloud1 = tv_cloud2 = tvgrab = None
 
 
 @app.listener('after_server_start')
 async def after_server_start(app, loop):
-    global PREFIX, _t_cloud1, _t_epg1, _t_recordings, _t_timers_d, _recordings
+    global PREFIX, _t_cloud1, _t_epg1, _t_timers_d, _recordings
     if __file__.startswith('/app/'):
         PREFIX = '/app/'
 
@@ -80,7 +79,7 @@ async def after_server_start(app, loop):
     _t_epg1 = asyncio.create_task(update_epg_delayed())
     _t_cloud1 = asyncio.create_task(update_cloud_delayed())
     if RECORDINGS:
-        _t_recordings = asyncio.create_task(every(300, update_recordings_m3u))
+        await update_recordings_m3u()
         try:
             async with await open_async(recordings) as f:
                 recordingsdata = ujson.loads(await f.read())
@@ -106,9 +105,8 @@ async def after_server_start(app, loop):
 @app.listener('after_server_stop')
 async def after_server_stop(app, loop):
     for task in [
-            _t_cloud1, _t_cloud2, _t_epg2, _t_epg1, _t_recordings,
-            _t_timers, _t_timers_d, _t_timers_r, _t_timers_t,
-            tv_cloud1, tv_cloud2, tvgrab]:
+            _t_cloud1, _t_cloud2, _t_epg2, _t_epg1, _t_timers, _t_timers_d,
+            _t_timers_r, _t_timers_t, tv_cloud1, tv_cloud2, tvgrab]:
         try:
             task.cancel()
             await asyncio.wait({task})
