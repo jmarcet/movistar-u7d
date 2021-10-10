@@ -167,7 +167,7 @@ def ffmpeg_completed():
     if check_recording():
         save_metadata()
         httpx.put(epg_url)
-    else:
+    elif os.path.exists(filename + VID_EXT):
         os.remove(filename + VID_EXT)
 
     _cleanup()
