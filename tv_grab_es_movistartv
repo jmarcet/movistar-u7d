@@ -1209,8 +1209,7 @@ class XMLTV:
                 channel_logo = f'http://{sanic}/Logos/' + \
                     self.__channels[channel_id]['logo_uri']
                 if channel_id not in epg_channels:
-                    logger.info('M3U: Saltando canal encriptado '
-                                f'"{channel_name}" {channel_id}')
+                    logger.info('M3U: Saltando canal encriptado ' f'"{channel_name}" {channel_id}')
                     continue
                 m3u += f'#EXTINF:-1 tvg-chnum="{channel_number}" '
                 m3u += f'tvg-id="{channel_id}.movistar.tv" '
@@ -1296,10 +1295,12 @@ def export_channels(m3u_file, cloud=None):
 if 'LAN_IP' in os.environ:
     lan_ip = os.getenv('LAN_IP')
 else:
-    lan_ip = [l for l in ([ip for ip in socket.gethostbyname_ex(socket.gethostname())[2]
-        if not ip.startswith("127.")][:1], [[(s.connect(('8.8.8.8', 53)), s.getsockname()[0],
-        s.close()) for s in [socket.socket(socket.AF_INET, socket.SOCK_DGRAM)]][0][1]])
-        if l][0][0]
+    lan_ip = [
+        line for line in ([ip for ip in socket.gethostbyname_ex(socket.gethostname())[2]
+                           if not ip.startswith("127.")][:1],
+                          [[(s.connect(('8.8.8.8', 53)), s.getsockname()[0],
+                           s.close()) for s in [socket.socket(socket.AF_INET,
+                                                socket.SOCK_DGRAM)]][0][1]]) if line][0][0]
 
 # Endpoint del backend principal
 sanic = f'{lan_ip}:' + os.getenv('SANIC_PORT', '8888')
@@ -1315,8 +1316,7 @@ epg_threads = int(os.getenv('EPG_THREADS', '4'))
 
 # Guarda el timestamp de inicio
 time_start = int(time.time())
-deadline = int(datetime.combine(date.today() - timedelta(days=7),
-                                datetime.min.time()).timestamp())
+deadline = int(datetime.combine(date.today() - timedelta(days=7), datetime.min.time()).timestamp())
 
 # Crea el logger
 logger = create_logger(sys.argv)
@@ -1369,8 +1369,7 @@ try:
     xml = epg_x.getroot()
     ElTr.indent(xml)
     if args.cloud_recordings:
-        logger.info(
-            f'Guía XMLTV de Grabaciones en la Nube guardada: {args.cloud_recordings}')
+        logger.info(f'Guía XMLTV de Grabaciones en la Nube guardada: {args.cloud_recordings}')
         _saved = sys.stdout
         sys.stdout = open(args.cloud_recordings, 'w')
     if args.output:

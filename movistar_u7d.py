@@ -40,6 +40,7 @@ IPTV_BW = 85000 if IPTV_BW > 90000 else IPTV_BW
 MIME_TS = 'video/MP2T;audio/mp3'
 MIME_WEBM = 'video/webm'
 MP4_OUTPUT = bool(os.getenv('MP4_OUTPUT', False))
+NETWORK_FSIGNAL = '/tmp/.u7d_bw'
 RECORDINGS = os.getenv('RECORDINGS', None)
 SANIC_EPG_URL = 'http://127.0.0.1:8889'
 SANIC_HOST = os.getenv('LAN_IP', '0.0.0.0')
@@ -53,43 +54,42 @@ LOG_SETTINGS['formatters']['generic']['datefmt'] = \
     LOG_SETTINGS['formatters']['access']['datefmt'] = '[%Y-%m-%d %H:%M:%S]'
 
 PREFIX = ''
+_CHANNELS = {}
+_IPTV = _SESSION = _SESSION_LOGOS = None
+_NETWORK_SATURATED = False
+_RESPONSES = []
+
+VodArgs = namedtuple('Vod', ['channel', 'broadcast', 'iptv_ip',
+                             'client_ip', 'client_port', 'start', 'cloud'])
 
 app = Sanic('movistar_u7d', log_config=LOG_SETTINGS)
 app.config.update({'FALLBACK_ERROR_FORMAT': 'json',
                    'GRACEFUL_SHUTDOWN_TIMEOUT': 0,
                    'REQUEST_TIMEOUT': 1,
                    'RESPONSE_TIMEOUT': 1})
-app.ctx.vod_client = None
-
-VodArgs = namedtuple('Vod', ['channel', 'broadcast', 'iptv_ip',
-                             'client_ip', 'client_port', 'start', 'cloud'])
-
-_channels = _iptv = _session = _session_logos = _t_tp = None
-_network_fsignal = '/tmp/.u7d_bw'
-_network_saturated = False
-_responses = []
+app.ctx.vod_client = _t_tp = None
 
 
 @app.listener('after_server_start')
 async def after_server_start(app, loop):
     log.debug('after_server_start')
-    global PREFIX, _channels, _iptv, _session, _t_tp
+    global PREFIX, _CHANNELS, _IPTV, _SESSION, _t_tp
     if __file__.startswith('/app/'):
         PREFIX = '/app/'
 
     s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
     s.connect(("172.26.23.3", 53))
-    _iptv = s.getsockname()[0]
+    _IPTV = s.getsockname()[0]
     s.close()
 
     conn = aiohttp.TCPConnector(keepalive_timeout=YEAR_SECONDS, limit_per_host=1)
-    _session = aiohttp.ClientSession(connector=conn, json_serialize=ujson.dumps)
+    _SESSION = aiohttp.ClientSession(connector=conn, json_serialize=ujson.dumps)
 
     while True:
         try:
-            async with _session.get(f'{SANIC_EPG_URL}/channels/') as r:
+            async with _SESSION.get(f'{SANIC_EPG_URL}/channels/') as r:
                 if r.status == 200:
-                    _channels = await r.json()
+                    _CHANNELS = await r.json()
                     break
                 else:
                     await asyncio.sleep(5)
@@ -118,15 +118,15 @@ async def after_server_start(app, loop):
             log.info('Setting dynamic limit of clients '
                      'from ' + iface_rx.split('/')[4] + ' bw')
             _t_tp = app.add_task(throughput(iface_rx))
-            if not os.path.exists(_network_fsignal):
-                with open(_network_fsignal, 'w') as f:
+            if not os.path.exists(NETWORK_FSIGNAL):
+                with open(NETWORK_FSIGNAL, 'w') as f:
                     f.write('')
 
 
 @app.listener('before_server_stop')
 async def before_server_stop(app, loop):
-    global _responses
-    for req, resp, vod_msg in _responses:
+    global _RESPONSES
+    for req, resp, vod_msg in _RESPONSES:
         try:
             await resp.eof()
             log.info(f'[{req.ip}] {req.raw_url.decode()} -> Stopped 2 {vod_msg}')
@@ -149,8 +149,7 @@ async def after_server_stop(app, loop):
 async def handle_channels(request):
     log.info(f'[{request.ip}] {request.method} {request.url}')
     if not os.path.exists(CHANNELS):
-        raise exceptions.NotFound(
-            f'Requested URL {request.raw_url.decode()} not found')
+        raise exceptions.NotFound(f'Requested URL {request.raw_url.decode()} not found')
     return await response.file(CHANNELS)
 
 
@@ -159,8 +158,7 @@ async def handle_channels(request):
 async def handle_channels_cloud(request):
     log.info(f'[{request.ip}] {request.method} {request.url}')
     if not os.path.exists(CHANNELS_CLOUD):
-        raise exceptions.NotFound(
-            f'Requested URL {request.raw_url.decode()} not found')
+        raise exceptions.NotFound(f'Requested URL {request.raw_url.decode()} not found')
     return await response.file(CHANNELS_CLOUD)
 
 
@@ -169,8 +167,7 @@ async def handle_channels_cloud(request):
 async def handle_channels_recordings(request):
     log.info(f'[{request.ip}] {request.method} {request.url}')
     if not os.path.exists(CHANNELS_RECORDINGS):
-        raise exceptions.NotFound(
-            f'Requested URL {request.raw_url.decode()} not found')
+        raise exceptions.NotFound(f'Requested URL {request.raw_url.decode()} not found')
     return await response.file(CHANNELS_RECORDINGS)
 
 
@@ -179,9 +176,7 @@ async def handle_channels_recordings(request):
 async def handle_guide(request):
     log.info(f'[{request.ip}] {request.method} {request.url}')
     if not os.path.exists(GUIDE):
-        raise exceptions.NotFound(
-            f'Requested URL {request.raw_url.decode()} not found')
-    log.debug(f'[{request.ip}] Return: {request.method} {request.url}')
+        raise exceptions.NotFound(f'Requested URL {request.raw_url.decode()} not found')
     return await response.file(GUIDE)
 
 
@@ -190,8 +185,7 @@ async def handle_guide(request):
 async def handle_guide_cloud(request):
     log.info(f'[{request.ip}] {request.method} {request.url}')
     if not os.path.exists(GUIDE_CLOUD):
-        raise exceptions.NotFound(
-            f'Requested URL {request.raw_url.decode()} not found')
+        raise exceptions.NotFound(f'Requested URL {request.raw_url.decode()} not found')
     return await response.file(GUIDE_CLOUD)
 
 
@@ -204,37 +198,32 @@ async def handle_logos(request, cover=None, logo=None, path=None):
     elif path and cover and cover.split('.')[0].isdigit():
         orig_url = f'{COVER_URL}/{path}/{cover}'
     else:
-        raise exceptions.NotFound(
-            f'Requested URL {request.raw_url.decode()} not found')
+        raise exceptions.NotFound(f'Requested URL {request.raw_url.decode()} not found')
 
     if request.method == 'HEAD':
         return response.HTTPResponse(content_type='image/jpeg', status=200)
 
-    global _session_logos
-    if not _session_logos:
+    global _SESSION_LOGOS
+    if not _SESSION_LOGOS:
         headers = {'User-Agent': 'MICA-IP-STB'}
-        _session_logos = aiohttp.ClientSession(headers=headers)
+        _SESSION_LOGOS = aiohttp.ClientSession(headers=headers)
 
-    async with _session_logos.get(orig_url) as r:
+    async with _SESSION_LOGOS.get(orig_url) as r:
         if r.status == 200:
             logo_data = await r.read()
             headers = {}
-            headers.setdefault('Content-Disposition',
-                               f'attachment; filename="{logo}"')
-            return response.HTTPResponse(body=logo_data,
-                                         content_type='image/jpeg',
-                                         headers=headers,
-                                         status=200)
+            headers.setdefault('Content-Disposition', f'attachment; filename="{logo}"')
+            return response.HTTPResponse(body=logo_data, content_type='image/jpeg',
+                                         headers=headers, status=200)
         else:
-            raise exceptions.NotFound(
-                f'Requested URL {request.raw_url.decode()} not found')
+            raise exceptions.NotFound(f'Requested URL {request.raw_url.decode()} not found')
 
 
 @app.route('/<channel_id:int>/live', methods=['GET', 'HEAD'])
 async def handle_channel(request, channel_id):
     _start = timeit.default_timer()
     _raw_url = request.raw_url.decode()
-    if _network_saturated:
+    if _NETWORK_SATURATED:
         procs = await get_ffmpeg_procs()
         if procs:
             os.kill(int(procs[-1].split()[0]), signal.SIGINT)
@@ -244,7 +233,7 @@ async def handle_channel(request, channel_id):
             log.warning(f'[{request.ip}] {_raw_url} -> Network Saturated')
             raise exceptions.ServiceUnavailable('Network Saturated')
     try:
-        name, mc_grp, mc_port = [_channels[str(channel_id)][t]
+        name, mc_grp, mc_port = [_CHANNELS[str(channel_id)][t]
                                  for t in ['name', 'address', 'port']]
     except (AttributeError, KeyError):
         log.error(f'{_raw_url} not found')
@@ -253,15 +242,13 @@ async def handle_channel(request, channel_id):
     if request.method == 'HEAD':
         return response.HTTPResponse(content_type=MIME_TS, status=200)
 
-    with closing(socket.socket(socket.AF_INET,
-                               socket.SOCK_DGRAM,
-                               socket.IPPROTO_UDP)) as sock:
+    with closing(socket.socket(socket.AF_INET, socket.SOCK_DGRAM, socket.IPPROTO_UDP)) as sock:
         sock.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
         sock.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEPORT, 1)
         sock.bind((mc_grp, int(mc_port)))
-        sock.setsockopt(socket.SOL_IP, socket.IP_MULTICAST_IF, socket.inet_aton(_iptv))
+        sock.setsockopt(socket.SOL_IP, socket.IP_MULTICAST_IF, socket.inet_aton(_IPTV))
         sock.setsockopt(socket.SOL_IP, socket.IP_ADD_MEMBERSHIP,
-                        socket.inet_aton(mc_grp) + socket.inet_aton(_iptv))
+                        socket.inet_aton(mc_grp) + socket.inet_aton(_IPTV))
 
         try:
             with closing(await asyncio_dgram.from_socket(sock)) as stream:
@@ -269,7 +256,7 @@ async def handle_channel(request, channel_id):
                 await _response.send((await stream.recv())[0][28:])
                 _lat = timeit.default_timer() - _start
                 asyncio.create_task(
-                    _session.post(f'{SANIC_EPG_URL}/prom_event/add', json={
+                    _SESSION.post(f'{SANIC_EPG_URL}/prom_event/add', json={
                         'method': 'live',
                         'endpoint': f'{name} _ {request.ip} _ ',
                         'channel_id': channel_id,
@@ -282,7 +269,7 @@ async def handle_channel(request, channel_id):
             try:
                 await _response.eof()
             finally:
-                await _session.post(f'{SANIC_EPG_URL}/prom_event/remove', json={
+                await _SESSION.post(f'{SANIC_EPG_URL}/prom_event/remove', json={
                     'method': 'live',
                     'endpoint': f'{name} _ {request.ip} _ ',
                     'channel_id': channel_id,
@@ -295,15 +282,14 @@ async def handle_flussonic(request, channel_id, url, cloud=False):
     _start = timeit.default_timer()
     _raw_url = request.raw_url.decode()
     procs = None
-    if _network_saturated:
+    if _NETWORK_SATURATED:
         procs = await get_ffmpeg_procs()
         if not procs:
             log.warning(f'[{request.ip}] {_raw_url} -> Network Saturated')
             raise exceptions.ServiceUnavailable('Network Saturated')
     try:
-        async with _session.get(
-            f'{SANIC_EPG_URL}/program_id/{channel_id}/{url}'
-            + ('?cloud=1' if cloud else '')) as r:
+        async with _SESSION.get(f'{SANIC_EPG_URL}/program_id/{channel_id}/{url}' + (
+                '?cloud=1' if cloud else '')) as r:
             name, program_id, duration, offset = (await r.json()).values()
     except (AttributeError, KeyError, ValueError):
         log.error(f'{_raw_url} not found')
@@ -312,7 +298,7 @@ async def handle_flussonic(request, channel_id, url, cloud=False):
     if request.method == 'HEAD':
         return response.HTTPResponse(content_type=MIME_TS, status=200)
 
-    client_port = find_free_port(_iptv)
+    client_port = find_free_port(_IPTV)
     vod_msg = f'"{name}" {program_id} [{offset}/{duration}]'
 
     record = request.args.get('record', 0)
@@ -326,17 +312,17 @@ async def handle_flussonic(request, channel_id, url, cloud=False):
                         'ffmpeg "' + procs[-1].split(RECORDINGS)[1] + '"')
     elif record:
         cmd = f'{PREFIX}vod.py {channel_id} {program_id} -s {offset}' \
-              f' -p {client_port} -i {request.ip} -a {_iptv}'
+              f' -p {client_port} -i {request.ip} -a {_IPTV}'
         record = int(record)
         record_time = record if record > 1 else duration - offset
 
         cmd += f' -t {record_time} -w'
+        if cloud:
+            cmd += ' --cloud 1'
         if MP4_OUTPUT or request.args.get('mp4', False):
             cmd += ' --mp4 1'
         if request.args.get('vo', False):
             cmd += ' --vo 1'
-        if cloud:
-            cmd += ' --cloud 1'
 
         log.info(f'[{request.ip}] {_raw_url} -> Recording [{record_time}s] {vod_msg}')
         signal.signal(signal.SIGCHLD, signal.SIG_IGN)
@@ -345,23 +331,23 @@ async def handle_flussonic(request, channel_id, url, cloud=False):
                               'channel_id': channel_id, 'program_id': program_id,
                               'offset': offset, 'time': record_time})
 
-    _args = VodArgs(channel_id, program_id, _iptv, request.ip, client_port, offset, cloud)
+    _args = VodArgs(channel_id, program_id, _IPTV, request.ip, client_port, offset, cloud)
     vod_data = await VodSetup(_args, app.ctx.vod_client)
     if not vod_data:
         log.error(f'{_raw_url} not found')
         raise exceptions.NotFound(f'Requested URL {_raw_url} not found')
     vod = asyncio.create_task(VodLoop(_args, vod_data))
-    _endpoint = _channels[str(channel_id)]['name'] + f' _ {request.ip} _ '
+    _endpoint = _CHANNELS[str(channel_id)]['name'] + f' _ {request.ip} _ '
     try:
-        with closing(await asyncio_dgram.bind((_iptv, client_port))) as stream:
+        with closing(await asyncio_dgram.bind((_IPTV, client_port))) as stream:
             try:
                 _response = await request.respond(content_type=MIME_TS)
-                global _responses
-                _responses.append((request, _response, vod_msg))
+                global _RESPONSES
+                _RESPONSES.append((request, _response, vod_msg))
                 await _response.send((await asyncio.wait_for(stream.recv(), 1))[0])
                 _lat = timeit.default_timer() - _start
                 asyncio.create_task(
-                    _session.post(f'{SANIC_EPG_URL}/prom_event/add', json={
+                    _SESSION.post(f'{SANIC_EPG_URL}/prom_event/add', json={
                         'method': 'catchup',
                         'endpoint': _endpoint,
                         'channel_id': channel_id,
@@ -380,12 +366,12 @@ async def handle_flussonic(request, channel_id, url, cloud=False):
         try:
             await _response.eof()
         finally:
-            _responses.remove((request, _response, vod_msg))
+            _RESPONSES.remove((request, _response, vod_msg))
             try:
                 vod.cancel()
             except (ProcessLookupError, TypeError):
                 pass
-            await _session.post(f'{SANIC_EPG_URL}/prom_event/remove', json={
+            await _SESSION.post(f'{SANIC_EPG_URL}/prom_event/remove', json={
                 'method': 'catchup',
                 'endpoint': _endpoint,
                 'channel_id': channel_id,
@@ -401,14 +387,13 @@ async def handle_flussonic(request, channel_id, url, cloud=False):
 async def handle_flussonic_cloud(request, channel_id, url):
     if url == 'live':
         return await handle_channel(request, channel_id)
-    return await handle_flussonic(request, channel_id, url, True)
+    return await handle_flussonic(request, channel_id, url, cloud=True)
 
 
 @app.route('/recording/', methods=['GET', 'HEAD'])
 async def handle_recording(request):
     if not RECORDINGS:
-        raise exceptions.NotFound(
-            f'Requested URL {request.raw_url.decode()} not found')
+        raise exceptions.NotFound(f'Requested URL {request.raw_url.decode()} not found')
 
     _path = urllib.parse.unquote(request.raw_url.decode().split('/recording/')[1])
     file = os.path.join(RECORDINGS, _path[1:])
@@ -426,11 +411,9 @@ async def handle_recording(request):
             except exceptions.HeaderNotFound:
                 _range = None
 
-            return await response.file_stream(
-                file, mime_type=MIME_WEBM, _range=_range)
+            return await response.file_stream(file, mime_type=MIME_WEBM, _range=_range)
 
-    raise exceptions.NotFound(
-        f'Requested URL {request.raw_url.decode()} not found')
+    raise exceptions.NotFound(f'Requested URL {request.raw_url.decode()} not found')
 
 
 @app.get('/favicon.ico')
@@ -441,21 +424,21 @@ async def handle_notfound(request):
 @app.get('/metrics')
 async def handle_prometheus(request):
     try:
-        async with _session.get(f'{SANIC_EPG_URL}/metrics') as r:
+        async with _SESSION.get(f'{SANIC_EPG_URL}/metrics') as r:
             return response.text((await r.read()).decode())
     except aiohttp.client_exceptions.ClientConnectorError:
         raise exceptions.ServiceUnavailable('Not available')
 
 
 async def throughput(iface_rx):
-    global _network_saturated
+    global _NETWORK_SATURATED
     cur = last = 0
     while True:
         async with await open_async(iface_rx) as f:
             cur = int((await f.read())[:-1])
             if last:
                 tp = int((cur - last) * 8 / 1000 / 3)
-                _network_saturated = tp > IPTV_BW
+                _NETWORK_SATURATED = tp > IPTV_BW
             last = cur
             await asyncio.sleep(3)
 
