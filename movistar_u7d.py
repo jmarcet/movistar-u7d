@@ -35,7 +35,7 @@ CHANNELS_CLOUD = os.path.join(HOME, 'cloud.m3u')
 CHANNELS_RECORDINGS = os.path.join(HOME, 'recordings.m3u')
 GUIDE = os.path.join(HOME, 'guide.xml')
 GUIDE_CLOUD = os.path.join(HOME, 'cloud.xml')
-IPTV_BW = int(os.getenv('IPTV_BW', '85000'))
+IPTV_BW = int(os.getenv('IPTV_BW', '0'))
 IPTV_BW = 85000 if IPTV_BW > 90000 else IPTV_BW
 MIME_TS = 'video/MP2T;audio/mp3'
 MIME_WEBM = 'video/webm'
@@ -101,7 +101,7 @@ async def after_server_start(app, loop):
         app.ctx.vod_client = aiohttp.ClientSession(connector=conn_vod,
                                                    headers={'User-Agent': UA})
 
-    if os.path.exists('/proc/net/route'):
+    if IPTV_BW and os.path.exists('/proc/net/route'):
         async with await open_async('/proc/net/route') as f:
             _route = await f.read()
 
