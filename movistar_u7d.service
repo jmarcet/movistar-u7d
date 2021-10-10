@@ -6,10 +6,12 @@ Requires=movistar_epg.service
 [Service]
 Type=simple
 # Environment=HOME=/home
-# Environment=RECORDINGS=/tmp
-# Environment=SANIC_HOST=0.0.0.0
+# Environment=LAN_IP=192.168.1.10
+# Environment=IPTV_BW=85000
+# Environment=RECORDINGS=/mnt/recordings
 # Environment=SANIC_PORT=8888
-# Environment=SANIC_THREADS=3
+# Environment=SANIC_THREADS=4
+# Environment=U7D_UID=nobody
 ExecStart=movistar_u7d.py
 
 [Install]

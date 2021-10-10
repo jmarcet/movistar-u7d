@@ -1,10 +1,11 @@
-# U7D_UID=nobody                     # UID para ejecutar los backends y para las grabaciones y caches
+# U7D_UID=nobody                     # usuario con el que ejecutar los microservicios y para las grabaciones y cachés
 # HOME=/home                         # directorio donde quedará guardada la caché de tv_grab_es_movistartv
+# LAN_IP=192.168.1.10                # ip donde queremos tener el proxy funcionando
+
+# EPG_THREADS=4                      # número de hilos para descargar la epg
 # IPTV_BW=85000                      # máximo ancho de banda (en kbps) permitido para el total de clientes, la vlan de iptv de Movistar tiene un tope de 100000 kbps
-# LAN_IP=                            # ip donde queremos tener el proxy funcionando
-# EPG_THREADS=4                      # número de hilos para la descarga de la epg
-# MP4_OUTPUT=                        # hacer grabaciones a fichero .mp4 y .sub por separado
+# MP4_OUTPUT=1                       # hacer grabaciones a fichero .mp4 y .sub por separado
 # RECORDING_THREADS=4                # número de grabaciones simultáneas
-# RECORDINGS=                        # directorio para grabaciones, si se establece se activará la comprobación periódica de timers.json
-# SANIC_PORT=8888                    # puerto del proxy
-# SANIC_THREADS=4                    # número de hilos de ejecución de movistar_u7d.py
+# RECORDINGS=/mnt/recordings         # directorio para grabaciones, si se establece se activará la comprobación periódica de timers.conf
+# SANIC_PORT=8888                    # puerto en el que el proxy será accesible
+# SANIC_THREADS=4                    # número de procesos simultáneos de movistar_u7d.py

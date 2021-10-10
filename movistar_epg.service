@@ -5,8 +5,12 @@ After=network.target
 [Service]
 Type=simple
 # Environment=HOME=/home
-# Environment=SANIC_EPG_HOST=127.0.0.1
-# Environment=SANIC_EPG_PORT=8889
+# Environment=LAN_IP=192.168.1.10
+# Environment=EPG_THREADS=4
+# Environment=RECORDING_THREADS=4
+# Environment=RECORDINGS=/mnt/recordings
+# Environment=SANIC_PORT=8888
+# Environment=U7D_UID=nobody
 ExecStart=movistar_epg.py
 
 [Install]
