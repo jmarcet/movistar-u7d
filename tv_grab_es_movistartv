@@ -46,226 +46,251 @@ from threading import Thread
 from movistar_epg import get_title_meta
 
 
-setproctitle('tv_grab_es_movistartv')
+setproctitle("tv_grab_es_movistartv")
 
 epg_channels = [
-    '2543', '4455', '2524', '1825', '1826', '2526', '4913', '4912', '884', '4714',
-    '3223', '844', '1221', '4063', '2544', '3063', '657', '663', '4716', '4715',
-    '3185', '1616', '578', '4467', '743', '582', '3603', '3443', '5029', '3103']
+    "2543",
+    "4455",
+    "2524",
+    "1825",
+    "1826",
+    "2526",
+    "4913",
+    "4912",
+    "884",
+    "4714",
+    "3223",
+    "844",
+    "1221",
+    "4063",
+    "2544",
+    "3063",
+    "657",
+    "663",
+    "4716",
+    "4715",
+    "3185",
+    "1616",
+    "578",
+    "4467",
+    "743",
+    "582",
+    "3603",
+    "3443",
+    "5029",
+    "3103",
+]
 
 demarcations = {
-    'Andalucia': 15,
-    'Aragon': 34,
-    'Asturias': 13,
-    'Cantabria': 29,
-    'Catalunya': 1,
-    'Castilla la Mancha': 38,
-    'Castilla y Leon': 4,
-    'Comunidad Valenciana': 6,
-    'Extremadura': 32,
-    'Galicia': 24,
-    'Islas Baleares': 10,
-    'Islas Canarias': 37,
-    'La Rioja': 31,
-    'Madrid': 19,
-    'Murcia': 12,
-    'Navarra': 35,
-    'Pais Vasco': 36
+    "Andalucia": 15,
+    "Aragon": 34,
+    "Asturias": 13,
+    "Cantabria": 29,
+    "Catalunya": 1,
+    "Castilla la Mancha": 38,
+    "Castilla y Leon": 4,
+    "Comunidad Valenciana": 6,
+    "Extremadura": 32,
+    "Galicia": 24,
+    "Islas Baleares": 10,
+    "Islas Canarias": 37,
+    "La Rioja": 31,
+    "Madrid": 19,
+    "Murcia": 12,
+    "Navarra": 35,
+    "Pais Vasco": 36,
 }
 
-default_demarcation = demarcations['Galicia']
+default_demarcation = demarcations["Galicia"]
 
-app_dir = os.path.join(os.environ.get('HOME'), '.xmltv')
+app_dir = os.path.join(os.environ.get("HOME"), ".xmltv")
 use_multithread = True
 
-log_file = 'tv_grab_es_movistartv.log'
+log_file = "tv_grab_es_movistartv.log"
 log_level = logging.INFO
 log_size = 5  # MB
 
-cookie_file = 'tv_grab_es_movistartv.cookie'
-end_points_file = 'tv_grab_es_movistartv.endpoints'
+cookie_file = "tv_grab_es_movistartv.cookie"
+end_points_file = "tv_grab_es_movistartv.endpoints"
 
 max_credits = 4
 
 end_points = {
-    'epNoCach1': 'http://www-60.svc.imagenio.telefonica.net:2001',
-    'epNoCach2': 'http://nc2.svc.imagenio.telefonica.net:2001',
-    'epNoCach4': 'http://nc4.svc.imagenio.telefonica.net:2001',
-    'epNoCach5': 'http://nc5.svc.imagenio.telefonica.net:2001',
-    'epNoCach6': 'http://nc6.svc.imagenio.telefonica.net:2001'
+    "epNoCach1": "http://www-60.svc.imagenio.telefonica.net:2001",
+    "epNoCach2": "http://nc2.svc.imagenio.telefonica.net:2001",
+    "epNoCach4": "http://nc4.svc.imagenio.telefonica.net:2001",
+    "epNoCach5": "http://nc5.svc.imagenio.telefonica.net:2001",
+    "epNoCach6": "http://nc6.svc.imagenio.telefonica.net:2001",
 }
 
-lang = {
-    'es': {'lang': 'es'},
-    'en': {'lang': 'en'}
-}
+lang = {"es": {"lang": "es"}, "en": {"lang": "en"}}
 
 genre_map = {
-    '0': {
-        '0': 'Arts / Culture (without music)',
-        '1': 'Popular culture / Traditional arts',
-        '2': 'Popular culture / Traditional arts',
-        '3': 'Arts magazines / Culture magazines',
-        '4': 'Fine arts',
-        '5': 'Fashion',
-        '6': 'Broadcasting / Press',
-        '7': 'Performing arts',
-        '8': 'Performing arts',
-        '9': 'Arts magazines / Culture magazines',
-        'A': 'New media',
-        'B': 'Popular culture / Traditional arts',
-        'C': 'Film / Cinema',
-        'D': 'Arts magazines / Culture magazines',
-        'E': 'Performing arts',
-        'F': 'Experimental film / Video'
+    "0": {
+        "0": "Arts / Culture (without music)",
+        "1": "Popular culture / Traditional arts",
+        "2": "Popular culture / Traditional arts",
+        "3": "Arts magazines / Culture magazines",
+        "4": "Fine arts",
+        "5": "Fashion",
+        "6": "Broadcasting / Press",
+        "7": "Performing arts",
+        "8": "Performing arts",
+        "9": "Arts magazines / Culture magazines",
+        "A": "New media",
+        "B": "Popular culture / Traditional arts",
+        "C": "Film / Cinema",
+        "D": "Arts magazines / Culture magazines",
+        "E": "Performing arts",
+        "F": "Experimental film / Video",
     },
-    '1': {
-        '0': 'Movie / Drama',
-        '1': 'Adventure / Western / War',
-        '2': 'Romance',
-        '3': 'Soap / Melodrama / Folkloric',
-        '4': 'Serious / Classical / Religious / Historical movie / Drama',
-        '5': 'Science fiction / Fantasy / Horror',
-        '6': 'Detective / Thriller',
-        '7': 'Comedy',
-        '8': 'Serious / Classical / Religious / Historical movie / Drama',
-        '9': 'Movie / drama',
-        'A': 'Adventure / Western / War',
-        'B': 'Movie / drama',
-        'C': 'Adult movie / Drama',
-        'D': 'Science fiction / Fantasy / Horror',
-        'E': 'Adult movie / Drama',
-        'F': 'Science fiction / Fantasy / Horror'
+    "1": {
+        "0": "Movie / Drama",
+        "1": "Adventure / Western / War",
+        "2": "Romance",
+        "3": "Soap / Melodrama / Folkloric",
+        "4": "Serious / Classical / Religious / Historical movie / Drama",
+        "5": "Science fiction / Fantasy / Horror",
+        "6": "Detective / Thriller",
+        "7": "Comedy",
+        "8": "Serious / Classical / Religious / Historical movie / Drama",
+        "9": "Movie / drama",
+        "A": "Adventure / Western / War",
+        "B": "Movie / drama",
+        "C": "Adult movie / Drama",
+        "D": "Science fiction / Fantasy / Horror",
+        "E": "Adult movie / Drama",
+        "F": "Science fiction / Fantasy / Horror",
     },
-    '2': {
-        '0': 'Social / Political issues / Economics',
-        '1': 'Magazines / Reports / Documentary',
-        '2': 'Economics / Social advisory',
-        '3': 'Social / Political issues / Economics',
-        '4': 'Social / Political issues / Economics',
-        '5': 'Social / Political issues / Economics',
-        '6': 'Social / Political issues / Economics',
-        '7': 'Social / Political issues / Economics',
-        '8': 'Social / Political issues / Economics',
-        '9': 'Social / Political issues / Economics',
-        'A': 'Social / Political issues / Economics',
-        'B': 'Social / Political issues / Economics',
-        'C': 'Social / Political issues / Economics',
-        'D': 'Social / Political issues / Economics',
-        'E': 'Social / Political issues / Economics',
-        'F': 'Social / Political issues / Economics',
+    "2": {
+        "0": "Social / Political issues / Economics",
+        "1": "Magazines / Reports / Documentary",
+        "2": "Economics / Social advisory",
+        "3": "Social / Political issues / Economics",
+        "4": "Social / Political issues / Economics",
+        "5": "Social / Political issues / Economics",
+        "6": "Social / Political issues / Economics",
+        "7": "Social / Political issues / Economics",
+        "8": "Social / Political issues / Economics",
+        "9": "Social / Political issues / Economics",
+        "A": "Social / Political issues / Economics",
+        "B": "Social / Political issues / Economics",
+        "C": "Social / Political issues / Economics",
+        "D": "Social / Political issues / Economics",
+        "E": "Social / Political issues / Economics",
+        "F": "Social / Political issues / Economics",
     },
-    '4': {
-        '0': 'Sports',
-        '1': 'Motor sport',
-        '2': 'Team sports (excluding football)',
-        '3': 'Water sport',
-        '4': 'Team sports (excluding football)',
-        '5': 'Team sports (excluding football)',
-        '6': 'Martial sports',
-        '7': 'Football / Soccer',
-        '8': 'Water sport',
-        '9': 'Team sports (excluding football)',
-        'A': 'Athletics',
-        'B': 'Sports',
-        'C': 'Motor sport',
-        'D': 'Sports',
-        'E': 'Sports',
-        'F': 'Tennis / Squash'
+    "4": {
+        "0": "Sports",
+        "1": "Motor sport",
+        "2": "Team sports (excluding football)",
+        "3": "Water sport",
+        "4": "Team sports (excluding football)",
+        "5": "Team sports (excluding football)",
+        "6": "Martial sports",
+        "7": "Football / Soccer",
+        "8": "Water sport",
+        "9": "Team sports (excluding football)",
+        "A": "Athletics",
+        "B": "Sports",
+        "C": "Motor sport",
+        "D": "Sports",
+        "E": "Sports",
+        "F": "Tennis / Squash",
     },
-    '5': {
-        '0': 'Children\'s / Youth programs',
-        '1': 'Entertainment programs for 10 to 16',
-        '2': 'Pre-school children\'s programs',
-        '3': 'Entertainment programs for 6 to 14',
-        '4': 'Children\'s / Youth programs',
-        '5': 'Informational / Educational / School programs',
-        '6': 'Entertainment programs for 6 to 14',
-        '7': 'Children\'s / Youth programs',
-        '8': 'Children\'s / Youth programs',
-        '9': 'Children\'s / Youth programs',
-        'A': 'Children\'s / Youth programs',
-        'B': 'Children\'s / Youth programs',
-        'C': 'Children\'s / Youth programs',
-        'D': 'Children\'s / Youth programs',
-        'E': 'Children\'s / Youth programs',
-        'F': 'Children\'s / Youth programs'
+    "5": {
+        "0": "Children's / Youth programs",
+        "1": "Entertainment programs for 10 to 16",
+        "2": "Pre-school children's programs",
+        "3": "Entertainment programs for 6 to 14",
+        "4": "Children's / Youth programs",
+        "5": "Informational / Educational / School programs",
+        "6": "Entertainment programs for 6 to 14",
+        "7": "Children's / Youth programs",
+        "8": "Children's / Youth programs",
+        "9": "Children's / Youth programs",
+        "A": "Children's / Youth programs",
+        "B": "Children's / Youth programs",
+        "C": "Children's / Youth programs",
+        "D": "Children's / Youth programs",
+        "E": "Children's / Youth programs",
+        "F": "Children's / Youth programs",
     },
-    '6': {
-        '0': 'Music / Ballet / Dance',
-        '1': 'Musical / Opera',
-        '2': 'Serious music / Classical music',
-        '3': 'Rock / Pop',
-        '4': 'Music / Ballet / Dance',
-        '5': 'Music / Ballet / Dance',
-        '6': 'Music / Ballet / Dance',
-        '7': 'Musical / Opera',
-        '8': 'Ballet',
-        '9': 'Jazz',
-        'A': 'Music / Ballet / Dance',
-        'B': 'Rock / Pop',
-        'C': 'Music / Ballet / Dance',
-        'D': 'Music / Ballet / Dance',
-        'E': 'Music / Ballet / Dance',
-        'F': 'Music / Ballet / Dance'
+    "6": {
+        "0": "Music / Ballet / Dance",
+        "1": "Musical / Opera",
+        "2": "Serious music / Classical music",
+        "3": "Rock / Pop",
+        "4": "Music / Ballet / Dance",
+        "5": "Music / Ballet / Dance",
+        "6": "Music / Ballet / Dance",
+        "7": "Musical / Opera",
+        "8": "Ballet",
+        "9": "Jazz",
+        "A": "Music / Ballet / Dance",
+        "B": "Rock / Pop",
+        "C": "Music / Ballet / Dance",
+        "D": "Music / Ballet / Dance",
+        "E": "Music / Ballet / Dance",
+        "F": "Music / Ballet / Dance",
     },
-    '7': {
-        '0': 'Show / Game show',
-        '1': 'Variety show',
-        '2': 'Variety show',
-        '3': 'Variety show',
-        '4': 'Talk show',
-        '5': 'Variety show',
-        '6': 'Variety show',
-        '7': 'Variety show',
-        '8': 'Variety show',
-        '9': 'Variety show',
-        'A': 'Variety show',
-        'B': 'Show / Game show',
-        'C': 'Talk show',
-        'D': 'Show / Game show',
-        'E': 'Show / Game show',
-        'F': 'Show / Game show'
+    "7": {
+        "0": "Show / Game show",
+        "1": "Variety show",
+        "2": "Variety show",
+        "3": "Variety show",
+        "4": "Talk show",
+        "5": "Variety show",
+        "6": "Variety show",
+        "7": "Variety show",
+        "8": "Variety show",
+        "9": "Variety show",
+        "A": "Variety show",
+        "B": "Show / Game show",
+        "C": "Talk show",
+        "D": "Show / Game show",
+        "E": "Show / Game show",
+        "F": "Show / Game show",
     },
-    '8': {
-        '0': 'Education / Science / Factual topics',
-        '1': 'Further education',
-        '2': 'Social / Spiritual sciences',
-        '3': 'Medicine / Physiology / Psychology',
-        '4': 'Social / Spiritual sciences',
-        '5': 'Technology / Natural sciences',
-        '6': 'Social / Spiritual sciences',
-        '7': 'Education / Science / Factual topics',
-        '8': 'Further education',
-        '9': 'Nature / Animals / Environment',
-        'A': 'Foreign countries / Expeditions',
-        'B': 'Further education',
-        'C': 'Social / Spiritual sciences',
-        'D': 'Further education',
-        'E': 'Education / Science / Factual topics',
-        'F': 'Education / Science / Factual topics'
+    "8": {
+        "0": "Education / Science / Factual topics",
+        "1": "Further education",
+        "2": "Social / Spiritual sciences",
+        "3": "Medicine / Physiology / Psychology",
+        "4": "Social / Spiritual sciences",
+        "5": "Technology / Natural sciences",
+        "6": "Social / Spiritual sciences",
+        "7": "Education / Science / Factual topics",
+        "8": "Further education",
+        "9": "Nature / Animals / Environment",
+        "A": "Foreign countries / Expeditions",
+        "B": "Further education",
+        "C": "Social / Spiritual sciences",
+        "D": "Further education",
+        "E": "Education / Science / Factual topics",
+        "F": "Education / Science / Factual topics",
     },
-    '9': {
-        '0': 'Movie / Drama',
-        '1': 'Adult movie / Drama',
-        '2': 'Adult movie / Drama',
-        '3': 'Adult movie / Drama',
-        '4': 'Adult movie / Drama',
-        '5': 'Adult movie / Drama',
-        '6': 'Adult movie / Drama',
-        '7': 'Adult movie / Drama',
-        '8': 'Adult movie / Drama',
-        '9': 'Adult movie / Drama',
-        'A': 'Adult movie / Drama',
-        'B': 'Adult movie / Drama',
-        'C': 'Adult movie / Drama',
-        'D': 'Adult movie / Drama',
-        'E': 'Adult movie / Drama',
-        'F': 'Adult movie / Drama'
-    }
+    "9": {
+        "0": "Movie / Drama",
+        "1": "Adult movie / Drama",
+        "2": "Adult movie / Drama",
+        "3": "Adult movie / Drama",
+        "4": "Adult movie / Drama",
+        "5": "Adult movie / Drama",
+        "6": "Adult movie / Drama",
+        "7": "Adult movie / Drama",
+        "8": "Adult movie / Drama",
+        "9": "Adult movie / Drama",
+        "A": "Adult movie / Drama",
+        "B": "Adult movie / Drama",
+        "C": "Adult movie / Drama",
+        "D": "Adult movie / Drama",
+        "E": "Adult movie / Drama",
+        "F": "Adult movie / Drama",
+    },
 }
 
-age_rating = ['0', '0', '0', '7', '12', '16', '17', '18']
+age_rating = ["0", "0", "0", "7", "12", "16", "17", "18"]
 
 
 class Error(Exception):
@@ -273,14 +298,12 @@ class Error(Exception):
 
 
 class MulticastError(Error):
-
-    def __init__(self, message=''):
+    def __init__(self, message=""):
         if message:
-            self.message = message.replace('\n', '')
+            self.message = message.replace("\n", "")
 
 
 class MulticastEPGFetcher(Thread):
-
     def __init__(self, queue):
         Thread.__init__(self, daemon=True)
         self.queue = queue
@@ -288,15 +311,11 @@ class MulticastEPGFetcher(Thread):
     def run(self):
         while True:
             mcast = self.queue.get()
-            iptv.get_day(mcast['mcast_grp'],
-                         mcast['mcast_port'],
-                         mcast['source'],
-                         mcast['day'])
+            iptv.get_day(mcast["mcast_grp"], mcast["mcast_port"], mcast["source"], mcast["day"])
             self.queue.task_done()
 
 
 class Cache:
-
     def __init__(self):
         self.__programs = {}
         self.__end_points = None
@@ -305,23 +324,23 @@ class Cache:
 
     @staticmethod
     def __check_dirs():
-        cache_path = f'{app_dir}/cache'
-        progs_path = f'{cache_path}/programs'
+        cache_path = f"{app_dir}/cache"
+        progs_path = f"{cache_path}/programs"
         if not os.path.isdir(cache_path):
-            logger.info(f'Creando caché en {cache_path}')
+            logger.info(f"Creando caché en {cache_path}")
             os.mkdir(cache_path)
         if not os.path.isdir(progs_path):
             os.mkdir(progs_path)
 
     @staticmethod
     def __clean():
-        for file in glob.glob(f'{app_dir}/cache/programs/*.json'):
+        for file in glob.glob(f"{app_dir}/cache/programs/*.json"):
             try:
                 with open(file) as f:
-                    _data = json.load(f)['data']
-                _exp_date = int(_data['endTime'] / 1000)
+                    _data = json.load(f)["data"]
+                _exp_date = int(_data["endTime"] / 1000)
                 if _exp_date < deadline:
-                    logger.info(f'Caché: {file} caducado [{time.ctime(_exp_date)}]')
+                    logger.info(f"Caché: {file} caducado [{time.ctime(_exp_date)}]")
                     os.remove(file)
             except (IOError, KeyError, ValueError):
                 pass
@@ -329,20 +348,20 @@ class Cache:
     @staticmethod
     def __load(cfile):
         try:
-            with open(f'{app_dir}/cache/{cfile}', 'r') as f:
-                return json.load(f)['data']
+            with open(f"{app_dir}/cache/{cfile}", "r") as f:
+                return json.load(f)["data"]
         except (IOError, KeyError, ValueError):
             return None
 
     @staticmethod
     def __save(cfile, data):
-        with open(f'{app_dir}/cache/{cfile}', 'w') as f:
+        with open(f"{app_dir}/cache/{cfile}", "w") as f:
             try:
-                json.dump({'data': data}, f, ensure_ascii=False, indent=4, sort_keys=True)
+                json.dump({"data": data}, f, ensure_ascii=False, indent=4, sort_keys=True)
             except AttributeError:
-                json.dump({'data': data}, f, ensure_ascii=False, sort_keys=True)
+                json.dump({"data": data}, f, ensure_ascii=False, sort_keys=True)
 
-        logger.debug(f'Cache: {cfile} guardado')
+        logger.debug(f"Cache: {cfile} guardado")
 
     def load_cookie(self):
         data = self.__load(cookie_file)
@@ -350,68 +369,67 @@ class Cache:
         return data
 
     def save_cookie(self, data):
-        logger.debug(f'Set-Cookie: {data}')
+        logger.debug(f"Set-Cookie: {data}")
         self.__save(cookie_file, data)
 
     def load_end_points(self):
         if not self.__end_points:
-            logger.info('End Points: buscando')
+            logger.info("End Points: buscando")
             self.__end_points = self.__load(end_points_file)
         if not self.__end_points:
-            logger.warning('End Points: por defecto')
+            logger.warning("End Points: por defecto")
             return end_points
         return self.__end_points
 
     def save_end_points(self, data):
-        logger.info(f'Nuevos End Points: {data.keys()}')
+        logger.info(f"Nuevos End Points: {data.keys()}")
         self.__end_points = data
         self.__save(end_points_file, data)
 
     def load_epg_extended_info(self, pid):
         if pid in self.__programs:
             return self.__programs[pid]
-        return self.__load(f'programs/{pid}.json')
+        return self.__load(f"programs/{pid}.json")
 
     def save_epg_extended_info(self, data):
-        self.__programs[data['productID']] = data
-        self.__save('programs/%s.json' % data['productID'], data)
+        self.__programs[data["productID"]] = data
+        self.__save("programs/%s.json" % data["productID"], data)
 
     def load_config(self):
-        data = self.__load('config.json')
+        data = self.__load("config.json")
         if not data:
-            logger.warning()('Caché: configuración no encontrada')
+            logger.warning()("Caché: configuración no encontrada")
         return data
 
     def save_config(self, data):
-        self.__save('config.json', data)
+        self.__save("config.json", data)
 
     def load_service_provider_data(self):
-        data = self.__load('provider.json')
+        data = self.__load("provider.json")
         if not data:
-            logger.warning('Caché: datos del Proveedor de Servicios no encontrados')
+            logger.warning("Caché: datos del Proveedor de Servicios no encontrados")
         return data
 
     def save_service_provider_data(self, data):
-        self.__save('provider.json', data)
+        self.__save("provider.json", data)
 
     def save_epg_data(self, data):
-        self.__save('epg_metadata.json', data)
+        self.__save("epg_metadata.json", data)
 
     def load_cloud_epg(self):
-        return self.__load('cloud.json')
+        return self.__load("cloud.json")
 
     def load_epg(self):
-        data = self.__load('epg.json')
+        data = self.__load("epg.json")
         if not data:
-            logger.warning('Caché: EPG no encontrada')
+            logger.warning("Caché: EPG no encontrada")
         return data
 
     def save_epg(self, data):
-        self.__save('epg.json', data)
+        self.__save("epg.json", data)
 
 
 class MovistarTV:
-
     def __init__(self):
         self.__cookie = cache.load_cookie()
         self.__end_points_down = []
@@ -420,80 +438,73 @@ class MovistarTV:
     def __get_client_profile(self):
         # noinspection PyBroadException
         try:
-            logger.info('Descargando configuración del cliente')
-            return self.__get_service_data('getClientProfile')['resultData']
+            logger.info("Descargando configuración del cliente")
+            return self.__get_service_data("getClientProfile")["resultData"]
         except Exception as ex:
-            logger.error(f'__get_client_profile: {repr(ex)}')
-            logger.error('Usando la configuración de cliente por defecto: %i|ALL|1'
-                         % default_demarcation)
-            return {
-                'tvPackages': 'ALL',
-                'demarcation': str(default_demarcation),
-                'tvWholesaler': 1
-            }
+            logger.error(f"__get_client_profile: {repr(ex)}")
+            logger.error("Usando la configuración de cliente por defecto: %i|ALL|1" % default_demarcation)
+            return {"tvPackages": "ALL", "demarcation": str(default_demarcation), "tvWholesaler": 1}
 
     def __get_platform_profile(self):
         # noinspection PyBroadException
         try:
-            logger.info('Descargando perfil del servicio')
-            return self.__get_service_data('getPlatformProfile')['resultData']
+            logger.info("Descargando perfil del servicio")
+            return self.__get_service_data("getPlatformProfile")["resultData"]
         except Exception as ex:
-            logger.error(f'__get_platform_profile: {repr(ex)}')
-            logger.error('Usando el perfil del servicio por defecto')
+            logger.error(f"__get_platform_profile: {repr(ex)}")
+            logger.error("Usando el perfil del servicio por defecto")
             return {
-                'RES_BASE_URI': 'http://www-60.svc.imagenio.telefonica.net:2001'
-                                '/appclientv/nux/',
-                'dvbConfig': {'dvbEntryPoint': '239.0.2.129:3937'},
-                'endPoints': end_points
+                "RES_BASE_URI": "http://www-60.svc.imagenio.telefonica.net:2001" "/appclientv/nux/",
+                "dvbConfig": {"dvbEntryPoint": "239.0.2.129:3937"},
+                "endPoints": end_points,
             }
 
     def __get_config_params(self):
         # noinspection PyBroadException
         try:
-            logger.info('Descargando parámetros de configuración')
-            return self.__get_service_data('getConfigurationParams')['resultData']
+            logger.info("Descargando parámetros de configuración")
+            return self.__get_service_data("getConfigurationParams")["resultData"]
         except Exception as ex:
-            logger.error(f'__get_config_params: {repr(ex)}')
-            logger.error('Usando los parámetros de configuración por defecto')
+            logger.error(f"__get_config_params: {repr(ex)}")
+            logger.error("Usando los parámetros de configuración por defecto")
             return {
-                'tvChannelLogoPath': 'incoming/epg/channelLogo/',
-                'tvCoversPath': 'incoming/covers/programmeImages/',
-                'landscapeSubPath': 'landscape/',
-                'bigSubpath': 'big/'
+                "tvChannelLogoPath": "incoming/epg/channelLogo/",
+                "tvCoversPath": "incoming/covers/programmeImages/",
+                "landscapeSubPath": "landscape/",
+                "bigSubpath": "big/",
             }
 
     def __get_genres(self, tv_wholesaler):
         try:
-            logger.info('Descargando mapa de géneros')
-            return self.__get_service_data('getEpgSubGenres&tvWholesaler='
-                                           f'{tv_wholesaler}')['resultData']
+            logger.info("Descargando mapa de géneros")
+            return self.__get_service_data("getEpgSubGenres&tvWholesaler=" f"{tv_wholesaler}")["resultData"]
         except Exception as ex:
-            logger.error(f'Mapa de géneros no encontrado: {repr(ex)}')
+            logger.error(f"Mapa de géneros no encontrado: {repr(ex)}")
             return None
 
     def get_epg_extended_info(self, pid, channel_id):
         try:
             data = cache.load_epg_extended_info(pid)
         except Exception as ex:
-            logger.warning(f'get_epg_extended_info {repr(ex)}')
+            logger.warning(f"get_epg_extended_info {repr(ex)}")
             pass
         if not data:
-            logger.debug(f'Descargando info extendida: {pid}')
+            logger.debug(f"Descargando info extendida: {pid}")
             try:
-                print('.', flush=True, end='')
-                data = self.__get_service_data(f'epgInfov2&productID={pid}'
-                                               f'&channelID={channel_id}'
-                                               f'&extra=1')['resultData']
+                print(".", flush=True, end="")
+                data = self.__get_service_data(
+                    f"epgInfov2&productID={pid}" f"&channelID={channel_id}" f"&extra=1"
+                )["resultData"]
                 cache.save_epg_extended_info(data)
             except Exception as ex:
-                logger.error(f'Información extendida no encontrada: {pid} {repr(ex)}')
+                logger.error(f"Información extendida no encontrada: {pid} {repr(ex)}")
                 return None
         return data
 
     @staticmethod
     def __get_end_points():
         try:
-            return config['end_points']
+            return config["end_points"]
         except KeyError:
             return cache.load_end_points()
 
@@ -501,7 +512,7 @@ class MovistarTV:
         eps = self.__get_end_points()
         if last_used:
             self.__end_points_down.append(last_used)
-            logger.error(f'End Point {last_used} desactivado')
+            logger.error(f"End Point {last_used} desactivado")
         for ep in sorted(eps):
             if eps[ep] not in self.__end_points_down:
                 return eps[ep]
@@ -524,33 +535,34 @@ class MovistarTV:
     def get_service_config(self):
         cfg = cache.load_config()
         if cfg:
-            logger.info('tvPackages: %s' % cfg['tvPackages'])
-            logger.info('Demarcation: %s' % cfg['demarcation'])
+            logger.info("tvPackages: %s" % cfg["tvPackages"])
+            logger.info("Demarcation: %s" % cfg["demarcation"])
             return cfg
         client = self.__get_client_profile()
         platform = self.__get_platform_profile()
         params = self.__get_config_params()
-        dvb_entry_point = platform['dvbConfig']['dvbipiEntryPoint'].split(':')
-        logger.info('tvPackages: %s' % client['tvPackages'])
-        logger.info('Demarcation: %s' % client['demarcation'])
+        dvb_entry_point = platform["dvbConfig"]["dvbipiEntryPoint"].split(":")
+        logger.info("tvPackages: %s" % client["tvPackages"])
+        logger.info("Demarcation: %s" % client["demarcation"])
         conf = {
-            'tvPackages': client['tvPackages'],
-            'demarcation': client['demarcation'],
-            'tvWholesaler': client['tvWholesaler'],
-            'end_points': self.__update_end_points(platform['endPoints']),
-            'mcast_grp': dvb_entry_point[0],
-            'mcast_port': int(dvb_entry_point[1]),
-            'tvChannelLogoPath': '%s%s' % (platform['RES_BASE_URI'],
-                                           params['tvChannelLogoPath']),
-            'tvCoversPath': '%s%s%s290x429/' % (platform['RES_BASE_URI'],
-                                                params['tvCoversPath'],
-                                                params['portraitSubPath']),
-            'tvCoversLandscapePath': '%s%s%s%s' % (
-                platform['RES_BASE_URI'],
-                params['tvCoversPath'],
-                params['landscapeSubPath'],
-                params['bigSubpath']),
-            'genres': self.__get_genres(client['tvWholesaler'])}
+            "tvPackages": client["tvPackages"],
+            "demarcation": client["demarcation"],
+            "tvWholesaler": client["tvWholesaler"],
+            "end_points": self.__update_end_points(platform["endPoints"]),
+            "mcast_grp": dvb_entry_point[0],
+            "mcast_port": int(dvb_entry_point[1]),
+            "tvChannelLogoPath": "%s%s" % (platform["RES_BASE_URI"], params["tvChannelLogoPath"]),
+            "tvCoversPath": "%s%s%s290x429/"
+            % (platform["RES_BASE_URI"], params["tvCoversPath"], params["portraitSubPath"]),
+            "tvCoversLandscapePath": "%s%s%s%s"
+            % (
+                platform["RES_BASE_URI"],
+                params["tvCoversPath"],
+                params["landscapeSubPath"],
+                params["bigSubpath"],
+            ),
+            "genres": self.__get_genres(client["tvWholesaler"]),
+        }
         cache.save_config(conf)
         return conf
 
@@ -561,7 +573,7 @@ class MovistarTV:
         while True:
             ep = self.get_end_point(ep)
             if not ep:
-                logger.error('Servicio Web de Movistar TV caído: decargando guía básica')
+                logger.error("Servicio Web de Movistar TV caído: decargando guía básica")
                 self.__web_service_down = True
                 return None
             __attempts = 4
@@ -569,31 +581,31 @@ class MovistarTV:
                 try:
                     headers = {}
                     if self.__cookie:
-                        for ck in self.__cookie.split('; '):
-                            if '=' in ck:
-                                headers['Cookie'] = self.__cookie
-                    url = f'{ep}/appserver/mvtv.do?action={action}'
+                        for ck in self.__cookie.split("; "):
+                            if "=" in ck:
+                                headers["Cookie"] = self.__cookie
+                    url = f"{ep}/appserver/mvtv.do?action={action}"
                     response = httpx.get(url, headers=headers)
                     content = response.json()
                     if response.status_code == 200:
-                        new_cookie = response.headers['set-cookie'] \
-                            if 'set-cookie' in response.headers else None
+                        new_cookie = (
+                            response.headers["set-cookie"] if "set-cookie" in response.headers else None
+                        )
                         if new_cookie and not self.__cookie:
                             self.__cookie = new_cookie
                             cache.save_cookie(self.__cookie)
                         elif new_cookie and new_cookie != self.__cookie:
                             cache.save_cookie(new_cookie)
                         return content
-                    raise ValueError(f'{response}')
+                    raise ValueError(f"{response}")
                 except Exception as ex:
-                    logger.debug(f'__get_service_data: {repr(ex)}')
+                    logger.debug(f"__get_service_data: {repr(ex)}")
                     __attempts -= 1
-                    logger.warning(f'Timeout: {ep}, reintentos: {__attempts}')
+                    logger.warning(f"Timeout: {ep}, reintentos: {__attempts}")
                     continue
 
 
 class MulticastIPTV:
-
     def __init__(self):
         self.__xml_data = {}
         self.__epg = None
@@ -602,39 +614,40 @@ class MulticastIPTV:
     def __parse_chunk(data):
         try:
             chunk = {
-                "end": struct.unpack('B', data[:1])[0],
-                "size": struct.unpack('>HB', data[1:4])[0],
-                "filetype": struct.unpack('B', data[4:5])[0],
-                "fileid": struct.unpack('>H', data[5:7])[0] & 0x0fff,
-                "chunk_number": struct.unpack('>H', data[8:10])[0] >> 4,
-                "chunk_total": struct.unpack('B', data[10:11])[0],
-                "data": data[12:].decode(encoding='latin1')
+                "end": struct.unpack("B", data[:1])[0],
+                "size": struct.unpack(">HB", data[1:4])[0],
+                "filetype": struct.unpack("B", data[4:5])[0],
+                "fileid": struct.unpack(">H", data[5:7])[0] & 0x0FFF,
+                "chunk_number": struct.unpack(">H", data[8:10])[0] >> 4,
+                "chunk_total": struct.unpack("B", data[10:11])[0],
+                "data": data[12:].decode(encoding="latin1"),
             }
             return chunk
         except Exception as ex:
-            raise MulticastError(f'get_chunk: error al analizar los datos {repr(ex)}')
+            raise MulticastError(f"get_chunk: error al analizar los datos {repr(ex)}")
 
     def __get_xml_files(self, mc_grp, mc_port):
         loop = True
         max_files = 1000
         _files = {}
-        first_file = ''
+        first_file = ""
         sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM, socket.IPPROTO_UDP)
         sock.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
         sock.settimeout(3)
         sock.bind((mc_grp, int(mc_port)))
         sock.setsockopt(socket.SOL_IP, socket.IP_MULTICAST_IF, socket.inet_aton(_iptv))
-        sock.setsockopt(socket.SOL_IP, socket.IP_ADD_MEMBERSHIP,
-                        socket.inet_aton(mc_grp) + socket.inet_aton(_iptv))
+        sock.setsockopt(
+            socket.SOL_IP, socket.IP_ADD_MEMBERSHIP, socket.inet_aton(mc_grp) + socket.inet_aton(_iptv)
+        )
         # Wait for an end chunk to start by the beginning
         while True:
             try:
                 chunk = self.__parse_chunk(sock.recv(1500))
-                if (chunk["end"]):
+                if chunk["end"]:
                     first_file = str(chunk["filetype"]) + "_" + str(chunk["fileid"])
                     break
             except Exception as ex:
-                logger.warning(f'Error al descargar los archivos XML: {repr(ex)}')
+                logger.warning(f"Error al descargar los archivos XML: {repr(ex)}")
         # Loop until firstfile
         while loop:
             try:
@@ -649,154 +662,151 @@ class MulticastIPTV:
                 # Discard last 4bytes binary footer?
                 xmldata += body[:-4]
                 _files[str(chunk["filetype"]) + "_" + str(chunk["fileid"])] = xmldata
-                logger.debug('XML: %s_%s' % (chunk["filetype"], chunk["fileid"]))
-                print('.', flush=True, end='')
+                logger.debug("XML: %s_%s" % (chunk["filetype"], chunk["fileid"]))
+                print(".", flush=True, end="")
                 max_files -= 1
-                if str(chunk["filetype"]) + "_" + str(chunk["fileid"]) == first_file \
-                        or max_files == 0:
-                    logger.info(f'{mc_grp}:{mc_port} -> XML descargado')
+                if str(chunk["filetype"]) + "_" + str(chunk["fileid"]) == first_file or max_files == 0:
+                    logger.info(f"{mc_grp}:{mc_port} -> XML descargado")
                     loop = False
             except Exception as ex:
-                logger.warning(f'Error al descargar los archivos XML: {repr(ex)}')
+                logger.warning(f"Error al descargar los archivos XML: {repr(ex)}")
         sock.close()
         return _files
 
     @staticmethod
     def __get_channels(xml_channels):
-        root = ElTr.fromstring(xml_channels.replace('\n', ' '))
+        root = ElTr.fromstring(xml_channels.replace("\n", " "))
         services = root[0][0].findall("{urn:dvb:ipisdns:2006}SingleService")
         channel_list = {}
         for i in services:
-            channel_id = 'unknown'
+            channel_id = "unknown"
             try:
-                channel_id = i[1].attrib['ServiceName']
+                channel_id = i[1].attrib["ServiceName"]
                 channel_list[channel_id] = {
-                    'id': channel_id,
-                    'address': i[0][0].attrib['Address'],
-                    'port': i[0][0].attrib['Port'],
-                    'name': i[2][0].text.encode('latin1').decode(),
-                    'shortname': i[2][1].text.encode('latin1').decode(),
-                    'genre': i[2][3][0].text.encode('latin1').decode(),
-                    'logo_uri': i[1].attrib['logoURI'] if 'logoURI' in i[1].attrib
-                                                          else 'MAY_1/imSer/4146.jpg'}
-                if i[2][4].tag == '{urn:dvb:ipisdns:2006}ReplacementService':
-                    channel_list[channel_id]['replacement'] = \
-                        i[2][4][0].attrib['ServiceName']
+                    "id": channel_id,
+                    "address": i[0][0].attrib["Address"],
+                    "port": i[0][0].attrib["Port"],
+                    "name": i[2][0].text.encode("latin1").decode(),
+                    "shortname": i[2][1].text.encode("latin1").decode(),
+                    "genre": i[2][3][0].text.encode("latin1").decode(),
+                    "logo_uri": i[1].attrib["logoURI"]
+                    if "logoURI" in i[1].attrib
+                    else "MAY_1/imSer/4146.jpg",
+                }
+                if i[2][4].tag == "{urn:dvb:ipisdns:2006}ReplacementService":
+                    channel_list[channel_id]["replacement"] = i[2][4][0].attrib["ServiceName"]
             except (KeyError, IndexError) as ex:
-                logger.debug(f'El canal {channel_id} no tiene la estructura correcta: {repr(ex)}')
-        logger.info('Canales: %i' % len(channel_list))
+                logger.debug(f"El canal {channel_id} no tiene la estructura correcta: {repr(ex)}")
+        logger.info("Canales: %i" % len(channel_list))
         return channel_list
 
     @staticmethod
     def __get_packages(xml):
-        root = ElTr.fromstring(xml.replace('\n', ' '))
+        root = ElTr.fromstring(xml.replace("\n", " "))
         packages = root[0].findall("{urn:dvb:ipisdns:2006}Package")
         package_list = {}
         for package in packages:
-            package_name = 'unknown'
+            package_name = "unknown"
             try:
                 package_name = package[0].text
                 package_list[package_name] = {
-                    'id': package.attrib['Id'],
-                    'name': package_name,
-                    'services': {}}
+                    "id": package.attrib["Id"],
+                    "name": package_name,
+                    "services": {},
+                }
                 for service in package:
-                    if not service.tag == '{urn:dvb:ipisdns:2006}PackageName':
-                        service_id = service[0].attrib['ServiceName']
-                        package_list[package_name]['services'][service_id] = \
-                            service[1].text
+                    if not service.tag == "{urn:dvb:ipisdns:2006}PackageName":
+                        service_id = service[0].attrib["ServiceName"]
+                        package_list[package_name]["services"][service_id] = service[1].text
             except (KeyError, ElTr.ParseError) as ex:
-                logger.error(f'El paquete {package_name} no tiene la estructura correcta: {repr(ex)}')
-        logger.info(f'Paquetes: {len(package_list)}')
+                logger.error(f"El paquete {package_name} no tiene la estructura correcta: {repr(ex)}")
+        logger.info(f"Paquetes: {len(package_list)}")
         return package_list
 
     @staticmethod
     def __get_segments(xml):
-        root = ElTr.fromstring(xml.replace('\n', ' '))
+        root = ElTr.fromstring(xml.replace("\n", " "))
         payloads = root[0][1][1].findall("{urn:dvb:ipisdns:2006}DVBBINSTP")
         segment_list = {}
         for segments in payloads:
-            source = 'unknown'
+            source = "unknown"
             try:
-                source = segments.attrib['Source']
+                source = segments.attrib["Source"]
                 segment_list[source] = {
-                    'Source': source,
-                    'Port': segments.attrib['Port'],
-                    'Address': segments.attrib['Address'],
-                    'Segments': {}}
+                    "Source": source,
+                    "Port": segments.attrib["Port"],
+                    "Address": segments.attrib["Address"],
+                    "Segments": {},
+                }
                 for segment in segments[0]:
-                    segment_id = segment.attrib['ID']
-                    segment_list[source]['Segments'][segment_id] = \
-                        segment.attrib['Version']
+                    segment_id = segment.attrib["ID"]
+                    segment_list[source]["Segments"][segment_id] = segment.attrib["Version"]
             except KeyError:
-                logger.warning(f'El segmento {source} no tiene la estructura correcta')
-        logger.info('Días de EPG: %i' % len(segment_list))
+                logger.warning(f"El segmento {source} no tiene la estructura correcta")
+        logger.info("Días de EPG: %i" % len(segment_list))
         return segment_list
 
     @staticmethod
     def __get_demarcation_name():
         for demarcation in demarcations:
-            if demarcations[demarcation] == config['demarcation']:
+            if demarcations[demarcation] == config["demarcation"]:
                 return demarcation
-        return config['demarcation']
+        return config["demarcation"]
 
     def __get_service_provider_ip(self):
         try:
-            logger.info('Buscando el Proveedor de Servicios de %s'
-                        % self.__get_demarcation_name())
+            logger.info("Buscando el Proveedor de Servicios de %s" % self.__get_demarcation_name())
             data = cache.load_service_provider_data()
             if not data:
-                xml = self.__get_xml_files(config['mcast_grp'],
-                                           config['mcast_port'])['1_0']
+                xml = self.__get_xml_files(config["mcast_grp"], config["mcast_port"])["1_0"]
                 result = re.findall(
-                    'DEM_' + str(config['demarcation']) +
-                    '\..*?Address=\"(.*?)\".*?\s*Port=\"(.*?)\".*?', xml, re.DOTALL)[0]
-                data = {
-                    'mcast_grp': result[0],
-                    'mcast_port': result[1]
-                }
+                    "DEM_" + str(config["demarcation"]) + '\..*?Address="(.*?)".*?\s*Port="(.*?)".*?',
+                    xml,
+                    re.DOTALL,
+                )[0]
+                data = {"mcast_grp": result[0], "mcast_port": result[1]}
                 cache.save_service_provider_data(data)
-            logger.info('Proveedor de Servicios de %s: %s'
-                        % (self.__get_demarcation_name(), data['mcast_grp']))
+            logger.info(
+                "Proveedor de Servicios de %s: %s" % (self.__get_demarcation_name(), data["mcast_grp"])
+            )
             return data
         except Exception as ex:
-            logger.error(f'Usando el Proveedor de Servicios por defecto: 239.0.2.150 {repr(ex)}')
-            return {
-                'mcast_grp': '239.0.2.150',
-                'mcast_port': '3937'
-            }
+            logger.error(f"Usando el Proveedor de Servicios por defecto: 239.0.2.150 {repr(ex)}")
+            return {"mcast_grp": "239.0.2.150", "mcast_port": "3937"}
 
     def __get_bin_epg(self):
         self.__epg = []
-        for key in sorted(self.__xml_data['segments']):
-            logger.info(f'Descargando {key}')
-            self.__epg.append(self.__get_xml_files(
-                self.__xml_data['segments'][key]['Address'],
-                self.__xml_data['segments'][key]['Port'])
+        for key in sorted(self.__xml_data["segments"]):
+            logger.info(f"Descargando {key}")
+            self.__epg.append(
+                self.__get_xml_files(
+                    self.__xml_data["segments"][key]["Address"], self.__xml_data["segments"][key]["Port"]
+                )
             )
 
     def get_day(self, mcast_grp, mcast_port, source, day):
-        logger.info('Descargando XML ' + source.split('.')[0] +
-                    f' -> {mcast_grp}:{mcast_port}')
+        logger.info("Descargando XML " + source.split(".")[0] + f" -> {mcast_grp}:{mcast_port}")
         self.__epg[day] = self.__get_xml_files(mcast_grp, mcast_port)
 
     def __get_bin_epg_threaded(self):
         queue = Queue()
         threads = epg_threads
         day = -1
-        self.__epg = [{} for r in range(0, len(self.__xml_data['segments']))]
-        logger.info(f'Multithread: {threads} descargas simultáneas')
+        self.__epg = [{} for r in range(0, len(self.__xml_data["segments"]))]
+        logger.info(f"Multithread: {threads} descargas simultáneas")
         for n in range(threads):
             process = MulticastEPGFetcher(queue)
             process.start()
-        for key in sorted(self.__xml_data['segments']):
+        for key in sorted(self.__xml_data["segments"]):
             day += 1
-            queue.put({
-                'mcast_grp': self.__xml_data['segments'][key]['Address'],
-                'mcast_port': self.__xml_data['segments'][key]['Port'],
-                'source': key,
-                'day': day,
-            })
+            queue.put(
+                {
+                    "mcast_grp": self.__xml_data["segments"][key]["Address"],
+                    "mcast_port": self.__xml_data["segments"][key]["Port"],
+                    "source": key,
+                    "day": day,
+                }
+            )
         queue.join()
 
     @staticmethod
@@ -804,16 +814,18 @@ class MulticastIPTV:
         clean_channels = {}
         for channel in list(set(epg) & set(epg_channels)):
             clean_channels[channel] = epg[channel]
-        logger.info(f'Conservando {len(clean_channels)} canales en abierto')
+        logger.info(f"Conservando {len(clean_channels)} canales en abierto")
         return clean_channels
 
     def __get_sane_epg(self, epg):
         sane_epg = {}
         for channel_key in epg:
-            _channels = self.__xml_data['channels']
+            _channels = self.__xml_data["channels"]
             for channel_id in _channels:
-                if 'replacement' in _channels[channel_id] and \
-                        _channels[channel_id]['replacement'] == channel_key:
+                if (
+                    "replacement" in _channels[channel_id]
+                    and _channels[channel_id]["replacement"] == channel_key
+                ):
                     sane_epg[channel_id] = epg[channel_key]
                     break
             if channel_id not in sane_epg:
@@ -825,8 +837,11 @@ class MulticastIPTV:
 
     def get_epg(self):
         cached_epg = cache.load_epg()
-        cached_epg = self.__drop_encrypted_channels(self.__get_sane_epg(cached_epg)) \
-            if '1' in cached_epg else self.__drop_encrypted_channels(cached_epg)
+        cached_epg = (
+            self.__drop_encrypted_channels(self.__get_sane_epg(cached_epg))
+            if "1" in cached_epg
+            else self.__drop_encrypted_channels(cached_epg)
+        )
         if use_multithread:
             self.__get_bin_epg_threaded()
         else:
@@ -834,25 +849,25 @@ class MulticastIPTV:
         new_epg = self.__drop_encrypted_channels(self.__get_sane_epg(self.__parse_bin_epg()))
 
         fixed = 0
-        logger.info('Comprobando si el nuevo EPG necesita arreglos...')
+        logger.info("Comprobando si el nuevo EPG necesita arreglos...")
         for channel in new_epg:
             sorted_new_epg = sorted(new_epg[channel])
             for i in range(len(sorted_new_epg) - 1):
-                _end = new_epg[channel][sorted_new_epg[i]]['end']
-                _next = new_epg[channel][sorted_new_epg[i + 1]]['start']
+                _end = new_epg[channel][sorted_new_epg[i]]["end"]
+                _next = new_epg[channel][sorted_new_epg[i + 1]]["start"]
                 if _end > _next:
-                    logger.debug(f'{channel} {sorted_new_epg[i]} end={_end} >> next={_next}')
-                    new_epg[channel][sorted_new_epg[i]]['end'] = _next
+                    logger.debug(f"{channel} {sorted_new_epg[i]} end={_end} >> next={_next}")
+                    new_epg[channel][sorted_new_epg[i]]["end"] = _next
                     fixed += 1
         if fixed:
-            logger.debug(f'NUEVO EPG CONTENíA ERRORES DE PROGRAMAS QUE SE PISABAN')
-            logger.debug(f'{fixed} programas acababan después de que el siguiente empezara')
+            logger.debug("NUEVO EPG CONTENíA ERRORES DE PROGRAMAS QUE SE PISABAN")
+            logger.debug(f"{fixed} programas acababan después de que el siguiente empezara")
 
         if not cached_epg:
-            logger.warning('Sin caché de EPG guardada')
+            logger.warning("Sin caché de EPG guardada")
             return new_epg
 
-        logger.info(f'Fecha de caducidad: [{time.ctime(deadline)}]')
+        logger.info(f"Fecha de caducidad: [{time.ctime(deadline)}]")
 
         broken = 0
         expired = 0
@@ -862,7 +877,7 @@ class MulticastIPTV:
             else:
                 clean_channel_epg = {}
                 for timestamp in sorted(cached_epg[channel]):
-                    if cached_epg[channel][timestamp]['end'] < deadline:
+                    if cached_epg[channel][timestamp]["end"] < deadline:
                         expired += 1
                         continue
                     clean_channel_epg[int(timestamp)] = cached_epg[channel][timestamp]
@@ -874,32 +889,37 @@ class MulticastIPTV:
             prev_end = 0
             sorted_new_epg = sorted(new_epg[channel])
             new_timestamp = sorted_new_epg[0]
-            newest_timestamp = new_epg[channel][sorted_new_epg[-1]]['end']
+            newest_timestamp = new_epg[channel][sorted_new_epg[-1]]["end"]
             stales = []
             for timestamp in sorted(cached_epg[channel]):
                 if prev_end > timestamp:
-                    if timestamp < new_timestamp or timestamp > newest_timestamp \
-                            or timestamp not in new_epg[channel]:
+                    if (
+                        timestamp < new_timestamp
+                        or timestamp > newest_timestamp
+                        or timestamp not in new_epg[channel]
+                    ):
                         stales.append(timestamp)
                         continue
-                prev_end = cached_epg[channel][timestamp]['end']
+                prev_end = cached_epg[channel][timestamp]["end"]
             if not stales:
                 continue
             for timestamp in stales:
-                del(cached_epg[channel][timestamp])
+                del cached_epg[channel][timestamp]
             new_nr_entries = len(cached_epg[channel])
             if new_nr_entries != nr_entries:
                 _broken = nr_entries - new_nr_entries
-                _s = 's' if _broken > 1 else ''
-                logger.info(f'[{channel}] {nr_entries} => {new_nr_entries}: '
-                            f'{_broken} Evento{_s} de EPG roto{_s} eliminado{_s}')
+                _s = "s" if _broken > 1 else ""
+                logger.info(
+                    f"[{channel}] {nr_entries} => {new_nr_entries}: "
+                    f"{_broken} Evento{_s} de EPG roto{_s} eliminado{_s}"
+                )
                 broken += _broken
 
-        logger.info(f'Canales con EPG: {len(cached_epg)}')
+        logger.info(f"Canales con EPG: {len(cached_epg)}")
         nr_epg = 0
         for channel in cached_epg:
             nr_epg += len(cached_epg[channel])
-        logger.info(f'Entradas en el EPG: Total: {nr_epg} Caducados: {expired} Rotos: {broken}')
+        logger.info(f"Entradas en el EPG: Total: {nr_epg} Caducados: {expired} Rotos: {broken}")
 
         cache.save_epg(cached_epg)
         return cached_epg
@@ -907,46 +927,46 @@ class MulticastIPTV:
     def __get_epg_data(self, mcast_grp, mcast_port):
         while True:
             xml = self.__get_xml_files(mcast_grp, mcast_port)
-            _msg = '[' + " ".join(sorted(xml)) + '] / [2_0 5_0 6_0]'
-            if '2_0' in xml and '5_0' in xml and '6_0' in xml:
-                print('', flush=True)
-                logger.info(f'Ficheros XML descargados: {_msg}')
+            _msg = "[" + " ".join(sorted(xml)) + "] / [2_0 5_0 6_0]"
+            if "2_0" in xml and "5_0" in xml and "6_0" in xml:
+                print("", flush=True)
+                logger.info(f"Ficheros XML descargados: {_msg}")
                 break
             else:
-                logger.warning(f'Ficheros XML incompletos: {_msg}')
+                logger.warning(f"Ficheros XML incompletos: {_msg}")
                 time.sleep(10)
-        logger.info('Descargando canales y paquetes')
-        self.__xml_data['channels'] = self.__get_channels(xml['2_0'])
-        self.__xml_data['packages'] = self.__get_packages(xml['5_0'])
-        logger.info('Descargando índices')
-        self.__xml_data['segments'] = self.__get_segments(xml['6_0'])
+        logger.info("Descargando canales y paquetes")
+        self.__xml_data["channels"] = self.__get_channels(xml["2_0"])
+        self.__xml_data["packages"] = self.__get_packages(xml["5_0"])
+        logger.info("Descargando índices")
+        self.__xml_data["segments"] = self.__get_segments(xml["6_0"])
         cache.save_epg_data(self.__xml_data)
 
     def get_service_provider_data(self):
         if not self.__xml_data:
             connection = self.__get_service_provider_ip()
-            self.__get_epg_data(connection['mcast_grp'], connection['mcast_port'])
+            self.__get_epg_data(connection["mcast_grp"], connection["mcast_port"])
         return self.__xml_data
 
     @staticmethod
     def __decode_string(string):
-        _t = (''.join(chr(char ^ 0x15) for char in string)).encode('latin1').decode()
-        return _t.replace('&quot;', '«', 1).replace('&quot;', '»', 1)
+        _t = ("".join(chr(char ^ 0x15) for char in string)).encode("latin1").decode()
+        return _t.replace("&quot;", "«", 1).replace("&quot;", "»", 1)
 
     @staticmethod
     def __parse_bin_epg_header(data):
-        data = data.encode('latin1')
+        data = data.encode("latin1")
         try:
-            body = struct.unpack('B', data[6:7])[0] + 7
+            body = struct.unpack("B", data[6:7])[0] + 7
             return {
-                'size': struct.unpack('>H', data[1:3])[0],
-                'service_id': struct.unpack('>H', data[3:5])[0],
-                'service_version': struct.unpack('B', data[5:6])[0],
-                'service_url': data[7:body],
-                'data': data[body:]
+                "size": struct.unpack(">H", data[1:3])[0],
+                "service_id": struct.unpack(">H", data[3:5])[0],
+                "service_version": struct.unpack("B", data[5:6])[0],
+                "service_url": data[7:body],
+                "data": data[body:],
             }
         except Exception as ex:
-            logger.error(f'Error al procesar la cabecera: {repr(ex)}')
+            logger.error(f"Error al procesar la cabecera: {repr(ex)}")
             raise
 
     def __parse_bin_epg_body(self, data):
@@ -954,40 +974,37 @@ class MulticastIPTV:
         try:
             programs = {}
             while epg_dt:
-                start = struct.unpack('>I', epg_dt[4:8])[0]
-                duration = struct.unpack('>H', epg_dt[8:10])[0]
-                title_end = struct.unpack('B', epg_dt[31:32])[0] + 32
-                episode = struct.unpack('B', epg_dt[title_end + 8:title_end + 9])[0]
-                season = struct.unpack('B', epg_dt[title_end + 11:title_end + 12])[0]
+                start = struct.unpack(">I", epg_dt[4:8])[0]
+                duration = struct.unpack(">H", epg_dt[8:10])[0]
+                title_end = struct.unpack("B", epg_dt[31:32])[0] + 32
+                episode = struct.unpack("B", epg_dt[title_end + 8: title_end + 9])[0]
+                season = struct.unpack("B", epg_dt[title_end + 11: title_end + 12])[0]
                 full_title = self.__decode_string(epg_dt[32:title_end])
-                serie_id = struct.unpack('>H', epg_dt[title_end + 5:title_end + 7])[0]
+                serie_id = struct.unpack(">H", epg_dt[title_end + 5: title_end + 7])[0]
                 meta_data = get_title_meta(full_title, serie_id)
                 programs[start] = {
-                    'pid': struct.unpack('>I', epg_dt[:4])[0],
-                    'start': start,
-                    'duration': duration,
-                    'end': start + duration,
-                    'genre': '{:02X}'.format(struct.unpack('B', epg_dt[20:21])[0]),
-                    'age_rating': struct.unpack('B', epg_dt[24:25])[0],
-                    'full_title': meta_data['full_title'],
-                    'serie_id': serie_id,
-                    'episode': meta_data['episode'] if meta_data['episode'] else episode,
-                    'year': str(struct.unpack('>H', epg_dt[title_end + 9:title_end + 11])[0]),
-                    'serie': meta_data['serie'],
-                    'season': meta_data['season'] if meta_data['season'] else season,
-                    'is_serie': meta_data['is_serie']
+                    "pid": struct.unpack(">I", epg_dt[:4])[0],
+                    "start": start,
+                    "duration": duration,
+                    "end": start + duration,
+                    "genre": "{:02X}".format(struct.unpack("B", epg_dt[20:21])[0]),
+                    "age_rating": struct.unpack("B", epg_dt[24:25])[0],
+                    "full_title": meta_data["full_title"],
+                    "serie_id": serie_id,
+                    "episode": meta_data["episode"] if meta_data["episode"] else episode,
+                    "year": str(struct.unpack(">H", epg_dt[title_end + 9: title_end + 11])[0]),
+                    "serie": meta_data["serie"],
+                    "season": meta_data["season"] if meta_data["season"] else season,
+                    "is_serie": meta_data["is_serie"],
                 }
-                if meta_data['episode_title']:
-                    programs[start]['episode_title'] = meta_data['episode_title']
-                pr_title_end = \
-                    struct.unpack('B', epg_dt[title_end + 12:title_end + 13])[0] \
-                    + title_end + 13
+                if meta_data["episode_title"]:
+                    programs[start]["episode_title"] = meta_data["episode_title"]
+                pr_title_end = struct.unpack("B", epg_dt[title_end + 12: title_end + 13])[0] + title_end + 13
                 cut = pr_title_end if pr_title_end else title_end
-                epg_dt \
-                    = epg_dt[struct.unpack('B', epg_dt[cut + 3:cut + 4])[0] + cut + 4:]
+                epg_dt = epg_dt[struct.unpack("B", epg_dt[cut + 3: cut + 4])[0] + cut + 4:]
             return programs
         except Exception as ex:
-            logger.error(f'Error al procesar la guía: {repr(ex)}')
+            logger.error(f"Error al procesar la guía: {repr(ex)}")
             raise
 
     def __merge_dicts(self, dict1, dict2, path=None):
@@ -999,7 +1016,7 @@ class MulticastIPTV:
                 elif dict1[key] == dict2[key]:
                     pass
                 else:
-                    raise ValueError('Conflicto en %s' % '.'.join(path + [str(key)]))
+                    raise ValueError("Conflicto en %s" % ".".join(path + [str(key)]))
             else:
                 dict1[key] = dict2[key]
         return dict1
@@ -1009,163 +1026,175 @@ class MulticastIPTV:
         for epg_day in self.__epg:
             programs = {}
             for ch_id in epg_day:
-                if epg_day[ch_id] and 'replacement' not in epg_day[ch_id]:
+                if epg_day[ch_id] and "replacement" not in epg_day[ch_id]:
                     head = self.__parse_bin_epg_header(epg_day[ch_id])
-                    programs[str(head['service_id'])] \
-                        = self.__parse_bin_epg_body(head['data'])
+                    programs[str(head["service_id"])] = self.__parse_bin_epg_body(head["data"])
             self.__merge_dicts(merged_epg, programs)
-        logger.info(f'Canales con EPG: {len(merged_epg)}')
+        logger.info(f"Canales con EPG: {len(merged_epg)}")
         cache.save_epg(merged_epg)
         return merged_epg
 
 
 class XMLTV:
-
     def __init__(self, data):
-        self.__channels = data['channels']
-        self.__packages = data['packages']
+        self.__channels = data["channels"]
+        self.__packages = data["packages"]
 
     def generate_xml(self, parsed_epg):
-        logger.info('Generando la guía XMLTV...')
-        root = ElTr.Element('tv', {
-            'date': datetime.now().strftime('%Y%m%d%H%M%S'),
-            'generator_info_url': 'http://wiki.xmltv.org/index.php/XMLTVFormat'})
+        logger.info("Generando la guía XMLTV...")
+        root = ElTr.Element(
+            "tv",
+            {
+                "date": datetime.now().strftime("%Y%m%d%H%M%S"),
+                "generator_info_url": "http://wiki.xmltv.org/index.php/XMLTVFormat",
+            },
+        )
         tz = int(abs(time.timezone / 3600)) + time.localtime().tm_isdst
         services = self.__get_client_channels()
         for channel_id in sorted(services, key=lambda key: int(services[key])):
             if channel_id in self.__channels:
-                tag_channel = ElTr.Element('channel',
-                                           {'id': f'{channel_id}.movistar.tv'})
-                tag_dname = ElTr.SubElement(tag_channel, 'display-name')
-                tag_dname.text = self.__channels[channel_id]['name']
+                tag_channel = ElTr.Element("channel", {"id": f"{channel_id}.movistar.tv"})
+                tag_dname = ElTr.SubElement(tag_channel, "display-name")
+                tag_dname.text = self.__channels[channel_id]["name"]
                 root.append(tag_channel)
             else:
-                logger.debug(f'El canal {channel_id} no tiene EPG')
+                logger.debug(f"El canal {channel_id} no tiene EPG")
         for channel_id in sorted(services, key=lambda key: int(services[key])):
             if channel_id in self.__channels and channel_id in parsed_epg:
                 if channel_id not in epg_channels:
-                    logger.info(f'XML: Saltando canal encriptado {channel_id}')
+                    logger.info(f"XML: Saltando canal encriptado {channel_id}")
                     continue
                 for program in sorted(parsed_epg[channel_id]):
-                    root.append(self.__build_programme_tag(channel_id,
-                                                           parsed_epg[channel_id][program],
-                                                           tz))
-        print('', flush=True)
+                    root.append(self.__build_programme_tag(channel_id, parsed_epg[channel_id][program], tz))
+        print("", flush=True)
         return ElTr.ElementTree(root)
 
     @staticmethod
     def __get_genre_and_subgenre(code):
         return {
-            'genre': genre_map[code[0]]['0'],
-            'sub-genre': None if code[1] == '0' else genre_map[code[0]][code[1]]
+            "genre": genre_map[code[0]]["0"],
+            "sub-genre": None if code[1] == "0" else genre_map[code[0]][code[1]],
         }
 
     @staticmethod
     def __get_key_and_subkey(code, genres):
         if not genres:
             return None
-        genre = next(genre for genre in genres if genre['id'].upper() == (code[0]
-                     if code[0] == '0' else ('%s%s' % (code[0], '0')).upper()))
-        subgenre = None \
-            if code[1] == '0' else next(subgenre for subgenre in genre['subgenres']
-                                        if subgenre['id'].upper() == (code[1].upper()
-                                        if code[0] == '0'
-                                        else ('%s%s' % (code[0], code[1])).upper()))
-        return {
-            'key': genre['name'],
-            'sub-key': subgenre['name'] if subgenre else None
-        }
+        genre = next(
+            genre
+            for genre in genres
+            if genre["id"].upper() == (code[0] if code[0] == "0" else ("%s%s" % (code[0], "0")).upper())
+        )
+        subgenre = (
+            None
+            if code[1] == "0"
+            else next(
+                subgenre
+                for subgenre in genre["subgenres"]
+                if subgenre["id"].upper()
+                == (code[1].upper() if code[0] == "0" else ("%s%s" % (code[0], code[1])).upper())
+            )
+        )
+        return {"key": genre["name"], "sub-key": subgenre["name"] if subgenre else None}
 
     @staticmethod
     def __get_series_data(program, ext_info):
-        episode = program['episode']
-        season = program['season']
-        stitle = program['episode_title'] if 'episode_title' in program else ''
+        episode = program["episode"]
+        season = program["season"]
+        stitle = program["episode_title"] if "episode_title" in program else ""
         return {
-            'title': program['serie'] if program['serie'] else program['full_title'],
-            'sub-title': stitle if not stitle.startswith('Episod') else '',
-            'season': season,
-            'episode': episode
+            "title": program["serie"] if program["serie"] else program["full_title"],
+            "sub-title": stitle if not stitle.startswith("Episod") else "",
+            "season": season,
+            "episode": episode,
         }
 
     def __build_programme_tag(self, channel_id, program, tz):
-        start = datetime.fromtimestamp(program['start']).strftime('%Y%m%d%H%M%S')
-        stop = datetime.fromtimestamp(program['end']).strftime('%Y%m%d%H%M%S')
-        tag_programme = ElTr.Element('programme', {
-            'channel': f'{channel_id}.movistar.tv',
-            'start': f'{start} +0{tz}00',
-            'stop': f'{stop} +0{tz}00'})
-        tag_title = ElTr.SubElement(tag_programme, 'title', lang['es'])
-        tag_title.text = program['full_title']
-        tag_desc = ElTr.SubElement(tag_programme, 'desc', lang['es'])
-        tag_desc.text = 'Año: ' + program['year'] + '. '
-        ext_info = mtv.get_epg_extended_info(program['pid'], channel_id)
-        orig_title = ext_info['originalTitle'] \
-            if ext_info and 'originalTitle' in ext_info else None
-        if orig_title and \
-                orig_title not in program['full_title'] and not orig_title.startswith('Episod'):
-            tag_desc.text += f'«{orig_title}» '
-        gens = self.__get_genre_and_subgenre(program['genre'])
-        keys = self.__get_key_and_subkey(program['genre'], config['genres'])
+        start = datetime.fromtimestamp(program["start"]).strftime("%Y%m%d%H%M%S")
+        stop = datetime.fromtimestamp(program["end"]).strftime("%Y%m%d%H%M%S")
+        tag_programme = ElTr.Element(
+            "programme",
+            {
+                "channel": f"{channel_id}.movistar.tv",
+                "start": f"{start} +0{tz}00",
+                "stop": f"{stop} +0{tz}00",
+            },
+        )
+        tag_title = ElTr.SubElement(tag_programme, "title", lang["es"])
+        tag_title.text = program["full_title"]
+        tag_desc = ElTr.SubElement(tag_programme, "desc", lang["es"])
+        tag_desc.text = "Año: " + program["year"] + ". "
+        ext_info = mtv.get_epg_extended_info(program["pid"], channel_id)
+        orig_title = ext_info["originalTitle"] if ext_info and "originalTitle" in ext_info else None
+        if orig_title and orig_title not in program["full_title"] and not orig_title.startswith("Episod"):
+            tag_desc.text += f"«{orig_title}» "
+        gens = self.__get_genre_and_subgenre(program["genre"])
+        keys = self.__get_key_and_subkey(program["genre"], config["genres"])
         # Series
-        if program['is_serie'] or program['serie_id'] > 0:
+        if program["is_serie"] or program["serie_id"] > 0:
             tsse = self.__get_series_data(program, ext_info)
-            tag_title.text = tsse['title']
-            tag_stitle = ElTr.SubElement(tag_programme, 'sub-title', lang['es'])
-            tag_stitle.text = tsse['sub-title']
-            tag_date = ElTr.SubElement(tag_programme, 'date')
-            tag_date.text = program['year']
-            tag_episode_num = ElTr.SubElement(tag_programme,
-                                              'episode-num',
-                                              {'system': 'xmltv_ns'})
-            tag_episode_num.text = str(int(tsse['season']) - 1 if tsse['season'] else '') \
-                + '.' + str(int(tsse['episode']) - 1 if tsse['episode'] else '')
+            tag_title.text = tsse["title"]
+            tag_stitle = ElTr.SubElement(tag_programme, "sub-title", lang["es"])
+            tag_stitle.text = tsse["sub-title"]
+            tag_date = ElTr.SubElement(tag_programme, "date")
+            tag_date.text = program["year"]
+            tag_episode_num = ElTr.SubElement(tag_programme, "episode-num", {"system": "xmltv_ns"})
+            tag_episode_num.text = (
+                str(int(tsse["season"]) - 1 if tsse["season"] else "")
+                + "."
+                + str(int(tsse["episode"]) - 1 if tsse["episode"] else "")
+            )
         # Películas y otros
         elif ext_info:
-            if 'productionDate' in ext_info:
-                if 'Movie' in gens['genre']:
-                    tag_stitle = ElTr.SubElement(tag_programme, 'sub-title', lang['es'])
-                    tag_stitle.text = str(ext_info['productionDate'])
-                tag_date = ElTr.SubElement(tag_programme, 'date')
-                tag_date.text = str(ext_info['productionDate'])
-                tag_desc.text = 'Año: ' + tag_date.text + '. '
+            if "productionDate" in ext_info:
+                if "Movie" in gens["genre"]:
+                    tag_stitle = ElTr.SubElement(tag_programme, "sub-title", lang["es"])
+                    tag_stitle.text = str(ext_info["productionDate"])
+                tag_date = ElTr.SubElement(tag_programme, "date")
+                tag_date.text = str(ext_info["productionDate"])
+                tag_desc.text = "Año: " + tag_date.text + ". "
         # Comunes a los tres
         if ext_info:
-            if ('mainActors' or 'directors') in ext_info:
-                tag_credits = ElTr.SubElement(tag_programme, 'credits')
-                if 'directors' in ext_info:
-                    tag_desc.text += ','.join(ext_info['directors'])
-                    tag_desc.text += '. '
-                    length = len(ext_info['directors']) \
-                        if len(ext_info['directors']) <= max_credits else max_credits
-                    for director in ext_info['directors'][:length]:
-                        tag_director = ElTr.SubElement(tag_credits, 'director')
+            if ("mainActors" or "directors") in ext_info:
+                tag_credits = ElTr.SubElement(tag_programme, "credits")
+                if "directors" in ext_info:
+                    tag_desc.text += ",".join(ext_info["directors"])
+                    tag_desc.text += ". "
+                    length = (
+                        len(ext_info["directors"])
+                        if len(ext_info["directors"]) <= max_credits
+                        else max_credits
+                    )
+                    for director in ext_info["directors"][:length]:
+                        tag_director = ElTr.SubElement(tag_credits, "director")
                         tag_director.text = director.strip()
-                if 'mainActors' in ext_info:
-                    tag_desc.text += ','.join(ext_info['mainActors'])
-                    tag_desc.text += '.'
-                    length = len(ext_info['mainActors']) \
-                        if len(ext_info['mainActors']) <= max_credits else max_credits
-                    for actor in ext_info['mainActors'][:length]:
-                        tag_actor = ElTr.SubElement(tag_credits, 'actor')
+                if "mainActors" in ext_info:
+                    tag_desc.text += ",".join(ext_info["mainActors"])
+                    tag_desc.text += "."
+                    length = (
+                        len(ext_info["mainActors"])
+                        if len(ext_info["mainActors"]) <= max_credits
+                        else max_credits
+                    )
+                    for actor in ext_info["mainActors"][:length]:
+                        tag_actor = ElTr.SubElement(tag_credits, "actor")
                         tag_actor.text = actor.strip()
-            ElTr.SubElement(tag_programme, 'icon', {
-                'src': f'http://{sanic}/Covers/' + ext_info['cover']})
-            tag_desc.text += '\n\n' + ext_info['description']
-        tag_rating = ElTr.SubElement(tag_programme, 'rating', {'system': 'pl'})
-        tag_value = ElTr.SubElement(tag_rating, 'value')
-        tag_value.text = age_rating[program['age_rating']]
-        tag_category = ElTr.SubElement(tag_programme, 'category', lang['en'])
-        tag_category.text = gens['genre']
-        if gens['sub-genre']:
-            tag_subcategory = ElTr.SubElement(tag_programme, 'category', {'lang': 'en'})
-            tag_subcategory.text = gens['sub-genre']
+            ElTr.SubElement(tag_programme, "icon", {"src": f"http://{sanic}/Covers/" + ext_info["cover"]})
+            tag_desc.text += "\n\n" + ext_info["description"]
+        tag_rating = ElTr.SubElement(tag_programme, "rating", {"system": "pl"})
+        tag_value = ElTr.SubElement(tag_rating, "value")
+        tag_value.text = age_rating[program["age_rating"]]
+        tag_category = ElTr.SubElement(tag_programme, "category", lang["en"])
+        tag_category.text = gens["genre"]
+        if gens["sub-genre"]:
+            tag_subcategory = ElTr.SubElement(tag_programme, "category", {"lang": "en"})
+            tag_subcategory.text = gens["sub-genre"]
         if keys:
-            tag_keyword = ElTr.SubElement(tag_programme, 'keyword')
-            tag_keyword.text = keys['key']
-            if keys['sub-key']:
-                tag_subkeyword = ElTr.SubElement(tag_programme, 'keyword')
-                tag_subkeyword.text = keys['sub-key']
+            tag_keyword = ElTr.SubElement(tag_programme, "keyword")
+            tag_keyword.text = keys["key"]
+            if keys["sub-key"]:
+                tag_subkeyword = ElTr.SubElement(tag_programme, "keyword")
+                tag_subkeyword.text = keys["sub-key"]
         return tag_programme
 
     def write_m3u(self, file_path, cloud=None):
@@ -1174,19 +1203,18 @@ class XMLTV:
 
     def __get_client_channels(self):
         services = {}
-        for package in config['tvPackages'].split('|') \
-                if config['tvPackages'] != 'ALL' else self.__packages:
+        for package in config["tvPackages"].split("|") if config["tvPackages"] != "ALL" else self.__packages:
             if package in self.__packages:
-                services.update(self.__packages[package]['services'])
+                services.update(self.__packages[package]["services"])
         return services
 
     def __generate_m3u(self, cloud=None):
         m3u = '#EXTM3U name="'
-        m3u += 'Cloud ' if cloud else ''
+        m3u += "Cloud " if cloud else ""
         m3u += 'MovistarTV" catchup="flussonic" catchup-days='
-        m3u += '365 ' if cloud else '8 '
+        m3u += "365 " if cloud else "8 "
         m3u += f'dlna_extras=mpeg_ps_pal url-tvg="http://{sanic}/'
-        m3u += 'cloud.xml' if cloud else 'guide.xml'
+        m3u += "cloud.xml" if cloud else "guide.xml"
         m3u += '"\n'
         services = self.__get_client_channels()
         if cloud:
@@ -1200,36 +1228,35 @@ class XMLTV:
             channels = channels[1:] + channels[:1]
         for channel_id in channels:
             if channel_id in self.__channels:
-                channel_name = self.__channels[channel_id]['name']
-                channel_tag = 'Cloud' if cloud else 'IPTV'
-                channel_tag += ' - TDT Movistar.es'
+                channel_name = self.__channels[channel_id]["name"]
+                channel_tag = "Cloud" if cloud else "IPTV"
+                channel_tag += " - TDT Movistar.es"
                 channel_number = services[channel_id]
-                if channel_number == '0':
-                    channel_number = '999'
-                channel_logo = f'http://{sanic}/Logos/' + \
-                    self.__channels[channel_id]['logo_uri']
+                if channel_number == "0":
+                    channel_number = "999"
+                channel_logo = f"http://{sanic}/Logos/" + self.__channels[channel_id]["logo_uri"]
                 if channel_id not in epg_channels:
-                    logger.info('M3U: Saltando canal encriptado ' f'"{channel_name}" {channel_id}')
+                    logger.info("M3U: Saltando canal encriptado " f'"{channel_name}" {channel_id}')
                     continue
                 m3u += f'#EXTINF:-1 tvg-chnum="{channel_number}" '
                 m3u += f'tvg-id="{channel_id}.movistar.tv" '
                 m3u += f'group-title="{channel_tag}" '
                 m3u += f'tvg-logo="{channel_logo}" '
                 m3u += f'catchup-source="http://{sanic}'
-                m3u += '/cloud' if cloud else ''
-                m3u += f'/{channel_id}' + '/{utc}-{duration}.ts"'
-                m3u += f',{channel_name}\n'
-                m3u += '#KODIPROP:inputstream=inputstream.ffmpegdirect\n'
-                m3u += '#KODIPROP:inputstream.ffmpegdirect.stream_mode=timeshift\n'
-                m3u += '#KODIPROP:inputstream.ffmpegdirect.is_realtime_stream=true\n'
-                m3u += f'http://{sanic}'
-                m3u += '/cloud' if cloud else ''
-                m3u += f'/{channel_id}/live\n'
+                m3u += "/cloud" if cloud else ""
+                m3u += f"/{channel_id}" + '/{utc}-{duration}.ts"'
+                m3u += f",{channel_name}\n"
+                m3u += "#KODIPROP:inputstream=inputstream.ffmpegdirect\n"
+                m3u += "#KODIPROP:inputstream.ffmpegdirect.stream_mode=timeshift\n"
+                m3u += "#KODIPROP:inputstream.ffmpegdirect.is_realtime_stream=true\n"
+                m3u += f"http://{sanic}"
+                m3u += "/cloud" if cloud else ""
+                m3u += f"/{channel_id}/live\n"
         return m3u
 
     @staticmethod
     def __write_to_disk(file_path, content):
-        with codecs.open(file_path, 'w', 'UTF-8') as file_h:
+        with codecs.open(file_path, "w", "UTF-8") as file_h:
             file_h.write(content)
             file_h.close()
 
@@ -1237,73 +1264,73 @@ class XMLTV:
 def create_logger(argv):
     if not os.path.exists(app_dir):
         os.mkdir(app_dir)
-    log_path = f'{app_dir}/{log_file}'
-    handler = RotatingFileHandler(log_path,
-                                  mode='a',
-                                  maxBytes=log_size * 1048576,
-                                  backupCount=2,
-                                  encoding=None,
-                                  delay=0)
-    formatter = logging.Formatter('[%(asctime)s] [%(levelname)s] %(message)s',
-                                  '%Y-%m-%d %H:%M:%S')
+    log_path = f"{app_dir}/{log_file}"
+    handler = RotatingFileHandler(
+        log_path, mode="a", maxBytes=log_size * 1048576, backupCount=2, encoding=None, delay=0
+    )
+    formatter = logging.Formatter("[%(asctime)s] [%(levelname)s] %(message)s", "%Y-%m-%d %H:%M:%S")
     handler.setFormatter(formatter)
     handler.setLevel(log_level)
-    logger_h = logging.getLogger('movistartv.epg.xmltv')
+    logger_h = logging.getLogger("movistartv.epg.xmltv")
     logger_h.setLevel(log_level)
     logger_h.addHandler(handler)
-    logger_h.info('---------------------------------------------------')
-    logger_h.info('MovistarTV EPG Grabber')
-    logger_h.info('Parámetros: %s' % argv[1:])
-    logger_h.info('---------------------------------------------------')
+    logger_h.info("---------------------------------------------------")
+    logger_h.info("MovistarTV EPG Grabber")
+    logger_h.info("Parámetros: %s" % argv[1:])
+    logger_h.info("---------------------------------------------------")
     return logger_h
 
 
 def create_args_parser():
     now = datetime.now()
-    desc = 'Grab Movistar TV EPG guide via Multicast from %s to %s' % (
-        (now - timedelta(hours=2)).strftime('%d/%m/%Y'),
-        (now + timedelta(days=6)).strftime('%d/%m/%Y'))
+    desc = "Grab Movistar TV EPG guide via Multicast from %s to %s" % (
+        (now - timedelta(hours=2)).strftime("%d/%m/%Y"),
+        (now + timedelta(days=6)).strftime("%d/%m/%Y"),
+    )
     parser = argparse.ArgumentParser(description=desc)
-    parser.add_argument('--description',
-                        help="Show 'Spain (MovistarTV)'")
-    parser.add_argument('--capabilities',
-                        help='Show xmltv capabilities')
-    parser.add_argument('--m3u',
-                        help='Dump channels in m3u format to the specified file.')
-    parser.add_argument('--tvheadend',
-                        help="Grab EPG and dump channels in m3u format to the specified file.")
-    parser.add_argument('--output',
-                        help='Redirect the xmltv output to the specified file. '
-                             'Otherwise output goes to stdout.')
-    parser.add_argument('--cloud_m3u',
-                        help='Dump channels with Cloud Recordings in m3u format to the specified file.')
-    parser.add_argument('--cloud_recordings',
-                        help='Write xmltv for Cloud Recordings to the specified file.')
-    parser.add_argument('--reset',
-                        help='Delete saved configuration, log file and caches.')
+    parser.add_argument("--description", help="Show 'Spain (MovistarTV)'")
+    parser.add_argument("--capabilities", help="Show xmltv capabilities")
+    parser.add_argument("--m3u", help="Dump channels in m3u format to the specified file.")
+    parser.add_argument("--tvheadend", help="Grab EPG and dump channels in m3u format to the specified file.")
+    parser.add_argument(
+        "--output",
+        help="Redirect the xmltv output to the specified file. Otherwise output goes to stdout.",
+    )
+    parser.add_argument(
+        "--cloud_m3u", help="Dump channels with Cloud Recordings in m3u format to the specified file."
+    )
+    parser.add_argument("--cloud_recordings", help="Write xmltv for Cloud Recordings to the specified file.")
+    parser.add_argument("--reset", help="Delete saved configuration, log file and caches.")
     return parser
 
 
 def export_channels(m3u_file, cloud=None):
     xmltv.write_m3u(m3u_file, cloud)
-    logger.info(f'Lista de canales '
-                f'{"de Grabaciones en la Nube " if cloud else ""}'
-                f'exportada: {m3u_file}')
+    logger.info(
+        f"Lista de canales " f'{"de Grabaciones en la Nube " if cloud else ""}' f"exportada: {m3u_file}"
+    )
 
 
 # Determina la primera IP de rango local
-if 'LAN_IP' in os.environ:
-    lan_ip = os.getenv('LAN_IP')
+if "LAN_IP" in os.environ:
+    lan_ip = os.getenv("LAN_IP")
 else:
     lan_ip = [
-        line for line in ([ip for ip in socket.gethostbyname_ex(socket.gethostname())[2]
-                           if not ip.startswith("127.")][:1],
-                          [[(s.connect(('8.8.8.8', 53)), s.getsockname()[0],
-                           s.close()) for s in [socket.socket(socket.AF_INET,
-                                                socket.SOCK_DGRAM)]][0][1]]) if line][0][0]
+        line
+        for line in (
+            [ip for ip in socket.gethostbyname_ex(socket.gethostname())[2] if not ip.startswith("127.")][:1],
+            [
+                [
+                    (s.connect(("8.8.8.8", 53)), s.getsockname()[0], s.close())
+                    for s in [socket.socket(socket.AF_INET, socket.SOCK_DGRAM)]
+                ][0][1]
+            ],
+        )
+        if line
+    ][0][0]
 
 # Endpoint del backend principal
-sanic = f'{lan_ip}:' + os.getenv('SANIC_PORT', '8888')
+sanic = f"{lan_ip}:" + os.getenv("SANIC_PORT", "8888")
 
 # Determina la dirección IP para el IPTV
 s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
@@ -1312,7 +1339,7 @@ _iptv = s.getsockname()[0]
 s.close()
 
 # Número de hilos para descarga de la EPG
-epg_threads = int(os.getenv('EPG_THREADS', '4'))
+epg_threads = int(os.getenv("EPG_THREADS", "4"))
 
 # Guarda el timestamp de inicio
 time_start = int(time.time())
@@ -1331,7 +1358,7 @@ try:
         try:
             fcntl.flock(fh, fcntl.LOCK_EX | fcntl.LOCK_NB)
         except BlockingIOError:
-            sys.stderr.write(f'{__file__} ya se está ejecutando\n')
+            sys.stderr.write(f"{__file__} ya se está ejecutando\n")
             sys.exit(0)
 
     # Crea la caché
@@ -1369,13 +1396,13 @@ try:
     xml = epg_x.getroot()
     ElTr.indent(xml)
     if args.cloud_recordings:
-        logger.info(f'Guía XMLTV de Grabaciones en la Nube guardada: {args.cloud_recordings}')
+        logger.info(f"Guía XMLTV de Grabaciones en la Nube guardada: {args.cloud_recordings}")
         _saved = sys.stdout
-        sys.stdout = open(args.cloud_recordings, 'w')
+        sys.stdout = open(args.cloud_recordings, "w")
     if args.output:
-        logger.info(f'Guía XMLTV guardada: {args.output}')
+        logger.info(f"Guía XMLTV guardada: {args.output}")
         _saved = sys.stdout
-        sys.stdout = open(args.output, 'w')
+        sys.stdout = open(args.output, "w")
     if args.tvheadend:
         export_channels(args.tvheadend)
     print("<?xml version='1.0' encoding='UTF-8'?>", flush=True)
@@ -1385,14 +1412,19 @@ try:
 
     if not args.cloud_recordings:
         total = (int(time.time()) - time_start) / 60
-        logger.info('EPG de %i canales y %i días %s' % (
-            len(epg),
-            len(xdata['segments']),
-            'descargada en %i minutos' % total if total != 0 else
-            'generada en %i segundos' % (int(time.time()) - time_start)))
+        logger.info(
+            "EPG de %i canales y %i días %s"
+            % (
+                len(epg),
+                len(xdata["segments"]),
+                "descargada en %i minutos" % total
+                if total != 0
+                else "generada en %i segundos" % (int(time.time()) - time_start),
+            )
+        )
 
     sys.exit(0)
 
 except Exception as ex:
-    logger.critical(f'{repr(ex)}')
+    logger.critical(f"{repr(ex)}")
     sys.exit(1)

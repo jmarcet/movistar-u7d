@@ -1,5 +1,6 @@
 aiohttp
 asyncio_dgram
+black
 httpx
 json2xml
 python-ffmpeg
