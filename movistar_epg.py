@@ -6,6 +6,7 @@ import os
 import re
 import sys
 import time
+import tomli
 import ujson
 import urllib.parse
 
@@ -58,7 +59,7 @@ cloud_data = os.path.join(HOME, ".xmltv/cache/cloud.json")
 epg_data = os.path.join(HOME, ".xmltv/cache/epg.json")
 epg_metadata = os.path.join(HOME, ".xmltv/cache/epg_metadata.json")
 recordings = os.path.join(HOME, "recordings.json")
-timers = os.path.join(HOME, "timers.json")
+timers = os.path.join(HOME, "timers.conf")
 
 epg_lock = asyncio.Lock()
 timers_lock = asyncio.Lock()
@@ -103,7 +104,7 @@ async def after_server_start(app, loop):
             ]
             _t_timers_d = asyncio.create_task(timers_check_delayed())
         else:
-            log.info("No timers.json found, recordings disabled")
+            log.info("No timers.conf found, recordings disabled")
 
 
 @app.listener("after_server_stop")
@@ -467,7 +468,10 @@ async def timers_check():
         _timers = {}
         try:
             async with await open_async(timers) as f:
-                _timers = ujson.loads(await f.read())
+                try:
+                    _timers = tomli.loads(await f.read())
+                except ValueError:
+                    _timers = ujson.loads(await f.read())
         except (FileNotFoundError, TypeError, ValueError) as ex:
             log.error(f"handle_timers: {repr(ex)}")
             return
