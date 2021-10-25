@@ -257,40 +257,48 @@ async def handle_channel(request, channel_id):
             socket.SOL_IP, socket.IP_ADD_MEMBERSHIP, socket.inet_aton(mc_grp) + socket.inet_aton(_IPTV)
         )
 
-        try:
-            with closing(await asyncio_dgram.from_socket(sock)) as stream:
+        with closing(await asyncio_dgram.from_socket(sock)) as stream:
+            try:
                 _response = await request.respond(content_type=MIME_TS)
                 await _response.send((await stream.recv())[0][28:])
-                _lat = timeit.default_timer() - _start
-                asyncio.create_task(
-                    _SESSION.post(
-                        f"{SANIC_EPG_URL}/prom_event/add",
-                        json={
-                            "method": "live",
-                            "endpoint": f"{name} _ {request.ip} _ ",
-                            "channel_id": channel_id,
-                            "msg": f'[{request.ip}] -> Playing "{name}" {_lat}s ',
-                            "id": _start,
-                            "lat": _lat,
-                        },
-                    )
-                )
-                while True:
-                    await _response.send((await stream.recv())[0][28:])
-        finally:
-            try:
-                await _response.eof()
-            finally:
-                await _SESSION.post(
-                    f"{SANIC_EPG_URL}/prom_event/remove",
+            except asyncio.exceptions.TimeoutError:
+                log.error(f"{_raw_url} not found")
+                raise exceptions.NotFound(f"Requested URL {_raw_url} not found")
+
+            _lat = timeit.default_timer() - _start
+            asyncio.create_task(
+                _SESSION.post(
+                    f"{SANIC_EPG_URL}/prom_event/add",
                     json={
                         "method": "live",
                         "endpoint": f"{name} _ {request.ip} _ ",
                         "channel_id": channel_id,
-                        "msg": f'[{request.ip}] -> Stopped "{name}" {_raw_url} ',
+                        "msg": f'[{request.ip}] -> Playing "{name}" {_lat}s ',
                         "id": _start,
+                        "lat": _lat,
                     },
                 )
+            )
+
+            try:
+                while True:
+                    await _response.send((await stream.recv())[0][28:])
+            finally:
+                try:
+                    await _response.eof()
+                finally:
+                    asyncio.create_task(
+                        _SESSION.post(
+                            f"{SANIC_EPG_URL}/prom_event/remove",
+                            json={
+                                "method": "live",
+                                "endpoint": f"{name} _ {request.ip} _ ",
+                                "channel_id": channel_id,
+                                "msg": f'[{request.ip}] -> Stopped "{name}" {_raw_url} ',
+                                "id": _start,
+                            },
+                        )
+                    )
 
 
 @app.route("/<channel_id:int>/<url>", methods=["GET", "HEAD"])
@@ -364,58 +372,60 @@ async def handle_flussonic(request, channel_id, url, cloud=False):
         raise exceptions.NotFound(f"Requested URL {_raw_url} not found")
     vod = asyncio.create_task(VodLoop(_args, vod_data))
     _endpoint = _CHANNELS[str(channel_id)]["name"] + f" _ {request.ip} _ "
-    try:
-        with closing(await asyncio_dgram.bind((_IPTV, client_port))) as stream:
-            try:
-                _response = await request.respond(content_type=MIME_TS)
-                global _RESPONSES
-                _RESPONSES.append((request, _response, vod_msg))
-                await _response.send((await asyncio.wait_for(stream.recv(), 1))[0])
-                _lat = timeit.default_timer() - _start
-                asyncio.create_task(
-                    _SESSION.post(
-                        f"{SANIC_EPG_URL}/prom_event/add",
-                        json={
-                            "method": "catchup",
-                            "endpoint": _endpoint,
-                            "channel_id": channel_id,
-                            "url": url,
-                            "msg": f"[{request.ip}] -> Playing {vod_msg} {_lat}s ",
-                            "id": _start,
-                            "cloud": cloud,
-                            "lat": _lat,
-                        },
-                    )
-                )
-            except asyncio.exceptions.TimeoutError:
-                log.error(f"NOT_AVAILABLE: {vod_msg}")
-                raise exceptions.NotFound(f"Requested URL {_raw_url} not found")
-
-            while True:
-                await _response.send((await stream.recv())[0])
-    finally:
+    with closing(await asyncio_dgram.bind((_IPTV, client_port))) as stream:
         try:
-            await _response.eof()
-        finally:
-            _RESPONSES.remove((request, _response, vod_msg))
-            try:
-                vod.cancel()
-            except (ProcessLookupError, TypeError):
-                pass
-            await _SESSION.post(
-                f"{SANIC_EPG_URL}/prom_event/remove",
+            _response = await request.respond(content_type=MIME_TS)
+            await _response.send((await stream.recv())[0])
+        except asyncio.exceptions.TimeoutError:
+            log.error(f"NOT_AVAILABLE: {vod_msg}")
+            raise exceptions.NotFound(f"Requested URL {_raw_url} not found")
+
+        _lat = timeit.default_timer() - _start
+        _RESPONSES.append((request, _response, vod_msg))
+        asyncio.create_task(
+            _SESSION.post(
+                f"{SANIC_EPG_URL}/prom_event/add",
                 json={
                     "method": "catchup",
                     "endpoint": _endpoint,
                     "channel_id": channel_id,
                     "url": url,
-                    "msg": f"[{request.ip}] -> Stopped {vod_msg} {_raw_url} ",
+                    "msg": f"[{request.ip}] -> Playing {vod_msg} {_lat}s ",
                     "id": _start,
                     "cloud": cloud,
-                    "offset": timeit.default_timer() - _start,
+                    "lat": _lat,
                 },
             )
-            await asyncio.wait({vod})
+        )
+
+        try:
+            while True:
+                await _response.send((await stream.recv())[0])
+        finally:
+            try:
+                await _response.eof()
+            finally:
+                _RESPONSES.remove((request, _response, vod_msg))
+                asyncio.create_task(
+                    _SESSION.post(
+                        f"{SANIC_EPG_URL}/prom_event/remove",
+                        json={
+                            "method": "catchup",
+                            "endpoint": _endpoint,
+                            "channel_id": channel_id,
+                            "url": url,
+                            "msg": f"[{request.ip}] -> Stopped {vod_msg} {_raw_url} ",
+                            "id": _start,
+                            "cloud": cloud,
+                            "offset": timeit.default_timer() - _start,
+                        },
+                    )
+                )
+                try:
+                    vod.cancel()
+                    await asyncio.wait({vod})
+                except (ProcessLookupError, TypeError):
+                    pass
 
 
 @app.route("/cloud/<channel_id:int>/<url>", methods=["GET", "HEAD"])
