@@ -471,7 +471,7 @@ async def handle_prometheus(request):
     try:
         async with _SESSION.get(f"{SANIC_EPG_URL}/metrics") as r:
             return response.text((await r.read()).decode())
-    except aiohttp.client_exceptions.ClientConnectorError:
+    except (aiohttp.client_exceptions.ClientConnectorError, AttributeError):
         raise exceptions.ServiceUnavailable("Not available")
 
 
