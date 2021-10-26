@@ -158,7 +158,6 @@ def get_program_id(channel_id, url=None, cloud=False):
 
     name = _CHANNELS[channel_id]["name"]
     start = int(x.groups()[0])
-    duration = int(x.groups()[1]) if x.groups()[1] else 0
     last_event = new_start = 0
 
     if not cloud:
@@ -170,22 +169,25 @@ def get_program_id(channel_id, url=None, cloud=False):
             if not last_event:
                 return
             start, new_start = last_event, start
-        program_id, end = [_EPGDATA[channel_id][start][t] for t in ["pid", "end"]]
+        program_id, duration = [_EPGDATA[channel_id][start][t] for t in ["pid", "duration"]]
     else:
         if channel_id not in _CLOUD:
             return
-        if start not in _CLOUD[channel_id]:
+        if start in _CLOUD[channel_id]:
+            duration = _CLOUD[channel_id][start]["duration"]
+        else:
             for event in _CLOUD[channel_id]:
+                duration = _CLOUD[channel_id][event]["duration"]
                 if start > event and start < event + duration:
                     start, new_start = event, start
             if not new_start:
                 return
-        program_id, end = [_CLOUD[channel_id][start][t] for t in ["pid", "end"]]
+        program_id = _CLOUD[channel_id][start]["pid"]
 
     return {
         "name": name,
         "program_id": program_id,
-        "duration": duration if duration else end - start,
+        "duration": duration,
         "offset": new_start - start if new_start else 0,
     }
 
