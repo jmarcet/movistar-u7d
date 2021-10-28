@@ -10,6 +10,7 @@ import tomli
 import ujson
 import urllib.parse
 
+from asyncio.subprocess import DEVNULL
 from datetime import datetime
 from glob import glob
 from setproctitle import setproctitle
@@ -661,11 +662,19 @@ async def update_cloud(forced=False):
 
     if updated or not os.path.exists(CHANNELS_CLOUD) or not os.path.exists(GUIDE_CLOUD):
         tv_cloud1 = await asyncio.create_subprocess_exec(
-            f"{PREFIX}tv_grab_es_movistartv", "--cloud_m3u", CHANNELS_CLOUD
+            f"{PREFIX}tv_grab_es_movistartv",
+            "--cloud_m3u",
+            CHANNELS_CLOUD,
+            stdout=DEVNULL,
+            stderr=DEVNULL,
         )
         async with tvgrab_lock:
             tv_cloud2 = await asyncio.create_subprocess_exec(
-                f"{PREFIX}tv_grab_es_movistartv", "--cloud_recordings", GUIDE_CLOUD
+                f"{PREFIX}tv_grab_es_movistartv",
+                "--cloud_recordings",
+                GUIDE_CLOUD,
+                stdout=DEVNULL,
+                stderr=DEVNULL,
             )
     if forced and not updated:
         log.info("Loaded Cloud Recordings data")
@@ -682,7 +691,13 @@ async def update_epg():
     for i in range(5):
         async with tvgrab_lock:
             tvgrab = await asyncio.create_subprocess_exec(
-                f"{PREFIX}tv_grab_es_movistartv", "--tvheadend", CHANNELS, "--output", GUIDE
+                f"{PREFIX}tv_grab_es_movistartv",
+                "--tvheadend",
+                CHANNELS,
+                "--output",
+                GUIDE,
+                stdout=DEVNULL,
+                stderr=DEVNULL,
             )
             await tvgrab.wait()
         if tvgrab.returncode != 0:
