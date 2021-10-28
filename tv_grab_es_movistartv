@@ -977,10 +977,10 @@ class MulticastIPTV:
                 start = struct.unpack(">I", epg_dt[4:8])[0]
                 duration = struct.unpack(">H", epg_dt[8:10])[0]
                 title_end = struct.unpack("B", epg_dt[31:32])[0] + 32
-                episode = struct.unpack("B", epg_dt[title_end + 8: title_end + 9])[0]
-                season = struct.unpack("B", epg_dt[title_end + 11: title_end + 12])[0]
+                episode = struct.unpack("B", epg_dt[title_end + 8 : title_end + 9])[0]
+                season = struct.unpack("B", epg_dt[title_end + 11 : title_end + 12])[0]
                 full_title = self.__decode_string(epg_dt[32:title_end])
-                serie_id = struct.unpack(">H", epg_dt[title_end + 5: title_end + 7])[0]
+                serie_id = struct.unpack(">H", epg_dt[title_end + 5 : title_end + 7])[0]
                 meta_data = get_title_meta(full_title, serie_id)
                 programs[start] = {
                     "pid": struct.unpack(">I", epg_dt[:4])[0],
@@ -992,16 +992,16 @@ class MulticastIPTV:
                     "full_title": meta_data["full_title"],
                     "serie_id": serie_id,
                     "episode": meta_data["episode"] if meta_data["episode"] else episode,
-                    "year": str(struct.unpack(">H", epg_dt[title_end + 9: title_end + 11])[0]),
+                    "year": str(struct.unpack(">H", epg_dt[title_end + 9 : title_end + 11])[0]),
                     "serie": meta_data["serie"],
                     "season": meta_data["season"] if meta_data["season"] else season,
                     "is_serie": meta_data["is_serie"],
                 }
                 if meta_data["episode_title"]:
                     programs[start]["episode_title"] = meta_data["episode_title"]
-                pr_title_end = struct.unpack("B", epg_dt[title_end + 12: title_end + 13])[0] + title_end + 13
+                pr_title_end = struct.unpack("B", epg_dt[title_end + 12 : title_end + 13])[0] + title_end + 13
                 cut = pr_title_end if pr_title_end else title_end
-                epg_dt = epg_dt[struct.unpack("B", epg_dt[cut + 3: cut + 4])[0] + cut + 4:]
+                epg_dt = epg_dt[struct.unpack("B", epg_dt[cut + 3 : cut + 4])[0] + cut + 4 :]
             return programs
         except Exception as ex:
             logger.error(f"Error al procesar la guía: {repr(ex)}")
