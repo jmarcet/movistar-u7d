@@ -24,7 +24,7 @@ from sanic.server import HttpProtocol
 from sanic.touchup.meta import TouchUpMeta
 
 from movistar_epg import get_ffmpeg_procs
-from vod import VodLoop, VodSetup, find_free_port, COVER_URL, IMAGENIO_URL, UA
+from vod import VodData, VodLoop, VodSetup, find_free_port, COVER_URL, IMAGENIO_URL, UA
 
 
 setproctitle("movistar_u7d")
@@ -367,9 +367,11 @@ async def handle_flussonic(request, channel_id, url, cloud=False):
 
     _args = VodArgs(channel_id, program_id, _IPTV, request.ip, client_port, offset, cloud)
     vod_data = await VodSetup(_args, app.ctx.vod_client)
-    if not vod_data:
-        log.error(f"{_raw_url} not found")
-        raise exceptions.NotFound(f"Requested URL {_raw_url} not found")
+    if not isinstance(vod_data, VodData):
+        if vod_data:
+            raise exceptions.ServiceUnavailable("Movistar IPTV catchup service DOWN")
+        else:
+            raise exceptions.NotFound(f"Requested URL {_raw_url} not found")
     vod = asyncio.create_task(VodLoop(_args, vod_data))
     _endpoint = _CHANNELS[str(channel_id)]["name"] + f" _ {request.ip} _ "
     with closing(await asyncio_dgram.bind((_IPTV, client_port))) as stream:

@@ -239,12 +239,8 @@ async def get_vod_info(channel_id, program_id, cloud, vod_client):
     params = "action=getRecordingData" if cloud else "action=getCatchUpUrl"
     params += f"&extInfoID={program_id}&channelID={channel_id}&mode=1"
 
-    try:
-        async with vod_client.get(f"{MVTV_URL}?{params}") as r:
-            resp = await r.json()
-        return resp["resultData"]
-    except KeyError:
-        return
+    async with vod_client.get(f"{MVTV_URL}?{params}") as r:
+        return (await r.json())["resultData"]
 
 
 async def record_stream():
@@ -335,21 +331,20 @@ def save_metadata():
 
 
 async def VodLoop(args, vod_data=None):
-    try:
-        if __name__ == "__main__":
-            conn = aiohttp.TCPConnector()
-            vod_client = aiohttp.ClientSession(connector=conn, headers={"User-Agent": UA})
-            vod_data = await VodSetup(args, vod_client)
-            if not vod_data:
-                sys.stderr.write(f"{_log_prefix} Could not get uri for: {_log_suffix}\n")
-                return
-
-            if args.write_to_file:
-                await record_stream()
-
-        elif not vod_data:
+    if __name__ == "__main__":
+        conn = aiohttp.TCPConnector()
+        vod_client = aiohttp.ClientSession(connector=conn, headers={"User-Agent": UA})
+        vod_data = await VodSetup(args, vod_client)
+        if not isinstance(vod_data, VodData):
             return
 
+        if args.write_to_file:
+            await record_stream()
+
+    elif not vod_data:
+        return
+
+    try:
         while True:
             await asyncio.sleep(30)
             if __name__ == "__main__":
@@ -392,12 +387,16 @@ async def VodSetup(args, vod_client):
     describe["Accept"] = "application/sdp"
     setup["Transport"] = f"MP2T/H2221/UDP;unicast;client_port={args.client_port}"
 
-    vod_info = await get_vod_info(args.channel, args.broadcast, args.cloud, vod_client)
-    if not vod_info:
+    try:
+        vod_info = await get_vod_info(args.channel, args.broadcast, args.cloud, vod_client)
+        uri = urllib.parse.urlparse(vod_info["url"])
+    except (aiohttp.client_exceptions.ClientConnectorError, ConnectionRefusedError):
+        sys.stderr.write(f"{_log_prefix} Movistar IPTV catchup service DOWN\n")
+        return True
+    except KeyError:
         sys.stderr.write(f"{_log_prefix} Could not get uri for: {_log_suffix}\n")
-        return
+        return False
 
-    uri = urllib.parse.urlparse(vod_info["url"])
     reader, writer = await asyncio.open_connection(uri.hostname, uri.port)
     epg_url = f"{SANIC_EPG_URL}/program_name/{args.channel}/{args.broadcast}"
 
