@@ -47,7 +47,7 @@ LOG_SETTINGS["formatters"]["generic"]["datefmt"] = LOG_SETTINGS["formatters"]["a
 
 PREFIX = ""
 
-_CHANNELS = _CLOUD = _EPGDATA = _RECORDINGS = {}
+_CHANNELS = _CLOUD = _EPGDATA = _RECORDINGS = _RECORDINGS_INC = {}
 
 app = Sanic("movistar_epg")
 app.config.update({"FALLBACK_ERROR_FORMAT": "json", "KEEP_ALIVE_TIMEOUT": YEAR_SECONDS})
@@ -297,6 +297,21 @@ async def handle_program_name(request, channel_id, program_id):
             },
             ensure_ascii=False,
         )
+
+    missing = request.args.get("missing", 0)
+    if missing:
+        if channel_id not in _RECORDINGS_INC:
+            _RECORDINGS_INC[channel_id] = {}
+        if program_id not in _RECORDINGS_INC[channel_id]:
+            _RECORDINGS_INC[channel_id][program_id] = []
+        _RECORDINGS_INC[channel_id][program_id].append(missing)
+        _t = _RECORDINGS_INC[channel_id][program_id]
+        if len(_t) > 2 and _t[-3] == _t[-2] and _t[-2] == _t[-1]:
+            log.info(f"Recording Incomplete KEEP: {_t}")
+            del _RECORDINGS_INC[channel_id][program_id]
+        else:
+            log.warning(f"Recording Incomplete RETRY: {_t}")
+            return response.json({"status": "Recording Incomplete"}, status=201)
 
     if channel_id not in _RECORDINGS:
         _RECORDINGS[channel_id] = {}
