@@ -453,7 +453,11 @@ async def reload_epg():
         log.info(f"Total Channels: {len(_EPGDATA)}")
         nr_epg = 0
         for channel in _EPGDATA:
-            nr_epg += len(_EPGDATA[channel])
+            nr_epg += (
+                len(set(_EPGDATA[channel]) - (set(_CLOUD[channel]) - set(_EPGDATA[channel])))
+                if channel in _CLOUD
+                else len(_EPGDATA[channel])
+            )
         log.info(f"Total EPG entries: {nr_epg}")
         log.info("EPG Updated")
     return response.json({"status": "EPG Updated"}, 200)

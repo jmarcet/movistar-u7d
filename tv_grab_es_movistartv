@@ -915,13 +915,8 @@ class MulticastIPTV:
                 )
                 broken += _broken
 
-        logger.info(f"Canales con EPG: {len(cached_epg)}")
-        nr_epg = 0
-        for channel in cached_epg:
-            nr_epg += len(cached_epg[channel])
-        logger.info(f"Entradas en el EPG: Total: {nr_epg} Caducados: {expired} Rotos: {broken}")
-
         cache.save_epg(cached_epg)
+        logger.info(f"Eventos: Caducados = {expired} _ Rotos = {broken}")
         return cached_epg
 
     def __get_epg_data(self, mcast_grp, mcast_port):
