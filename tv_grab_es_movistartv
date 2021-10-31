@@ -1044,7 +1044,7 @@ class XMLTV:
                 "generator_info_url": "http://wiki.xmltv.org/index.php/XMLTVFormat",
             },
         )
-        tz = int(abs(time.timezone / 3600)) + time.localtime().tm_isdst
+        tz_offset = int(abs(time.timezone / 3600))
         services = self.__get_client_channels()
         for channel_id in sorted(services, key=lambda key: int(services[key])):
             if channel_id in self.__channels:
@@ -1060,7 +1060,13 @@ class XMLTV:
                     logger.info(f"XML: Saltando canal encriptado {channel_id}")
                     continue
                 for program in sorted(parsed_epg[channel_id]):
-                    root.append(self.__build_programme_tag(channel_id, parsed_epg[channel_id][program], tz))
+                    root.append(
+                        self.__build_programme_tag(
+                            channel_id,
+                            parsed_epg[channel_id][program],
+                            tz_offset,
+                        )
+                    )
         print("", flush=True)
         return ElTr.ElementTree(root)
 
@@ -1104,15 +1110,17 @@ class XMLTV:
             "episode": episode,
         }
 
-    def __build_programme_tag(self, channel_id, program, tz):
+    def __build_programme_tag(self, channel_id, program, tz_offset):
+        dst_start = time.localtime(int(program["start"])).tm_isdst
+        dst_stop = time.localtime(int(program["end"])).tm_isdst
         start = datetime.fromtimestamp(program["start"]).strftime("%Y%m%d%H%M%S")
         stop = datetime.fromtimestamp(program["end"]).strftime("%Y%m%d%H%M%S")
         tag_programme = ElTr.Element(
             "programme",
             {
                 "channel": f"{channel_id}.movistar.tv",
-                "start": f"{start} +0{tz}00",
-                "stop": f"{stop} +0{tz}00",
+                "start": f"{start} +0{tz_offset + dst_start}00",
+                "stop": f"{stop} +0{tz_offset + dst_stop}00",
             },
         )
         tag_title = ElTr.SubElement(tag_programme, "title", lang["es"])
