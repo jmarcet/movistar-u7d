@@ -398,7 +398,7 @@ class Cache:
     def load_config(self):
         data = self.__load("config.json")
         if not data:
-            logger.warning()("Caché: configuración no encontrada")
+            logger.warning("Caché: configuración no encontrada")
         return data
 
     def save_config(self, data):
@@ -489,7 +489,7 @@ class MovistarTV:
             logger.warning(f"get_epg_extended_info {repr(ex)}")
             pass
         if not data:
-            logger.debug(f"Descargando info extendida: {pid}")
+            logger.info(f"Descargando info extendida: {pid}")
             try:
                 print(".", flush=True, end="")
                 data = self.__get_service_data(
@@ -505,7 +505,7 @@ class MovistarTV:
     def __get_end_points():
         try:
             return config["end_points"]
-        except KeyError:
+        except (KeyError, NameError):
             return cache.load_end_points()
 
     def get_end_point(self, last_used=None):
@@ -837,11 +837,12 @@ class MulticastIPTV:
 
     def get_epg(self):
         cached_epg = cache.load_epg()
-        cached_epg = (
-            self.__drop_encrypted_channels(self.__get_sane_epg(cached_epg))
-            if "1" in cached_epg
-            else self.__drop_encrypted_channels(cached_epg)
-        )
+        if cached_epg:
+            cached_epg = (
+                self.__drop_encrypted_channels(self.__get_sane_epg(cached_epg))
+                if "1" in cached_epg
+                else self.__drop_encrypted_channels(cached_epg)
+            )
         if use_multithread:
             self.__get_bin_epg_threaded()
         else:
