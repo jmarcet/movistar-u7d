@@ -23,6 +23,7 @@
 
 import argparse
 import codecs
+import concurrent.futures
 import fcntl
 import glob
 import httpx
@@ -475,15 +476,15 @@ class MovistarTV:
             logger.warning(f"get_epg_extended_info {repr(ex)}")
             pass
         if not data:
-            logger.info(f"Descargando info extendida: {pid}")
+            logger.debug(f"Descargando info extendida: {pid}")
+            print(".", end="", flush=True)
             try:
-                print(".", flush=True, end="")
                 data = self.__get_service_data(
                     f"epgInfov2&productID={pid}" f"&channelID={channel_id}" f"&extra=1"
                 )["resultData"]
                 cache.save_epg_extended_info(data)
             except Exception as ex:
-                logger.error(f"Información extendida no encontrada: {pid} {repr(ex)}")
+                logger.debug(f"Información extendida no encontrada: {pid} {repr(ex)}")
                 return None
         return data
 
@@ -855,8 +856,7 @@ class MulticastIPTV:
             logger.debug(f"{fixed} programas acababan después de que el siguiente empezara")
 
         if not cached_epg:
-            logger.warning("Sin caché de EPG guardada")
-            return new_epg
+            return (new_epg, False)
 
         logger.info(f"Fecha de caducidad: [{time.ctime(deadline)}]")
 
@@ -908,7 +908,7 @@ class MulticastIPTV:
 
         cache.save_epg(cached_epg)
         logger.info(f"Eventos: Caducados = {expired} _ Rotos = {broken}")
-        return cached_epg
+        return (cached_epg, True)
 
     def __get_epg_data(self, mcast_grp, mcast_port):
         while True:
@@ -1026,7 +1026,7 @@ class XMLTV:
         self.__channels = data["channels"]
         self.__packages = data["packages"]
 
-    def generate_xml(self, parsed_epg):
+    def generate_xml(self, parsed_epg, verbose):
         logger.info("Generando la guía XMLTV...")
         root = ElTr.Element(
             "tv",
@@ -1045,19 +1045,33 @@ class XMLTV:
                 root.append(tag_channel)
             else:
                 logger.debug(f"El canal {channel_id} no tiene EPG")
-        for channel_id in sorted(services, key=lambda key: int(services[key])):
-            if channel_id in self.__channels and channel_id in parsed_epg:
-                if channel_id not in epg_channels:
-                    logger.info(f"XML: Saltando canal encriptado {channel_id}")
-                    continue
-                for program in sorted(parsed_epg[channel_id]):
-                    root.append(
-                        self.__build_programme_tag(
-                            channel_id,
-                            parsed_epg[channel_id][program],
-                            tz_offset,
-                        )
-                    )
+
+        logger.info(f'XML: Descargando info extendida con {epg_threads * 2} descargas simultáneas')
+        for channel_id in [
+            cid
+            for cid in sorted(services, key=lambda key: int(services[key]))
+            if cid in self.__channels and cid in parsed_epg
+        ]:
+            channel_name = self.__channels[channel_id]["name"]
+            if channel_id not in epg_channels:
+                logger.info(f'XML: Saltando canal encriptado "{channel_name}"')
+                continue
+
+            _res = {}
+            if verbose:
+                logger.info(f'XML: "{channel_name}"')
+            with concurrent.futures.ThreadPoolExecutor(max_workers=epg_threads * 2) as executor:
+                _futures = {
+                    executor.submit(
+                        self.__build_programme_tag, channel_id, parsed_epg[channel_id][program], tz_offset
+                    ): program
+                    for program in sorted(parsed_epg[channel_id])
+                }
+                for future in concurrent.futures.as_completed(_futures):
+                    # _futures[future] => program
+                    _res[_futures[future]] = future.result()
+            for program in sorted(_res):
+                root.append(_res[program])
         print("", flush=True)
         return ElTr.ElementTree(root)
 
@@ -1380,10 +1394,10 @@ if args.cloud_m3u or args.cloud_recordings:
         export_channels(args.cloud_m3u, list(epg))
         sys.exit(0)
 else:
-    epg = iptv.get_epg()
+    epg, cached = iptv.get_epg()
 
 # Genera el árbol XMLTV de los paquetes contratados
-epg_x = xmltv.generate_xml(epg)
+epg_x = xmltv.generate_xml(epg, not cached)
 
 _saved = None
 xml = epg_x.getroot()

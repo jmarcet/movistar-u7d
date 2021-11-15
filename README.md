@@ -140,13 +140,13 @@ Si queremos usarlo dentro del propio router, también podemos, aunque se complic
 Configuración y Observaciones
 -----------------------------
 
- - La primera vez tendremos que esperar a que se genere la lista de canales y a que se descargue la guía. Sin playlist no hay canales y sin EPG no hay catchup. Tardará unos minutos.
+ - La primera vez tendremos que esperar a que se genere la lista de canales y a que se descargue la guía. Sin playlist no hay canales y sin EPG no hay catchup. Tardará un buen rato.
 
  - Podemos controlar varios aspectos con variables de entorno:
 
    1. La más importante es `LAN_IP`, que corresponde a la ip que tendrán los canales de tv. Por defecto usa la ip local principal.
 
-   2. `EPG_THREADS`: número de descargas paralelas al generar la EPG. Yo lo uso con 8 hilos, pero con instalaciones de serie puede dar problemas, así que por defecto usa 4.
+   2. `EPG_THREADS`: número de descargas paralelas al generar la EPG. Por defecto usa tantos hilos como CPUs detecta en el sistema, con un máximo de 8.
 
    3. `IPTV_BW`: ancho de banda máximo que le perimitimos usar al proxy. Especialmente útil si se instala en el propio router o en un aparato independiente. El valor óptimo máximo, en kilobits por segundo, Kbps, es 85000, dado que el ancho de banda real disponible en la vlan de IPTV es de 100000 Kbps. En el caso de estar instalado en el router, el proxy podrá además conocer el ancho de banda consumido específicamente en la vlan de IPTV. En el resto de casos sólo podrá contabilizar el ancho de banda de red total consumido en el dispositivo en el que se ejecuta. de ahí que la funcionalidad no esté activa a menos que definamos esta variable. Este control se basa en rechazar clientes una vez llegado al tope de ancho de banda definido con esta variable. Si llegan peticiones de nuevos clientes, recibirán un 503, Servicio no Disponible, aunque en el caso de que haya grabaciones en curso, dado que se pueden repetir, si la nueva petición es de un cliente normal se cancelará una grabación y se le dará prioridad al cliente normal. Esto consigue que no se produzcan cortes por saturación de la vlan de IPTV y se puedan hacer grabaciones en paralelo aprovechando todo el ancho de banda.
 
@@ -178,7 +178,7 @@ Configuración de clientes
 
  - A la hora de configurar cualquier cliente (TiviMate, OTT, Kodi u otro) es recomendable que en los ajustes del mismo desactivéis cualquier tipo de buffer de red que tenga, lo dejéis a 0.
 
- - De igual manera, es importante que lo configuréis para que la guía se recargue con la mayor frecuencia posible, y que no use caché si la ofrece (como el Kodi). El backend actualiza a cada hora en punto la guía general, y cada 5 minutos las grabaciones en la nube. La lista de grabaciones locales se indexan al ejecutarse el proxy y se actualiza a medida que se realizan grabaciones.
+ - De igual manera, es importante que lo configuréis para que la guía se recargue con la mayor frecuencia posible, y que no use caché si la ofrece (como el Kodi). El backend actualiza a cada hora en punto la guía general, y cada 5 minutos las grabaciones en la nube. La lista de grabaciones locales se indexa al ejecutarse el proxy y se actualiza a medida que se realizan grabaciones.
 
  - Por último, aseguraos de que el cliente que uséis guarda al menos 8 días de historial del EPG y en el caso de las Grabaciones en la Nube lo óptimo sería que no caducasen nunca. Desconozco el tiempo exacto que [Movistar](https://www.movistar.es/particulares/internet/) permite tener dichas grabaciones almacenadas. Grabaciones que no son más que eventos de la EPG que no se borran de la parrilla, así es como funcionan, de manera que las grabaciones se comparten entre los clientes.
 
