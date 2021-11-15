@@ -1333,7 +1333,7 @@ _iptv = s.getsockname()[0]
 s.close()
 
 # Número de hilos para descarga de la EPG
-epg_threads = int(os.getenv("EPG_THREADS", "4"))
+epg_threads = min(8, int(os.getenv("EPG_THREADS", os.cpu_count())))
 
 # Guarda el timestamp de inicio
 time_start = int(time.time())
