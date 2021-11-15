@@ -4,7 +4,7 @@ black
 httpx
 json2xml
 python-ffmpeg
-git+https://github.com/sanic-org/sanic
+sanic
 sanic-prometheus
 setproctitle
 tomli
