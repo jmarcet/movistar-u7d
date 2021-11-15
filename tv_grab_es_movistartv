@@ -1352,83 +1352,78 @@ deadline = int(datetime.combine(date.today() - timedelta(days=7), datetime.min.t
 # Crea el logger
 logger = create_logger(sys.argv)
 
-try:
-    # Obtiene los argumentos de entrada
-    args = create_args_parser().parse_args()
+# Obtiene los argumentos de entrada
+args = create_args_parser().parse_args()
 
-    if not args.m3u and not args.cloud_m3u:
-        # Sólo una instancia ejecutándose
-        fh = open(os.path.realpath(__file__))
-        try:
-            fcntl.flock(fh, fcntl.LOCK_EX | fcntl.LOCK_NB)
-        except BlockingIOError:
-            sys.stderr.write(f"{__file__} ya se está ejecutando\n")
-            sys.exit(0)
-
-    # Crea la caché
-    cache = Cache()
-
-    # Descarga la configuración del servicio Web de MovistarTV
-    mtv = MovistarTV()
-    config = mtv.get_service_config()
-
-    # Busca el Proveedor de Servicios y descarga los archivos XML:
-    # canales, paquetes y segments
-    iptv = MulticastIPTV()
-    xdata = iptv.get_service_provider_data()
-
-    # Crea el objeto XMLTV a partir de los datos descargados del Proveedor de Servicios
-    xmltv = XMLTV(xdata)
-
-    if args.m3u:
-        export_channels(args.m3u)
+if not args.m3u and not args.cloud_m3u:
+    # Sólo una instancia ejecutándose
+    fh = open(os.path.realpath(__file__))
+    try:
+        fcntl.flock(fh, fcntl.LOCK_EX | fcntl.LOCK_NB)
+    except BlockingIOError:
+        sys.stderr.write(f"{__file__} ya se está ejecutando\n")
         sys.exit(0)
 
-    # Descarga los segments de cada EPG_X_BIN.imagenio.es y devuelve la guía decodificada
-    if args.cloud_m3u or args.cloud_recordings:
-        epg = cache.load_cloud_epg()
-        if args.cloud_m3u:
-            export_channels(args.cloud_m3u, list(epg))
-            sys.exit(0)
-    else:
-        epg = iptv.get_epg()
+# Crea la caché
+cache = Cache()
 
-    # Genera el árbol XMLTV de los paquetes contratados
-    epg_x = xmltv.generate_xml(epg)
+# Descarga la configuración del servicio Web de MovistarTV
+mtv = MovistarTV()
+config = mtv.get_service_config()
 
-    _saved = None
-    xml = epg_x.getroot()
-    ElTr.indent(xml)
-    if args.cloud_recordings:
-        logger.info(f"Guía XMLTV de Grabaciones en la Nube guardada: {args.cloud_recordings}")
-        _saved = sys.stdout
-        sys.stdout = open(args.cloud_recordings, "w")
-    if args.output:
-        logger.info(f"Guía XMLTV guardada: {args.output}")
-        _saved = sys.stdout
-        sys.stdout = open(args.output, "w")
-    if args.tvheadend:
-        export_channels(args.tvheadend)
-    print("<?xml version='1.0' encoding='UTF-8'?>", flush=True)
-    ElTr.dump(xml)
-    if _saved:
-        sys.stdout = _saved
+# Busca el Proveedor de Servicios y descarga los archivos XML:
+# canales, paquetes y segments
+iptv = MulticastIPTV()
+xdata = iptv.get_service_provider_data()
 
-    if not args.cloud_recordings:
-        total = (int(time.time()) - time_start) / 60
-        logger.info(
-            "EPG de %i canales y %i días %s"
-            % (
-                len(epg),
-                len(xdata["segments"]),
-                "descargada en %i minutos" % total
-                if total != 0
-                else "generada en %i segundos" % (int(time.time()) - time_start),
-            )
-        )
+# Crea el objeto XMLTV a partir de los datos descargados del Proveedor de Servicios
+xmltv = XMLTV(xdata)
 
+if args.m3u:
+    export_channels(args.m3u)
     sys.exit(0)
 
-except Exception as ex:
-    logger.critical(f"{repr(ex)}")
-    sys.exit(1)
+# Descarga los segments de cada EPG_X_BIN.imagenio.es y devuelve la guía decodificada
+if args.cloud_m3u or args.cloud_recordings:
+    epg = cache.load_cloud_epg()
+    if args.cloud_m3u:
+        export_channels(args.cloud_m3u, list(epg))
+        sys.exit(0)
+else:
+    epg = iptv.get_epg()
+
+# Genera el árbol XMLTV de los paquetes contratados
+epg_x = xmltv.generate_xml(epg)
+
+_saved = None
+xml = epg_x.getroot()
+ElTr.indent(xml)
+if args.cloud_recordings:
+    logger.info(f"Guía XMLTV de Grabaciones en la Nube guardada: {args.cloud_recordings}")
+    _saved = sys.stdout
+    sys.stdout = open(args.cloud_recordings, "w")
+if args.output:
+    logger.info(f"Guía XMLTV guardada: {args.output}")
+    _saved = sys.stdout
+    sys.stdout = open(args.output, "w")
+if args.tvheadend:
+    export_channels(args.tvheadend)
+print("<?xml version='1.0' encoding='UTF-8'?>", flush=True)
+ElTr.dump(xml)
+if _saved:
+    sys.stdout = _saved
+
+if not args.cloud_recordings:
+    total = (int(time.time()) - time_start) / 60
+    logger.info(
+        "EPG de %i canales y %i días %s"
+        % (
+            len(epg),
+            len(xdata["segments"]),
+            "descargada en %i minutos" % total
+            if total != 0
+            else "generada en %i segundos" % (int(time.time()) - time_start),
+        )
+    )
+
+sys.exit(0)
