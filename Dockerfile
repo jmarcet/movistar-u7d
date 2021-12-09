@@ -6,7 +6,7 @@ ENV HOME="/home"
 ENV PYTHONPATH=/app
 ENV PYTHONUNBUFFERED=1
 
-# RUN sed -e 's:alpine\/[.0-9v]\+\/:alpine/edge/:g' -i /etc/apk/repositories
+RUN sed -e 's:alpine\/[.0-9v]\+\/:alpine/edge/:g' -i /etc/apk/repositories
 RUN apk update && apk upgrade --available --prune --purge
 RUN apk add build-base linux-headers
 RUN apk add bash ffmpeg git htop mkvtoolnix s6 vim
