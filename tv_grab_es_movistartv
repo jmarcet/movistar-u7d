@@ -1401,7 +1401,10 @@ epg_x = xmltv.generate_xml(epg, not cached)
 
 _saved = None
 xml = epg_x.getroot()
-ElTr.indent(xml)
+try:
+    ElTr.indent(xml)
+except AttributeError:
+    pass
 if args.cloud_recordings:
     logger.info(f"Guía XMLTV de Grabaciones en la Nube guardada: {args.cloud_recordings}")
     _saved = sys.stdout
