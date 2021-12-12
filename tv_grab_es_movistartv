@@ -80,6 +80,7 @@ epg_channels = [
     "3443",
     "5029",
     "3103",
+    "4990",
 ]
 
 demarcations = {
