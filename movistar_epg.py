@@ -197,9 +197,11 @@ def get_recording_path(channel_id, timestamp):
     if _EPGDATA[channel_id][timestamp]["serie"]:
         path = os.path.join(RECORDINGS, get_safe_filename(_EPGDATA[channel_id][timestamp]["serie"]))
     else:
-        path = RECORDINGS
+        path = os.path.join(RECORDINGS, get_safe_filename(_EPGDATA[channel_id][timestamp]["full_title"]))
 
     filename = os.path.join(path, get_safe_filename(_EPGDATA[channel_id][timestamp]["full_title"]))
+    if not _EPGDATA[channel_id][timestamp]["is_serie"]:
+        filename += f' - {datetime.fromtimestamp(timestamp).strftime("%Y%m%d_%H%M")}'
 
     return (path, filename)
 
@@ -529,7 +531,7 @@ async def timers_check():
                     vo = True if lang == "VO" else False
                     _, filename = get_recording_path(channel_id, timestamp)
                     if re.match(timer_match, title) and (
-                        title not in timers_added and filename.split("/")[-1:][0] not in str(_ffmpeg)
+                        filename not in timers_added and filename.split("/")[-1:][0] not in str(_ffmpeg)
                     ):
                         if channel_id in _RECORDINGS:
                             if (
@@ -551,7 +553,7 @@ async def timers_check():
                                 r = await client.get(sanic_url)
                             log.info(f"{sanic_url} => {r}")
                             if r.status_code == 200:
-                                timers_added.append(title)
+                                timers_added.append(filename)
                                 nr_procs += 1
                                 if RECORDING_THREADS and not nr_procs < RECORDING_THREADS:
                                     log.info(f"Already recording {nr_procs} streams")
