@@ -287,9 +287,9 @@ async def handle_program_name(request, channel_id, program_id):
     except TypeError:
         raise exceptions.NotFound(f"Requested URL {request.raw_url.decode()} not found")
 
-    if request.method == "GET":
-        path, filename = get_recording_path(channel_id, event)
+    path, filename = get_recording_path(channel_id, event)
 
+    if request.method == "GET":
         return response.json(
             {
                 "status": "OK",
@@ -317,7 +317,7 @@ async def handle_program_name(request, channel_id, program_id):
 
     if channel_id not in _RECORDINGS:
         _RECORDINGS[channel_id] = {}
-    _RECORDINGS[channel_id][program_id] = {"full_title": _epg["full_title"]}
+    _RECORDINGS[channel_id][program_id] = {"full_title": os.path.basename(filename)}
 
     with open(recordings, "w") as f:
         ujson.dump(_RECORDINGS, f, ensure_ascii=False, indent=4, sort_keys=True)
@@ -530,17 +530,13 @@ async def timers_check():
                         lang = deflang
                     vo = True if lang == "VO" else False
                     _, filename = get_recording_path(channel_id, timestamp)
-                    if re.match(timer_match, title) and (
-                        filename not in timers_added and filename.split("/")[-1:][0] not in str(_ffmpeg)
-                    ):
+                    if re.match(timer_match, title) and filename not in (timers_added or str(_ffmpeg)):
+                        _name = os.path.basename(filename)
                         if channel_id in _RECORDINGS:
-                            if (
-                                title in str(_RECORDINGS[channel_id]) or timestamp in _RECORDINGS[channel_id]
-                            ) and os.path.exists(filename + VID_EXT):
+                            if (_name or title) in str(_RECORDINGS[channel_id]):
                                 continue
                         log.info(
-                            f"Found match! {filename + VID_EXT} {channel_id} {timestamp}"
-                            f'{" [VO]" if vo else ""}'
+                            f"Found MATCH: {channel_id} {timestamp}" f'{" [VO]" if vo else ""}' f' "{_name}"'
                         )
                         sanic_url = f"{SANIC_URL}"
                         if channel_id in _CLOUD and timestamp in _CLOUD[channel_id]:
