@@ -72,11 +72,11 @@ Una vez instalado, tendremos las siguientes URLs disponibles, donde 192.168.1.10
 Instalación
 -----------
 
-Desde un dispositivo conectado directamente al router, podemos ejecutarlo sin mayores complicaciones. Mirad un poco más abajo las variables de entorno que se pueden ajustar para configurar el proxy, como activar las grabaciones, el control de ancho de banda automático, etc.
+Necesitamos algún dispositivo, sea un ordenador tradicional o algo más sencillo como una raspberry, con Linux/UNIX como OS y conectado directamente al router. Un poco más abajo podéis ver las variables de entorno que se pueden ajustar para configurar el proxy, como activar las grabaciones, el control de ancho de banda automático, etc.
 
- 1. Tenemos la opción de utilizar [docker](https://www.redeszone.net/2019/04/21/instalar-docker-windows-10/) y [docker-compose](https://luisiblogdeinformatica.com/como-instalar-y-usar-docker-compose-en-ubuntu-20-04/).
+ 1. Tenemos la opción de utilizar docker y docker-compose.
 
-Una vez tenemos [docker](https://www.redeszone.net/2019/04/21/instalar-docker-windows-10/) instalado, nos descargamos todo este repositorio a nuestro ordenador, ya sea clonando [el repo](https://github.com/jmarcet/movistar-u7d.git) con [git](https://git-scm.com/download/windows) o descargando un [zip](https://github.com/jmarcet/movistar-u7d/archive/refs/heads/master.zip) que en su caso descomprimimos, a continuación abrimos el `docker-compose.yml` con un editor, y habilitamos las variables de entorno que podamos necesitar, de manera que si queremos ajustar la variable `LAN_IP` que puede ser útil si obtenemos algún error del tipo `Name does not resolve`, debería quedar así:
+Nos descargamos todo este repositorio a nuestro ordenador, ya sea clonando [el repo](https://github.com/jmarcet/movistar-u7d.git) con git o descargando un [zip](https://github.com/jmarcet/movistar-u7d/archive/refs/heads/master.zip) que en su caso descomprimimos, a continuación abrimos el `docker-compose.yml` con un editor, y habilitamos las variables de entorno que podamos necesitar, de manera que si queremos ajustar la variable `LAN_IP` que puede ser útil si obtenemos algún error del tipo `Name does not resolve`, debería quedar así:
 
 ```
 [...]
@@ -85,7 +85,7 @@ Una vez tenemos [docker](https://www.redeszone.net/2019/04/21/instalar-docker-wi
 [...]
 ```
 
-Una vez tenemos el compose ajustado, en un terminal/shell/powershell, nos movemos a la carpeta donde tengamos todo clonado/descomprimido y ejecutamos:
+Una vez tenemos el compose ajustado, en un shell, nos movemos a la carpeta donde tengamos todo clonado/descomprimido y ejecutamos:
 
 ```
 docker-copose up -d && docker-copose logs -f
@@ -94,7 +94,7 @@ docker-copose up -d && docker-copose logs -f
 Dentro del `docker` queda todo lo necesario y se ejecutará muy rápidamente, sólo tiene que descargar la última versión disponible [aquí](https://gitlab.marcet.info/javier/movistar-u7d/container_registry/2), no necesita generar nada. Un vez arranque sí, tardará unos minutos en generar la EPG y las listas de canales.
 
 
- 2. Si por el contrario preferimos instalarlo y usarlo directamente (desde un Linux/OS X/UNIX/Windows WSL):
+ 2. Si por el contrario preferimos instalarlo y usarlo directamente:
 
  - Necesitamos Python 3, con pip, e instalar las dependencias:
 
@@ -108,7 +108,7 @@ pip3 install -r requirements.txt
 cp movistar_u7d.py movistar_epg.py tv_grab_es_movistartv vod.py /usr/local/bin/
 ```
 
- 3. Para Systemd (también desde Linux/OS X/UNIX/Windows WSL):
+ 3. Para Systemd:
 
  - [movistar_u7d.service](movistar_u7d.service): service systemd para el microservicio principal
 
@@ -134,7 +134,7 @@ En cualquier caso, si lo usas sin docker, es importante que el proxy tenga acces
 Instalación en el propio router
 -------------------------------
 
-Si queremos usarlo dentro del propio router, también podemos, aunque se complica todo un poco. De interesaros esta opción, [aquí](https://openwrt.marcet.info/latest/targets/x86/64/) podéís encontrar builds de openwrt para x86-64 con todo lo necesario para desplegar todo esto. Los actualizo cada pocos días.
+Esta es la forma ideal de usarlo, aunque se complica todo un poco. [Aquí](https://openwrt.marcet.info/latest/targets/x86/64/) podéís encontrar builds de openwrt para x86-64 con todo lo necesario para desplegar todo esto. Los actualizo cada pocos días.
 
 
 Configuración y Observaciones
@@ -160,7 +160,7 @@ Configuración y Observaciones
 
    8. Para el resto, que es inusual necesitar cambiarlas, mirad el fichero [env-example](env-example).
 
-- Si usamos [docker](https://www.redeszone.net/2019/04/21/instalar-docker-windows-10/) y [docker-compose](https://luisiblogdeinformatica.com/como-instalar-y-usar-docker-compose-en-ubuntu-20-04/), tenemos [env-example](env-example) con explicación de todas las variables de entorno que podemos ajustar. Editamos el `docker-compose.yml` y borramos los `#` de delante y definimos las variables necesarias, para después ejecutar `docker-compose up -d`
+- Si usamos docker y docker-compose, tenemos [env-example](env-example) con explicación de todas las variables de entorno que podemos ajustar. Editamos el `docker-compose.yml` y borramos los `#` de delante y definimos las variables necesarias, para después ejecutar `docker-compose up -d`
 
  - La funcionalidad que más trabajo me dio conseguir y que más agradezco a la hora de usarlo es la reproducción continua. ¿Que qué es eso? Pues dado que [Movistar](https://www.movistar.es/particulares/internet/) da acceso a la programación de los últimos 7 días a partir de un identificador de canal y un identificador de programa, ambos incluidos en la EPG, a la hora de reproducir cualquier momento de la semana, se establece una negociación con Movistar que te da acceso a reproducir **ese** programa, no el siguiente. De esta manera, tanto en la app oficial como en el addon cerrado, reproduces un programa y al acabar (normalmente sobre 1 o 2 minutos después del final) se detiene.
 
@@ -236,26 +236,13 @@ default = "VO"
     ".*La Luna.*",
     ".*Tesla.*",
     ".*universo.*",
-    ".*El enigma de Júpiter.*",
-    ".*La navaja de Ockham.* ## Esp",
-    "El cazador de cerebros ## Esp",
-    "La España prehistórica",
-    "Tras la pista del virus que hizo temblar al mundo",
-    "Basura espacial ## Esp",
-    "Los planetas",
-    "Documentos TV.*",
-    "Sobrehumanos.*",
     ".*Marte.*",
     ".*Plut.n.*",
     ".*Saturno.*",
     ".*Venus.*",
 ]
 4714 = [
-    "American Dad ## Esp",
-    "Dos hombres y medio",
     "Los Simpson S(24|25|26|27|28|29|30|31|32|33)E\\d\\d[ $] ## Esp",
-    "Padre de familia ## Esp",
-    "Superperdidos",
 ]
 ```
 
