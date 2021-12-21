@@ -1,6 +1,7 @@
 #!/bin/sh
 
 [ -n "${U7D_UID}" ] && _SUDO="s6-setuidgid ${U7D_UID}"
+[ -e "${HOME}/.xmltv" ] || mkdir -p "${HOME}/.xmltv"
 
 _tvgrab_log="${HOME}/.xmltv/tv_grab_es_movistartv.log"
 rm -f "${_tvgrab_log}"; ${_SUDO} touch "${_tvgrab_log}"
