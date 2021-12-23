@@ -127,6 +127,7 @@ class RtspClient(object):
 
 @ffmpeg.on("completed")
 def ffmpeg_completed():
+    sys.stderr.write(f"{_log_prefix} Recording Ended: {_log_suffix}")
     command = list(_nice)
 
     if os.path.exists(filename + VID_EXT):
@@ -164,16 +165,22 @@ def ffmpeg_completed():
 
         proc.wait()
 
-    missing_time = check_recording()
-    if not missing_time:
-        save_metadata()
-        httpx.put(epg_url)
-    elif os.path.exists(filename + VID_EXT):
-        resp = httpx.put(epg_url + f"?missing={missing_time}")
-        if resp.status_code == 200:
-            save_metadata()
-        else:
-            os.remove(filename + VID_EXT)
+    if os.path.exists(filename + VID_EXT):
+        try:
+            missing_time = check_recording()
+            if not missing_time:
+                save_metadata()
+                httpx.put(epg_url)
+            else:
+                resp = httpx.put(epg_url + f"?missing={missing_time}")
+                if resp.status_code == 200:
+                    save_metadata()
+                else:
+                    os.remove(filename + VID_EXT)
+        except (KeyError, ValueError):
+            sys.stderr.write(f"{_log_prefix} Recording CANNOT PARSE: {_log_suffix}")
+    else:
+        sys.stderr.write(f"{_log_prefix} Recording CANNOT FIND: {_log_suffix}")
 
     _cleanup()
 
@@ -209,19 +216,12 @@ def _handle_cleanup(signum, frame):
 
 
 def check_recording():
-    if not os.path.exists(filename + VID_EXT):
-        sys.stderr.write(f"{_log_prefix} Recording CANNOT FIND: {_log_suffix}")
-        return -1
-
     command = list(_nice)
     command += ["ffprobe", "-v", "quiet", "-print_format", "json", "-show_format"]
     command += [filename + VID_EXT]
-    try:
-        probe = ujson.loads(subprocess.run(command, capture_output=True).stdout.decode())
-        duration = int(float(probe["format"]["duration"]))
-    except (KeyError, ValueError):
-        sys.stderr.write(f"{_log_prefix} Recording CANNOT PARSE: {_log_suffix}")
-        return -1
+
+    probe = ujson.loads(subprocess.run(command, capture_output=True).stdout.decode())
+    duration = int(float(probe["format"]["duration"]))
 
     _bad = (duration + 30) < args.time
     sys.stderr.write(
@@ -230,7 +230,7 @@ def check_recording():
         f"{_log_suffix}"
     )
 
-    return 0 if not _bad else args.time - duration
+    return args.time - duration if _bad else 0
 
 
 def find_free_port(iface=""):
