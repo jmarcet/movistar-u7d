@@ -37,6 +37,7 @@ GUIDE = os.path.join(HOME, "guide.xml")
 GUIDE_CLOUD = os.path.join(HOME, "cloud.xml")
 IPTV_BW = int(os.getenv("IPTV_BW", "0"))
 IPTV_BW = 85000 if IPTV_BW > 90000 else IPTV_BW
+MIME_M3U = "audio/x-mpegurl"
 MIME_TS = "video/MP2T;audio/mp3"
 MIME_WEBM = "video/webm"
 MP4_OUTPUT = bool(os.getenv("MP4_OUTPUT", False))
@@ -155,7 +156,7 @@ async def handle_channels(request):
     log.info(f"[{request.ip}] {request.method} {request.url}")
     if not os.path.exists(CHANNELS):
         raise exceptions.NotFound(f"Requested URL {request.raw_url.decode()} not found")
-    return await response.file(CHANNELS)
+    return await response.file(CHANNELS, mime_type=MIME_M3U)
 
 
 @app.get("/cloud.m3u")
@@ -164,7 +165,7 @@ async def handle_channels_cloud(request):
     log.info(f"[{request.ip}] {request.method} {request.url}")
     if not os.path.exists(CHANNELS_CLOUD):
         raise exceptions.NotFound(f"Requested URL {request.raw_url.decode()} not found")
-    return await response.file(CHANNELS_CLOUD)
+    return await response.file(CHANNELS_CLOUD, mime_type=MIME_M3U)
 
 
 @app.get("/grabaciones.m3u")
@@ -173,7 +174,7 @@ async def handle_channels_recordings(request):
     log.info(f"[{request.ip}] {request.method} {request.url}")
     if not os.path.exists(CHANNELS_RECORDINGS):
         raise exceptions.NotFound(f"Requested URL {request.raw_url.decode()} not found")
-    return await response.file(CHANNELS_RECORDINGS)
+    return await response.file(CHANNELS_RECORDINGS, mime_type=MIME_M3U)
 
 
 @app.get("/guia.xml")
