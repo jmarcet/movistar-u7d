@@ -108,6 +108,8 @@ pip3 install -r requirements.txt
 cp movistar_u7d.py movistar_epg.py tv_grab_es_movistartv vod.py /usr/local/bin/
 ```
 
+ - Para hacer uso de la funcionalidad de grabaciones también necesitamos tener instalados tanto `ffmpeg` como `mkvtoolnix`.
+
  3. Para Systemd:
 
  - [movistar_u7d.service](movistar_u7d.service): service systemd para el microservicio principal

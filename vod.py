@@ -16,6 +16,7 @@ import urllib.parse
 from collections import namedtuple
 from contextlib import closing
 from ffmpeg import FFmpeg
+from glob import glob
 from json2xml import json2xml
 from threading import Thread
 
@@ -30,7 +31,7 @@ MVTV_URL = "http://www-60.svc.imagenio.telefonica.net:2001/appserver/mvtv.do"
 
 NFO_EXT = "-movistar.nfo"
 TMP_EXT = ".tmp"
-VID_EXT = ".mkv"
+TMP_EXT2 = ".tmp2"
 UA = "MICA-IP-STB"
 
 YEAR_SECONDS = 365 * 24 * 60 * 60
@@ -127,62 +128,69 @@ class RtspClient(object):
 
 @ffmpeg.on("completed")
 def ffmpeg_completed():
-    sys.stderr.write(f"{_log_prefix} Recording Ended: {_log_suffix}")
+    sys.stderr.write(f"{_log_prefix} Recording ENDED: {_log_suffix}\n")
+
     command = list(_nice)
+    command += ["mkvmerge", "--abort-on-warnings", "-q", "-o", filename + TMP_EXT2]
+    if args.vo:
+        command += ["--track-order", "0:2,0:1,0:4,0:3,0:6,0:5"]
+        command += ["--default-track", "2:1"]
+    command += [filename + TMP_EXT]
+    try:
+        proc = subprocess.run(command, capture_output=True)
+        _cleanup(TMP_EXT)
+        if proc.stdout:
+            raise ValueError(proc.stdout.decode().replace("\n", " ").strip())
 
-    if os.path.exists(filename + VID_EXT):
-        os.remove(filename + VID_EXT)
+        recording_data = ujson.loads(
+            subprocess.run(["mkvmerge", "-J", filename + TMP_EXT2], capture_output=True).stdout.decode()
+        )
 
-    if not args.mp4:
-        command += ["mkvmerge", "-q", "-o", filename + VID_EXT]
-        if args.vo:
-            command += ["--track-order", "0:2,0:1,0:4,0:3,0:6,0:5"]
-            command += ["--default-track", "2:1"]
-        command += [filename + TMP_EXT]
-        subprocess.run(command)
+        duration = int(int(recording_data["container"]["properties"]["duration"]) / 1000000000)
+        bad = duration + 30 < args.time
+        sys.stderr.write(
+            f"{_log_prefix} Recording {'INCOMPLETE:' if bad else 'COMPLETE:'} "
+            f"[{duration}s] / {_log_suffix}\n"
+        )
+        missing_time = args.time - duration if bad else 0
 
-    else:
-        proc = subprocess.run(["ffprobe", filename + TMP_EXT], capture_output=True)
-        subs = [t.split()[1] for t in proc.stderr.decode().splitlines() if " Subtitle:" in t]
-
-        command += ["ffmpeg", "-i", filename + TMP_EXT]
-        command += ["-map", "0", "-c", "copy", "-sn"]
-        command += ["-movflags", "+faststart"]
-        command += ["-v", "panic", "-y", "-f", "mp4"]
-        command += [filename + VID_EXT]
-
-        proc = subprocess.Popen(command)
-
-        if len(subs):
-            track, lang = re.match(r"^#([0-9:]+)[^:]*\((\w+)\):", subs[0]).groups()
-            if lang == "esp":
-                lang = "spa"
+        _cleanup(VID_EXT, args.mp4)
+        if args.mp4:
             command = list(_nice)
-            command += ["ffmpeg", "-i", filename + TMP_EXT, "-map", track]
-            command += ["-c:s", "dvbsub", "-f", "mpegts", "-v", "panic"]
-            command += ["-y", f"{filename}.{lang}.sub"]
-            subprocess.run(command)
+            command += ["ffmpeg", "-i", filename + TMP_EXT2]
+            command += ["-map", "0", "-c", "copy", "-sn", "-movflags", "+faststart"]
+            command += ["-f", "mp4", "-v", "panic", filename + VID_EXT]
+            if subprocess.run(command).returncode:
+                _cleanup(VID_EXT)
+                raise ValueError("Failed to write " + filename + VID_EXT)
 
-        proc.wait()
+            subs = [t for t in recording_data["tracks"] if t["type"] == "subtitles"]
+            for track in subs:
+                filesub = "%s.%s.sub" % (filename, track["properties"]["language"])
+                command = list(_nice)
+                command += ["ffmpeg", "-i", filename + TMP_EXT2]
+                command += ["-map", "0:%d" % track["id"], "-c:s", "dvbsub"]
+                command += ["-f", "mpegts", "-v", "panic", filesub]
+                if subprocess.run(command).returncode:
+                    _cleanup(VID_EXT, args.mp4)
+                    raise ValueError("Failed to write " + filesub)
 
-    if os.path.exists(filename + VID_EXT):
-        try:
-            missing_time = check_recording()
-            if not missing_time:
+            _cleanup(TMP_EXT2)
+        else:
+            os.rename(filename + TMP_EXT2, filename + VID_EXT)
+
+        if not missing_time:
+            save_metadata()
+            httpx.put(epg_url)
+        else:
+            resp = httpx.put(epg_url + f"?missing={missing_time}")
+            if resp.status_code == 200:
                 save_metadata()
-                httpx.put(epg_url)
             else:
-                resp = httpx.put(epg_url + f"?missing={missing_time}")
-                if resp.status_code == 200:
-                    save_metadata()
-                else:
-                    os.remove(filename + VID_EXT)
-        except (KeyError, ValueError):
-            sys.stderr.write(f"{_log_prefix} Recording CANNOT PARSE: {_log_suffix}")
-    else:
-        sys.stderr.write(f"{_log_prefix} Recording CANNOT FIND: {_log_suffix}")
-
-    _cleanup()
+                _cleanup(VID_EXT, args.mp4)
+    except Exception as ex:
+        sys.stderr.write(f"{_log_prefix} Recording FAILED: {_log_suffix} => {repr(ex)}\n")
+        _cleanup(TMP_EXT2)
 
 
 @ffmpeg.on("error")
@@ -199,13 +207,15 @@ def ffmpeg_error(code):
 
 @ffmpeg.on("terminated")
 def ffmpeg_terminated():
-    sys.stderr.write(f"{_log_prefix} [ffmpeg] TERMINATED: {_log_suffix}")
+    sys.stderr.write(f"{_log_prefix} [ffmpeg] TERMINATED: {_log_suffix}\n")
     ffmpeg_completed()
 
 
-def _cleanup():
-    if os.path.exists(filename + TMP_EXT):
-        os.remove(filename + TMP_EXT)
+def _cleanup(ext, subs=False):
+    if os.path.exists(filename + ext):
+        os.remove(filename + ext)
+    if subs:
+        [os.remove(t) for t in glob(f"{filename}.*.sub")]
 
 
 def _handle_cleanup(signum, frame):
@@ -213,24 +223,6 @@ def _handle_cleanup(signum, frame):
         raise TimeoutError()
     else:
         return
-
-
-def check_recording():
-    command = list(_nice)
-    command += ["ffprobe", "-v", "quiet", "-print_format", "json", "-show_format"]
-    command += [filename + VID_EXT]
-
-    probe = ujson.loads(subprocess.run(command, capture_output=True).stdout.decode())
-    duration = int(float(probe["format"]["duration"]))
-
-    _bad = (duration + 30) < args.time
-    sys.stderr.write(
-        f"{_log_prefix} Recording {'INCOMPLETE:' if _bad else 'COMPLETE:'} "
-        f"[{duration}s] -> "
-        f"{_log_suffix}"
-    )
-
-    return args.time - duration if _bad else 0
 
 
 def find_free_port(iface=""):
@@ -278,18 +270,17 @@ async def record_stream():
     else:
         filename = os.path.join(RECORDINGS, f"{args.channel}-{args.broadcast}")
 
-    _log_suffix += f' [{args.time}s] "{filename[20:]}"\n'
+    _log_suffix = f'[{args.time}s] {_log_suffix} "{filename[20:]}"'
 
     ffmpeg.input(
         f"udp://@{args.iptv_ip}:{args.client_port}", fifo_size=5572, pkt_size=1316, timeout=500000
     ).output(
         filename + TMP_EXT,
         _options,
-        fflags="+igndts",
         t=str(
             args.time + 600 if args.time > 7200 else args.time + 300 if args.time > 1800 else args.time + 60
         ),
-        v="info",
+        v="panic",
         vsync="0",
         f="matroska",
     )
@@ -297,7 +288,7 @@ async def record_stream():
     _ffmpeg = Thread(target=asyncio.run, args=(ffmpeg.execute(),))
     _ffmpeg.start()
 
-    sys.stderr.write(f"{_log_prefix} Recording STARTED: {_log_suffix}")
+    sys.stderr.write(f"{_log_prefix} Recording STARTED: {_log_suffix}\n")
 
 
 def save_metadata():
@@ -461,6 +452,11 @@ if __name__ == "__main__":
 
     if not args.client_port:
         args.client_port = find_free_port(args.iptv_ip)
+
+    if args.mp4:
+        VID_EXT = ".mp4"
+    else:
+        VID_EXT = ".mkv"
 
     try:
         asyncio.run(VodLoop(args))

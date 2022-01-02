@@ -20,7 +20,7 @@ from sanic.compat import open_async
 from sanic.log import logger as log, LOGGING_CONFIG_DEFAULTS
 from xml.sax.saxutils import unescape
 
-from vod import MVTV_URL, TMP_EXT, VID_EXT
+from vod import MVTV_URL, TMP_EXT
 
 
 setproctitle("movistar_epg")
@@ -393,7 +393,7 @@ async def handle_prom_event_remove(request):
                 request.json["id"],
             )
             _offset = "[%d/%d]" % (_event["offset"] + request.json["offset"], _event["duration"])
-        log.info(f"{_msg} -> {_offset}")
+        log.info(f"{_msg} _ {_offset}")
     except KeyError:
         return response.empty(404)
     return response.empty(200)
