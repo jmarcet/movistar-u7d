@@ -350,7 +350,7 @@ async def handle_prom_event_add(request):
             _,
         ) = get_epg(request.json["channel_id"], _event["program_id"])
         _offset = "[%d/%d]" % (_event["offset"], _event["duration"])
-        request.app.metrics["RQS_LATENCY"].labels(
+        request.app.ctx.metrics["RQS_LATENCY"].labels(
             request.json["method"],
             request.json["endpoint"] + _epg["full_title"] + f" _ {_offset}",
             request.json["id"],
@@ -380,14 +380,14 @@ async def handle_prom_event_remove(request):
         _offset = "[%d/%d]" % (_event["offset"], _event["duration"])
         if request.json["method"] == "live":
             found = False
-            for _metric in request.app.metrics["RQS_LATENCY"]._metrics:
+            for _metric in request.app.ctx.metrics["RQS_LATENCY"]._metrics:
                 if request.json["method"] in _metric and str(request.json["id"]) in _metric:
                     found = True
                     break
             if found:
-                request.app.metrics["RQS_LATENCY"].remove(*_metric)
+                request.app.ctx.metrics["RQS_LATENCY"].remove(*_metric)
         else:
-            request.app.metrics["RQS_LATENCY"].remove(
+            request.app.ctx.metrics["RQS_LATENCY"].remove(
                 request.json["method"],
                 request.json["endpoint"] + _epg["full_title"] + f" _ {_offset}",
                 request.json["id"],

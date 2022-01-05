@@ -5,6 +5,6 @@ httpx
 json2xml
 python-ffmpeg
 sanic
-sanic-prometheus
+git+https://github.com/jmarcet/sanic-prometheus
 setproctitle
 tomli
