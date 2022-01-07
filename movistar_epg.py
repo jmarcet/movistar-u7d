@@ -201,7 +201,7 @@ def get_recording_path(channel_id, timestamp):
 
     filename = os.path.join(path, get_safe_filename(_EPGDATA[channel_id][timestamp]["full_title"]))
     if not _EPGDATA[channel_id][timestamp]["is_serie"]:
-        filename += f' - {datetime.fromtimestamp(timestamp).strftime("%Y%m%d_%H%M")}'
+        filename += f' - {datetime.fromtimestamp(timestamp).strftime("%Y%m%d")}'
 
     return (path, filename)
 
