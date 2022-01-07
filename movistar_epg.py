@@ -541,7 +541,7 @@ async def timers_check():
                         sanic_url = f"{SANIC_URL}"
                         if channel_id in _CLOUD and timestamp in _CLOUD[channel_id]:
                             sanic_url += "/cloud"
-                        sanic_url += f"/{channel_id}/{timestamp}.mp4?record=1"
+                        sanic_url += f"/{channel_id}/{timestamp}?record=1"
                         if vo:
                             sanic_url += "&vo=1"
                         try:
