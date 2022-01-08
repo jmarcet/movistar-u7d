@@ -48,6 +48,7 @@ LOG_SETTINGS["formatters"]["generic"]["datefmt"] = LOG_SETTINGS["formatters"]["a
 PREFIX = ""
 
 _CHANNELS = _CLOUD = _EPGDATA = _RECORDINGS = _RECORDINGS_INC = {}
+_TIMERS_ADDED = []
 
 app = Sanic("movistar_epg")
 app.config.update({"FALLBACK_ERROR_FORMAT": "json", "KEEP_ALIVE_TIMEOUT": YEAR_SECONDS})
@@ -300,6 +301,7 @@ async def handle_program_name(request, channel_id, program_id):
             ensure_ascii=False,
         )
 
+    global _TIMERS_ADDED
     missing = request.args.get("missing", 0)
     if missing:
         if channel_id not in _RECORDINGS_INC:
@@ -313,11 +315,13 @@ async def handle_program_name(request, channel_id, program_id):
             del _RECORDINGS_INC[channel_id][program_id]
         else:
             log.warning(f"Recording Incomplete RETRY: {_t}")
+            _TIMERS_ADDED.remove(filename)
             return response.json({"status": "Recording Incomplete"}, status=201)
 
     if channel_id not in _RECORDINGS:
         _RECORDINGS[channel_id] = {}
     _RECORDINGS[channel_id][program_id] = {"full_title": os.path.basename(filename)}
+    _TIMERS_ADDED.remove(filename)
 
     with open(recordings, "w") as f:
         ujson.dump(_RECORDINGS, f, ensure_ascii=False, indent=4, sort_keys=True)
@@ -506,13 +510,13 @@ async def timers_check():
             log.info(f"Already recording {nr_procs} streams")
             return
 
+        global _TIMERS_ADDED
         for channel_id in _timers["match"]:
             channel_id = int(channel_id)
             if channel_id not in _EPGDATA:
                 log.info(f"Channel {channel_id} not found in EPG")
                 continue
 
-            timers_added = []
             _time_limit = int(datetime.now().timestamp()) - (3600 * 3)
             for timestamp in reversed(_EPGDATA[channel_id]):
                 if timestamp > _time_limit:
@@ -530,7 +534,7 @@ async def timers_check():
                         lang = deflang
                     vo = True if lang == "VO" else False
                     _, filename = get_recording_path(channel_id, timestamp)
-                    if re.match(timer_match, title) and filename not in (timers_added or str(_ffmpeg)):
+                    if re.match(timer_match, title) and filename not in (_TIMERS_ADDED or str(_ffmpeg)):
                         _name = os.path.basename(filename)
                         if channel_id in _RECORDINGS:
                             if (_name or title) in str(_RECORDINGS[channel_id]):
@@ -549,7 +553,7 @@ async def timers_check():
                                 r = await client.get(sanic_url)
                             log.info(f"{sanic_url} => {r}")
                             if r.status_code == 200:
-                                timers_added.append(filename)
+                                _TIMERS_ADDED.append(filename)
                                 nr_procs += 1
                                 if RECORDING_THREADS and not nr_procs < RECORDING_THREADS:
                                     log.info(f"Already recording {nr_procs} streams")

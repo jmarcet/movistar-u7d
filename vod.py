@@ -18,6 +18,7 @@ from contextlib import closing
 from ffmpeg import FFmpeg
 from glob import glob
 from json2xml import json2xml
+from random import randint
 from threading import Thread
 
 
@@ -178,19 +179,21 @@ def ffmpeg_completed():
             _cleanup(TMP_EXT2)
         else:
             os.rename(filename + TMP_EXT2, filename + VID_EXT)
-
-        if not missing_time:
-            save_metadata()
-            httpx.put(epg_url)
-        else:
-            resp = httpx.put(epg_url + f"?missing={missing_time}")
-            if resp.status_code == 200:
-                save_metadata()
-            else:
-                _cleanup(VID_EXT, args.mp4)
     except Exception as ex:
         sys.stderr.write(f"{_log_prefix} Recording FAILED: {_log_suffix} => {repr(ex)}\n")
+        httpx.put(epg_url + f"?missing={randint(1, args.time)}")
         _cleanup(TMP_EXT2)
+        return
+
+    if not missing_time:
+        save_metadata()
+        httpx.put(epg_url)
+    else:
+        resp = httpx.put(epg_url + f"?missing={missing_time}")
+        if resp.status_code == 200:
+            save_metadata()
+        else:
+            _cleanup(VID_EXT, args.mp4)
 
 
 @ffmpeg.on("error")
