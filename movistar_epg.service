@@ -10,7 +10,9 @@ Type=simple
 # Environment=RECORDING_THREADS=4
 # Environment=RECORDINGS=/mnt/recordings
 # Environment=SANIC_PORT=8888
-# Environment=U7D_UID=nobody
+
+# Antes de lanzar movistar_epg.py, comprueba que las dns de movistar sean accesibles
+ExecStartPre=/bin/bash -c 'while (true); do nc -z -v -w 1 172.26.23.3 53 2>/dev/null && break; sleep 1; done'
 ExecStart=movistar_epg.py
 
 [Install]
