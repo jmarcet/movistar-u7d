@@ -1,7 +1,7 @@
 Movistar IPTV U7D - Flussonic catchup proxy
 ===========================================
 
-[![TiviMate Movistar](https://img.youtube.com/vi/WVHkjAZ1hBA/0.jpg)](https://www.youtube.com/embed/WVHkjAZ1hBA)
+[![TiviMate Movistar](https://openwrt.marcet.info/u7d/TiviMate_Video_Overlay.jpg)](https://openwrt.marcet.info/u7d/TiviMate_Movistar_20210320_U7D-1.mp4)
 
 
 Qué es
@@ -88,7 +88,7 @@ Nos descargamos todo este repositorio a nuestro ordenador, ya sea clonando [el r
 Una vez tenemos el compose ajustado, en un shell, nos movemos a la carpeta donde tengamos todo clonado/descomprimido y ejecutamos:
 
 ```
-docker-copose up -d && docker-copose logs -f
+docker-compose up -d && docker-compose logs -f
 ```
 
 Dentro del `docker` queda todo lo necesario y se ejecutará muy rápidamente, sólo tiene que descargar la última versión disponible [aquí](https://gitlab.marcet.info/javier/movistar-u7d/container_registry/2), no necesita generar nada. Un vez arranque sí, tardará unos minutos en generar la EPG y las listas de canales.
@@ -112,9 +112,9 @@ cp movistar_u7d.py movistar_epg.py tv_grab_es_movistartv vod.py /usr/local/bin/
 
  3. Para Systemd:
 
- - [movistar_u7d.service](movistar_u7d.service): service systemd para el microservicio principal
+ - [movistar_u7d.service](movistar_u7d.service): servicio systemd para el microservicio principal
 
- - [movistar_epg.service](movistar_epg.service): service systemd para el microservicio que mantiene el estado (la EPG), realiza las grabaciones, etc
+ - [movistar_epg.service](movistar_epg.service): servicio systemd para el microservicio que mantiene la EPG para el ctachup, procesa los temporizadores, las métricas de uso, etc
 
 
  - Copiamos los `.service` a `/etc/systemd/system`, ajustando las variables de entorno que queramos. Habilitamos los servicios y los iniciamos:
@@ -136,7 +136,7 @@ En cualquier caso, si lo usas sin docker, es importante que el proxy tenga acces
 Instalación en el propio router
 -------------------------------
 
-Esta es la forma ideal de usarlo, aunque se complica todo un poco. [Aquí](https://openwrt.marcet.info/latest/targets/x86/64/) podéís encontrar builds de openwrt para x86-64 con todo lo necesario para desplegar todo esto. Los actualizo cada pocos días.
+Es una forma ideal de usarlo. [Aquí](https://openwrt.marcet.info/latest/targets/x86/64/) podéís encontrar builds de OpenWRT para x86_64 con todo lo necesario para desplegarlo todo. Los actualizo cada pocos días.
 
 
 Configuración y Observaciones
@@ -205,8 +205,8 @@ Espero que se solucione pronto.
 - Cualquier duda o consulta, o si os encontráis con un cliente con catchup que os parece que debería funcionar con este proxy pero no lo hace (pienso en clientes incluidos en SmartTVs modernos), no dudéis en abrir una incidencia, ya sea en [Github](https://github.com/jmarcet/movistar_u7d) o en [Gitlab](https://gitlab.marcet.info/javier/movistar-u7d).
 
 
-Grabaciones automáticas
------------------------
+Grabaciones automáticas: Temporizadores
+---------------------------------------
 
 Existe una funcionalidad de grabaciones automáticas a partir de unos temporizadores que podremos definir con una cadena de texto, clasificados por canales.
 
@@ -258,11 +258,11 @@ Cada cadena de texto es en realidad una [expresión regular](https://es.wikipedi
 
 Podemos también definir por temporizador qué pista de audio queremos como principal. Si el temporizador finaliza con `" ## Esp"` o `" ## VO"`, estaremos indicando la pista que queremos, si la primera o la segunda. En el ejemplo de arriba se define la `VO` como comportamiento por defecto, es decir se especifica que las grabaciones deben tener como pista de audio principal la que llega como secundaria y, por separado, se definen varios temporizadores en los que se especifica que las grabaciones se hagan con la pista de audio normal como principal `" ## Esp"`.
 
-Como se mencionó antes, las grabaciones se realizan desde el catchup, empezando unas horas después de ser emitidas. Esto es con la intención de que cualquier cambio en el horario esté reflejado y asi tener más posibilidades de grabar entero el evento. Esto también implica que se pueden reintentar en caso de problemas, por lo que las grabaciones se comprueban antes de ser archivadas como correctas. En caso de cualquier error, se reintentan pasados unos minutos.
+Como se mencionó antes, las grabaciones se realizan desde el catchup, empezando unas horas después de ser emitidas. Esto es con la intención de que cualquier cambio en el horario esté reflejado ya en la guía y así tener más posibilidades de grabar entero el evento. Esto también implica que se pueden reintentar en caso de problemas, por lo que las grabaciones se comprueban antes de ser archivadas como correctas. En caso de cualquier error, se reintentan poco después. De esta manera, podemos confiar en que todo lo grabado quede perfecto, sin el más mínimo error.
 
-El control de qué grabaciones se reintentan o no, viene determinado por el fichero `recordings.json` que se generará automáticamente y se actualizará con cada grabación hecha. Si queremos que una grabación existente se sobreescriba, bastará con eliminarla de este `recordings.json` o borrarla del disco. Si el temporizador que la generó sigue existiendo en el fichero [timers.conf](timers.conf), la grabación se repetirá a los pocos minutos, hasta que sea satisfactoria. En el caso de resultar incompleta tres veces seguidas, con la misma duración total, se archivará como correcta.
+El control de qué grabaciones se reintentan, o no, viene determinado por el fichero `recordings.json` que se generará automáticamente y se actualizará con cada grabación hecha. Si queremos que una grabación existente se sobreescriba, bastará con eliminarla de este `recordings.json` y reiniciar [movistar_epg.py](movistar_epg.py). Si el temporizador que la generó sigue existiendo en el fichero [timers.conf](timers.conf), la grabación se repetirá poco después, hasta que sea satisfactoria. En el caso de resultar incompleta tres veces seguidas pero con la misma duración total las tres veces, se archivará como correcta.
 
-Por último, las grabaciones se realizan en carpetas con el nombre de la serie o programa. En caso de no tener nombre de serie, se crearán directamente en la raíz de la ruta a la que apunta `RECORDINGS`, e igualmente serán expuestas en la `.m3u` de grabaciones locales.
+Por último, las grabaciones se realizan en carpetas con el nombre de la serie o programa. En caso de programas periódicos no clasificados como series, como los de noticias, serán grabados en una carpeta con el nombre del programa y cada grabación llevará añadida la fecha, de manera que se puedan grabar programas periódicos que siempre tienen el mismo nombre genérico. En todos los casos, las grabaciones serán expuestas en la `.m3u` de grabaciones locales: `recordings.m3u` o `grabaciones.m3u`.
 
 
 Cómo funciona
@@ -276,9 +276,7 @@ Donde `canal` es el número identificador de los canales según figuran en la li
 
  - Y a las grabaciones en la nube de [Movistar](https://www.movistar.es/particulares/internet/), con mucho más tiempo de almacenado: `http://192.168.1.10:8888/cloud/{canal}/{timestamp}`
 
- - Opcionalmente, el timestamp puede ir precedido de una palabra y/o seguido de una duración en segundos así como de una extensión: `http://192.168.1.10:8888/{canal}/{palabra}-{timestamp}-{duracion}.{extension}`. Esto ha cambiado para tener mayor compatibilidad con diferentes clientes.
-
- El timestamp es en el que queremos iniciar la reproducción, la duración no se usa, puede ser **0**, y la extensión puede tener cualquier valor. `TiviMate` usa **.m3u8**, `OTT Nagivator IPTV` depende de cómo lo configuremos, en modo flussonic-ts, usa **.ts**, mientras que VLC necesita que las URLs terminen en **.mpeg** o no reproducirá bien los streams.
+ - Opcionalmente, el timestamp puede ir precedido de una palabra y/o seguido de una duración en segundos así como de una extensión: `http://192.168.1.10:8888/{canal}/{palabra}-{timestamp}-{duracion}.{extension}`. Esto es para tener la mayor compatibilidad posible con diferentes clientes.
 
  - Adicionalmente, la funcionalidad de realizar grabaciones es accesible añadiendo unos parámetros a las URLs flussonic, es decir, no valen para los directos:
 
@@ -292,7 +290,7 @@ Las grabaciones llevan las pistas de audio `mp2` transcodeadas a `aac` para que 
 
  - Por último, las grabaciones son accesibles desde `http://192.168.1.10:8888/recording/?{fichero}`
 
-Donde el fichero se buscará, con ruta incluida, en la carpeta indicada por `RECORDINGS`. Se devuelve por HTTP con `content-range`, por lo que es reproducible directamente en Chrome.
+Donde el fichero se buscará, con ruta incluida, en la carpeta indicada por `RECORDINGS`. Se devuelve por HTTP con `content-range`, por lo que debería ser reproducible con cualquier tipo de cliente.
 
 
 Componentes
@@ -300,7 +298,7 @@ Componentes
 
 Este software consta de cuatro partes. Las dos primeras son dos microservicios escritos en python asíncrono, con [Sanic](https://github.com/sanic-org/sanic), el tercero es también asíncrono pero sin [Sanic](https://github.com/sanic-org/sanic), al menos cuando se ejecuta como script independiente, y el último se encarga de descargar la EPG y generar las listas de canales y guías de programación. El extra es un fichero de ejemplo para montarnos gráficas estadísticas con [Grafana](https://grafana.com/grafana/):
 
- - [movistar_u7d.py](movistar_u7d.py): el proxy principal con el que se comunica el cliente final, como el TiviMate. Se ejecuta en varios procesos simultáneos, número determinado por la variable de entorno `SANIC_THREADS` que por defecto es 4.
+ - [movistar_u7d.py](movistar_u7d.py): el microservicio principal y fachada del proxy con el que se comunica el cliente final, como el TiviMate. Se ejecuta en varios procesos simultáneos, número determinado por la variable de entorno `SANIC_THREADS` que por defecto es 4.
 
  - [movistar_epg.py](movistar_epg.py): el segundo microservicio escrito con [Sanic](https://github.com/sanic-org/sanic). Mantiene el estado necesario para que el anterior sea funcional puro y pueda ejecutarse en múltiples procesos sin problemas. Está encargado de generar y actualizar las listas de canales y de grabaciones y las guías de programación, así como de gestionar los temporizadores de las grabaciones locales. También se encarga de lás métricas [Prometheus](https://prometheus.io/docs/introduction/overview/), aunque sean luego servidas por el anterior.
 
@@ -314,7 +312,7 @@ Esta caché que genera el `tv_grab_es_movistartv` es imprescindible para que tod
 
 
 De dónde nace
-----------------------
+-------------
 
 Este proyecto nació del descontento de acceder a los canales de TV de [Movistar](https://www.movistar.es/particulares/internet/) a través de su [app de Movistar](https://play.google.com/store/apps/details?id=es.plus.yomvi), que dicho de forma elegante, está muy por detrás de la competencia.
 
@@ -348,12 +346,6 @@ Pasó a ser mi modo favorito de acceder a los canales, nada se le acercaba. Es s
 Tan contento con él estaba que tenía que poder usar el resto de funcionalidad. Daba acceso a servicios de catchup (últimos 7 días), y lo hacía de dos maneras diferentes. Después de hacer pruebas, monitorear qué conexiones realizaba cuando intentabas ver algo de los últimos 7 días, ...
 
 Se me ocurrió que podía hacer algún tipo de proxy entre dicho TiviMate con catchup flussonic (de las variantes de catchup que soporta es el que más extendido he encontrado y a la vez es el más sencillo e intuitivo de implementar) y la IPTV de Movistar.
-
-El resultado es algo así (el funcionamiento real es fluido todo el tiempo, el video se llega a atascar en los momentos de mayor tráfico de datos):
-
- - [TiviMate_Movistar_20210320_U7D-1.mp4](https://openwrt.marcet.info/u7d/TiviMate_Movistar_20210320_U7D-1.mp4)
-
- - [TiviMate_Movistar_20210320_U7D-2.mp4](https://openwrt.marcet.info/u7d/TiviMate_Movistar_20210320_U7D-2.mp4)
 
 A día de doy alterno constantemente entre clientes, cada uno tiene sus pros y sus contras, ninguno es perfecto. Lo ideal de este proxy es que te abre un mundo de posibilidades para acceder a la IPTV, de forma estable y sin cortes.
 
