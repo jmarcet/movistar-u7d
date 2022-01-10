@@ -157,11 +157,19 @@ async def get_ffmpeg_procs():
 
 def get_program_id(channel_id, url=None, cloud=False):
     if not url:
-        url = f"{int(time.time())}"
-    x = flussonic_regex.match(url)
+        start = int(time.time())
+    elif len(url) == 10:
+        start = int(url)
+    elif not url.isdigit():
+        start = int(flussonic_regex.match(url).groups()[0])
+    elif len(url) == 12:
+        start = int(datetime.strptime(url, "%Y%m%d%H%M").timestamp())
+    elif len(url) == 14:
+        start = int(datetime.strptime(url, "%Y%m%d%H%M%S").timestamp())
+    else:
+        return
 
     channel = _CHANNELS[channel_id]["name"]
-    start = int(x.groups()[0])
     last_event = new_start = 0
 
     if not cloud:

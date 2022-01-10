@@ -272,9 +272,9 @@ Cómo funciona
 
 Donde `canal` es el número identificador de los canales según figuran en la lista de canales `.m3u` principal
 
- - Se puede acceder a cualquier instante de los últimos 7 días en URLs como: `http://192.168.1.10:8888/{canal}/{timestamp}`
+ - Se puede acceder a cualquier instante de los últimos 7 días en URLs como: `http://192.168.1.10:8888/{canal}/{YYYYMMDDHHMM}`, `http://192.168.1.10:8888/{canal}/{YYYYMMDDHHMMSS}` y `http://192.168.1.10:8888/{canal}/{timestamp}`
 
- - Y a las grabaciones en la nube de [Movistar](https://www.movistar.es/particulares/internet/), con mucho más tiempo de almacenado: `http://192.168.1.10:8888/cloud/{canal}/{timestamp}`
+ - Y a las grabaciones en la nube de [Movistar](https://www.movistar.es/particulares/internet/), con mucho más tiempo de almacenado: `http://192.168.1.10:8888/cloud/{canal}/{YYYYMMDDHHMM}`, `http://192.168.1.10:8888/cloud/{canal}/{YYYYMMDDHHMMSS}` y `http://192.168.1.10:8888/cloud/{canal}/{timestamp}`
 
  - Opcionalmente, el timestamp puede ir precedido de una palabra y/o seguido de una duración en segundos así como de una extensión: `http://192.168.1.10:8888/{canal}/{palabra}-{timestamp}-{duracion}.{extension}`. Esto es para tener la mayor compatibilidad posible con diferentes clientes.
 
