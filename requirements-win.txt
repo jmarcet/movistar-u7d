@@ -1,11 +1,10 @@
 aiohttp
-asyncio_dgram
+git+https://github.com/jmarcet/asyncio-dgram
 black
 httpx
 json2xml
 python-ffmpeg
 sanic
 git+https://github.com/jmarcet/sanic-prometheus
-setproctitle
 tomli
 ujson

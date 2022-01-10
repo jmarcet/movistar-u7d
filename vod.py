@@ -404,7 +404,8 @@ async def VodSetup(args, vod_client):
     reader, writer = await asyncio.open_connection(uri.hostname, uri.port)
     epg_url = f"{SANIC_EPG_URL}/program_name/{args.channel}/{args.broadcast}"
 
-    signal.signal(signal.SIGHUP, _handle_cleanup)
+    if os.name != "nt":
+        signal.signal(signal.SIGHUP, _handle_cleanup)
     signal.signal(signal.SIGTERM, _handle_cleanup)
 
     client = RtspClient(reader, writer, vod_info["url"])

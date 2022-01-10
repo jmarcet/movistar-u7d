@@ -14,7 +14,6 @@ import urllib.parse
 
 from collections import namedtuple
 from contextlib import closing
-from setproctitle import setproctitle
 from sanic import Sanic, exceptions, response
 from sanic.compat import open_async, stat_async
 from sanic.handlers import ContentRangeHandler
@@ -26,10 +25,20 @@ from sanic.touchup.meta import TouchUpMeta
 from movistar_epg import get_ffmpeg_procs
 from vod import VodData, VodLoop, VodSetup, find_free_port, COVER_URL, IMAGENIO_URL, UA
 
+if os.name != "nt":
+    from setproctitle import setproctitle
 
-setproctitle("movistar_u7d")
+    setproctitle("movistar_u7d")
 
-HOME = os.getenv("HOME", "/home")
+if "LAN_IP" in os.environ:
+    SANIC_HOST = os.getenv("LAN_IP")
+else:
+    s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+    s.connect(("8.8.8.8", 53))
+    SANIC_HOST = s.getsockname()[0]
+    s.close
+
+HOME = os.getenv("HOME", os.getenv("HOMEPATH"))
 CHANNELS = os.path.join(HOME, "MovistarTV.m3u")
 CHANNELS_CLOUD = os.path.join(HOME, "cloud.m3u")
 CHANNELS_RECORDINGS = os.path.join(HOME, "recordings.m3u")
@@ -41,10 +50,9 @@ MIME_M3U = "audio/x-mpegurl"
 MIME_TS = "video/MP2T;audio/mp3"
 MIME_WEBM = "video/webm"
 MP4_OUTPUT = bool(os.getenv("MP4_OUTPUT", False))
-NETWORK_FSIGNAL = "/tmp/.u7d_bw"
+NETWORK_FSIGNAL = os.path.join(os.getenv("TMP", "/tmp"), ".u7d_bw")
 RECORDINGS = os.getenv("RECORDINGS", None)
 SANIC_EPG_URL = "http://127.0.0.1:8889"
-SANIC_HOST = os.getenv("LAN_IP", "0.0.0.0")
 SANIC_PORT = int(os.getenv("SANIC_PORT", "8888"))
 SANIC_THREADS = int(os.getenv("SANIC_THREADS", "4"))
 
@@ -249,57 +257,56 @@ async def handle_channel(request, channel_id):
     if request.method == "HEAD":
         return response.HTTPResponse(content_type=MIME_TS, status=200)
 
-    with closing(socket.socket(socket.AF_INET, socket.SOCK_DGRAM, socket.IPPROTO_UDP)) as sock:
-        sock.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
-        sock.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEPORT, 1)
-        sock.bind((mc_grp, int(mc_port)))
-        sock.setsockopt(socket.SOL_IP, socket.IP_MULTICAST_IF, socket.inet_aton(_IPTV))
-        sock.setsockopt(
-            socket.SOL_IP, socket.IP_ADD_MEMBERSHIP, socket.inet_aton(mc_grp) + socket.inet_aton(_IPTV)
+    sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM, socket.IPPROTO_UDP)
+    sock.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+    sock.bind((mc_grp if os.name != "nt" else "", int(mc_port)))
+    sock.setsockopt(
+        socket.IPPROTO_IP, socket.IP_ADD_MEMBERSHIP, socket.inet_aton(mc_grp) + socket.inet_aton(_IPTV)
+    )
+
+    stream = await asyncio_dgram.from_socket(sock)
+    try:
+        _response = await request.respond(content_type=MIME_TS)
+        await _response.send((await stream.recv())[0][28:])
+    except asyncio.exceptions.TimeoutError:
+        log.error(f"{_raw_url} not found")
+        raise exceptions.NotFound(f"Requested URL {_raw_url} not found")
+
+    _lat = timeit.default_timer() - _start
+    asyncio.create_task(
+        _SESSION.post(
+            f"{SANIC_EPG_URL}/prom_event/add",
+            json={
+                "method": "live",
+                "endpoint": f"{name} _ {request.ip} _ ",
+                "channel_id": channel_id,
+                "msg": f"[{request.ip}] -> Playing {_raw_url} [{_lat:1.4}s]",
+                "id": _start,
+                "lat": _lat,
+            },
         )
+    )
 
-        with closing(await asyncio_dgram.from_socket(sock)) as stream:
-            try:
-                _response = await request.respond(content_type=MIME_TS)
-                await _response.send((await stream.recv())[0][28:])
-            except asyncio.exceptions.TimeoutError:
-                log.error(f"{_raw_url} not found")
-                raise exceptions.NotFound(f"Requested URL {_raw_url} not found")
-
-            _lat = timeit.default_timer() - _start
+    try:
+        while True:
+            await _response.send((await stream.recv())[0][28:])
+    finally:
+        try:
+            await _response.eof()
+        finally:
+            stream.close()
             asyncio.create_task(
                 _SESSION.post(
-                    f"{SANIC_EPG_URL}/prom_event/add",
+                    f"{SANIC_EPG_URL}/prom_event/remove",
                     json={
                         "method": "live",
                         "endpoint": f"{name} _ {request.ip} _ ",
                         "channel_id": channel_id,
-                        "msg": f'[{request.ip}] -> Playing [{_lat:1.4}s] "{name}" ',
+                        "msg": f"[{request.ip}] -> Stopped {_raw_url} [{_lat:1.4}s]",
                         "id": _start,
-                        "lat": _lat,
                     },
                 )
             )
-
-            try:
-                while True:
-                    await _response.send((await stream.recv())[0][28:])
-            finally:
-                try:
-                    await _response.eof()
-                finally:
-                    asyncio.create_task(
-                        _SESSION.post(
-                            f"{SANIC_EPG_URL}/prom_event/remove",
-                            json={
-                                "method": "live",
-                                "endpoint": f"{name} _ {request.ip} _ ",
-                                "channel_id": channel_id,
-                                "msg": f'[{request.ip}] -> Stopped "{name}" {_raw_url} ',
-                                "id": _start,
-                            },
-                        )
-                    )
 
 
 @app.route("/<channel_id:int>/<url>", methods=["GET", "HEAD"])
@@ -515,7 +522,7 @@ if __name__ == "__main__":
             access_log=False,
             auto_reload=False,
             debug=False,
-            workers=SANIC_THREADS,
+            workers=SANIC_THREADS if os.name != "nt" else 1,
         )
     except (KeyboardInterrupt, TimeoutError):
         sys.exit(1)

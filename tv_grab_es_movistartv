@@ -24,7 +24,6 @@
 import argparse
 import codecs
 import concurrent.futures
-import fcntl
 import glob
 import httpx
 import logging
@@ -41,13 +40,14 @@ import xml.etree.ElementTree as ElTr
 from datetime import date, datetime, timedelta
 from logging.handlers import RotatingFileHandler
 from queue import Queue
-from setproctitle import setproctitle
 from threading import Thread
 
 from movistar_epg import get_title_meta
 
+if os.name != "nt":
+    from setproctitle import setproctitle
 
-setproctitle("tv_grab_es_movistartv")
+    setproctitle("tv_grab_es_movistartv")
 
 epg_channels = [
     "2543",
@@ -105,7 +105,8 @@ demarcations = {
 
 default_demarcation = demarcations["Galicia"]
 
-app_dir = os.path.join(os.environ.get("HOME"), ".xmltv")
+app_dir = os.path.join(os.getenv("HOME", os.getenv("HOMEPATH")), ".xmltv")
+sep = "\\" if os.name == "nt" else "/"
 use_multithread = True
 
 log_file = "tv_grab_es_movistartv.log"
@@ -326,8 +327,8 @@ class Cache:
 
     @staticmethod
     def __check_dirs():
-        cache_path = f"{app_dir}/cache"
-        progs_path = f"{cache_path}/programs"
+        cache_path = f"{app_dir}{sep}cache"
+        progs_path = f"{cache_path}{sep}programs"
         if not os.path.isdir(cache_path):
             logger.info(f"Creando caché en {cache_path}")
             os.mkdir(cache_path)
@@ -336,9 +337,9 @@ class Cache:
 
     @staticmethod
     def __clean():
-        for file in glob.glob(f"{app_dir}/cache/programs/*.json"):
+        for file in glob.glob(f"{app_dir}{sep}cache{sep}programs{sep}*.json"):
             try:
-                with open(file) as f:
+                with open(file, encoding="utf8") as f:
                     _data = json.load(f)["data"]
                 _exp_date = int(_data["endTime"] / 1000)
                 if _exp_date < deadline:
@@ -350,14 +351,14 @@ class Cache:
     @staticmethod
     def __load(cfile):
         try:
-            with open(f"{app_dir}/cache/{cfile}", "r") as f:
+            with open(f"{app_dir}{sep}cache{sep}{cfile}", "r", encoding="utf8") as f:
                 return json.load(f)["data"]
         except (IOError, KeyError, ValueError):
             return None
 
     @staticmethod
     def __save(cfile, data):
-        with open(f"{app_dir}/cache/{cfile}", "w") as f:
+        with open(f"{app_dir}{sep}cache{sep}{cfile}", "w", encoding="utf8") as f:
             try:
                 json.dump({"data": data}, f, ensure_ascii=False, indent=4, sort_keys=True)
             except AttributeError:
@@ -383,11 +384,11 @@ class Cache:
         self.__save(end_points_file, data)
 
     def load_epg_extended_info(self, pid):
-        return self.__programs[pid] if pid in self.__programs else self.__load(f"programs/{pid}.json")
+        return self.__programs[pid] if pid in self.__programs else self.__load(f"programs{sep}{pid}.json")
 
     def save_epg_extended_info(self, data):
         self.__programs[data["productID"]] = data
-        self.__save("programs/%s.json" % data["productID"], data)
+        self.__save("programs%s%s.json" % (sep, data["productID"]), data)
 
     def load_config(self):
         return self.__load("config.json")
@@ -608,7 +609,7 @@ class MulticastIPTV:
                 "fileid": struct.unpack(">H", data[5:7])[0] & 0x0FFF,
                 "chunk_number": struct.unpack(">H", data[8:10])[0] >> 4,
                 "chunk_total": struct.unpack("B", data[10:11])[0],
-                "data": data[12:].decode(encoding="latin1"),
+                "data": data[12:].decode("latin1"),
             }
             return chunk
         except Exception as ex:
@@ -622,10 +623,9 @@ class MulticastIPTV:
         sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM, socket.IPPROTO_UDP)
         sock.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
         sock.settimeout(3)
-        sock.bind((mc_grp, int(mc_port)))
-        sock.setsockopt(socket.SOL_IP, socket.IP_MULTICAST_IF, socket.inet_aton(_iptv))
+        sock.bind((mc_grp if os.name != "nt" else "", int(mc_port)))
         sock.setsockopt(
-            socket.SOL_IP, socket.IP_ADD_MEMBERSHIP, socket.inet_aton(mc_grp) + socket.inet_aton(_iptv)
+            socket.IPPROTO_IP, socket.IP_ADD_MEMBERSHIP, socket.inet_aton(mc_grp) + socket.inet_aton(_iptv)
         )
         # Wait for an end chunk to start by the beginning
         while True:
@@ -674,9 +674,9 @@ class MulticastIPTV:
                     "id": channel_id,
                     "address": i[0][0].attrib["Address"],
                     "port": i[0][0].attrib["Port"],
-                    "name": i[2][0].text.encode("latin1").decode(),
-                    "shortname": i[2][1].text.encode("latin1").decode(),
-                    "genre": i[2][3][0].text.encode("latin1").decode(),
+                    "name": i[2][0].text.encode("latin1").decode("utf8"),
+                    "shortname": i[2][1].text.encode("latin1").decode("utf8"),
+                    "genre": i[2][3][0].text.encode("latin1").decode("utf8"),
                     "logo_uri": i[1].attrib["logoURI"]
                     if "logoURI" in i[1].attrib
                     else "MAY_1/imSer/4146.jpg",
@@ -941,7 +941,7 @@ class MulticastIPTV:
 
     @staticmethod
     def __decode_string(string):
-        _t = ("".join(chr(char ^ 0x15) for char in string)).encode("latin1").decode()
+        _t = ("".join(chr(char ^ 0x15) for char in string)).encode("latin1").decode("utf8")
         return _t.replace("&quot;", "«", 1).replace("&quot;", "»", 1)
 
     @staticmethod
@@ -1273,7 +1273,7 @@ class XMLTV:
 def create_logger(argv):
     if not os.path.exists(app_dir):
         os.mkdir(app_dir)
-    log_path = f"{app_dir}/{log_file}"
+    log_path = f"{app_dir}{sep}{log_file}"
     handler = RotatingFileHandler(
         log_path, mode="a", maxBytes=log_size * 1048576, backupCount=2, encoding=None, delay=0
     )
@@ -1320,26 +1320,16 @@ def export_channels(m3u_file, cloud=None):
     )
 
 
-# Determina la primera IP de rango local
 if "LAN_IP" in os.environ:
     lan_ip = os.getenv("LAN_IP")
 else:
-    lan_ip = [
-        line
-        for line in (
-            [ip for ip in socket.gethostbyname_ex(socket.gethostname())[2] if not ip.startswith("127.")][:1],
-            [
-                [
-                    (s.connect(("8.8.8.8", 53)), s.getsockname()[0], s.close())
-                    for s in [socket.socket(socket.AF_INET, socket.SOCK_DGRAM)]
-                ][0][1]
-            ],
-        )
-        if line
-    ][0][0]
+    s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+    s.connect(("8.8.8.8", 53))
+    lan_ip = s.getsockname()[0]
+    s.close
 
 # Endpoint del backend principal
-sanic = f"{lan_ip}:" + os.getenv("SANIC_PORT", "8888")
+sanic = "%s:%s" % (lan_ip, os.getenv("SANIC_PORT", "8888"))
 
 # Determina la dirección IP para el IPTV
 s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
@@ -1360,14 +1350,17 @@ logger = create_logger(sys.argv)
 # Obtiene los argumentos de entrada
 args = create_args_parser().parse_args()
 
-if not args.m3u and not args.cloud_m3u:
-    # Sólo una instancia ejecutándose
-    fh = open(os.path.realpath(__file__))
-    try:
-        fcntl.flock(fh, fcntl.LOCK_EX | fcntl.LOCK_NB)
-    except BlockingIOError:
-        sys.stderr.write(f"{__file__} ya se está ejecutando\n")
-        sys.exit(0)
+if os.name != "nt":
+    if not args.m3u and not args.cloud_m3u:
+        import fcntl
+
+        # Sólo una instancia ejecutándose
+        fh = open(os.path.realpath(__file__))
+        try:
+            fcntl.flock(fh, fcntl.LOCK_EX | fcntl.LOCK_NB)
+        except BlockingIOError:
+            sys.stderr.write(f"{__file__} ya se está ejecutando\n")
+            sys.exit(0)
 
 # Crea la caché
 cache = Cache()
@@ -1394,6 +1387,7 @@ if args.cloud_m3u or args.cloud_recordings:
     if args.cloud_m3u:
         export_channels(args.cloud_m3u, list(epg))
         sys.exit(0)
+    cached = False
 else:
     epg, cached = iptv.get_epg()
 

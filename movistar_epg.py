@@ -4,6 +4,7 @@ import asyncio
 import httpx
 import os
 import re
+import socket
 import sys
 import time
 import tomli
@@ -13,7 +14,6 @@ import urllib.parse
 from asyncio.subprocess import DEVNULL
 from datetime import datetime
 from glob import glob
-from setproctitle import setproctitle
 from sanic import Sanic, exceptions, response
 from sanic_prometheus import monitor
 from sanic.compat import open_async
@@ -22,17 +22,26 @@ from xml.sax.saxutils import unescape
 
 from vod import MVTV_URL, TMP_EXT
 
+if os.name != "nt":
+    from setproctitle import setproctitle
 
-setproctitle("movistar_epg")
+    setproctitle("movistar_epg")
 
-HOME = os.getenv("HOME", "/home/")
+if "LAN_IP" in os.environ:
+    SANIC_HOST = os.getenv("LAN_IP")
+else:
+    s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+    s.connect(("8.8.8.8", 53))
+    SANIC_HOST = s.getsockname()[0]
+    s.close
+
+HOME = os.getenv("HOME", os.getenv("HOMEPATH"))
 CHANNELS = os.path.join(HOME, "MovistarTV.m3u")
 CHANNELS_CLOUD = os.path.join(HOME, "cloud.m3u")
 CHANNELS_RECORDINGS = os.path.join(HOME, "recordings.m3u")
 GUIDE = os.path.join(HOME, "guide.xml")
 GUIDE_CLOUD = os.path.join(HOME, "cloud.xml")
-NETWORK_FSIGNAL = "/tmp/.u7d_bw"
-SANIC_HOST = os.getenv("LAN_IP", "127.0.0.1")
+NETWORK_FSIGNAL = os.path.join(os.getenv("TMP", "/tmp"), ".u7d_bw")
 SANIC_PORT = int(os.getenv("SANIC_PORT", "8888"))
 SANIC_URL = f"http://{SANIC_HOST}:{SANIC_PORT}"
 RECORDING_THREADS = int(os.getenv("RECORDING_THREADS", "4"))
@@ -86,7 +95,7 @@ async def after_server_start(app, loop):
     if RECORDINGS:
         await update_recordings_m3u()
         try:
-            async with await open_async(recordings) as f:
+            async with await open_async(recordings, encoding="utf8") as f:
                 recordingsdata = ujson.loads(await f.read())
             int_recordings = {}
             for channel in recordingsdata:
@@ -334,7 +343,7 @@ async def handle_program_name(request, channel_id, program_id):
     _RECORDINGS[channel_id][program_id] = {"full_title": os.path.basename(filename)}
     _TIMERS_ADDED.remove(filename)
 
-    with open(recordings, "w") as f:
+    with open(recordings, "w", encoding="utf8") as f:
         ujson.dump(_RECORDINGS, f, ensure_ascii=False, indent=4, sort_keys=True)
 
     await update_recordings_m3u()
@@ -435,7 +444,7 @@ async def reload_epg():
 
     async with epg_lock:
         try:
-            async with await open_async(epg_data) as f:
+            async with await open_async(epg_data, encoding="utf8") as f:
                 epgdata = ujson.loads(await f.read())["data"]
             int_epgdata = {}
             for channel in epgdata:
@@ -451,7 +460,7 @@ async def reload_epg():
             return await reload_epg()
 
         try:
-            async with await open_async(epg_metadata) as f:
+            async with await open_async(epg_metadata, encoding="utf8") as f:
                 channels = ujson.loads(await f.read())["data"]["channels"]
             int_channels = {}
             for channel in channels:
@@ -508,7 +517,7 @@ async def timers_check():
 
         _timers = {}
         try:
-            async with await open_async(timers) as f:
+            async with await open_async(timers, encoding="utf8") as f:
                 try:
                     _timers = tomli.loads(await f.read())
                 except ValueError:
@@ -594,7 +603,7 @@ async def update_cloud(forced=False):
     global cloud_data, tv_cloud1, tv_cloud2, _CLOUD, _EPGDATA
 
     try:
-        async with await open_async(cloud_data) as f:
+        async with await open_async(cloud_data, encoding="utf8") as f:
             clouddata = ujson.loads(await f.read())["data"]
         int_clouddata = {}
         for channel in clouddata:
@@ -676,6 +685,8 @@ async def update_cloud(forced=False):
         def merge():
             global _CLOUD
             for channel_id in new_cloud:
+                if channel_id not in _EPGDATA:
+                    _EPGDATA[channel_id] = {}
                 for event in list(set(new_cloud[channel_id]) - set(_EPGDATA[channel_id])):
                     _EPGDATA[channel_id][event] = new_cloud[channel_id][event]
             if not forced:
@@ -692,12 +703,13 @@ async def update_cloud(forced=False):
 
     if updated:
         _CLOUD = new_cloud
-        with open(cloud_data, "w") as fp:
-            ujson.dump({"data": _CLOUD}, fp, ensure_ascii=False, indent=6, sort_keys=True)
+        with open(cloud_data, "w", encoding="utf8") as fp:
+            ujson.dump({"data": _CLOUD}, fp, ensure_ascii=False, indent=4, sort_keys=True)
         log.info("Updated Cloud Recordings data")
 
     if updated or not os.path.exists(CHANNELS_CLOUD) or not os.path.exists(GUIDE_CLOUD):
         tv_cloud1 = await asyncio.create_subprocess_exec(
+            "python3",
             f"{PREFIX}tv_grab_es_movistartv",
             "--cloud_m3u",
             CHANNELS_CLOUD,
@@ -706,6 +718,7 @@ async def update_cloud(forced=False):
         )
         async with tvgrab_lock:
             tv_cloud2 = await asyncio.create_subprocess_exec(
+                "python3",
                 f"{PREFIX}tv_grab_es_movistartv",
                 "--cloud_recordings",
                 GUIDE_CLOUD,
@@ -727,6 +740,7 @@ async def update_epg():
     for i in range(5):
         async with tvgrab_lock:
             tvgrab = await asyncio.create_subprocess_exec(
+                "python3",
                 f"{PREFIX}tv_grab_es_movistartv",
                 "--tvheadend",
                 CHANNELS,
@@ -788,7 +802,7 @@ async def update_recordings_m3u():
     m3u = dump_files(m3u, sorted(files))
 
     log.info("Local Recordings Updated")
-    with open(CHANNELS_RECORDINGS, "w") as f:
+    with open(CHANNELS_RECORDINGS, "w", encoding="utf8") as f:
         f.write(m3u)
 
 
