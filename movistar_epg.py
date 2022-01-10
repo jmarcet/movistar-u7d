@@ -452,7 +452,7 @@ async def reload_epg():
                 for event in epgdata[channel]:
                     int_epgdata[int(channel)][int(event)] = epgdata[channel][event]
             _EPGDATA = int_epgdata
-            log.info("Loaded fresh EPG data")
+            log.info(f"Loaded fresh EPG data => {SANIC_URL}/guide.xml")
         except (FileNotFoundError, TypeError, ValueError) as ex:
             log.error(f"Failed to load EPG data {repr(ex)}")
             if os.path.exists(epg_data):
@@ -469,7 +469,7 @@ async def reload_epg():
                 if "replacement" in channels[channel]:
                     int_channels[int(channel)]["replacement"] = int(channels[channel]["replacement"])
             _CHANNELS = int_channels
-            log.info("Loaded Channels metadata")
+            log.info(f"Loaded Channels metadata => {SANIC_URL}/MovistarTV.m3u")
         except (FileNotFoundError, TypeError, ValueError) as ex:
             log.error(f"Failed to load Channels metadata {repr(ex)}")
             if os.path.exists(epg_metadata):
@@ -726,7 +726,7 @@ async def update_cloud(forced=False):
                 stderr=DEVNULL,
             )
     if forced and not updated:
-        log.info("Loaded Cloud Recordings data")
+        log.info(f"Loaded Cloud Recordings data => {SANIC_URL}/cloud.m3u")
 
 
 async def update_cloud_delayed():
