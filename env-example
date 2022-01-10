@@ -9,3 +9,4 @@
 # RECORDINGS=/mnt/recordings         # directorio para grabaciones, si se establece se activará la comprobación periódica de timers.conf
 # SANIC_PORT=8888                    # puerto en el que el proxy será accesible
 # SANIC_THREADS=4                    # número de procesos simultáneos de movistar_u7d.py
+# VSERBOSE_LOGS=0                    # no mostrar la url a la que se accede en los logs

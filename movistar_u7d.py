@@ -54,7 +54,9 @@ NETWORK_FSIGNAL = os.path.join(os.getenv("TMP", "/tmp"), ".u7d_bw")
 RECORDINGS = os.getenv("RECORDINGS", None)
 SANIC_EPG_URL = "http://127.0.0.1:8889"
 SANIC_PORT = int(os.getenv("SANIC_PORT", "8888"))
+SANIC_URL = f"http://{SANIC_HOST}:{SANIC_PORT}"
 SANIC_THREADS = int(os.getenv("SANIC_THREADS", "4"))
+VERBOSE_LOGS = bool(int(os.getenv("VERBOSE_LOGS", 1)))
 
 YEAR_SECONDS = 365 * 24 * 60 * 60
 
@@ -143,7 +145,7 @@ async def before_server_stop(app, loop):
     for req_ip, raw_url, resp in _RESPONSES:
         try:
             await resp.eof()
-            log.info(f"[{req_ip}] {raw_url} -> Stopped 2")
+            log.info(f"[{req_ip}] " f"{SANIC_URL if VERBOSE_LOGS else ''}" f"{raw_url} -> Stopped 2")
         except AttributeError:
             pass
 
@@ -238,6 +240,7 @@ async def handle_logos(request, cover=None, logo=None, path=None):
 async def handle_channel(request, channel_id):
     _start = timeit.default_timer()
     _raw_url = request.raw_url.decode()
+    _sanic_url = (SANIC_URL + _raw_url + " ") if VERBOSE_LOGS else ""
     if _NETWORK_SATURATED:
         procs = await get_ffmpeg_procs()
         if procs:
@@ -280,7 +283,7 @@ async def handle_channel(request, channel_id):
                 "method": "live",
                 "endpoint": f"{name} _ {request.ip} _ ",
                 "channel_id": channel_id,
-                "msg": f"[{request.ip}] -> Playing {_raw_url} [{_lat:1.4}s]",
+                "msg": f"[{request.ip}] -> Playing {_sanic_url}[{_lat:1.4}s]",
                 "id": _start,
                 "lat": _lat,
             },
@@ -302,7 +305,7 @@ async def handle_channel(request, channel_id):
                         "method": "live",
                         "endpoint": f"{name} _ {request.ip} _ ",
                         "channel_id": channel_id,
-                        "msg": f"[{request.ip}] -> Stopped {_raw_url} [{_lat:1.4}s]",
+                        "msg": f"[{request.ip}] -> Stopped {_sanic_url}[{_lat:1.4}s]",
                         "id": _start,
                     },
                 )
@@ -313,6 +316,7 @@ async def handle_channel(request, channel_id):
 async def handle_flussonic(request, channel_id, url, cloud=False):
     _start = timeit.default_timer()
     _raw_url = request.raw_url.decode()
+    _sanic_url = (SANIC_URL + _raw_url + " ") if VERBOSE_LOGS else ""
     procs = None
     if _NETWORK_SATURATED:
         procs = await get_ffmpeg_procs()
@@ -399,7 +403,7 @@ async def handle_flussonic(request, channel_id, url, cloud=False):
                     "endpoint": _endpoint,
                     "channel_id": channel_id,
                     "url": url,
-                    "msg": f"[{request.ip}] -> Playing {_raw_url} [{_lat:1.4}s]",
+                    "msg": f"[{request.ip}] -> Playing {_sanic_url}[{_lat:1.4}s]",
                     "id": _start,
                     "cloud": cloud,
                     "lat": _lat,
@@ -423,7 +427,7 @@ async def handle_flussonic(request, channel_id, url, cloud=False):
                             "endpoint": _endpoint,
                             "channel_id": channel_id,
                             "url": url,
-                            "msg": f"[{request.ip}] -> Stopped {_raw_url} [{_lat:1.4}s]",
+                            "msg": f"[{request.ip}] -> Stopped {_sanic_url}[{_lat:1.4}s]",
                             "id": _start,
                             "cloud": cloud,
                             "offset": timeit.default_timer() - _start,
