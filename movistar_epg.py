@@ -94,8 +94,10 @@ async def after_server_start(app, loop):
                 for event in recordingsdata[channel]:
                     int_recordings[int(channel)][int(event)] = recordingsdata[channel][event]
             _RECORDINGS = int_recordings
-        except (FileNotFoundError, TypeError, ValueError) as ex:
+        except (TypeError, ValueError) as ex:
             log.error(f"{repr(ex)}")
+        except FileNotFoundError:
+            pass
 
         if os.path.exists(timers):
             _ffmpeg = str(await get_ffmpeg_procs())
