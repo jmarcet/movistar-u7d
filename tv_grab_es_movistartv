@@ -1047,7 +1047,7 @@ class XMLTV:
             else:
                 logger.debug(f"El canal {channel_id} no tiene EPG")
 
-        logger.info(f'XML: Descargando info extendida con {epg_threads * 2} descargas simultáneas')
+        logger.info(f"XML: Descargando info extendida con {epg_threads * 2} descargas simultáneas")
         for channel_id in [
             cid
             for cid in sorted(services, key=lambda key: int(services[key]))

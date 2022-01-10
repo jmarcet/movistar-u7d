@@ -132,10 +132,10 @@ async def after_server_start(app, loop):
 @app.listener("before_server_stop")
 async def before_server_stop(app, loop):
     global _RESPONSES
-    for req, resp, vod_msg in _RESPONSES:
+    for req_ip, raw_url, resp in _RESPONSES:
         try:
             await resp.eof()
-            log.info(f"[{req.ip}] {req.raw_url.decode()} -> Stopped 2 {vod_msg}")
+            log.info(f"[{req_ip}] {raw_url} -> Stopped 2")
         except AttributeError:
             pass
 
@@ -316,7 +316,7 @@ async def handle_flussonic(request, channel_id, url, cloud=False):
         async with _SESSION.get(
             f"{SANIC_EPG_URL}/program_id/{channel_id}/{url}" + ("?cloud=1" if cloud else "")
         ) as r:
-            name, program_id, duration, offset = (await r.json()).values()
+            channel, program_id, start, duration, offset = (await r.json()).values()
     except (AttributeError, KeyError, ValueError):
         log.error(f"{_raw_url} not found")
         raise exceptions.NotFound(f"Requested URL {_raw_url} not found")
@@ -325,7 +325,6 @@ async def handle_flussonic(request, channel_id, url, cloud=False):
         return response.HTTPResponse(content_type=MIME_TS, status=200)
 
     client_port = find_free_port(_IPTV)
-    vod_msg = f'"{name}" {program_id} [{offset}/{duration}]'
 
     record = request.args.get("record", 0)
     if procs:
@@ -353,7 +352,6 @@ async def handle_flussonic(request, channel_id, url, cloud=False):
         if request.args.get("vo", False):
             cmd += " --vo 1"
 
-        log.info(f"[{request.ip}] {_raw_url} -> Recording [{record_time}s] {vod_msg}")
         signal.signal(signal.SIGCHLD, signal.SIG_IGN)
         subprocess.Popen(cmd.split())
         return response.json(
@@ -361,6 +359,7 @@ async def handle_flussonic(request, channel_id, url, cloud=False):
                 "status": "OK",
                 "channel_id": channel_id,
                 "program_id": program_id,
+                "start": start,
                 "offset": offset,
                 "time": record_time,
             }
@@ -380,11 +379,11 @@ async def handle_flussonic(request, channel_id, url, cloud=False):
             _response = await request.respond(content_type=MIME_TS)
             await _response.send((await stream.recv())[0])
         except asyncio.exceptions.TimeoutError:
-            log.error(f"NOT_AVAILABLE: {vod_msg}")
+            log.error(f"NOT_AVAILABLE: [{channel}] [{channel_id}] [{start}]")
             raise exceptions.NotFound(f"Requested URL {_raw_url} not found")
 
         _lat = timeit.default_timer() - _start
-        _RESPONSES.append((request, _response, vod_msg))
+        _RESPONSES.append((request.ip, _raw_url, _response))
         asyncio.create_task(
             _SESSION.post(
                 f"{SANIC_EPG_URL}/prom_event/add",
@@ -393,7 +392,7 @@ async def handle_flussonic(request, channel_id, url, cloud=False):
                     "endpoint": _endpoint,
                     "channel_id": channel_id,
                     "url": url,
-                    "msg": f"[{request.ip}] -> Playing [{_lat:1.4}s] {vod_msg} ",
+                    "msg": f"[{request.ip}] -> Playing {_raw_url} [{_lat:1.4}s]",
                     "id": _start,
                     "cloud": cloud,
                     "lat": _lat,
@@ -408,7 +407,7 @@ async def handle_flussonic(request, channel_id, url, cloud=False):
             try:
                 await _response.eof()
             finally:
-                _RESPONSES.remove((request, _response, vod_msg))
+                _RESPONSES.remove((request.ip, _raw_url, _response))
                 asyncio.create_task(
                     _SESSION.post(
                         f"{SANIC_EPG_URL}/prom_event/remove",
@@ -417,7 +416,7 @@ async def handle_flussonic(request, channel_id, url, cloud=False):
                             "endpoint": _endpoint,
                             "channel_id": channel_id,
                             "url": url,
-                            "msg": f"[{request.ip}] -> Stopped {vod_msg} {_raw_url} ",
+                            "msg": f"[{request.ip}] -> Stopped {_raw_url} [{_lat:1.4}s]",
                             "id": _start,
                             "cloud": cloud,
                             "offset": timeit.default_timer() - _start,

@@ -160,7 +160,7 @@ def get_program_id(channel_id, url=None, cloud=False):
         url = f"{int(time.time())}"
     x = flussonic_regex.match(url)
 
-    name = _CHANNELS[channel_id]["name"]
+    channel = _CHANNELS[channel_id]["name"]
     start = int(x.groups()[0])
     last_event = new_start = 0
 
@@ -189,8 +189,9 @@ def get_program_id(channel_id, url=None, cloud=False):
         program_id = _CLOUD[channel_id][start]["pid"]
 
     return {
-        "name": name,
+        "channel": channel,
         "program_id": program_id,
+        "start": start,
         "duration": duration,
         "offset": new_start - start if new_start else 0,
     }
@@ -361,10 +362,10 @@ async def handle_prom_event_add(request):
             request.json["endpoint"] + _epg["full_title"] + f" _ {_offset}",
             request.json["id"],
         ).observe(float(request.json["lat"]))
-        _msg = request.json["msg"] + '"' + _epg["full_title"] + '"'
-        if request.json["method"] == "live":
-            _msg += f" _ {_offset}"
-        log.info(_msg)
+        log.info(
+            '%s [%s] [%s] "%s" _ %s'
+            % (request.json["msg"], _event["channel"], _event["start"], _epg["full_title"], _offset)
+        )
     except KeyError:
         return response.empty(404)
     return response.empty(200)
@@ -382,7 +383,6 @@ async def handle_prom_event_remove(request):
             _epg,
             _,
         ) = get_epg(request.json["channel_id"], _event["program_id"])
-        _msg = request.json["msg"] + '"' + _epg["full_title"] + '"'
         _offset = "[%d/%d]" % (_event["offset"], _event["duration"])
         if request.json["method"] == "live":
             found = False
@@ -399,7 +399,10 @@ async def handle_prom_event_remove(request):
                 request.json["id"],
             )
             _offset = "[%d/%d]" % (_event["offset"] + request.json["offset"], _event["duration"])
-        log.info(f"{_msg} _ {_offset}")
+        log.info(
+            '%s [%s] [%s] "%s" _ %s'
+            % (request.json["msg"], _event["channel"], _event["start"], _epg["full_title"], _offset)
+        )
     except KeyError:
         return response.empty(404)
     return response.empty(200)
@@ -516,7 +519,7 @@ async def timers_check():
         for channel_id in _timers["match"]:
             channel_id = int(channel_id)
             if channel_id not in _EPGDATA:
-                log.info(f"Channel {channel_id} not found in EPG")
+                log.info(f"Channel [{channel_id}] not found in EPG")
                 continue
 
             _time_limit = int(datetime.now().timestamp()) - (3600 * 3)
@@ -542,7 +545,9 @@ async def timers_check():
                             if (_name or title) in str(_RECORDINGS[channel_id]):
                                 continue
                         log.info(
-                            f"Found MATCH: {channel_id} {timestamp}" f'{" [VO]" if vo else ""}' f' "{_name}"'
+                            f"Found MATCH: [{channel_id}] [{timestamp}]"
+                            f'{" [VO]" if vo else ""}'
+                            f' "{_name}"'
                         )
                         sanic_url = f"{SANIC_URL}"
                         if channel_id in _CLOUD and timestamp in _CLOUD[channel_id]:
@@ -553,7 +558,7 @@ async def timers_check():
                         try:
                             async with httpx.AsyncClient() as client:
                                 r = await client.get(sanic_url)
-                            log.info(f"{sanic_url} => {r}")
+                            log.debug(f"{sanic_url} => {r}")
                             if r.status_code == 200:
                                 _TIMERS_ADDED.append(filename)
                                 nr_procs += 1

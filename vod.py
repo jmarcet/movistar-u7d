@@ -273,7 +273,7 @@ async def record_stream():
     else:
         filename = os.path.join(RECORDINGS, f"{args.channel}-{args.broadcast}")
 
-    _log_suffix = f'[{args.time}s] {_log_suffix} "{filename[20:]}"'
+    _log_suffix += f' "{filename[20:]}"'
 
     ffmpeg.input(
         f"udp://@{args.iptv_ip}:{args.client_port}", fifo_size=5572, pkt_size=1316, timeout=500000
@@ -377,7 +377,6 @@ async def VodSetup(args, vod_client):
     global _log_prefix, _log_suffix, epg_url
 
     _log_prefix = f"{'[' + args.client_ip + '] ' if args.client_ip else ''}[VOD:{os.getpid()}]"
-    _log_suffix = f"{args.channel} {args.broadcast}"
 
     client = None
     headers = {"CSeq": "", "User-Agent": UA}
@@ -388,6 +387,12 @@ async def VodSetup(args, vod_client):
 
     try:
         vod_info = await get_vod_info(args.channel, args.broadcast, args.cloud, vod_client)
+        _log_suffix = "[%ds] [%s] [%d] [%d]" % (
+            vod_info["duration"],
+            vod_info["channelName"],
+            vod_info["serviceUID"],
+            vod_info["beginTime"] / 1000,
+        )
         uri = urllib.parse.urlparse(vod_info["url"])
     except (aiohttp.client_exceptions.ClientConnectorError, ConnectionRefusedError):
         sys.stderr.write(f"{_log_prefix} Movistar IPTV catchup service DOWN\n")
