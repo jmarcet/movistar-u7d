@@ -57,6 +57,7 @@ SANIC_PORT = int(os.getenv("SANIC_PORT", "8888"))
 SANIC_URL = f"http://{SANIC_HOST}:{SANIC_PORT}"
 SANIC_THREADS = int(os.getenv("SANIC_THREADS", "4"))
 VERBOSE_LOGS = bool(int(os.getenv("VERBOSE_LOGS", 1)))
+VOD_EXEC = "vod.exe" if os.path.exists("vod.exe") else "vod.py"
 
 YEAR_SECONDS = 365 * 24 * 60 * 60
 
@@ -349,7 +350,7 @@ async def handle_flussonic(request, channel_id, url, cloud=False):
             )
     elif record:
         cmd = (
-            f"{PREFIX}vod.py {channel_id} {program_id} -s {offset}"
+            f"{PREFIX}{VOD_EXEC} {channel_id} {program_id} -s {offset}"
             f" -p {client_port} -i {request.ip} -a {_IPTV}"
         )
         record = int(record)

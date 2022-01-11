@@ -8,3 +8,4 @@ sanic
 git+https://github.com/jmarcet/sanic-prometheus
 tomli
 ujson
+cx_Freeze
