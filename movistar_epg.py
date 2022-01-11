@@ -709,7 +709,6 @@ async def update_cloud(forced=False):
 
     if updated or not os.path.exists(CHANNELS_CLOUD) or not os.path.exists(GUIDE_CLOUD):
         tv_cloud1 = await asyncio.create_subprocess_exec(
-            "python3",
             f"{PREFIX}tv_grab_es_movistartv",
             "--cloud_m3u",
             CHANNELS_CLOUD,
@@ -718,7 +717,6 @@ async def update_cloud(forced=False):
         )
         async with tvgrab_lock:
             tv_cloud2 = await asyncio.create_subprocess_exec(
-                "python3",
                 f"{PREFIX}tv_grab_es_movistartv",
                 "--cloud_recordings",
                 GUIDE_CLOUD,
@@ -740,7 +738,6 @@ async def update_epg():
     for i in range(5):
         async with tvgrab_lock:
             tvgrab = await asyncio.create_subprocess_exec(
-                "python3",
                 f"{PREFIX}tv_grab_es_movistartv",
                 "--tvheadend",
                 CHANNELS,
