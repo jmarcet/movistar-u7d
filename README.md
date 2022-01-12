@@ -1,8 +1,7 @@
 Movistar IPTV U7D - Flussonic catchup proxy
 ===========================================
 
-[![TiviMate Movistar](https://openwrt.marcet.info/u7d/TiviMate_Video_Overlay.jpg)](https://openwrt.marcet.info/u7d/TiviMate_Movistar_20210320_U7D-1.mp4)
-
+[![TiviMate_Movistar](https://user-images.githubusercontent.com/959055/149075205-de2959a7-54cf-47e9-a1c7-8058dc80efe7.jpg)](https://www.youtube.com/embed/V4TGbh9bL1c)
 
 Qué es
 ------
