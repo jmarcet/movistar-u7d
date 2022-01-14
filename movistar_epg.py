@@ -615,7 +615,7 @@ async def update_cloud(forced=False):
         try:
             r = await client.get(f"{MVTV_URL}?action=recordingList&mode=0&state=2&firstItem=0&numItems=999")
             cloud_recordings = r.json()["resultData"]["result"]
-        except (httpx.ConnectError, KeyError):
+        except (httpx.ConnectError, httpx.ConnectTimeout, KeyError):
             cloud_recordings = None
     if not cloud_recordings:
         log.info("No cloud recordings found")
