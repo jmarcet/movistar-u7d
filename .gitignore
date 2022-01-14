@@ -1,4 +1,7 @@
 *env/
+*.exe
 *.swp
 .vscode
 __pycache__/
+archive/
+build/
