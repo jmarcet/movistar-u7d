@@ -54,8 +54,6 @@ LOG_SETTINGS["formatters"]["generic"]["datefmt"] = LOG_SETTINGS["formatters"]["a
     "datefmt"
 ] = "[%Y-%m-%d %H:%M:%S]"
 
-PREFIX = ""
-
 _CHANNELS = _CLOUD = _EPGDATA = _RECORDINGS = _RECORDINGS_INC = {}
 _TIMERS_ADDED = []
 
@@ -85,9 +83,7 @@ _t_cloud1 = (
 
 @app.listener("after_server_start")
 async def after_server_start(app, loop):
-    global PREFIX, _RECORDINGS, _t_cloud1, _t_epg1, _t_timers_d
-    if __file__.startswith("/app/"):
-        PREFIX = "/app/"
+    global RECORDINGS, _t_cloud1, _t_epg1, _t_timers_d
 
     await reload_epg()
     _t_epg1 = asyncio.create_task(update_epg_delayed())
@@ -709,7 +705,7 @@ async def update_cloud(forced=False):
 
     if updated or not os.path.exists(CHANNELS_CLOUD) or not os.path.exists(GUIDE_CLOUD):
         tv_cloud1 = await asyncio.create_subprocess_exec(
-            f"{PREFIX}tv_grab_es_movistartv",
+            f"tv_grab_es_movistartv",
             "--cloud_m3u",
             CHANNELS_CLOUD,
             stdout=DEVNULL,
@@ -717,7 +713,7 @@ async def update_cloud(forced=False):
         )
         async with tvgrab_lock:
             tv_cloud2 = await asyncio.create_subprocess_exec(
-                f"{PREFIX}tv_grab_es_movistartv",
+                f"tv_grab_es_movistartv",
                 "--cloud_recordings",
                 GUIDE_CLOUD,
                 stdout=DEVNULL,
@@ -738,7 +734,7 @@ async def update_epg():
     for i in range(5):
         async with tvgrab_lock:
             tvgrab = await asyncio.create_subprocess_exec(
-                f"{PREFIX}tv_grab_es_movistartv",
+                f"tv_grab_es_movistartv",
                 "--tvheadend",
                 CHANNELS,
                 "--output",

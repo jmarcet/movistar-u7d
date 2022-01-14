@@ -66,8 +66,6 @@ LOG_SETTINGS["formatters"]["generic"]["datefmt"] = LOG_SETTINGS["formatters"]["a
     "datefmt"
 ] = "[%Y-%m-%d %H:%M:%S]"
 
-PREFIX = ""
-
 _CHANNELS = {}
 _IPTV = _SESSION = _SESSION_LOGOS = None
 _NETWORK_SATURATED = False
@@ -90,9 +88,7 @@ app.ctx.vod_client = _t_tp = None
 @app.listener("after_server_start")
 async def after_server_start(app, loop):
     log.debug("after_server_start")
-    global PREFIX, _CHANNELS, _IPTV, _SESSION, _t_tp
-    if __file__.startswith("/app/"):
-        PREFIX = "/app/"
+    global _CHANNELS, _IPTV, _SESSION, _t_tp
 
     s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
     s.connect(("172.26.23.3", 53))
@@ -350,7 +346,7 @@ async def handle_flussonic(request, channel_id, url, cloud=False):
             )
     elif record:
         cmd = (
-            f"{PREFIX}{VOD_EXEC} {channel_id} {program_id} -s {offset}"
+            f"{VOD_EXEC} {channel_id} {program_id} -s {offset}"
             f" -p {client_port} -i {request.ip} -a {_IPTV}"
         )
         record = int(record)
