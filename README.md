@@ -1,7 +1,7 @@
 Movistar IPTV U7D - Flussonic catchup proxy
 ===========================================
 
-[![TiviMate Movistar](https://openwrt.marcet.info/u7d/TiviMate_Video_Overlay.jpg)](https://openwrt.marcet.info/u7d/TiviMate_Movistar_20210320_U7D-1.mp4)
+[![TiviMate Movistar](../../raw/data/TiviMate_Video_Overlay.jpg)](https://openwrt.marcet.info/u7d/TiviMate_Movistar_20210320_U7D-1.mp4)
 
 
 Qué es
@@ -39,8 +39,8 @@ Una vez instalado, tendremos las siguientes URLs disponibles, donde 192.168.1.10
 
  Con estas dos ya tendremos acceso a los directos y a los últimos 7 días en cualquier cliente IPTV con soporte de catchup flussonic. De hecho, con configurar la primera suele ser suficiente, ya que la guía la saca de la propia lista de canales, que incluye un enlace a la misma.
 
-![catchup1](https://openwrt.marcet.info/u7d/_git/TiviMate_20211010_201536.png)
-![catchup2](https://openwrt.marcet.info/u7d/_git/TiviMate_20211010_201255.png)
+![catchup1](../../raw/data/TiviMate_20211010_201536.png)
+![catchup2](../../raw/data/TiviMate_20211010_201255.png)
 
  Como novedad, ahora también es posible acceder a las grabaciones que tengamos en la nube de [Movistar](https://www.movistar.es/particulares/internet/). De tener alguna grabación en dicha nube, tendremos disponibles una nueva lista de canales y una nueva guía de programación que, análoga a la general, incluirá solamente información de aquellos programas que tengamos grabados. El resultado es una forma muy cómoda de acceder a estas grabaciones en la nube.
 
@@ -48,8 +48,8 @@ Una vez instalado, tendremos las siguientes URLs disponibles, donde 192.168.1.10
 
  4. Guía de programación de las grabaciones en la nube (EPG): `http://192.168.1.10:8888/cloud.xml` o `http://192.168.1.10:8888/nube.xml`
 
-![cloud1](https://openwrt.marcet.info/u7d/_git/TiviMate_20211010_195920.png)
-![cloud2](https://openwrt.marcet.info/u7d/_git/TiviMate_20211010_195949.png)
+![cloud1](../../raw/data/TiviMate_20211010_195920.png)
+![cloud2](../../raw/data/TiviMate_20211010_195949.png)
 
  También es novedad tanto una funcionalidad de grabaciones locales automáticas, o temporizadores, así como el acceso a las mismas a través de una nueva lista de canales `.m3u` de tipo `VOD`, que por lo menos el `TiviMate` admite y que resulta especialmente útil para almacenar de forma local programas y series, y así crear colecciones. El resultado es increíblemente cómodo de usar.
 
@@ -57,26 +57,44 @@ Una vez instalado, tendremos las siguientes URLs disponibles, donde 192.168.1.10
 
 Ésta última sólo se activará cuando la variable de entorno `RECORDINGS` esté definida.
 
-![recordings](https://openwrt.marcet.info/u7d/_git/TiviMate_20211010_200145.png)
+![recordings](../../raw/data/TiviMate_20211010_200145.png)
 
-![overview](https://openwrt.marcet.info/u7d/_git/TiviMate_20211010_200214.png)
-![settings](https://openwrt.marcet.info/u7d/_git/TiviMate_20211010_200007.png)
+![overview](../../raw/data/TiviMate_20211010_200214.png)
+![settings](../../raw/data/TiviMate_20211010_200007.png)
 
  6. Métricas de utilización para [Prometheus](https://prometheus.io/docs/introduction/overview/): `http://192.168.1.10:8888/metrics`
 
 Éstas contienen información en tiempo real de los clientes activos, separados por directos y catchups, y ordenados por la latencia inicial que tuvo cada stream para llegar. Perfectas para conectar con [Grafana](https://grafana.com/grafana/) y así poder visualizarlas y también tener un archivo histórico de uso:
 
-![grafana-dashboard.json](https://openwrt.marcet.info/u7d/_git/grafana.png)
+![grafana-dashboard.json](../../raw/data/grafana.png)
 
 
-Instalación
------------
+Instalación en Windows
+----------------------
 
-Necesitamos algún dispositivo, sea un ordenador tradicional o algo más sencillo como una raspberry, con Linux/UNIX como OS y conectado directamente al router. Un poco más abajo podéis ver las variables de entorno que se pueden ajustar para configurar el proxy, como activar las grabaciones, el control de ancho de banda automático, etc.
+Nos descargamos la última versión de [aquí](../../releases), la descomprimimos donde nos resulte más cómodo y del interior de la carpeta `movistar-u7d`, ejecutamos [movistar-u7d.ps1](movistar-u7d.ps1) haciendo click derecho sobre él y seleccionando `Ejecutar con PowerShell`.
+
+![movistar-u7d-ps1.png](../../raw/data/movistar-u7d-ps1.png)
+
+Enseguida se abrirá una ventana de un terminal, donde aparecerán mensajes de información sobre todo lo que está haciendo.
+
+![movistar-u7d-inicio](../../raw/data/movistar-u7d-inicio.png)
+
+Por defecto la(s) lista(s) de canales y la(s) guía(s) las generará en vuestra carpeta de usuario, que o bien podemos abrir directamente, o podemos acceder a través de las [URLs normales](#uso). Podemos usar [VLC](https://www.videolan.org/vlc/) o [mpv](https://mpv.io/installation/) por ejemplo, que aunque no soportan en sí el catchup, es decir, no hay forma de seleccionar de forma cómoda programas de la parrilla, sí pueden reproducir todo. `Kodi` con `IPTV Simple` es una opción con catchup, aunque personalmente no me ha resultado nada estable en Windows.
+
+![movistar-u8d-escritorio](../../raw/data/movistar-u7d-escritorio.png)
+
+Si queremos hacer grabaciones tendremos que ajustar el directorio donde las queremos editando el fichero [movistar-u7d.ps1](movistar-u7d.ps1) y copiando [timers.conf](timers.conf), ajustado a vuestro gusto, a vuestra carpeta de usuario. Hay otras opciones que también podemos configurar, mirad el script de arranque [movistar-u7d.ps1](movistar-u7d.ps1) para más información, editándolo con `notepad` o el editor que más os guste.
+
+
+Instalación en Linux/UNIX/OS X
+------------------------------
+
+Podemos usar cualquier tipo de dispositivo, desde un ordenador tradicional a algo más sencillo como una raspberry, con Linux/UNIX/OS X como OS y conectado directamente al router (o con `igmpproxy` en el router). Un poco más abajo podéis ver las variables de entorno que se pueden ajustar para configurar el proxy, como activar las grabaciones, el control de ancho de banda automático, etc.
 
  1. Tenemos la opción de utilizar docker y docker-compose.
 
-Nos descargamos todo este repositorio a nuestro ordenador, ya sea clonando [el repo](https://github.com/jmarcet/movistar-u7d.git) con git o descargando un [zip](https://github.com/jmarcet/movistar-u7d/archive/refs/heads/master.zip) que en su caso descomprimimos, a continuación abrimos el `docker-compose.yml` con un editor, y habilitamos las variables de entorno que podamos necesitar, de manera que si queremos ajustar la variable `LAN_IP` que puede ser útil si obtenemos algún error del tipo `Name does not resolve`, debería quedar así:
+Nos descargamos todo este repositorio a nuestro ordenador, ya sea clonando [el repo](https://github.com/jmarcet/movistar-u7d.git) con git o descargando un [zip](../../archive/refs/heads/master.zip) que en su caso descomprimimos, a continuación abrimos el `docker-compose.yml` con un editor, y habilitamos las variables de entorno que podamos necesitar, de manera que si queremos ajustar la variable `LAN_IP` que puede ser útil si obtenemos algún error del tipo `Name does not resolve`, debería quedar así:
 
 ```
 [...]
