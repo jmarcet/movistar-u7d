@@ -331,13 +331,19 @@ async def handle_program_name(request, channel_id, program_id):
             del _RECORDINGS_INC[channel_id][program_id]
         else:
             log.warning(f"Recording Incomplete RETRY: {_t}")
-            _TIMERS_ADDED.remove(filename)
+            try:
+                _TIMERS_ADDED.remove(filename)
+            except ValueError:
+                pass
             return response.json({"status": "Recording Incomplete"}, status=201)
 
     if channel_id not in _RECORDINGS:
         _RECORDINGS[channel_id] = {}
     _RECORDINGS[channel_id][program_id] = {"full_title": os.path.basename(filename)}
-    _TIMERS_ADDED.remove(filename)
+    try:
+        _TIMERS_ADDED.remove(filename)
+    except ValueError:
+        pass
 
     with open(recordings, "w", encoding="utf8") as f:
         ujson.dump(_RECORDINGS, f, ensure_ascii=False, indent=4, sort_keys=True)
