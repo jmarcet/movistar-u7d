@@ -19,6 +19,7 @@ from ffmpeg import FFmpeg
 from glob import glob
 from json2xml import json2xml
 from random import randint
+from time import sleep
 from threading import Thread
 
 
@@ -131,6 +132,13 @@ class RtspClient(object):
 def ffmpeg_completed():
     sys.stderr.write(f"{_log_prefix} Recording ENDED: {_log_suffix}\n")
 
+    def timed_out(i, ex):
+        if i < 2:
+            sys.stderr.write(f"{_log_prefix} Recording WARNING: {_log_suffix} => {repr(ex)}\n")
+            sleep(15)
+        else:
+            sys.stderr.write(f"{_log_prefix} Recording ERROR: {_log_suffix} => {repr(ex)}\n")
+
     command = list(_nice)
     command += ["mkvmerge", "--abort-on-warnings", "-q", "-o", filename + TMP_EXT2]
     if args.vo:
@@ -181,19 +189,34 @@ def ffmpeg_completed():
             os.rename(filename + TMP_EXT2, filename + VID_EXT)
     except Exception as ex:
         sys.stderr.write(f"{_log_prefix} Recording FAILED: {_log_suffix} => {repr(ex)}\n")
-        httpx.put(epg_url + f"?missing={randint(1, args.time)}")
         _cleanup(TMP_EXT2)
+        for i in range(3):
+            try:
+                httpx.put(epg_url + f"?missing={randint(1, args.time)}")
+            except httpx.ReadTimeout:
+                timed_out(i, ex)
         return
 
+    resp = None
     if not missing_time:
-        save_metadata()
-        httpx.put(epg_url)
+        for i in range(3):
+            try:
+                resp = httpx.put(epg_url)
+                break
+            except httpx.ReadTimeout as ex:
+                timed_out(i, ex)
     else:
-        resp = httpx.put(epg_url + f"?missing={missing_time}")
-        if resp.status_code == 200:
-            save_metadata()
-        else:
-            _cleanup(VID_EXT, args.mp4)
+        for i in range(3):
+            try:
+                resp = httpx.put(epg_url + f"?missing={missing_time}")
+                break
+            except httpx.ReadTimeout as ex:
+                timed_out(i, ex)
+
+    if resp and resp.status_code == 200:
+        save_metadata()
+    else:
+        _cleanup(VID_EXT, args.mp4)
 
 
 @ffmpeg.on("error")
