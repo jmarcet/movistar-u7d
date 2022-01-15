@@ -720,7 +720,7 @@ async def update_cloud(forced=False):
                 stderr=DEVNULL,
             )
     if forced and not updated:
-        log.info(f"Loaded Cloud Recordings data => {SANIC_URL}/cloud.m3u")
+        log.info(f"Loaded Cloud Recordings data => {SANIC_URL}/cloud.m3u & {SANIC_URL}/cloud.xml")
 
 
 async def update_cloud_delayed():
@@ -794,7 +794,7 @@ async def update_recordings_m3u():
     m3u = dump_files(m3u, files, latest=True)
     m3u = dump_files(m3u, sorted(files))
 
-    log.info("Local Recordings Updated")
+    log.info(f"Local Recordings Updated => {SANIC_URL}/recordings.m3u")
     with open(CHANNELS_RECORDINGS, "w", encoding="utf8") as f:
         f.write(m3u)
 
