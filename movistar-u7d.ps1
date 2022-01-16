@@ -1,4 +1,5 @@
 $env:Path = "."
+$env:PYTHONUNBUFFERED = "1"
 
 # $env:HOME = "C:\\Users\\usuario"                # ruta donde queremos que se generen las listas m3u, la guía y el directorio oculto .xmltv
 # $env:LAN_IP = "192.168.1.15"                    # dirección IP, de las disponibles en el sistema, en la que queremos que el proxy funcione
