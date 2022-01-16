@@ -83,7 +83,7 @@ _t_cloud1 = (
 
 @app.listener("after_server_start")
 async def after_server_start(app, loop):
-    global RECORDINGS, _t_cloud1, _t_epg1, _t_timers_d
+    global _RECORDINGS, _t_cloud1, _t_epg1, _t_timers_d
 
     await reload_epg()
     _t_epg1 = asyncio.create_task(update_epg_delayed())
