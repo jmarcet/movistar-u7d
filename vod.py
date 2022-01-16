@@ -169,7 +169,7 @@ def ffmpeg_completed():
             command += ["ffmpeg", "-i", filename + TMP_EXT2]
             command += ["-map", "0", "-c", "copy", "-sn", "-movflags", "+faststart"]
             command += ["-f", "mp4", "-v", "panic", filename + VID_EXT]
-            if subprocess.run(command).returncode:
+            if subprocess.run(command).returncode > 1:
                 _cleanup(VID_EXT)
                 raise ValueError("Failed to write " + filename + VID_EXT)
 
@@ -180,7 +180,7 @@ def ffmpeg_completed():
                 command += ["ffmpeg", "-i", filename + TMP_EXT2]
                 command += ["-map", "0:%d" % track["id"], "-c:s", "dvbsub"]
                 command += ["-f", "mpegts", "-v", "panic", filesub]
-                if subprocess.run(command).returncode:
+                if subprocess.run(command).returncode > 1:
                     _cleanup(VID_EXT, args.mp4)
                     raise ValueError("Failed to write " + filesub)
 
