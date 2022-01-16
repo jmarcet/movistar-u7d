@@ -84,7 +84,7 @@ Por defecto la(s) lista(s) de canales y la(s) guía(s) las generará en vuestra 
 
 ![movistar-u8d-escritorio](../../raw/data/movistar-u7d-escritorio.png)
 
-Si queremos hacer grabaciones tendremos que ajustar el directorio donde las queremos editando el fichero [movistar-u7d.ps1](movistar-u7d.ps1) y copiando [timers.conf](timers.conf), ajustado a vuestro gusto, a vuestra carpeta de usuario. Hay otras opciones que también podemos configurar, mirad el script de arranque [movistar-u7d.ps1](movistar-u7d.ps1) para más información, editándolo con `notepad` o el editor que más os guste.
+Si queremos hacer grabaciones tendremos que copiar [timers.conf](timers.conf), ajustado a nuestro gusto, a nuestra carpeta de usuario. Por defecto las grabaciones se harán en nuestra carpeta personal de Videos, dentro del subdirectorio `movistar-u7d`. Si queremos cambiarlo, modificar el número de grabaciones simultáneas o configurar otras opciones de funcionamiento, podemos editar el script de arranque [movistar-u7d.ps1](movistar-u7d.ps1) con `notepad` o el editor que más nos guste.
 
 
 Instalación en Linux/UNIX/OS X
