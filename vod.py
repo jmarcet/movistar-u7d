@@ -476,6 +476,10 @@ if __name__ == "__main__":
 
     args = parser.parse_args()
 
+    if args.write_to_file and not RECORDINGS:
+        sys.stderr.write(f"RECORDINGS path not set\n")
+        sys.exit(1)
+
     if not args.iptv_ip:
         s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
         s.connect(("172.26.23.3", 53))
