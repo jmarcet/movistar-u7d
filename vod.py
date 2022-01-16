@@ -43,7 +43,7 @@ VodData = namedtuple("VodData", ["client", "get_parameter", "session"])
 
 ffmpeg = FFmpeg().option("y").option("xerror")
 _ffmpeg = _log_prefix = _log_suffix = args = epg_url = filename = full_title = path = None
-_nice = ("nice", "-n", "15", "ionice", "-c", "3")
+_nice = ("nice", "-n", "15", "ionice", "-c", "3") if os.name != "nt" else ()
 
 
 class RtspClient(object):
