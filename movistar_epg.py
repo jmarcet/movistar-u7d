@@ -117,7 +117,7 @@ async def after_server_start(app, loop):
             ]
             _t_timers_d = asyncio.create_task(timers_check_delayed())
         else:
-            log.info("No timers.conf found, recordings disabled")
+            log.info("No timers.conf found, automatic recordings disabled")
 
 
 @app.listener("after_server_stop")
