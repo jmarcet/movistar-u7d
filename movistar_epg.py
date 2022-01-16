@@ -497,6 +497,9 @@ async def reload_epg():
 
 @app.get("/timers_check")
 async def handle_timers_check(request):
+    if not RECORDINGS:
+        return response.json({"status": "RECORDINGS not configured"}, 404)
+
     global _t_timers_t
     if timers_lock.locked():
         return response.json({"status": "Busy"}, 201)
