@@ -296,7 +296,7 @@ async def record_stream():
     else:
         filename = os.path.join(RECORDINGS, f"{args.channel}-{args.broadcast}")
 
-    _log_suffix += f' "{filename[20:]}"'
+    _log_suffix += f' "{filename[len(RECORDINGS) + 1:]}"'
 
     ffmpeg.input(
         f"udp://@{args.iptv_ip}:{args.client_port}", fifo_size=5572, pkt_size=1316, timeout=500000
