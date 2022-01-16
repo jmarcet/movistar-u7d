@@ -318,31 +318,42 @@ async def record_stream():
 
 
 def save_metadata():
+    global filename, path
     try:
         with open(os.path.join(CACHE_DIR, f"{args.broadcast}.json")) as f:
             metadata = ujson.loads(f.read())["data"]
+        for t in ["beginTime", "endTime", "expDate"]:
+            metadata[t] = int(metadata[t] / 1000)
         _cover = metadata["cover"]
         resp = httpx.get(f"{COVER_URL}/{_cover}")
         if resp.status_code == 200:
-            image_ext = os.path.basename(_cover).split(".")[-1]
-            _img_name = f"{filename}.{image_ext}"
+            image_ext = os.path.splitext(_cover)[1]
+            _img_name = filename + image_ext
             with open(_img_name, "wb") as f:
                 f.write(resp.read())
             metadata["cover"] = os.path.basename(_img_name)
         if "covers" in metadata:
-            if not os.path.exists(os.path.join(path + "/metadata")):
-                os.mkdir(os.path.join(path + "/metadata"))
+            _covers = {}
+            _metadata = os.path.join(path, "metadata")
+            if not os.path.exists(_metadata):
+                os.mkdir(_metadata)
             for _img in metadata["covers"]:
                 _cover = metadata["covers"][_img]
                 resp = httpx.get(_cover)
                 if resp.status_code != 200:
                     continue
-                image_ext = os.path.basename(_cover).split(".")[-1]
-                _img_name = f"{path}/metadata/{os.path.basename(filename)}-{_img}" f".{image_ext}"
+                _img_ext = os.path.splitext(_cover)[1]
+                _img_rel = f"{os.path.basename(filename)}-{_img}" + _img_ext
+                _img_name = os.path.join(_metadata, _img_rel)
                 with open(_img_name, "wb") as f:
                     f.write(resp.read())
+                _covers[_img] = os.path.join("metadata", _img_rel)
+            if _covers:
+                metadata["covers"] = _covers
+            else:
+                metadata.pop("covers", None)
+                os.rmdir(_metadata)
         metadata["title"] = full_title
-        metadata.pop("covers", None)
         metadata.pop("logos", None)
         metadata.pop("name", None)
         with open(filename + NFO_EXT, "w") as f:
