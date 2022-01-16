@@ -89,6 +89,8 @@ async def after_server_start(app, loop):
     _t_epg1 = asyncio.create_task(update_epg_delayed())
     _t_cloud1 = asyncio.create_task(update_cloud_delayed())
     if RECORDINGS:
+        if not os.path.exists(RECORDINGS):
+            os.mkdir(RECORDINGS)
         await update_recordings_m3u()
         try:
             async with await open_async(recordings, encoding="utf8") as f:
