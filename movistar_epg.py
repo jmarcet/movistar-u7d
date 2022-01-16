@@ -236,8 +236,8 @@ def get_recording_path(channel_id, timestamp):
 
 
 def get_safe_filename(filename):
-    filename = filename.replace(":", ",").replace("...", "…")
-    keepcharacters = (" ", ",", ".", "_", "-", "¡", "!")
+    filename = filename.replace(":", ",").replace("...", "…").replace("(", "[").replace(")", "]")
+    keepcharacters = (" ", ",", ".", "_", "-", "¡", "!", "[", "]")
     return "".join(c for c in filename if c.isalnum() or c in keepcharacters).rstrip()
 
 
