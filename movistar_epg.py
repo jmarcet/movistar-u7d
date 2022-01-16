@@ -518,19 +518,20 @@ async def handle_timers_check(request):
 
 
 async def timers_check():
+    if not os.path.exists(timers):
+        log.warning(f"No timers.conf found")
+        return
+
+    if os.name != "nt":
+        async with await open_async("/proc/uptime") as f:
+            proc = await f.read()
+        uptime = int(float(proc.split()[1]))
+        if uptime < 300:
+            log.info("Waiting 300s to check timers after rebooting...")
+            await asyncio.sleep(300)
+
+    log.info("Processing timers")
     async with timers_lock:
-        try:
-            async with await open_async("/proc/uptime") as f:
-                proc = await f.read()
-            uptime = int(float(proc.split()[1]))
-            if uptime < 300:
-                log.info("Waiting 300s to check timers after rebooting...")
-                await asyncio.sleep(300)
-        except (FileNotFoundError, KeyError):
-            pass
-
-        log.info("Processing timers")
-
         _timers = {}
         try:
             async with await open_async(timers, encoding="utf8") as f:
@@ -538,7 +539,7 @@ async def timers_check():
                     _timers = tomli.loads(await f.read())
                 except ValueError:
                     _timers = ujson.loads(await f.read())
-        except (FileNotFoundError, TypeError, ValueError) as ex:
+        except (TypeError, ValueError) as ex:
             log.error(f"handle_timers: {repr(ex)}")
             return
 
