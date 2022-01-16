@@ -26,6 +26,8 @@ if os.name != "nt":
     from setproctitle import setproctitle
 
     setproctitle("movistar_epg")
+else:
+    from wmi import WMI
 
 if "LAN_IP" in os.environ:
     SANIC_HOST = os.getenv("LAN_IP")
@@ -157,6 +159,13 @@ def get_epg(channel_id, program_id):
 
 
 async def get_ffmpeg_procs():
+    if os.name == "nt":
+        return [
+            process.CommandLine
+            for process in WMI().Win32_Process(name="ffmpeg.exe")
+            if "udp://" in process.CommandLine
+        ]
+
     p = await asyncio.create_subprocess_exec("pgrep", "-af", "ffmpeg.+udp://", stdout=asyncio.subprocess.PIPE)
     stdout, _ = await p.communicate()
     return [t.rstrip().decode() for t in stdout.splitlines()]
@@ -563,8 +572,12 @@ async def timers_check():
                         lang = deflang
                     vo = True if lang == "VO" else False
                     _, filename = get_recording_path(channel_id, timestamp)
-                    if re.match(timer_match, title) and filename not in (_TIMERS_ADDED or str(_ffmpeg)):
-                        _name = os.path.basename(filename)
+                    _name = os.path.basename(filename)
+                    if (
+                        re.match(timer_match, title)
+                        and filename not in _TIMERS_ADDED
+                        and _name not in str(_ffmpeg)
+                    ):
                         if channel_id in _RECORDINGS:
                             if (_name or title) in str(_RECORDINGS[channel_id]):
                                 continue

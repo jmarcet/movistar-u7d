@@ -360,7 +360,8 @@ async def handle_flussonic(request, channel_id, url, cloud=False):
         if request.args.get("vo", False):
             cmd += " --vo 1"
 
-        signal.signal(signal.SIGCHLD, signal.SIG_IGN)
+        if os.name != "nt":
+            signal.signal(signal.SIGCHLD, signal.SIG_IGN)
         subprocess.Popen(cmd.split())
         return response.json(
             {
