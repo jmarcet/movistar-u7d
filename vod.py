@@ -469,9 +469,9 @@ if __name__ == "__main__":
     parser.add_argument("--client_port", "-p", help="client udp port", type=int)
     parser.add_argument("--start", "-s", help="stream start offset", type=int)
     parser.add_argument("--time", "-t", help="recording time in seconds", type=int)
-    parser.add_argument("--mp4", help="output split mp4 and vobsub files", type=bool, default=False)
-    parser.add_argument("--cloud", help="the event is from a cloud recording", type=bool, default=False)
-    parser.add_argument("--vo", help="set 2nd language as main one", type=bool, default=False)
+    parser.add_argument("--cloud", help="the event is from a cloud recording", action="store_true")
+    parser.add_argument("--mp4", help="output split mp4 and vobsub files", action="store_true")
+    parser.add_argument("--vo", help="set 2nd language as main one", action="store_true")
     parser.add_argument("--write_to_file", "-w", help="record", action="store_true")
 
     args = parser.parse_args()

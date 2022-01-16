@@ -354,11 +354,11 @@ async def handle_flussonic(request, channel_id, url, cloud=False):
 
         cmd += f" -t {record_time} -w"
         if cloud:
-            cmd += " --cloud 1"
+            cmd += " --cloud"
         if MP4_OUTPUT or request.args.get("mp4", False):
-            cmd += " --mp4 1"
+            cmd += " --mp4"
         if request.args.get("vo", False):
-            cmd += " --vo 1"
+            cmd += " --vo"
 
         if os.name != "nt":
             signal.signal(signal.SIGCHLD, signal.SIG_IGN)
