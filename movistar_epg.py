@@ -91,6 +91,7 @@ async def after_server_start(app, loop):
     _t_epg1 = asyncio.create_task(update_epg_delayed())
     _t_cloud1 = asyncio.create_task(update_cloud_delayed())
     if RECORDINGS:
+        log.info("Manual timers check => http://127.0.0.1:8889/timers_check")
         if not os.path.exists(RECORDINGS):
             os.mkdir(RECORDINGS)
         await update_recordings_m3u()
