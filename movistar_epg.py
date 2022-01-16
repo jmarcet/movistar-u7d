@@ -112,7 +112,7 @@ async def after_server_start(app, loop):
             _ffmpeg = str(await get_ffmpeg_procs())
             [
                 os.remove(t)
-                for t in glob(f"{RECORDINGS}/**/*{TMP_EXT}", recursive=True)
+                for t in glob(f"{RECORDINGS}/**/*{TMP_EXT}*", recursive=True)
                 if os.path.basename(t) not in _ffmpeg
             ]
             _t_timers_d = asyncio.create_task(timers_check_delayed())
