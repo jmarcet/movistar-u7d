@@ -23,8 +23,8 @@ from time import sleep
 from threading import Thread
 
 
-CACHE_DIR = os.path.join(os.getenv("HOME", "/home"), ".xmltv/cache/programs")
-RECORDINGS = os.getenv("RECORDINGS", "/tmp")
+CACHE_DIR = os.path.join(os.getenv("HOME", os.getenv("HOMEPATH")), ".xmltv/cache/programs")
+RECORDINGS = os.getenv("RECORDINGS", None)
 SANIC_EPG_URL = "http://127.0.0.1:8889"
 
 IMAGENIO_URL = "http://html5-static.svc.imagenio.telefonica.net/appclientv/nux/incoming/epg"
