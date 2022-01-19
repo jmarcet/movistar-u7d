@@ -42,6 +42,7 @@ HOME = os.getenv("HOME", os.getenv("HOMEPATH"))
 CHANNELS = os.path.join(HOME, "MovistarTV.m3u")
 CHANNELS_CLOUD = os.path.join(HOME, "cloud.m3u")
 CHANNELS_RECORDINGS = os.path.join(HOME, "recordings.m3u")
+DEBUG = bool(int(os.getenv("DEBUG", 0)))
 GUIDE = os.path.join(HOME, "guide.xml")
 GUIDE_CLOUD = os.path.join(HOME, "cloud.xml")
 IPTV_BW = int(os.getenv("IPTV_BW", "0"))
@@ -62,6 +63,7 @@ VOD_EXEC = "vod.exe" if os.path.exists("vod.exe") else "vod.py"
 YEAR_SECONDS = 365 * 24 * 60 * 60
 
 LOG_SETTINGS = LOGGING_CONFIG_DEFAULTS
+LOG_SETTINGS["formatters"]["generic"]["format"] = "%(asctime)s [U7D] [%(levelname)s] %(message)s"
 LOG_SETTINGS["formatters"]["generic"]["datefmt"] = LOG_SETTINGS["formatters"]["access"][
     "datefmt"
 ] = "[%Y-%m-%d %H:%M:%S]"
@@ -107,6 +109,7 @@ async def after_server_start(app, loop):
                 else:
                     await asyncio.sleep(5)
         except (ConnectionRefusedError, aiohttp.client_exceptions.ClientConnectorError):
+            log.debug("Waiting for EPG service...")
             await asyncio.sleep(5)
 
     if not app.ctx.vod_client:
@@ -362,6 +365,8 @@ async def handle_flussonic(request, channel_id, url, cloud=False):
 
         if os.name != "nt":
             signal.signal(signal.SIGCHLD, signal.SIG_IGN)
+
+        log.debug(f"Launching {cmd}")
         subprocess.Popen(cmd.split())
         return response.json(
             {
@@ -523,7 +528,7 @@ if __name__ == "__main__":
             protocol=VodHttpProtocol,
             access_log=False,
             auto_reload=False,
-            debug=False,
+            debug=DEBUG,
             workers=SANIC_THREADS if os.name != "nt" else 1,
         )
     except (KeyboardInterrupt, TimeoutError):

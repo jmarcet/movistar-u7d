@@ -1,7 +1,7 @@
 # U7D_UID=nobody                     # usuario con el que ejecutar los microservicios y para las grabaciones y cachés
+# DEBUG=1                            # mostrar logs de depuración
 # HOME=/home                         # directorio donde quedará guardada la caché de tv_grab_es_movistartv
 # LAN_IP=192.168.1.10                # ip donde queremos tener el proxy funcionando
-
 # EPG_THREADS=4                      # número de hilos para descargar la epg
 # IPTV_BW=85000                      # máximo ancho de banda (en kbps) permitido para el total de clientes, la vlan de iptv de Movistar tiene un tope de 100000 kbps
 # MP4_OUTPUT=1                       # hacer grabaciones a fichero .mp4 y .sub por separado

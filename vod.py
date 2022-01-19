@@ -4,6 +4,7 @@ import aiohttp
 import argparse
 import asyncio
 import httpx
+import logging as log
 import os
 import re
 import signal
@@ -24,6 +25,7 @@ from threading import Thread
 
 
 CACHE_DIR = os.path.join(os.getenv("HOME", os.getenv("HOMEPATH")), ".xmltv/cache/programs")
+DEBUG = bool(int(os.getenv("DEBUG", 0)))
 RECORDINGS = os.getenv("RECORDINGS", None)
 SANIC_EPG_URL = "http://127.0.0.1:8889"
 
@@ -67,12 +69,12 @@ class RtspClient(object):
     async def print(self, req, resp):
         WIDTH = 134
         headers = self.serialize_headers(resp.headers)
-        sys.stderr.write("-" * WIDTH + "\n")
-        sys.stderr.write("Request: " + req.split("\n")[0] + "\n")
-        sys.stderr.write(f"Response: {resp.version} {resp.status}\n{headers}\n")
+        log.debug("-" * WIDTH)
+        log.debug("Request: " + req.split("\n")[0])
+        log.debug(f"Response: {resp.version} {resp.status}\n{headers}")
         if resp.body:
-            sys.stderr.write(f"\n{resp.body.rstrip()}\n")
-        sys.stderr.write("-" * WIDTH + "\n")
+            log.debug(f"\n{resp.body.rstrip()}")
+        log.debug("-" * WIDTH)
 
     async def read_message(self):
         resp = (await self.reader.read(4096)).decode()
@@ -117,7 +119,8 @@ class RtspClient(object):
 
         self.writer.write(req.encode())
         resp = await self.read_message()
-        # asyncio.create_task(self.print(req, resp))
+        if DEBUG:
+            asyncio.create_task(self.print(req, resp))
 
         if resp.status != "200 OK" and method not in ["SETUP", "TEARDOWN"]:
             raise ValueError(f"{method} {resp}")
@@ -130,14 +133,14 @@ class RtspClient(object):
 
 @ffmpeg.on("completed")
 def ffmpeg_completed():
-    sys.stderr.write(f"{_log_prefix} Recording ENDED: {_log_suffix}\n")
+    log.info(f"{_log_prefix} Recording ENDED: {_log_suffix}")
 
     def timed_out(i, ex):
         if i < 2:
-            sys.stderr.write(f"{_log_prefix} Recording WARNING: {_log_suffix} => {repr(ex)}\n")
+            log.warning(f"{_log_prefix} Recording ARCHIVE: {_log_suffix} => {repr(ex)}")
             sleep(15)
         else:
-            sys.stderr.write(f"{_log_prefix} Recording ERROR: {_log_suffix} => {repr(ex)}\n")
+            log.error(f"{_log_prefix} Recording ARCHIVE: {_log_suffix} => {repr(ex)}")
 
     command = list(_nice)
     command += ["mkvmerge", "--abort-on-warnings", "-q", "-o", filename + TMP_EXT2]
@@ -157,9 +160,9 @@ def ffmpeg_completed():
 
         duration = int(int(recording_data["container"]["properties"]["duration"]) / 1000000000)
         bad = duration + 30 < args.time
-        sys.stderr.write(
+        log.info(
             f"{_log_prefix} Recording {'INCOMPLETE:' if bad else 'COMPLETE:'} "
-            f"[{duration}s] / {_log_suffix}\n"
+            f"[{duration}s] / {_log_suffix}"
         )
         missing_time = args.time - duration if bad else 0
 
@@ -188,7 +191,7 @@ def ffmpeg_completed():
         else:
             os.rename(filename + TMP_EXT2, filename + VID_EXT)
     except Exception as ex:
-        sys.stderr.write(f"{_log_prefix} Recording FAILED: {_log_suffix} => {repr(ex)}\n")
+        log.error(f"{_log_prefix} Recording FAILED: {_log_suffix} => {repr(ex)}")
         _cleanup(TMP_EXT2)
         for i in range(3):
             try:
@@ -224,16 +227,16 @@ def ffmpeg_error(code):
     ffmpeg_completed()
 
 
-# @ffmpeg.on('stderr')
+# @ffmpeg.on("stderr")
 # def ffmpeg_stderr(line):
-#     if line.startswith('frame='):
+#     if line.startswith("frame="):
 #         return
-#     sys.stderr.write(f'{_log_prefix} [ffmpeg] {line}\n')
+#     log.debug(f"{_log_prefix} [ffmpeg] {line}")
 
 
 @ffmpeg.on("terminated")
 def ffmpeg_terminated():
-    sys.stderr.write(f"{_log_prefix} [ffmpeg] TERMINATED: {_log_suffix}\n")
+    log.info(f"{_log_prefix} [ffmpeg] TERMINATED: {_log_suffix}")
     ffmpeg_completed()
 
 
@@ -291,7 +294,7 @@ async def record_stream():
         _options["metadata:s:v"] = f"title={full_title}"
 
         if not os.path.exists(path):
-            sys.stderr.write(f"{_log_prefix} Creating recording subdir {path}\n")
+            log.info(f"{_log_prefix} Creating recording subdir {path}")
             os.mkdir(path)
     else:
         filename = os.path.join(RECORDINGS, f"{args.channel}-{args.broadcast}")
@@ -314,7 +317,7 @@ async def record_stream():
     _ffmpeg = Thread(target=asyncio.run, args=(ffmpeg.execute(),))
     _ffmpeg.start()
 
-    sys.stderr.write(f"{_log_prefix} Recording STARTED: {_log_suffix}\n")
+    log.info(f"{_log_prefix} Recording STARTED: {_log_suffix}")
 
 
 def save_metadata():
@@ -360,7 +363,7 @@ def save_metadata():
             f.write(json2xml.Json2xml(metadata, attr_type=False, pretty=True, wrapper="metadata").to_xml())
 
     except (FileNotFoundError, TypeError, ValueError) as ex:
-        sys.stderr.write(f"{_log_prefix} No metadata found {repr(ex)}\n")
+        log.warning(f"{_log_prefix} No metadata found {repr(ex)}")
 
 
 async def VodLoop(args, vod_data=None):
@@ -388,7 +391,7 @@ async def VodLoop(args, vod_data=None):
     except (AttributeError, TimeoutError, TypeError, ValueError):
         pass
     except Exception as ex:
-        sys.stderr.write(f"{_log_prefix} Error: {repr(ex)}\n")
+        log.error(f"{_log_prefix}: {repr(ex)}")
 
     finally:
         try:
@@ -410,7 +413,7 @@ async def VodLoop(args, vod_data=None):
 async def VodSetup(args, vod_client):
     global _log_prefix, _log_suffix, epg_url
 
-    _log_prefix = f"{'[' + args.client_ip + '] ' if args.client_ip else ''}[VOD:{os.getpid()}]"
+    _log_prefix = f"{('[' + args.client_ip + ']') if args.client_ip else ''}"
 
     client = None
     headers = {"CSeq": "", "User-Agent": UA}
@@ -428,12 +431,13 @@ async def VodSetup(args, vod_client):
             vod_info["beginTime"] / 1000,
         )
         uri = urllib.parse.urlparse(vod_info["url"])
-    except (aiohttp.client_exceptions.ClientConnectorError, ConnectionRefusedError):
-        sys.stderr.write(f"{_log_prefix} Movistar IPTV catchup service DOWN\n")
-        return True
-    except KeyError:
-        sys.stderr.write(f"{_log_prefix} Could not get uri for: {_log_suffix}\n")
-        return False
+    except Exception as ex:
+        if isinstance(ex, (aiohttp.client_exceptions.ClientConnectorError, ConnectionRefusedError)):
+            log.error(f"{_log_prefix} Movistar IPTV catchup service DOWN")
+        else:
+            log.error(f"{_log_prefix} Could not get uri for: [{args.channel}] [{args.broadcast}]: {repr(ex)}")
+        await vod_client.close()
+        return
 
     reader, writer = await asyncio.open_connection(uri.hostname, uri.port)
     epg_url = f"{SANIC_EPG_URL}/program_name/{args.channel}/{args.broadcast}"
@@ -451,7 +455,7 @@ async def VodSetup(args, vod_client):
         client.needs_position()
         r = await client.send_request("SETUP2", setup)
         if r.status != "200 OK":
-            sys.stderr.write(f"{r}\n")
+            log.error(f"{r}")
             return
 
     play["Range"] = f"npt={args.start}-end"
@@ -481,14 +485,24 @@ if __name__ == "__main__":
     parser.add_argument("--start", "-s", help="stream start offset", type=int)
     parser.add_argument("--time", "-t", help="recording time in seconds", type=int)
     parser.add_argument("--cloud", help="the event is from a cloud recording", action="store_true")
+    parser.add_argument("--debug", help="enable debug logs", action="store_true")
     parser.add_argument("--mp4", help="output split mp4 and vobsub files", action="store_true")
     parser.add_argument("--vo", help="set 2nd language as main one", action="store_true")
     parser.add_argument("--write_to_file", "-w", help="record", action="store_true")
 
     args = parser.parse_args()
 
+    if args.debug:
+        DEBUG = True
+
+    log.basicConfig(
+        datefmt="%Y-%m-%d %H:%M:%S",
+        format="[%(asctime)s] [VOD] [%(levelname)s] %(message)s",
+        level=log.DEBUG if DEBUG else log.INFO
+    )
+
     if args.write_to_file and not RECORDINGS:
-        sys.stderr.write(f"RECORDINGS path not set\n")
+        log.error(f"RECORDINGS path not set")
         sys.exit(1)
 
     if not args.iptv_ip:
@@ -511,5 +525,5 @@ if __name__ == "__main__":
     except (AttributeError, KeyboardInterrupt, FileNotFoundError, TimeoutError, ValueError):
         sys.exit(1)
     except Exception as ex:
-        sys.stderr.write(f"{repr(ex)}\n")
+        log.error(f"{repr(ex)}")
         sys.exit(1)

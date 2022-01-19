@@ -11,7 +11,6 @@ import tomli
 import ujson
 import urllib.parse
 
-from asyncio.subprocess import DEVNULL
 from datetime import datetime
 from glob import glob
 from sanic import Sanic, exceptions, response
@@ -41,6 +40,7 @@ HOME = os.getenv("HOME", os.getenv("HOMEPATH"))
 CHANNELS = os.path.join(HOME, "MovistarTV.m3u")
 CHANNELS_CLOUD = os.path.join(HOME, "cloud.m3u")
 CHANNELS_RECORDINGS = os.path.join(HOME, "recordings.m3u")
+DEBUG = bool(int(os.getenv("DEBUG", 0)))
 GUIDE = os.path.join(HOME, "guide.xml")
 GUIDE_CLOUD = os.path.join(HOME, "cloud.xml")
 NETWORK_FSIGNAL = os.path.join(os.getenv("TMP", "/tmp"), ".u7d_bw")
@@ -52,6 +52,7 @@ RECORDINGS = os.getenv("RECORDINGS", None)
 YEAR_SECONDS = 365 * 24 * 60 * 60
 
 LOG_SETTINGS = LOGGING_CONFIG_DEFAULTS
+LOG_SETTINGS["formatters"]["generic"]["format"] = "%(asctime)s [EPG] [%(levelname)s] %(message)s"
 LOG_SETTINGS["formatters"]["generic"]["datefmt"] = LOG_SETTINGS["formatters"]["access"][
     "datefmt"
 ] = "[%Y-%m-%d %H:%M:%S]"
@@ -734,16 +735,12 @@ async def update_cloud(forced=False):
             f"tv_grab_es_movistartv",
             "--cloud_m3u",
             CHANNELS_CLOUD,
-            stdout=DEVNULL,
-            stderr=DEVNULL,
         )
         async with tvgrab_lock:
             tv_cloud2 = await asyncio.create_subprocess_exec(
                 f"tv_grab_es_movistartv",
                 "--cloud_recordings",
                 GUIDE_CLOUD,
-                stdout=DEVNULL,
-                stderr=DEVNULL,
             )
     if forced and not updated:
         log.info(f"Loaded Cloud Recordings data => {SANIC_URL}/cloud.m3u & {SANIC_URL}/cloud.xml")
@@ -765,8 +762,6 @@ async def update_epg():
                 CHANNELS,
                 "--output",
                 GUIDE,
-                stdout=DEVNULL,
-                stderr=DEVNULL,
             )
             await tvgrab.wait()
         if tvgrab.returncode > 1:
@@ -791,14 +786,14 @@ async def update_recordings_m3u():
     def dump_files(m3u, files, latest=False):
         for file in files:
             filename, ext = os.path.splitext(file)
-            relname = filename[len(RECORDINGS) + 1:]
+            relname = filename[len(RECORDINGS) + 1 :]
             path, name = os.path.split(relname)
             if os.path.exists(filename + ".jpg"):
                 logo = relname + ".jpg"
             else:
                 _logo = glob(f"{filename}*.jpg")
                 if len(_logo) and os.path.isfile(_logo[0]):
-                    logo = _logo[0][len(RECORDINGS) + 1:]
+                    logo = _logo[0][len(RECORDINGS) + 1 :]
                 else:
                     logo = ""
             m3u += '#EXTINF:-1 tvg-id=""'
@@ -834,7 +829,7 @@ if __name__ == "__main__":
             mmc_period_sec=None,
             multiprocess_mode="livesum",
         ).expose_endpoint()
-        app.run(host="127.0.0.1", port=8889, access_log=False, auto_reload=False, debug=False, workers=1)
+        app.run(host="127.0.0.1", port=8889, access_log=False, auto_reload=False, debug=DEBUG, workers=1)
     except (KeyboardInterrupt, TimeoutError):
         sys.exit(1)
     except Exception as ex:

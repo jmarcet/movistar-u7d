@@ -4,7 +4,12 @@ After=network.target
 
 [Service]
 Type=simple
+StandardOutput=syslog
+StandardError=syslog
+SyslogIdentifier=movistar-u7d
+
 Environment=PYTHONUNBUFFERED=1
+# Environment=DEBUG=1
 # Environment=HOME=/home
 # Environment=LAN_IP=192.168.1.10
 # Environment=EPG_THREADS=4

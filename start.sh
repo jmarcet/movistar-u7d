@@ -1,10 +1,6 @@
 #!/bin/sh
 
 [ -n "${U7D_UID}" ] && _SUDO="s6-setuidgid ${U7D_UID}"
-[ -e "${HOME}/.xmltv" ] || ${_SUDO} mkdir -p "${HOME}/.xmltv"
-
-_tvgrab_log="${HOME}/.xmltv/tv_grab_es_movistartv.log"
-${_SUDO} echo > "${_tvgrab_log}"
 
 export PATH="/app:$PATH"
 hash -r
@@ -14,5 +10,5 @@ hash -r
 ( while (true); do nc -z -v -w 1 127.0.0.1 8889 2>/dev/null && break; sleep 1; done )
 ( while (true); do nice -n -15 ionice -c 1 -n 0 ${_SUDO} movistar_u7d.py; sleep 1; done ) &
 
-${_SUDO} tail -F "${_tvgrab_log}"
+${_SUDO} tail -f /dev/null
 
