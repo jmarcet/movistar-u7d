@@ -1260,11 +1260,12 @@ class XMLTV:
                 m3u += f'tvg-logo="{channel_logo}" '
                 m3u += f'catchup-source="http://{sanic}'
                 m3u += "/cloud" if cloud else ""
-                m3u += f"/{channel_id}" + '/{utc}-{duration}.ts"'
+                m3u += f"/{channel_id}" + '/{utc}.ts"'
                 m3u += f",{channel_name}\n"
                 m3u += "#KODIPROP:inputstream=inputstream.ffmpegdirect\n"
-                m3u += "#KODIPROP:inputstream.ffmpegdirect.stream_mode=timeshift\n"
                 m3u += "#KODIPROP:inputstream.ffmpegdirect.is_realtime_stream=true\n"
+                m3u += "#KODIPROP:inputstream.ffmpegdirect.mime_type=video/mp2t\n"
+                m3u += "#KODIPROP:inputstream.ffmpegdirect.stream_mode=timeshift\n"
                 m3u += f"http://{sanic}"
                 m3u += "/cloud" if cloud else ""
                 m3u += f"/{channel_id}/live\n"
