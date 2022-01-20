@@ -31,6 +31,7 @@ SANIC_EPG_URL = "http://127.0.0.1:8889"
 
 IMAGENIO_URL = "http://html5-static.svc.imagenio.telefonica.net/appclientv/nux/incoming/epg"
 COVER_URL = f"{IMAGENIO_URL}/covers/programmeImages/portrait/290x429"
+MOVISTAR_DNS = "172.26.23.3"
 MVTV_URL = "http://www-60.svc.imagenio.telefonica.net:2001/appserver/mvtv.do"
 
 NFO_EXT = "-movistar.nfo"
@@ -238,6 +239,17 @@ def ffmpeg_error(code):
 def ffmpeg_terminated():
     log.info(f"{_log_prefix} [ffmpeg] TERMINATED: {_log_suffix}")
     ffmpeg_completed()
+
+
+def check_dns():
+    s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+    try:
+        s.connect((MOVISTAR_DNS, 53))
+        return s.getsockname()[0]
+    except Exception as ex:
+        log.error("Unable to connect to Movistar DNS")
+    finally:
+        s.close()
 
 
 def cleanup(ext, subs=False):
@@ -512,10 +524,9 @@ if __name__ == "__main__":
         sys.exit(1)
 
     if not _args.iptv_ip:
-        s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
-        s.connect(("172.26.23.3", 53))
-        _args.iptv_ip = s.getsockname()[0]
-        s.close
+        _args.iptv_ip = check_dns()
+        if not _args.iptv_ip:
+            sys.exit(1)
 
     if not _args.client_port:
         _args.client_port = find_free_port(_args.iptv_ip)

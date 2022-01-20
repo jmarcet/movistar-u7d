@@ -12,16 +12,14 @@ SyslogIdentifier=movistar-u7d
 Environment=PYTHONUNBUFFERED=1
 # Environment=DEBUG=1
 # Environment=HOME=/home
-# Environment=LAN_IP=192.168.1.10
 # Environment=IPTV_BW=85000
+# Environment=LAN_IP=192.168.1.10
 # Environment=MP4_OUTPUT=1
 # Environment=RECORDINGS=/mnt/recordings
 # Environment=SANIC_PORT=8888
 # Environment=SANIC_THREADS=4
 # Environment=VERBOSE_LOGS=0
 
-# Antes de lanzar movistar_u7d.py, comprueba que movistar_epg.py esté ya escuchando peticiones
-ExecStartPre=/bin/bash -c 'while (true); do nc -z -v -w 1 127.0.0.1 8889 2>/dev/null && break; sleep 1; done'
 ExecStart=movistar_u7d.py
 
 [Install]

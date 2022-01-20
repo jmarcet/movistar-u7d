@@ -43,6 +43,7 @@ from queue import Queue
 from threading import Thread
 
 from movistar_epg import get_title_meta
+from vod import check_dns
 
 DEBUG = bool(int(os.getenv("DEBUG", 0)))
 
@@ -1317,11 +1318,10 @@ else:
 # Endpoint del backend principal
 sanic = "%s:%s" % (lan_ip, os.getenv("SANIC_PORT", "8888"))
 
-# Determina la dirección IP para el IPTV
-s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
-s.connect(("172.26.23.3", 53))
-_iptv = s.getsockname()[0]
-s.close()
+# Determina la dirección IP para el IPTV y la conectividad con las DNS de Movistar
+_iptv = check_dns()
+if not _iptv:
+    sys.exit(1)
 
 # Número de hilos para descarga de la EPG
 epg_threads = min(8, int(os.getenv("EPG_THREADS", os.cpu_count())))

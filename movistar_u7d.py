@@ -23,7 +23,8 @@ from sanic.server import HttpProtocol
 from sanic.touchup.meta import TouchUpMeta
 
 from movistar_epg import get_ffmpeg_procs
-from vod import VodData, VodLoop, VodSetup, find_free_port, COVER_URL, IMAGENIO_URL, UA
+from vod import VodData, VodLoop, VodSetup, find_free_port, COVER_URL, IMAGENIO_URL, UA, check_dns
+
 
 if os.name != "nt":
     from setproctitle import setproctitle
@@ -92,13 +93,19 @@ async def after_server_start(app, loop):
     log.debug("after_server_start")
     global _CHANNELS, _IPTV, _SESSION, _t_tp
 
-    s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
-    s.connect(("172.26.23.3", 53))
-    _IPTV = s.getsockname()[0]
-    s.close()
+    while True:
+        _IPTV = check_dns()
+        if _IPTV:
+            break
+        else:
+            await asyncio.sleep(5)
 
     conn = aiohttp.TCPConnector(keepalive_timeout=YEAR_SECONDS, limit_per_host=1)
     _SESSION = aiohttp.ClientSession(connector=conn, json_serialize=ujson.dumps)
+
+    if not app.ctx.vod_client:
+        conn_vod = aiohttp.TCPConnector(keepalive_timeout=YEAR_SECONDS)
+        app.ctx.vod_client = aiohttp.ClientSession(connector=conn_vod, headers={"User-Agent": UA})
 
     while True:
         try:
@@ -107,36 +114,17 @@ async def after_server_start(app, loop):
                     _CHANNELS = await r.json()
                     break
                 else:
+                    log.error("Failed to get channel list from EPG service")
                     await asyncio.sleep(5)
         except (ConnectionRefusedError, aiohttp.client_exceptions.ClientConnectorError):
             log.debug("Waiting for EPG service...")
             await asyncio.sleep(5)
 
-    if not app.ctx.vod_client:
-        conn_vod = aiohttp.TCPConnector(keepalive_timeout=YEAR_SECONDS)
-        app.ctx.vod_client = aiohttp.ClientSession(connector=conn_vod, headers={"User-Agent": UA})
-
-    if IPTV_BW and os.path.exists("/proc/net/route"):
-        async with await open_async("/proc/net/route") as f:
-            _route = await f.read()
-
-        try:
-            iface = list(
-                set([u[0] for u in [t.split()[0:3] for t in _route.splitlines()] if u[2] == "0100400A"])
-            )[
-                0
-            ]  # gw=10.64.0.1
-        except (AttributeError, KeyError):
-            return
-
-        # let's control dynamically the number of allowed clients
-        iface_rx = f"/sys/class/net/{iface}/statistics/rx_bytes"
-        if os.path.exists(iface_rx):
-            log.info("Setting dynamic limit of clients from " + iface_rx.split("/")[4] + " bw")
-            _t_tp = app.add_task(throughput(iface_rx))
-            if not os.path.exists(NETWORK_FSIGNAL):
-                with open(NETWORK_FSIGNAL, "w") as f:
-                    f.write("")
+    if IPTV_BW and os.path.exists(NETWORK_FSIGNAL):
+        async with await open_async(NETWORK_FSIGNAL) as f:
+            iface_rx = await f.read()
+        log.info("Setting dynamic limit of clients from " + iface_rx.split("/")[4] + " bw")
+        _t_tp = app.add_task(throughput(iface_rx))
 
 
 @app.listener("before_server_stop")

@@ -19,7 +19,8 @@ from sanic.compat import open_async
 from sanic.log import logger as log, LOGGING_CONFIG_DEFAULTS
 from xml.sax.saxutils import unescape
 
-from vod import MVTV_URL, TMP_EXT
+from vod import MVTV_URL, TMP_EXT, check_dns
+
 
 if os.name != "nt":
     from setproctitle import setproctitle
@@ -43,7 +44,9 @@ CHANNELS_RECORDINGS = os.path.join(HOME, "recordings.m3u")
 DEBUG = bool(int(os.getenv("DEBUG", 0)))
 GUIDE = os.path.join(HOME, "guide.xml")
 GUIDE_CLOUD = os.path.join(HOME, "cloud.xml")
+IPTV_BW = int(os.getenv("IPTV_BW", "0"))
 NETWORK_FSIGNAL = os.path.join(os.getenv("TMP", "/tmp"), ".u7d_bw")
+RECORDINGS = os.getenv("RECORDINGS", None)
 SANIC_PORT = int(os.getenv("SANIC_PORT", "8888"))
 SANIC_URL = f"http://{SANIC_HOST}:{SANIC_PORT}"
 RECORDING_THREADS = int(os.getenv("RECORDING_THREADS", "4"))
@@ -86,7 +89,35 @@ _t_cloud1 = (
 
 @app.listener("after_server_start")
 async def after_server_start(app, loop):
-    global _RECORDINGS, _t_cloud1, _t_epg1, _t_timers_d
+    global RECORDING_THREADS, _RECORDINGS, _t_cloud1, _t_epg1, _t_timers_d
+
+    while True:
+        _IPTV = check_dns()
+        if _IPTV:
+            break
+        else:
+            await asyncio.sleep(5)
+
+    if IPTV_BW and os.path.exists("/proc/net/route"):
+        async with await open_async("/proc/net/route") as f:
+            route = await f.read()
+
+        try:
+            iface = list(
+                set([u[0] for u in [t.split()[0:3] for t in route.splitlines()] if u[2] == "0100400A"])
+            )[
+                0
+            ]  # gw=10.64.0.1
+
+            # let's control dynamically the number of allowed clients
+            iface_rx = f"/sys/class/net/{iface}/statistics/rx_bytes"
+            if os.path.exists(iface_rx):
+                with open(NETWORK_FSIGNAL, "w") as f:
+                    f.write(iface_rx)
+                log.info("Ignoring RECORDING_THREADS, using dynamic limit")
+                RECORDING_THREADS = 0
+        except (AttributeError, KeyError):
+            pass
 
     await reload_epg()
     _t_epg1 = asyncio.create_task(update_epg_delayed())
@@ -616,9 +647,6 @@ async def timers_check_delayed():
     global RECORDING_THREADS, _t_timers
     log.info("Waiting 60s to check timers (ensuring no stale rtsp is present)...")
     await asyncio.sleep(60)
-    if os.path.exists(NETWORK_FSIGNAL):
-        log.info("Ignoring RECORDING_THREADS, using dynamic limit")
-        RECORDING_THREADS = 0
     _t_timers = asyncio.create_task(every(900, timers_check))
 
 
@@ -732,13 +760,13 @@ async def update_cloud(forced=False):
 
     if updated or not os.path.exists(CHANNELS_CLOUD) or not os.path.exists(GUIDE_CLOUD):
         tv_cloud1 = await asyncio.create_subprocess_exec(
-            f"tv_grab_es_movistartv",
+            "tv_grab_es_movistartv",
             "--cloud_m3u",
             CHANNELS_CLOUD,
         )
         async with tvgrab_lock:
             tv_cloud2 = await asyncio.create_subprocess_exec(
-                f"tv_grab_es_movistartv",
+                "tv_grab_es_movistartv",
                 "--cloud_recordings",
                 GUIDE_CLOUD,
             )
@@ -757,7 +785,7 @@ async def update_epg():
     for i in range(5):
         async with tvgrab_lock:
             tvgrab = await asyncio.create_subprocess_exec(
-                f"tv_grab_es_movistartv",
+                "tv_grab_es_movistartv",
                 "--tvheadend",
                 CHANNELS,
                 "--output",
