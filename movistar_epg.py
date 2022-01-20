@@ -477,15 +477,28 @@ async def handle_reload_epg(request):
 
 
 async def reload_epg():
-    global _CHANNELS, _CLOUD, _EPGDATA
+    global _CHANNELS, _CLOUD, _EPGDATA, tvgrab
 
     if (
+        not os.path.exists(CHANNELS)
+        and os.path.exists(epg_data)
+        and os.path.exists(epg_metadata)
+        and os.path.exists(GUIDE)
+    ):
+        log.warning("Missing channel list! Need to download it. Please be patient...")
+        async with tvgrab_lock:
+            tvgrab = await asyncio.create_subprocess_exec(
+                "tv_grab_es_movistartv",
+                "--m3u",
+                CHANNELS,
+            )
+            await tvgrab.wait()
+    elif (
         not os.path.exists(epg_data)
         or not os.path.exists(epg_metadata)
-        or not os.path.exists(CHANNELS)
         or not os.path.exists(GUIDE)
     ):
-        log.warning("Missing channels data!. Need to download it. Please be patient...")
+        log.warning("Missing channels data! Need to download it. Please be patient...")
         await update_epg()
 
     async with epg_lock:
