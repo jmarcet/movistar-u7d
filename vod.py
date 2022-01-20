@@ -42,9 +42,9 @@ YEAR_SECONDS = 365 * 24 * 60 * 60
 
 Response = namedtuple("Response", ["version", "status", "url", "headers", "body"])
 VodData = namedtuple("VodData", ["client", "get_parameter", "session"])
-
 ffmpeg = FFmpeg().option("y").option("xerror")
-_ffmpeg = _log_prefix = _log_suffix = args = epg_url = filename = full_title = path = None
+
+_args = _epg_url = _ffmpeg = _filename = _full_title = _log_prefix = _log_suffix = _path = None
 _nice = ("nice", "-n", "15", "ionice", "-c", "3") if os.name != "nt" else ()
 
 
@@ -143,60 +143,60 @@ def ffmpeg_completed():
             log.error(f"{_log_prefix} Recording ARCHIVE: {_log_suffix} => {repr(ex)}")
 
     command = list(_nice)
-    command += ["mkvmerge", "--abort-on-warnings", "-q", "-o", filename + TMP_EXT2]
-    if args.vo:
+    command += ["mkvmerge", "--abort-on-warnings", "-q", "-o", _filename + TMP_EXT2]
+    if _args.vo:
         command += ["--track-order", "0:2,0:1,0:4,0:3,0:6,0:5"]
         command += ["--default-track", "2:1"]
-    command += [filename + TMP_EXT]
+    command += [_filename + TMP_EXT]
     try:
         proc = subprocess.run(command, capture_output=True)
-        _cleanup(TMP_EXT)
+        cleanup(TMP_EXT)
         if proc.stdout:
             raise ValueError(proc.stdout.decode().replace("\n", " ").strip())
 
         recording_data = ujson.loads(
-            subprocess.run(["mkvmerge", "-J", filename + TMP_EXT2], capture_output=True).stdout.decode()
+            subprocess.run(["mkvmerge", "-J", _filename + TMP_EXT2], capture_output=True).stdout.decode()
         )
 
         duration = int(int(recording_data["container"]["properties"]["duration"]) / 1000000000)
-        bad = duration + 30 < args.time
+        bad = duration + 30 < _args.time
         log.info(
             f"{_log_prefix} Recording {'INCOMPLETE:' if bad else 'COMPLETE:'} "
             f"[{duration}s] / {_log_suffix}"
         )
-        missing_time = args.time - duration if bad else 0
+        missing_time = _args.time - duration if bad else 0
 
-        _cleanup(VID_EXT, args.mp4)
-        if args.mp4:
+        cleanup(VID_EXT, _args.mp4)
+        if _args.mp4:
             command = list(_nice)
-            command += ["ffmpeg", "-i", filename + TMP_EXT2]
+            command += ["ffmpeg", "-i", _filename + TMP_EXT2]
             command += ["-map", "0", "-c", "copy", "-sn", "-movflags", "+faststart"]
-            command += ["-f", "mp4", "-v", "panic", filename + VID_EXT]
+            command += ["-f", "mp4", "-v", "panic", _filename + VID_EXT]
             if subprocess.run(command).returncode > 1:
-                _cleanup(VID_EXT)
-                raise ValueError("Failed to write " + filename + VID_EXT)
+                cleanup(VID_EXT)
+                raise ValueError("Failed to write " + _filename + VID_EXT)
 
             subs = [t for t in recording_data["tracks"] if t["type"] == "subtitles"]
             for track in subs:
-                filesub = "%s.%s.sub" % (filename, track["properties"]["language"])
+                filesub = "%s.%s.sub" % (_filename, track["properties"]["language"])
                 command = list(_nice)
-                command += ["ffmpeg", "-i", filename + TMP_EXT2]
+                command += ["ffmpeg", "-i", _filename + TMP_EXT2]
                 command += ["-map", "0:%d" % track["id"], "-c:s", "dvbsub"]
                 command += ["-f", "mpegts", "-v", "panic", filesub]
                 if subprocess.run(command).returncode > 1:
-                    _cleanup(VID_EXT, args.mp4)
+                    cleanup(VID_EXT, _args.mp4)
                     raise ValueError("Failed to write " + filesub)
 
-            _cleanup(TMP_EXT2)
+            cleanup(TMP_EXT2)
         else:
-            os.rename(filename + TMP_EXT2, filename + VID_EXT)
+            os.rename(_filename + TMP_EXT2, _filename + VID_EXT)
     except Exception as ex:
         log.error(f"{_log_prefix} Recording FAILED: {_log_suffix} => {repr(ex)}")
-        _cleanup(TMP_EXT2)
+        cleanup(TMP_EXT2)
         for i in range(3):
             try:
-                httpx.put(epg_url + f"?missing={randint(1, args.time)}")
-            except httpx.ReadTimeout:
+                httpx.put(_epg_url + f"?missing={randint(1, _args.time)}")
+            except (httpx.ConnectError, httpx.ReadTimeout) as ex:
                 timed_out(i, ex)
         return
 
@@ -204,22 +204,22 @@ def ffmpeg_completed():
     if not missing_time:
         for i in range(3):
             try:
-                resp = httpx.put(epg_url)
+                resp = httpx.put(_epg_url)
                 break
-            except httpx.ReadTimeout as ex:
+            except (httpx.ConnectError, httpx.ReadTimeout) as ex:
                 timed_out(i, ex)
     else:
         for i in range(3):
             try:
-                resp = httpx.put(epg_url + f"?missing={missing_time}")
+                resp = httpx.put(_epg_url + f"?missing={missing_time}")
                 break
-            except httpx.ReadTimeout as ex:
+            except (httpx.ConnectError, httpx.ReadTimeout) as ex:
                 timed_out(i, ex)
 
     if resp and resp.status_code == 200:
         save_metadata()
     else:
-        _cleanup(VID_EXT, args.mp4)
+        cleanup(VID_EXT, _args.mp4)
 
 
 @ffmpeg.on("error")
@@ -240,18 +240,11 @@ def ffmpeg_terminated():
     ffmpeg_completed()
 
 
-def _cleanup(ext, subs=False):
-    if os.path.exists(filename + ext):
-        os.remove(filename + ext)
+def cleanup(ext, subs=False):
+    if os.path.exists(_filename + ext):
+        os.remove(_filename + ext)
     if subs:
-        [os.remove(t) for t in glob(f"{filename}.*.sub")]
-
-
-def _handle_cleanup(signum, frame):
-    if __name__ == "__main__":
-        raise TimeoutError()
-    else:
-        return
+        [os.remove(t) for t in glob(f"{_filename}.*.sub")]
 
 
 def find_free_port(iface=""):
@@ -269,9 +262,16 @@ async def get_vod_info(channel_id, program_id, cloud, vod_client):
         return (await r.json())["resultData"]
 
 
+def handle_cleanup(signum, frame):
+    if __name__ == "__main__":
+        raise TimeoutError()
+    else:
+        return
+
+
 async def record_stream():
-    global _ffmpeg, _log_suffix, ffmpeg, filename, full_title, path
-    _options = {
+    global _ffmpeg, _filename, _full_title, _log_suffix, _path
+    options = {
         "map": "0",
         "c": "copy",
         "c:a:0": "aac",
@@ -286,28 +286,32 @@ async def record_stream():
     }
 
     async with httpx.AsyncClient() as client:
-        resp = await client.get(epg_url)
+        resp = await client.get(_epg_url)
     if resp.status_code == 200:
         data = resp.json()
 
-        full_title, path, filename = [data[t] for t in ["full_title", "path", "filename"]]
-        _options["metadata:s:v"] = f"title={full_title}"
+        _full_title, _path, _filename = [data[t] for t in ["full_title", "path", "filename"]]
+        options["metadata:s:v"] = f"title={_full_title}"
 
-        if not os.path.exists(path):
-            log.info(f"{_log_prefix} Creating recording subdir {path}")
-            os.mkdir(path)
+        if not os.path.exists(_path):
+            log.info(f"{_log_prefix} Creating recording subdir {_path}")
+            os.mkdir(_path)
     else:
-        filename = os.path.join(RECORDINGS, f"{args.channel}-{args.broadcast}")
+        _filename = os.path.join(RECORDINGS, f"{_args.channel}-{_args.broadcast}")
 
-    _log_suffix += f' "{filename[len(RECORDINGS) + 1:]}"'
+    _log_suffix += f' "{_filename[len(RECORDINGS) + 1:]}"'
 
     ffmpeg.input(
-        f"udp://@{args.iptv_ip}:{args.client_port}", fifo_size=5572, pkt_size=1316, timeout=500000
+        f"udp://@{_args.iptv_ip}:{_args.client_port}", fifo_size=5572, pkt_size=1316, timeout=500000
     ).output(
-        filename + TMP_EXT,
-        _options,
+        _filename + TMP_EXT,
+        options,
         t=str(
-            args.time + 600 if args.time > 7200 else args.time + 300 if args.time > 1800 else args.time + 60
+            _args.time + 600
+            if _args.time > 7200
+            else _args.time + 300
+            if _args.time > 1800
+            else _args.time + 60
         ),
         v="panic",
         vsync="0",
@@ -321,49 +325,49 @@ async def record_stream():
 
 
 def save_metadata():
-    global filename, path
     try:
-        with open(os.path.join(CACHE_DIR, f"{args.broadcast}.json")) as f:
+        with open(os.path.join(CACHE_DIR, f"{_args.broadcast}.json")) as f:
             metadata = ujson.loads(f.read())["data"]
-        for t in ["beginTime", "endTime", "expDate"]:
-            metadata[t] = int(metadata[t] / 1000)
-        _cover = metadata["cover"]
-        resp = httpx.get(f"{COVER_URL}/{_cover}")
-        if resp.status_code == 200:
-            image_ext = os.path.splitext(_cover)[1]
-            _img_name = filename + image_ext
-            with open(_img_name, "wb") as f:
-                f.write(resp.read())
-            metadata["cover"] = os.path.basename(_img_name)
-        if "covers" in metadata:
-            _covers = {}
-            _metadata = os.path.join(path, "metadata")
-            if not os.path.exists(_metadata):
-                os.mkdir(_metadata)
-            for _img in metadata["covers"]:
-                _cover = metadata["covers"][_img]
-                resp = httpx.get(_cover)
-                if resp.status_code != 200:
-                    continue
-                _img_ext = os.path.splitext(_cover)[1]
-                _img_rel = f"{os.path.basename(filename)}-{_img}" + _img_ext
-                _img_name = os.path.join(_metadata, _img_rel)
-                with open(_img_name, "wb") as f:
-                    f.write(resp.read())
-                _covers[_img] = os.path.join("metadata", _img_rel)
-            if _covers:
-                metadata["covers"] = _covers
-            else:
-                metadata.pop("covers", None)
-                os.rmdir(_metadata)
-        metadata["title"] = full_title
-        metadata.pop("logos", None)
-        metadata.pop("name", None)
-        with open(filename + NFO_EXT, "w") as f:
-            f.write(json2xml.Json2xml(metadata, attr_type=False, pretty=True, wrapper="metadata").to_xml())
-
     except (FileNotFoundError, TypeError, ValueError) as ex:
-        log.warning(f"{_log_prefix} No metadata found {repr(ex)}")
+        log.warning(f"{_log_prefix} Extended info not found: {repr(ex)}")
+        return
+
+    for t in ["beginTime", "endTime", "expDate"]:
+        metadata[t] = int(metadata[t] / 1000)
+    cover = metadata["cover"]
+    resp = httpx.get(f"{COVER_URL}/{cover}")
+    if resp.status_code == 200:
+        img_ext = os.path.splitext(cover)[1]
+        img_name = _filename + img_ext
+        with open(img_name, "wb") as f:
+            f.write(resp.read())
+        metadata["cover"] = os.path.basename(img_name)
+    if "covers" in metadata:
+        covers = {}
+        metadata_dir = os.path.join(_path, "metadata")
+        if not os.path.exists(metadata_dir):
+            os.mkdir(metadata_dir)
+        for img in metadata["covers"]:
+            cover = metadata["covers"][img]
+            resp = httpx.get(cover)
+            if resp.status_code != 200:
+                continue
+            img_ext = os.path.splitext(cover)[1]
+            img_rel = f"{os.path.basename(_filename)}-{img}" + img_ext
+            img_name = os.path.join(metadata_dir, img_rel)
+            with open(img_name, "wb") as f:
+                f.write(resp.read())
+            covers[img] = os.path.join("metadata", img_rel)
+        if covers:
+            metadata["covers"] = covers
+        else:
+            metadata.pop("covers", None)
+            os.rmdir(metadata_dir)
+    metadata["title"] = _full_title
+    metadata.pop("logos", None)
+    metadata.pop("name", None)
+    with open(_filename + NFO_EXT, "w") as f:
+        f.write(json2xml.Json2xml(metadata, attr_type=False, pretty=True, wrapper="metadata").to_xml())
 
 
 async def VodLoop(args, vod_data=None):
@@ -411,8 +415,9 @@ async def VodLoop(args, vod_data=None):
 
 
 async def VodSetup(args, vod_client):
-    global _log_prefix, _log_suffix, epg_url
+    global _epg_url, _log_prefix, _log_suffix
 
+    _epg_url = f"{SANIC_EPG_URL}/program_name/{args.channel}/{args.broadcast}"
     _log_prefix = f"{('[' + args.client_ip + ']') if args.client_ip else ''}"
 
     client = None
@@ -432,20 +437,21 @@ async def VodSetup(args, vod_client):
         )
         uri = urllib.parse.urlparse(vod_info["url"])
     except Exception as ex:
+        if __name__ == "__main__":
+            await vod_client.close()
         if isinstance(ex, (aiohttp.client_exceptions.ClientConnectorError, ConnectionRefusedError)):
             log.error(f"{_log_prefix} Movistar IPTV catchup service DOWN")
+            if __name__ == "__main__":
+                httpx.put(_epg_url + f"?missing={randint(1, args.time)}")
         else:
             log.error(f"{_log_prefix} Could not get uri for: [{args.channel}] [{args.broadcast}]: {repr(ex)}")
-        await vod_client.close()
         return
 
-    reader, writer = await asyncio.open_connection(uri.hostname, uri.port)
-    epg_url = f"{SANIC_EPG_URL}/program_name/{args.channel}/{args.broadcast}"
-
     if os.name != "nt":
-        signal.signal(signal.SIGHUP, _handle_cleanup)
-    signal.signal(signal.SIGTERM, _handle_cleanup)
+        signal.signal(signal.SIGHUP, handle_cleanup)
+    signal.signal(signal.SIGTERM, handle_cleanup)
 
+    reader, writer = await asyncio.open_connection(uri.hostname, uri.port)
     client = RtspClient(reader, writer, vod_info["url"])
     await client.send_request("OPTIONS", headers)
     await client.send_request("DESCRIBE", describe)
@@ -490,37 +496,37 @@ if __name__ == "__main__":
     parser.add_argument("--vo", help="set 2nd language as main one", action="store_true")
     parser.add_argument("--write_to_file", "-w", help="record", action="store_true")
 
-    args = parser.parse_args()
+    _args = parser.parse_args()
 
-    if args.debug:
+    if _args.debug:
         DEBUG = True
 
     log.basicConfig(
         datefmt="%Y-%m-%d %H:%M:%S",
         format="[%(asctime)s] [VOD] [%(levelname)s] %(message)s",
-        level=log.DEBUG if DEBUG else log.INFO
+        level=log.DEBUG if DEBUG else log.INFO,
     )
 
-    if args.write_to_file and not RECORDINGS:
+    if _args.write_to_file and not RECORDINGS:
         log.error(f"RECORDINGS path not set")
         sys.exit(1)
 
-    if not args.iptv_ip:
+    if not _args.iptv_ip:
         s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
         s.connect(("172.26.23.3", 53))
-        args.iptv_ip = s.getsockname()[0]
+        _args.iptv_ip = s.getsockname()[0]
         s.close
 
-    if not args.client_port:
-        args.client_port = find_free_port(args.iptv_ip)
+    if not _args.client_port:
+        _args.client_port = find_free_port(_args.iptv_ip)
 
-    if args.mp4:
+    if _args.mp4:
         VID_EXT = ".mp4"
     else:
         VID_EXT = ".mkv"
 
     try:
-        asyncio.run(VodLoop(args))
+        asyncio.run(VodLoop(_args))
         sys.exit(0)
     except (AttributeError, KeyboardInterrupt, FileNotFoundError, TimeoutError, ValueError):
         sys.exit(1)
