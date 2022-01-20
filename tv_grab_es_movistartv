@@ -1343,7 +1343,7 @@ if os.name != "nt":
             fcntl.flock(fh, fcntl.LOCK_EX | fcntl.LOCK_NB)
         except BlockingIOError:
             sys.stderr.write(f"{__file__} ya se está ejecutando\n")
-            sys.exit(0)
+            sys.exit(1)
 
 # Crea la caché
 cache = Cache()
