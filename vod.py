@@ -16,9 +16,9 @@ import urllib.parse
 
 from collections import namedtuple
 from contextlib import closing
+from dict2xml import dict2xml
 from ffmpeg import FFmpeg
 from glob import glob
-from json2xml import json2xml
 from random import randint
 from time import sleep
 from threading import Thread
@@ -378,8 +378,8 @@ def save_metadata():
     metadata["title"] = _full_title
     metadata.pop("logos", None)
     metadata.pop("name", None)
-    with open(_filename + NFO_EXT, "w") as f:
-        f.write(json2xml.Json2xml(metadata, attr_type=False, pretty=True, wrapper="metadata").to_xml())
+    with open(_filename + NFO_EXT, "w", encoding="utf8") as f:
+        f.write(dict2xml(metadata, wrap="metadata", indent="    "))
 
 
 async def VodLoop(args, vod_data=None):

@@ -1,8 +1,8 @@
 aiohttp
 asyncio_dgram
 black
+dict2xml
 httpx
-json2xml
 python-ffmpeg
 sanic
 git+https://github.com/jmarcet/sanic-prometheus
