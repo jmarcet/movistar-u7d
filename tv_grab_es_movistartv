@@ -1375,7 +1375,7 @@ else:
     epg, cached = iptv.get_epg()
 
 # Genera el árbol XMLTV de los paquetes contratados
-epg_x = xmltv.generate_xml(epg, not cached)
+epg_x = xmltv.generate_xml(epg, verbose=not cached)
 
 _saved = None
 xml = epg_x.getroot()
