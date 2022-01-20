@@ -88,9 +88,8 @@ app.config.update(
 app.ctx.vod_client = _t_tp = None
 
 
-@app.listener("after_server_start")
-async def after_server_start(app, loop):
-    log.debug("after_server_start")
+@app.listener("before_server_start")
+async def before_server_start(app, loop):
     global _CHANNELS, _IPTV, _SESSION, _t_tp
 
     while True:

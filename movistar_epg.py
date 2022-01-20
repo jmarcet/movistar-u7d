@@ -87,8 +87,8 @@ _t_cloud1 = (
 ) = _t_epg2 = _t_timers = _t_timers_d = _t_timers_r = _t_timers_t = tv_cloud1 = tv_cloud2 = tvgrab = None
 
 
-@app.listener("after_server_start")
-async def after_server_start(app, loop):
+@app.listener("before_server_start")
+async def before_server_start(app, loop):
     global RECORDING_THREADS, _RECORDINGS, _t_cloud1, _t_epg1, _t_timers_d
 
     while True:
@@ -153,8 +153,8 @@ async def after_server_start(app, loop):
             log.info("No timers.conf found, automatic recordings disabled")
 
 
-@app.listener("after_server_stop")
-async def after_server_stop(app, loop):
+@app.listener("before_server_stop")
+async def before_server_stop(app, loop):
     for task in [
         _t_cloud1,
         _t_cloud2,
