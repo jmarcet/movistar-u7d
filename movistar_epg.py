@@ -499,7 +499,7 @@ async def reload_epg():
         or not os.path.exists(GUIDE)
     ):
         log.warning("Missing channels data! Need to download it. Please be patient...")
-        await update_epg()
+        return await update_epg()
 
     async with epg_lock:
         try:
