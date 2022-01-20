@@ -119,9 +119,13 @@ async def before_server_start(app, loop):
         except (AttributeError, KeyError):
             pass
 
+    if os.name != "nt":
+        await asyncio.create_subprocess_exec("pkill", "tv_grab_es_movistartv")
     await reload_epg()
+
     _t_epg1 = asyncio.create_task(update_epg_delayed())
     _t_cloud1 = asyncio.create_task(update_cloud_delayed())
+
     if RECORDINGS:
         log.info("Manual timers check => http://127.0.0.1:8889/timers_check")
         if not os.path.exists(RECORDINGS):
