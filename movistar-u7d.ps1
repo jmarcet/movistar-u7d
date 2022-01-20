@@ -13,9 +13,6 @@ $env:PYTHONUNBUFFERED = "1"
 
 $env:RECORDINGS = "$env:HOMEPATH\Videos\movistar-u7d"
 
-start .\movistar_epg.exe -NoNewWindow -RedirectStandardOutput $env:TMP\movistar_epg_out.log
-sleep 5
-start .\movistar_u7d.exe -NoNewWindow -RedirectStandardOutput $env:TMP\movistar_u7d_out.log
-
-tail -F $env:TMP\movistar_epg_out.log $env:TMP\movistar_u7d_out.log
+start .\movistar_epg.exe -NoNewWindow
+start .\movistar_u7d.exe -NoNewWindow -Wait
 
