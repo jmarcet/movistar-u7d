@@ -764,8 +764,8 @@ async def update_epg():
                 GUIDE,
             )
             await tvgrab.wait()
-        if tvgrab.returncode > 1:
-            log.error(f"{tvgrab.returncode} Waiting 15s before trying to update EPG again [{i+2}/5]")
+        if tvgrab.returncode:
+            log.error(f"Waiting 15s before trying to update EPG again [{i+2}/5]")
             await asyncio.sleep(15)
         else:
             await reload_epg()

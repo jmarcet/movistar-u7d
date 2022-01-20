@@ -1390,7 +1390,7 @@ if args.cloud_recordings:
 if args.output:
     log.info(f"Guía XMLTV guardada: {args.output}")
     _saved = sys.stdout
-    sys.stdout = open(args.output, "w")
+    sys.stdout = open(args.output, "w", encoding="utf8")
 if args.tvheadend:
     export_channels(args.tvheadend)
 print("<?xml version='1.0' encoding='UTF-8'?>", flush=True)
