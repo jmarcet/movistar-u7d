@@ -657,9 +657,12 @@ async def timers_check():
 
 
 async def timers_check_delayed():
-    global RECORDING_THREADS, _t_timers
-    log.info("Waiting 60s to check timers (ensuring no stale rtsp is present)...")
-    await asyncio.sleep(60)
+    global _t_timers
+    if not IPTV_BW or RECORDING_THREADS:
+        log.info("Waiting 60s to check timers (ensuring no stale rtsp is present)...")
+        await asyncio.sleep(60)
+    else:
+        await asyncio.sleep(5)
     _t_timers = asyncio.create_task(every(900, timers_check))
 
 
