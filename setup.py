@@ -16,7 +16,7 @@ executables = [
 
 setup(
     name="movistar-u7d",
-    version="4.0.9",
+    version="4.2",
     description="Movistar IPTV U7D to flussonic catchup proxy",
     options={"build_exe": build_exe_options},
     executables=executables,
