@@ -441,10 +441,10 @@ async def VodSetup(args, vod_client):
 
     try:
         vod_info = await get_vod_info(args.channel, args.broadcast, args.cloud, vod_client)
-        _log_suffix = "[%ds] [%s] [%d] [%d]" % (
+        _log_suffix = "[%ds] [%s] [%s] [%d]" % (
             vod_info["duration"],
             vod_info["channelName"],
-            vod_info["serviceUID"],
+            args.channel,
             vod_info["beginTime"] / 1000,
         )
         uri = urllib.parse.urlparse(vod_info["url"])
