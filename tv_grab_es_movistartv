@@ -335,12 +335,14 @@ class Cache:
 
     @staticmethod
     def __check_dirs():
-        cache_path = f"{app_dir}{sep}cache"
-        progs_path = f"{cache_path}{sep}programs"
-        if not os.path.isdir(cache_path):
+        cache_path = os.path.join(app_dir, "cache")
+        progs_path = os.path.join(cache_path, "programs")
+        if not os.path.exists(app_dir):
+            os.mkdir(app_dir)
+        if not os.path.exists(cache_path):
             log.info(f"Creando caché en {cache_path}")
             os.mkdir(cache_path)
-        if not os.path.isdir(progs_path):
+        if not os.path.exists(progs_path):
             os.mkdir(progs_path)
 
     @staticmethod
