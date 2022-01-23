@@ -21,11 +21,12 @@
 # You should have received a copy of the GNU General Public License
 # along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
+import aiohttp
 import argparse
+import asyncio
 import codecs
 import concurrent.futures
 import glob
-import httpx
 import logging as log
 import os
 import random
@@ -37,13 +38,14 @@ import time
 import ujson as json
 import xml.etree.ElementTree as ElTr
 
+from aiohttp.resolver import AsyncResolver
 from datetime import date, datetime, timedelta
 from logging.handlers import RotatingFileHandler
 from queue import Queue
 from threading import Thread
 
 from movistar_epg import get_title_meta
-from vod import check_dns
+from vod import MOVISTAR_DNS, UA, YEAR_SECONDS, check_dns
 
 DEBUG = bool(int(os.getenv("DEBUG", 0)))
 
@@ -431,14 +433,18 @@ class Cache:
 class MovistarTV:
     def __init__(self):
         self.__cookie = cache.load_cookie()
+        self.__loop = asyncio.new_event_loop()
         self.__end_points_down = []
         self.__web_service_down = False
+        self.__session = None
 
     def __get_client_profile(self):
         # noinspection PyBroadException
         try:
             log.info("Descargando configuración del cliente")
-            return self.__get_service_data("getClientProfile")["resultData"]
+            return asyncio.run_coroutine_threadsafe(self.__get_service_data("getClientProfile"), self.__loop)[
+                "resultData"
+            ]
         except Exception as ex:
             log.error(f"__get_client_profile: {repr(ex)}")
             log.error("Usando la configuración de cliente por defecto: %i|ALL|1" % default_demarcation)
@@ -448,7 +454,9 @@ class MovistarTV:
         # noinspection PyBroadException
         try:
             log.info("Descargando perfil del servicio")
-            return self.__get_service_data("getPlatformProfile")["resultData"]
+            return asyncio.run_coroutine_threadsafe(
+                self.__get_service_data("getPlatformProfile"), self.__loop
+            )["resultData"]
         except Exception as ex:
             log.error(f"__get_platform_profile: {repr(ex)}")
             log.error("Usando el perfil del servicio por defecto")
@@ -462,7 +470,9 @@ class MovistarTV:
         # noinspection PyBroadException
         try:
             log.info("Descargando parámetros de configuración")
-            return self.__get_service_data("getConfigurationParams")["resultData"]
+            return asyncio.run_coroutine_threadsafe(
+                self.__get_service_data("getConfigurationParams"), self.__loop
+            )["resultData"]
         except Exception as ex:
             log.error(f"__get_config_params: {repr(ex)}")
             log.error("Usando los parámetros de configuración por defecto")
@@ -476,7 +486,9 @@ class MovistarTV:
     def __get_genres(self, tv_wholesaler):
         try:
             log.info("Descargando mapa de géneros")
-            return self.__get_service_data("getEpgSubGenres&tvWholesaler=" f"{tv_wholesaler}")["resultData"]
+            return asyncio.run_coroutine_threadsafe(
+                self.__get_service_data(f"getEpgSubGenres&tvWholesaler={tv_wholesaler}"), self.__loop
+            )["resultData"]
         except Exception as ex:
             log.error(f"Mapa de géneros no encontrado: {repr(ex)}")
             return None
@@ -491,8 +503,9 @@ class MovistarTV:
             if DEBUG:
                 print(".", end="", flush=True)
             try:
-                data = self.__get_service_data(
-                    f"epgInfov2&productID={pid}" f"&channelID={channel_id}" f"&extra=1"
+                data = asyncio.run_coroutine_threadsafe(
+                    self.__get_service_data(f"epgInfov2&productID={pid}&channelID={channel_id}&extra=1"),
+                    self.__loop,
                 )["resultData"]
                 cache.save_epg_extended_info(data)
             except Exception as ex:
@@ -565,9 +578,18 @@ class MovistarTV:
         cache.save_config(conf)
         return conf
 
-    def __get_service_data(self, action):
+    async def __get_service_data(self, action):
         if self.__web_service_down:
             return None
+        if not self.__session:
+            self.__session = aiohttp.ClientSession(
+                connector=aiohttp.TCPConnector(
+                    keepalive_timeout=YEAR_SECONDS,
+                    resolver=AsyncResolver(nameservers=[MOVISTAR_DNS]) if os.name != "nt" else None,
+                ),
+                headers={"User-Agent": UA},
+                json_serialize=json.dumps,
+            )
         ep = None
         while True:
             ep = self.get_end_point(ep)
@@ -584,18 +606,18 @@ class MovistarTV:
                             if "=" in ck:
                                 headers["Cookie"] = self.__cookie
                     url = f"{ep}/appserver/mvtv.do?action={action}"
-                    response = httpx.get(url, headers=headers)
-                    content = response.json()
-                    if response.status_code == 200:
-                        new_cookie = (
-                            response.headers["set-cookie"] if "set-cookie" in response.headers else None
-                        )
-                        if new_cookie and not self.__cookie:
-                            self.__cookie = new_cookie
-                            cache.save_cookie(self.__cookie)
-                        elif new_cookie and new_cookie != self.__cookie:
-                            cache.save_cookie(new_cookie)
-                        return content
+                    async with self.__session.get(url, headers=headers) as response:
+                        if response.status == 200:
+                            content = await response.json()
+                            new_cookie = (
+                                response.headers["set-cookie"] if "set-cookie" in response.headers else None
+                            )
+                            if new_cookie and not self.__cookie:
+                                self.__cookie = new_cookie
+                                cache.save_cookie(self.__cookie)
+                            elif new_cookie and new_cookie != self.__cookie:
+                                cache.save_cookie(new_cookie)
+                            return content
                     raise ValueError(f"{response}")
                 except Exception as ex:
                     log.debug(f"__get_service_data: {repr(ex)}")

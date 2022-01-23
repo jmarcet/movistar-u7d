@@ -12,6 +12,7 @@ import timeit
 import ujson
 import urllib.parse
 
+from aiohttp.resolver import AsyncResolver
 from collections import namedtuple
 from contextlib import closing
 from sanic import Sanic, exceptions, response
@@ -23,7 +24,18 @@ from sanic.server import HttpProtocol
 from sanic.touchup.meta import TouchUpMeta
 
 from movistar_epg import get_ffmpeg_procs
-from vod import VodData, VodLoop, VodSetup, find_free_port, COVER_URL, IMAGENIO_URL, UA, check_dns
+from vod import (
+    COVER_URL,
+    IMAGENIO_URL,
+    MOVISTAR_DNS,
+    UA,
+    YEAR_SECONDS,
+    VodData,
+    VodLoop,
+    VodSetup,
+    check_dns,
+    find_free_port,
+)
 
 
 if os.name != "nt":
@@ -61,8 +73,6 @@ SANIC_THREADS = int(os.getenv("SANIC_THREADS", "4"))
 VERBOSE_LOGS = bool(int(os.getenv("VERBOSE_LOGS", 1)))
 VOD_EXEC = "vod.exe" if os.path.exists("vod.exe") else "vod.py"
 
-YEAR_SECONDS = 365 * 24 * 60 * 60
-
 LOG_SETTINGS = LOGGING_CONFIG_DEFAULTS
 LOG_SETTINGS["formatters"]["generic"]["format"] = "%(asctime)s [U7D] [%(levelname)s] %(message)s"
 LOG_SETTINGS["formatters"]["generic"]["datefmt"] = LOG_SETTINGS["formatters"]["access"][
@@ -99,12 +109,10 @@ async def before_server_start(app, loop):
         else:
             await asyncio.sleep(5)
 
-    conn = aiohttp.TCPConnector(keepalive_timeout=YEAR_SECONDS, limit_per_host=1)
-    _SESSION = aiohttp.ClientSession(connector=conn, json_serialize=ujson.dumps)
-
-    if not app.ctx.vod_client:
-        conn_vod = aiohttp.TCPConnector(keepalive_timeout=YEAR_SECONDS)
-        app.ctx.vod_client = aiohttp.ClientSession(connector=conn_vod, headers={"User-Agent": UA})
+    _SESSION = aiohttp.ClientSession(
+        connector=aiohttp.TCPConnector(keepalive_timeout=YEAR_SECONDS, limit_per_host=1),
+        json_serialize=ujson.dumps,
+    )
 
     while True:
         try:
@@ -125,6 +133,16 @@ async def before_server_start(app, loop):
         log.info("Setting dynamic limit of clients from " + iface_rx.split("/")[4] + " bw")
         _t_tp = app.add_task(throughput(iface_rx))
 
+    if not app.ctx.vod_client:
+        app.ctx.vod_client = aiohttp.ClientSession(
+            connector=aiohttp.TCPConnector(
+                keepalive_timeout=YEAR_SECONDS,
+                resolver=AsyncResolver(nameservers=[MOVISTAR_DNS]) if os.name != "nt" else None,
+            ),
+            headers={"User-Agent": UA},
+            json_serialize=ujson.dumps,
+        )
+
 
 @app.listener("before_server_stop")
 async def before_server_stop(app, loop):
@@ -139,6 +157,10 @@ async def before_server_stop(app, loop):
 
 @app.listener("after_server_stop")
 async def after_server_stop(app, loop):
+    await app.ctx.vod_client.close()
+    await _SESSION.close()
+    if _SESSION_LOGOS:
+        await _SESSION_LOGOS.close()
     try:
         _t_tp.cancel()
         await asyncio.wait({_t_tp})
@@ -208,8 +230,14 @@ async def handle_logos(request, cover=None, logo=None, path=None):
 
     global _SESSION_LOGOS
     if not _SESSION_LOGOS:
-        headers = {"User-Agent": "MICA-IP-STB"}
-        _SESSION_LOGOS = aiohttp.ClientSession(headers=headers)
+        _SESSION_LOGOS = aiohttp.ClientSession(
+            connector=aiohttp.TCPConnector(
+                keepalive_timeout=YEAR_SECONDS,
+                resolver=AsyncResolver(nameservers=[MOVISTAR_DNS]) if os.name != "nt" else None,
+            ),
+            headers={"User-Agent": UA},
+            json_serialize=ujson.dumps,
+        )
 
     async with _SESSION_LOGOS.get(orig_url) as r:
         if r.status == 200:

@@ -12,9 +12,6 @@ services:
       - SYS_NICE
     restart: on-failure
     network_mode: host
-    dns:
-      - 172.26.23.3
-      - 127.0.0.1
     volumes:
       - /etc/localtime:/etc/localtime
     # - ./:/app

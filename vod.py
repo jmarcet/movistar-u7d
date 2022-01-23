@@ -14,6 +14,7 @@ import sys
 import ujson
 import urllib.parse
 
+from aiohttp.resolver import AsyncResolver
 from collections import namedtuple
 from contextlib import closing
 from dict2xml import dict2xml
@@ -45,6 +46,8 @@ Response = namedtuple("Response", ["version", "status", "url", "headers", "body"
 VodData = namedtuple("VodData", ["client", "get_parameter", "session"])
 ffmpeg = FFmpeg().option("y").option("xerror")
 
+_LOOP = _SESSION = None
+
 _args = _epg_url = _ffmpeg = _filename = _full_title = _log_prefix = _log_suffix = _path = None
 _nice = ("nice", "-n", "15", "ionice", "-c", "3") if os.name != "nt" else ()
 
@@ -61,7 +64,7 @@ class RtspClient(object):
     def close_connection(self):
         self.writer.close()
 
-    def get_needs_position(self):
+    def does_need_position(self):
         return self.needs_position
 
     def needs_position(self):
@@ -218,7 +221,7 @@ def ffmpeg_completed():
                 timed_out(i, ex)
 
     if resp and resp.status_code == 200:
-        save_metadata()
+        asyncio.run_coroutine_threadsafe(save_metadata(), _LOOP)
     else:
         cleanup(VID_EXT, _args.mp4)
 
@@ -297,19 +300,18 @@ async def record_stream():
         "metadata:s:s:1": "language=eng",
     }
 
-    async with httpx.AsyncClient() as client:
-        resp = await client.get(_epg_url)
-    if resp.status_code == 200:
-        data = resp.json()
+    async with _SESSION.get(_epg_url) as resp:
+        if resp.status == 200:
+            data = await resp.json()
 
-        _full_title, _path, _filename = [data[t] for t in ["full_title", "path", "filename"]]
-        options["metadata:s:v"] = f"title={_full_title}"
+            _full_title, _path, _filename = [data[t] for t in ["full_title", "path", "filename"]]
+            options["metadata:s:v"] = f"title={_full_title}"
 
-        if not os.path.exists(_path):
-            log.info(f"{_log_prefix} Creating recording subdir {_path}")
-            os.mkdir(_path)
-    else:
-        _filename = os.path.join(RECORDINGS, f"{_args.channel}-{_args.broadcast}")
+            if not os.path.exists(_path):
+                log.info(f"{_log_prefix} Creating recording subdir {_path}")
+                os.mkdir(_path)
+        else:
+            _filename = os.path.join(RECORDINGS, f"{_args.channel}-{_args.broadcast}")
 
     _log_suffix += f' "{_filename[len(RECORDINGS) + 1:]}"'
 
@@ -336,7 +338,7 @@ async def record_stream():
     log.info(f"{_log_prefix} Recording STARTED: {_log_suffix}")
 
 
-def save_metadata():
+async def save_metadata():
     try:
         with open(os.path.join(CACHE_DIR, f"{_args.broadcast}.json")) as f:
             metadata = ujson.loads(f.read())["data"]
@@ -347,13 +349,13 @@ def save_metadata():
     for t in ["beginTime", "endTime", "expDate"]:
         metadata[t] = int(metadata[t] / 1000)
     cover = metadata["cover"]
-    resp = httpx.get(f"{COVER_URL}/{cover}")
-    if resp.status_code == 200:
-        img_ext = os.path.splitext(cover)[1]
-        img_name = _filename + img_ext
-        with open(img_name, "wb") as f:
-            f.write(resp.read())
-        metadata["cover"] = os.path.basename(img_name)
+    async with _SESSION.get(f"{COVER_URL}/{cover}") as resp:
+        if resp.status == 200:
+            img_ext = os.path.splitext(cover)[1]
+            img_name = _filename + img_ext
+            with open(img_name, "wb") as f:
+                f.write(await resp.read())
+            metadata["cover"] = os.path.basename(img_name)
     if "covers" in metadata:
         covers = {}
         metadata_dir = os.path.join(_path, "metadata")
@@ -361,15 +363,15 @@ def save_metadata():
             os.mkdir(metadata_dir)
         for img in metadata["covers"]:
             cover = metadata["covers"][img]
-            resp = httpx.get(cover)
-            if resp.status_code != 200:
-                continue
-            img_ext = os.path.splitext(cover)[1]
-            img_rel = f"{os.path.basename(_filename)}-{img}" + img_ext
-            img_name = os.path.join(metadata_dir, img_rel)
-            with open(img_name, "wb") as f:
-                f.write(resp.read())
-            covers[img] = os.path.join("metadata", img_rel)
+            async with _SESSION.get(cover) as resp:
+                if resp.status != 200:
+                    continue
+                img_ext = os.path.splitext(cover)[1]
+                img_rel = f"{os.path.basename(_filename)}-{img}" + img_ext
+                img_name = os.path.join(metadata_dir, img_rel)
+                with open(img_name, "wb") as f:
+                    f.write(await resp.read())
+                covers[img] = os.path.join("metadata", img_rel)
         if covers:
             metadata["covers"] = covers
         else:
@@ -384,13 +386,23 @@ def save_metadata():
 
 async def VodLoop(args, vod_data=None):
     if __name__ == "__main__":
-        conn = aiohttp.TCPConnector()
-        vod_client = aiohttp.ClientSession(connector=conn, headers={"User-Agent": UA})
-        vod_data = await VodSetup(args, vod_client)
+        global _SESSION
+        _SESSION = aiohttp.ClientSession(
+            connector=aiohttp.TCPConnector(
+                keepalive_timeout=YEAR_SECONDS,
+                resolver=AsyncResolver(nameservers=[MOVISTAR_DNS]) if os.name != "nt" else None,
+            ),
+            headers={"User-Agent": UA},
+            json_serialize=ujson.dumps,
+        )
+
+        vod_data = await VodSetup(args, _SESSION)
         if not isinstance(vod_data, VodData):
             return
 
         if args.write_to_file:
+            global _LOOP
+            _LOOP = asyncio.get_event_loop()
             await record_stream()
 
     elif not vod_data:
@@ -423,7 +435,7 @@ async def VodLoop(args, vod_data=None):
         if __name__ == "__main__":
             if _ffmpeg:
                 _ffmpeg.join()
-            await vod_client.close()
+            await _SESSION.close()
 
 
 async def VodSetup(args, vod_client):
@@ -450,7 +462,7 @@ async def VodSetup(args, vod_client):
         uri = urllib.parse.urlparse(vod_info["url"])
     except Exception as ex:
         if __name__ == "__main__":
-            await vod_client.close()
+            await _SESSION.close()
         if isinstance(ex, (aiohttp.client_exceptions.ClientConnectorError, ConnectionRefusedError)):
             log.error(f"{_log_prefix} Movistar IPTV catchup service DOWN")
             if __name__ == "__main__":
@@ -481,7 +493,7 @@ async def VodSetup(args, vod_client):
     play["Session"] = session["Session"] = r.headers["Session"].split(";")[0]
 
     get_parameter = session.copy()
-    if client.get_needs_position():
+    if client.does_need_position():
         get_parameter.update({"Content-type": "text/parameters", "Content-length": 10})
 
     await client.send_request("PLAY", play)

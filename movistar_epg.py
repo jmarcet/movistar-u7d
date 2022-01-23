@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 
+import aiohttp
 import asyncio
-import httpx
 import os
 import re
 import socket
@@ -11,6 +11,7 @@ import tomli
 import ujson
 import urllib.parse
 
+from aiohttp.resolver import AsyncResolver
 from datetime import datetime
 from glob import glob
 from sanic import Sanic, exceptions, response
@@ -19,7 +20,7 @@ from sanic.compat import open_async
 from sanic.log import logger as log, LOGGING_CONFIG_DEFAULTS
 from xml.sax.saxutils import unescape
 
-from vod import MVTV_URL, TMP_EXT, check_dns
+from vod import MOVISTAR_DNS, MVTV_URL, TMP_EXT, UA, YEAR_SECONDS, check_dns
 
 
 if os.name != "nt":
@@ -52,15 +53,13 @@ SANIC_URL = f"http://{SANIC_HOST}:{SANIC_PORT}"
 RECORDING_THREADS = int(os.getenv("RECORDING_THREADS", "4"))
 RECORDINGS = os.getenv("RECORDINGS", None)
 
-YEAR_SECONDS = 365 * 24 * 60 * 60
-
 LOG_SETTINGS = LOGGING_CONFIG_DEFAULTS
 LOG_SETTINGS["formatters"]["generic"]["format"] = "%(asctime)s [EPG] [%(levelname)s] %(message)s"
 LOG_SETTINGS["formatters"]["generic"]["datefmt"] = LOG_SETTINGS["formatters"]["access"][
     "datefmt"
 ] = "[%Y-%m-%d %H:%M:%S]"
 
-_CHANNELS = _CLOUD = _EPGDATA = _RECORDINGS = _RECORDINGS_INC = {}
+_CHANNELS = _CLOUD = _EPGDATA = _RECORDINGS = _RECORDINGS_INC = _SESSION = _SESSION_CLOUD = {}
 _TIMERS_ADDED = []
 
 app = Sanic("movistar_epg")
@@ -80,16 +79,13 @@ epg_lock = asyncio.Lock()
 timers_lock = asyncio.Lock()
 tvgrab_lock = asyncio.Lock()
 
-_t_cloud1 = (
-    _t_cloud2
-) = (
-    _t_epg1
-) = _t_epg2 = _t_timers = _t_timers_d = _t_timers_r = _t_timers_t = tv_cloud1 = tv_cloud2 = tvgrab = None
+_t_cloud1 = _t_cloud2 = _t_epg1 = _t_epg2 = _t_timers = _t_timers_d = _t_timers_r = _t_timers_t = None
+tv_cloud1 = tv_cloud2 = tvgrab = None
 
 
 @app.listener("before_server_start")
 async def before_server_start(app, loop):
-    global RECORDING_THREADS, _RECORDINGS, _t_cloud1, _t_epg1, _t_timers_d
+    global RECORDING_THREADS, _RECORDINGS, _SESSION, _SESSION_CLOUD, _t_cloud1, _t_epg1, _t_timers_d
 
     while True:
         _IPTV = check_dns()
@@ -105,9 +101,8 @@ async def before_server_start(app, loop):
         try:
             iface = list(
                 set([u[0] for u in [t.split()[0:3] for t in route.splitlines()] if u[2] == "0100400A"])
-            )[
-                0
-            ]  # gw=10.64.0.1
+            )[0]
+            # u[2] -> gw=10.64.0.1
 
             # let's control dynamically the number of allowed clients
             iface_rx = f"/sys/class/net/{iface}/statistics/rx_bytes"
@@ -121,8 +116,22 @@ async def before_server_start(app, loop):
 
     if os.name != "nt":
         await asyncio.create_subprocess_exec("pkill", "tv_grab_es_movistartv")
-    await reload_epg()
 
+    _SESSION = aiohttp.ClientSession(
+        connector=aiohttp.TCPConnector(keepalive_timeout=YEAR_SECONDS, limit_per_host=1),
+        json_serialize=ujson.dumps,
+    )
+
+    _SESSION_CLOUD = aiohttp.ClientSession(
+        connector=aiohttp.TCPConnector(
+            keepalive_timeout=YEAR_SECONDS,
+            resolver=AsyncResolver(nameservers=[MOVISTAR_DNS]) if os.name != "nt" else None,
+        ),
+        headers={"User-Agent": UA},
+        json_serialize=ujson.dumps,
+    )
+
+    await reload_epg()
     _t_epg1 = asyncio.create_task(update_epg_delayed())
     _t_cloud1 = asyncio.create_task(update_cloud_delayed())
 
@@ -157,8 +166,10 @@ async def before_server_start(app, loop):
             log.info("No timers.conf found, automatic recordings disabled")
 
 
-@app.listener("before_server_stop")
-async def before_server_stop(app, loop):
+@app.listener("after_server_stop")
+async def after_server_stop(app, loop):
+    await _SESSION.close()
+    await _SESSION_CLOUD.close()
     for task in [
         _t_cloud1,
         _t_cloud2,
@@ -497,11 +508,7 @@ async def reload_epg():
                 CHANNELS,
             )
             await tvgrab.wait()
-    elif (
-        not os.path.exists(epg_data)
-        or not os.path.exists(epg_metadata)
-        or not os.path.exists(GUIDE)
-    ):
+    elif not os.path.exists(epg_data) or not os.path.exists(epg_metadata) or not os.path.exists(GUIDE):
         log.warning("Missing channels data! Need to download it. Please be patient...")
         return await update_epg()
 
@@ -644,18 +651,17 @@ async def timers_check():
                         if vo:
                             sanic_url += "&vo=1"
                         try:
-                            async with httpx.AsyncClient() as client:
-                                r = await client.get(sanic_url)
-                            log.debug(f"{sanic_url} => {r}")
-                            if r.status_code == 200:
-                                _TIMERS_ADDED.append(filename)
-                                nr_procs += 1
-                                if RECORDING_THREADS and not nr_procs < RECORDING_THREADS:
-                                    log.info(f"Already recording {nr_procs} streams")
+                            async with _SESSION.get(sanic_url) as r:
+                                log.debug(f"{sanic_url} => {await r.json()}")
+                                if r.status == 200:
+                                    _TIMERS_ADDED.append(filename)
+                                    nr_procs += 1
+                                    if RECORDING_THREADS and not nr_procs < RECORDING_THREADS:
+                                        log.info(f"Already recording {nr_procs} streams")
+                                        return
+                                    await asyncio.sleep(3)
+                                elif r.status == 503:
                                     return
-                                await asyncio.sleep(3)
-                            elif r.status_code == 503:
-                                return
                         except Exception as ex:
                             log.warning(f"{repr(ex)}")
 
@@ -686,12 +692,13 @@ async def update_cloud(forced=False):
         if os.path.exists(cloud_data):
             os.remove(cloud_data)
 
-    async with httpx.AsyncClient() as client:
-        try:
-            r = await client.get(f"{MVTV_URL}?action=recordingList&mode=0&state=2&firstItem=0&numItems=999")
-            cloud_recordings = r.json()["resultData"]["result"]
-        except (httpx.ConnectError, httpx.ConnectTimeout, KeyError):
-            cloud_recordings = None
+    try:
+        async with _SESSION_CLOUD.get(
+            f"{MVTV_URL}?action=recordingList&mode=0&state=2&firstItem=0&numItems=999"
+        ) as r:
+            cloud_recordings = (await r.json())["resultData"]["result"]
+    except (aiohttp.client_exceptions.ClientConnectorError, AttributeError, KeyError) as ex:
+        cloud_recordings = None
     if not cloud_recordings:
         log.info("No cloud recordings found")
         return
@@ -710,36 +717,35 @@ async def update_cloud(forced=False):
             else:
                 product_id = event["productID"]
                 try:
-                    async with httpx.AsyncClient() as client:
-                        r = await client.get(
-                            f"{MVTV_URL}?action=epgInfov2&" f"productID={product_id}&channelID={channel_id}"
-                        )
-                        year = r.json()["resultData"]["productionDate"]
-                        r = await client.get(
-                            f"{MVTV_URL}?action=getRecordingData&"
-                            f"extInfoID={product_id}&channelID={channel_id}&mode=1"
-                        )
-                        _data = r.json()["resultData"]
-                        meta_data = get_title_meta(
-                            _data["name"], _data["seriesID"] if "seriesID" in _data else None
-                        )
-                        new_cloud[channel_id][_start] = {
-                            "age_rating": _data["ageRatingID"],
-                            "duration": _data["duration"],
-                            "end": int(str(_data["endTime"])[:-3]),
-                            "episode": meta_data["episode"] if meta_data["episode"] else _data["episode"],
-                            "full_title": meta_data["full_title"],
-                            "genre": _data["theme"],
-                            "is_serie": meta_data["is_serie"],
-                            "pid": product_id,
-                            "season": meta_data["season"] if meta_data["season"] else _data["season"],
-                            "start": int(_start),
-                            "year": year,
-                            "serie": meta_data["serie"] if meta_data["serie"] else _data["seriesName"],
-                            "serie_id": _data["seriesID"] if "seriesID" in _data else None,
-                        }
-                        if meta_data["episode_title"]:
-                            new_cloud[channel_id][_start]["episode_title"] = meta_data["episode_title"]
+                    async with _SESSION_CLOUD.get(
+                        f"{MVTV_URL}?action=epgInfov2&" f"productID={product_id}&channelID={channel_id}"
+                    ) as r:
+                        year = (await r.json())["resultData"]["productionDate"]
+                    async with _SESSION_CLOUD.get(
+                        f"{MVTV_URL}?action=getRecordingData&"
+                        f"extInfoID={product_id}&channelID={channel_id}&mode=1"
+                    ) as r:
+                        _data = (await r.json())["resultData"]
+                    meta_data = get_title_meta(
+                        _data["name"], _data["seriesID"] if "seriesID" in _data else None
+                    )
+                    new_cloud[channel_id][_start] = {
+                        "age_rating": _data["ageRatingID"],
+                        "duration": _data["duration"],
+                        "end": int(str(_data["endTime"])[:-3]),
+                        "episode": meta_data["episode"] if meta_data["episode"] else _data["episode"],
+                        "full_title": meta_data["full_title"],
+                        "genre": _data["theme"],
+                        "is_serie": meta_data["is_serie"],
+                        "pid": product_id,
+                        "season": meta_data["season"] if meta_data["season"] else _data["season"],
+                        "start": int(_start),
+                        "year": year,
+                        "serie": meta_data["serie"] if meta_data["serie"] else _data["seriesName"],
+                        "serie_id": _data["seriesID"] if "seriesID" in _data else None,
+                    }
+                    if meta_data["episode_title"]:
+                        new_cloud[channel_id][_start]["episode_title"] = meta_data["episode_title"]
                 except Exception as ex:
                     log.warning(f"{channel_id} {product_id} not located in Cloud {repr(ex)}")
     updated = False
