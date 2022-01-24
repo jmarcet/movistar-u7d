@@ -377,6 +377,13 @@ async def handle_program_name(request, channel_id, program_id):
         )
 
     global _TIMERS_ADDED
+    log_suffix = '[%s] [%s] [%s] [%s] "%s"' % (
+        _CHANNELS[channel_id]["name"],
+        channel_id,
+        event,
+        program_id,
+        _epg["full_title"],
+    )
     missing = request.args.get("missing", 0)
     if missing:
         if channel_id not in _RECORDINGS_INC:
@@ -386,10 +393,10 @@ async def handle_program_name(request, channel_id, program_id):
         _RECORDINGS_INC[channel_id][program_id].append(missing)
         _t = _RECORDINGS_INC[channel_id][program_id]
         if len(_t) > 2 and _t[-3] == _t[-2] and _t[-2] == _t[-1]:
-            log.info(f"Recording Incomplete KEEP: {_t}")
+            log.info(f"Recording Incomplete KEEP: {log_suffix}: {_t}")
             del _RECORDINGS_INC[channel_id][program_id]
         else:
-            log.warning(f"Recording Incomplete RETRY: {_t}")
+            log.warning(f"Recording Incomplete RETRY: {log_suffix}: {_t}")
             try:
                 _TIMERS_ADDED.remove(filename)
             except ValueError:
@@ -412,7 +419,7 @@ async def handle_program_name(request, channel_id, program_id):
     global _t_timers_r
     _t_timers_r = asyncio.create_task(timers_check())
 
-    log.info(f'Recording DONE: {channel_id} {program_id} "' + _epg["full_title"] + '"')
+    log.info(f"Recording ARCHIVED: {log_suffix}")
     return response.json(
         {
             "status": "Recorded OK",
@@ -617,7 +624,7 @@ async def timers_check():
             for timestamp in reversed(_EPGDATA[channel_id]):
                 if timestamp > _time_limit:
                     continue
-                title = _EPGDATA[channel_id][timestamp]["full_title"]
+                pid, title = [_EPGDATA[channel_id][timestamp][t] for t in ["pid", "full_title"]]
                 deflang = (
                     _timers["language"]["default"]
                     if ("language" in _timers and "default" in _timers["language"])
@@ -640,9 +647,9 @@ async def timers_check():
                             if (_name or title) in str(_RECORDINGS[channel_id]):
                                 continue
                         log.info(
-                            f"Found MATCH: [{channel_id}] [{timestamp}]"
-                            f'{" [VO]" if vo else ""}'
-                            f' "{_name}"'
+                            'Found MATCH: [%s] [%s] [%s] [%s] "%s"'
+                            % (_CHANNELS[channel_id]["name"], channel_id, timestamp, pid, _name)
+                            + f'{" [VO]" if vo else ""}'
                         )
                         sanic_url = f"{SANIC_URL}"
                         if channel_id in _CLOUD and timestamp in _CLOUD[channel_id]:

@@ -475,11 +475,12 @@ async def VodSetup(args, vod_client):
 
     try:
         vod_info = await get_vod_info(args.channel, args.broadcast, args.cloud, vod_client)
-        _log_suffix = "[%ds] [%s] [%s] [%d]" % (
+        _log_suffix = "[%ds] - [%s] [%s] [%d] [%s]" % (
             vod_info["duration"],
             vod_info["channelName"],
             args.channel,
             vod_info["beginTime"] / 1000,
+            args.broadcast,
         )
         uri = urllib.parse.urlparse(vod_info["url"])
     except Exception as ex:
