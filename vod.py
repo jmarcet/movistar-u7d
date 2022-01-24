@@ -3,7 +3,6 @@
 import aiohttp
 import argparse
 import asyncio
-import httpx
 import logging as log
 import os
 import re
@@ -14,6 +13,7 @@ import sys
 import ujson
 import urllib.parse
 
+from aiohttp.client_exceptions import ClientConnectorError
 from aiohttp.resolver import AsyncResolver
 from collections import namedtuple
 from contextlib import closing
@@ -49,7 +49,7 @@ Response = namedtuple("Response", ["version", "status", "url", "headers", "body"
 VodData = namedtuple("VodData", ["client", "get_parameter", "session"])
 ffmpeg = FFmpeg().option("y").option("xerror")
 
-_LOOP = _SESSION = None
+_LOOP = _SESSION = _SESSION_CLOUD = None
 
 _args = _epg_url = _ffmpeg = _filename = _full_title = _log_prefix = _log_suffix = _path = None
 _nice = ("nice", "-n", "15", "ionice", "-c", "3") if not WIN32 else ()
@@ -147,92 +147,7 @@ class RtspClient(object):
 @ffmpeg.on("completed")
 def ffmpeg_completed():
     log.info(f"{_log_prefix} Recording ENDED: {_log_suffix}")
-
-    def timed_out(i, ex):
-        if i < 2:
-            log.warning(f"{_log_prefix} Recording ARCHIVE: {_log_suffix} => {repr(ex)}")
-            sleep(15)
-        else:
-            log.error(f"{_log_prefix} Recording ARCHIVE: {_log_suffix} => {repr(ex)}")
-
-    command = list(_nice)
-    command += ["mkvmerge", "--abort-on-warnings", "-q", "-o", _filename + TMP_EXT2]
-    if _args.vo:
-        command += ["--track-order", "0:2,0:1,0:4,0:3,0:6,0:5"]
-        command += ["--default-track", "2:1"]
-    command += [_filename + TMP_EXT]
-    try:
-        proc = subprocess.run(command, capture_output=True)
-        cleanup(TMP_EXT)
-        if proc.stdout:
-            raise ValueError(proc.stdout.decode().replace("\n", " ").strip())
-
-        recording_data = ujson.loads(
-            subprocess.run(["mkvmerge", "-J", _filename + TMP_EXT2], capture_output=True).stdout.decode()
-        )
-
-        duration = int(int(recording_data["container"]["properties"]["duration"]) / 1000000000)
-        bad = duration + 30 < _args.time
-        log.info(
-            f"{_log_prefix} Recording {'INCOMPLETE:' if bad else 'COMPLETE:'} "
-            f"[{duration}s] / {_log_suffix}"
-        )
-        missing_time = _args.time - duration if bad else 0
-
-        cleanup(VID_EXT, _args.mp4)
-        if _args.mp4:
-            command = list(_nice)
-            command += ["ffmpeg", "-i", _filename + TMP_EXT2]
-            command += ["-map", "0", "-c", "copy", "-sn", "-movflags", "+faststart"]
-            command += ["-f", "mp4", "-v", "panic", _filename + VID_EXT]
-            if subprocess.run(command).returncode:
-                cleanup(VID_EXT)
-                raise ValueError("Failed to write " + _filename + VID_EXT)
-
-            subs = [t for t in recording_data["tracks"] if t["type"] == "subtitles"]
-            for track in subs:
-                filesub = "%s.%s.sub" % (_filename, track["properties"]["language"])
-                command = list(_nice)
-                command += ["ffmpeg", "-i", _filename + TMP_EXT2]
-                command += ["-map", "0:%d" % track["id"], "-c:s", "dvbsub"]
-                command += ["-f", "mpegts", "-v", "panic", filesub]
-                if subprocess.run(command).returncode:
-                    cleanup(VID_EXT, _args.mp4)
-                    raise ValueError("Failed to write " + filesub)
-
-            cleanup(TMP_EXT2)
-        else:
-            os.rename(_filename + TMP_EXT2, _filename + VID_EXT)
-    except Exception as ex:
-        log.error(f"{_log_prefix} Recording FAILED: {_log_suffix} => {repr(ex)}")
-        cleanup(TMP_EXT2)
-        for i in range(3):
-            try:
-                httpx.put(_epg_url + f"?missing={randint(1, _args.time)}")
-            except (httpx.ConnectError, httpx.ReadTimeout) as ex:
-                timed_out(i, ex)
-        return
-
-    resp = None
-    if not missing_time:
-        for i in range(3):
-            try:
-                resp = httpx.put(_epg_url)
-                break
-            except (httpx.ConnectError, httpx.ReadTimeout) as ex:
-                timed_out(i, ex)
-    else:
-        for i in range(3):
-            try:
-                resp = httpx.put(_epg_url + f"?missing={missing_time}")
-                break
-            except (httpx.ConnectError, httpx.ReadTimeout) as ex:
-                timed_out(i, ex)
-
-    if resp and resp.status_code == 200:
-        asyncio.run_coroutine_threadsafe(save_metadata(), _LOOP)
-    else:
-        cleanup(VID_EXT, _args.mp4)
+    asyncio.run_coroutine_threadsafe(postprocess(), _LOOP)
 
 
 @ffmpeg.on("error")
@@ -293,6 +208,81 @@ def handle_cleanup(signum, frame):
         raise TimeoutError()
     else:
         return
+
+
+async def postprocess():
+    command = list(_nice)
+    command += ["mkvmerge", "--abort-on-warnings", "-q", "-o", _filename + TMP_EXT2]
+    if _args.vo:
+        command += ["--track-order", "0:2,0:1,0:4,0:3,0:6,0:5"]
+        command += ["--default-track", "2:1"]
+    command += [_filename + TMP_EXT]
+    try:
+        proc = subprocess.run(command, capture_output=True)
+        cleanup(TMP_EXT)
+        if proc.stdout:
+            raise ValueError(proc.stdout.decode().replace("\n", " ").strip())
+
+        recording_data = ujson.loads(
+            subprocess.run(["mkvmerge", "-J", _filename + TMP_EXT2], capture_output=True).stdout.decode()
+        )
+
+        duration = int(int(recording_data["container"]["properties"]["duration"]) / 1000000000)
+        bad = duration + 30 < _args.time
+        log.info(
+            f"{_log_prefix} Recording {'INCOMPLETE:' if bad else 'COMPLETE:'} "
+            f"[{duration}s] / {_log_suffix}"
+        )
+        missing_time = _args.time - duration if bad else 0
+
+        cleanup(VID_EXT, _args.mp4)
+        if _args.mp4:
+            command = list(_nice)
+            command += ["ffmpeg", "-i", _filename + TMP_EXT2]
+            command += ["-map", "0", "-c", "copy", "-sn", "-movflags", "+faststart"]
+            command += ["-f", "mp4", "-v", "panic", _filename + VID_EXT]
+            if subprocess.run(command).returncode:
+                cleanup(VID_EXT)
+                raise ValueError("Failed to write " + _filename + VID_EXT)
+
+            subs = [t for t in recording_data["tracks"] if t["type"] == "subtitles"]
+            for track in subs:
+                filesub = "%s.%s.sub" % (_filename, track["properties"]["language"])
+                command = list(_nice)
+                command += ["ffmpeg", "-i", _filename + TMP_EXT2]
+                command += ["-map", "0:%d" % track["id"], "-c:s", "dvbsub"]
+                command += ["-f", "mpegts", "-v", "panic", filesub]
+                if subprocess.run(command).returncode:
+                    cleanup(VID_EXT, _args.mp4)
+                    raise ValueError("Failed to write " + filesub)
+
+            cleanup(TMP_EXT2)
+        else:
+            os.rename(_filename + TMP_EXT2, _filename + VID_EXT)
+    except Exception as ex:
+        log.error(f"{_log_prefix} Recording FAILED: {_log_suffix} => {repr(ex)}")
+        try:
+            await _SESSION.put(_epg_url + f"?missing={randint(1, _args.time)}")
+        finally:
+            await _SESSION_CLOUD.close()
+            await _SESSION.close()
+            cleanup(TMP_EXT2)
+        return
+
+    resp = None
+    try:
+        if not missing_time:
+            resp = await _SESSION.put(_epg_url)
+        else:
+            resp = await _SESSION.put(_epg_url + f"?missing={missing_time}")
+
+        if resp and resp.status == 200:
+            await save_metadata()
+        else:
+            cleanup(VID_EXT, _args.mp4)
+    finally:
+        await _SESSION_CLOUD.close()
+        await _SESSION.close()
 
 
 async def record_stream():
@@ -357,7 +347,7 @@ async def save_metadata():
                 metadata = ujson.loads(await f.read())["data"]
         else:
             log.info(f"{_log_prefix} Getting extended info: {_log_suffix}")
-            async with _SESSION.get(
+            async with _SESSION_CLOUD.get(
                 f"{MVTV_URL}?action=epgInfov2&productID={_args.broadcast}&channelID={_args.channel}&extra=1"
             ) as resp:
                 metadata = (await resp.json())["resultData"]
@@ -370,7 +360,7 @@ async def save_metadata():
     for t in ["beginTime", "endTime", "expDate"]:
         metadata[t] = int(metadata[t] / 1000)
     cover = metadata["cover"]
-    async with _SESSION.get(f"{COVER_URL}/{cover}") as resp:
+    async with _SESSION_CLOUD.get(f"{COVER_URL}/{cover}") as resp:
         if resp.status == 200:
             img_ext = os.path.splitext(cover)[1]
             img_name = _filename + img_ext
@@ -384,7 +374,7 @@ async def save_metadata():
             os.mkdir(metadata_dir)
         for img in metadata["covers"]:
             cover = metadata["covers"][img]
-            async with _SESSION.get(cover) as resp:
+            async with _SESSION_CLOUD.get(cover) as resp:
                 if resp.status != 200:
                     continue
                 img_ext = os.path.splitext(cover)[1]
@@ -407,8 +397,9 @@ async def save_metadata():
 
 async def VodLoop(args, vod_data=None):
     if __name__ == "__main__":
-        global _SESSION
-        _SESSION = aiohttp.ClientSession(
+        global _SESSION_CLOUD
+
+        _SESSION_CLOUD = aiohttp.ClientSession(
             connector=aiohttp.TCPConnector(
                 keepalive_timeout=YEAR_SECONDS,
                 resolver=AsyncResolver(nameservers=[MOVISTAR_DNS]) if not WIN32 else None,
@@ -418,15 +409,22 @@ async def VodLoop(args, vod_data=None):
         )
 
         try:
-            vod_data = await VodSetup(args, _SESSION)
+            vod_data = await VodSetup(args, _SESSION_CLOUD)
         except TimeoutError:
             vod_data = None
         if not isinstance(vod_data, VodData):
+            await _SESSION_CLOUD.close()
             return
 
         if args.write_to_file:
-            global _LOOP
+            global _LOOP, _SESSION
+
             _LOOP = asyncio.get_event_loop()
+            _SESSION = aiohttp.ClientSession(
+                connector=aiohttp.TCPConnector(keepalive_timeout=YEAR_SECONDS, limit_per_host=1),
+                json_serialize=ujson.dumps,
+            )
+
             await record_stream()
 
     elif not vod_data:
@@ -457,7 +455,8 @@ async def VodLoop(args, vod_data=None):
             pass
 
         if __name__ == "__main__":
-            await _SESSION.close()
+            if not args.write_to_file:
+                await _SESSION_CLOUD.close()
 
 
 async def VodSetup(args, vod_client):
@@ -484,12 +483,11 @@ async def VodSetup(args, vod_client):
         )
         uri = urllib.parse.urlparse(vod_info["url"])
     except Exception as ex:
-        if __name__ == "__main__":
-            await _SESSION.close()
-        if isinstance(ex, (aiohttp.client_exceptions.ClientConnectorError, ConnectionRefusedError)):
+        if isinstance(ex, (ClientConnectorError, ConnectionRefusedError)):
             log.error(f"{_log_prefix} Movistar IPTV catchup service DOWN")
             if __name__ == "__main__":
-                httpx.put(_epg_url + f"?missing={randint(1, args.time)}")
+                if args.write_to_file:
+                    await _SESSION.put(_epg_url + f"?missing={randint(1, args.time)}")
         else:
             log.error(f"{_log_prefix} Could not get uri for: [{args.channel}] [{args.broadcast}]: {repr(ex)}")
         return
