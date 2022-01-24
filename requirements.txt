@@ -4,7 +4,7 @@ asyncio_dgram
 black
 dict2xml
 httpx
-python-ffmpeg
+git+https://github.com/jmarcet/python-ffmpeg
 sanic
 git+https://github.com/jmarcet/sanic-prometheus
 setproctitle

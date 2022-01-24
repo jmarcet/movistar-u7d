@@ -3,7 +3,7 @@ git+https://github.com/jmarcet/asyncio-dgram
 black
 dict2xml
 httpx
-python-ffmpeg
+git+https://github.com/jmarcet/python-ffmpeg
 sanic
 git+https://github.com/jmarcet/sanic-prometheus
 tomli
