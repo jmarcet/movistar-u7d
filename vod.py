@@ -41,6 +41,8 @@ TMP_EXT = ".tmp"
 TMP_EXT2 = ".tmp2"
 UA = "MICA-IP-STB"
 
+WIN32 = sys.platform == "win32"
+
 YEAR_SECONDS = 365 * 24 * 60 * 60
 
 Response = namedtuple("Response", ["version", "status", "url", "headers", "body"])
@@ -50,7 +52,7 @@ ffmpeg = FFmpeg().option("y").option("xerror")
 _LOOP = _SESSION = None
 
 _args = _epg_url = _ffmpeg = _filename = _full_title = _log_prefix = _log_suffix = _path = None
-_nice = ("nice", "-n", "15", "ionice", "-c", "3") if os.name != "nt" else ()
+_nice = ("nice", "-n", "15", "ionice", "-c", "3") if not WIN32 else ()
 
 
 class RtspClient(object):
@@ -391,7 +393,7 @@ async def VodLoop(args, vod_data=None):
         _SESSION = aiohttp.ClientSession(
             connector=aiohttp.TCPConnector(
                 keepalive_timeout=YEAR_SECONDS,
-                resolver=AsyncResolver(nameservers=[MOVISTAR_DNS]) if os.name != "nt" else None,
+                resolver=AsyncResolver(nameservers=[MOVISTAR_DNS]) if not WIN32 else None,
             ),
             headers={"User-Agent": UA},
             json_serialize=ujson.dumps,
@@ -472,7 +474,7 @@ async def VodSetup(args, vod_client):
             log.error(f"{_log_prefix} Could not get uri for: [{args.channel}] [{args.broadcast}]: {repr(ex)}")
         return
 
-    if os.name != "nt":
+    if not WIN32:
         signal.signal(signal.SIGHUP, handle_cleanup)
     signal.signal(signal.SIGTERM, handle_cleanup)
 

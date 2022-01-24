@@ -29,6 +29,7 @@ from vod import (
     IMAGENIO_URL,
     MOVISTAR_DNS,
     UA,
+    WIN32,
     YEAR_SECONDS,
     VodData,
     VodLoop,
@@ -38,7 +39,7 @@ from vod import (
 )
 
 
-if os.name != "nt":
+if not WIN32:
     from setproctitle import setproctitle
 
     setproctitle("movistar_u7d")
@@ -69,7 +70,7 @@ RECORDINGS = os.getenv("RECORDINGS", None)
 SANIC_EPG_URL = "http://127.0.0.1:8889"
 SANIC_PORT = int(os.getenv("SANIC_PORT", "8888"))
 SANIC_URL = f"http://{SANIC_HOST}:{SANIC_PORT}"
-SANIC_THREADS = int(os.getenv("SANIC_THREADS", "4"))
+SANIC_THREADS = int(os.getenv("SANIC_THREADS", "4")) if not WIN32 else 1
 VERBOSE_LOGS = bool(int(os.getenv("VERBOSE_LOGS", 1)))
 VOD_EXEC = "vod.exe" if os.path.exists("vod.exe") else "vod.py"
 
@@ -137,7 +138,7 @@ async def before_server_start(app, loop):
         app.ctx.vod_client = aiohttp.ClientSession(
             connector=aiohttp.TCPConnector(
                 keepalive_timeout=YEAR_SECONDS,
-                resolver=AsyncResolver(nameservers=[MOVISTAR_DNS]) if os.name != "nt" else None,
+                resolver=AsyncResolver(nameservers=[MOVISTAR_DNS]) if not WIN32 else None,
             ),
             headers={"User-Agent": UA},
             json_serialize=ujson.dumps,
@@ -233,7 +234,7 @@ async def handle_logos(request, cover=None, logo=None, path=None):
         _SESSION_LOGOS = aiohttp.ClientSession(
             connector=aiohttp.TCPConnector(
                 keepalive_timeout=YEAR_SECONDS,
-                resolver=AsyncResolver(nameservers=[MOVISTAR_DNS]) if os.name != "nt" else None,
+                resolver=AsyncResolver(nameservers=[MOVISTAR_DNS]) if not WIN32 else None,
             ),
             headers={"User-Agent": UA},
             json_serialize=ujson.dumps,
@@ -277,7 +278,7 @@ async def handle_channel(request, channel_id):
 
     sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM, socket.IPPROTO_UDP)
     sock.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
-    sock.bind((mc_grp if os.name != "nt" else "", int(mc_port)))
+    sock.bind((mc_grp if not WIN32 else "", int(mc_port)))
     sock.setsockopt(
         socket.IPPROTO_IP, socket.IP_ADD_MEMBERSHIP, socket.inet_aton(mc_grp) + socket.inet_aton(_IPTV)
     )
@@ -378,7 +379,7 @@ async def handle_flussonic(request, channel_id, url, cloud=False):
         if request.args.get("vo", False):
             cmd += " --vo"
 
-        if os.name != "nt":
+        if not WIN32:
             signal.signal(signal.SIGCHLD, signal.SIG_IGN)
 
         log.debug(f"Launching {cmd}")
@@ -544,7 +545,7 @@ if __name__ == "__main__":
             access_log=False,
             auto_reload=False,
             debug=DEBUG,
-            workers=SANIC_THREADS if os.name != "nt" else 1,
+            workers=SANIC_THREADS,
         )
     except (KeyboardInterrupt, TimeoutError):
         sys.exit(1)

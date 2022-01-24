@@ -45,7 +45,7 @@ from queue import Queue
 from threading import Thread
 
 from movistar_epg import get_title_meta
-from vod import MOVISTAR_DNS, UA, YEAR_SECONDS, check_dns
+from vod import MOVISTAR_DNS, UA, WIN32, YEAR_SECONDS, check_dns
 
 DEBUG = bool(int(os.getenv("DEBUG", 0)))
 
@@ -60,7 +60,7 @@ log.info("Parámetros: %s" % sys.argv[1:])
 log.info("---------------------------------------------------")
 
 
-if os.name != "nt":
+if not WIN32:
     from setproctitle import setproctitle
 
     setproctitle("tv_grab_es_movistartv")
@@ -120,7 +120,7 @@ demarcations = {
 default_demarcation = demarcations["Galicia"]
 
 app_dir = os.path.join(os.getenv("HOME", os.getenv("HOMEPATH")), ".xmltv")
-sep = "\\" if os.name == "nt" else "/"
+sep = "\\" if WIN32 else "/"
 use_multithread = True
 
 cookie_file = "tv_grab_es_movistartv.cookie"
@@ -585,7 +585,7 @@ class MovistarTV:
             self.__session = aiohttp.ClientSession(
                 connector=aiohttp.TCPConnector(
                     keepalive_timeout=YEAR_SECONDS,
-                    resolver=AsyncResolver(nameservers=[MOVISTAR_DNS]) if os.name != "nt" else None,
+                    resolver=AsyncResolver(nameservers=[MOVISTAR_DNS]) if not WIN32 else None,
                 ),
                 headers={"User-Agent": UA},
                 json_serialize=json.dumps,
@@ -655,7 +655,7 @@ class MulticastIPTV:
         sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM, socket.IPPROTO_UDP)
         sock.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
         sock.settimeout(3)
-        sock.bind((mc_grp if os.name != "nt" else "", int(mc_port)))
+        sock.bind((mc_grp if not WIN32 else "", int(mc_port)))
         sock.setsockopt(
             socket.IPPROTO_IP, socket.IP_ADD_MEMBERSHIP, socket.inet_aton(mc_grp) + socket.inet_aton(_iptv)
         )
@@ -1357,7 +1357,7 @@ deadline = int(datetime.combine(date.today() - timedelta(days=7), datetime.min.t
 # Obtiene los argumentos de entrada
 args = create_args_parser().parse_args()
 
-if os.name != "nt":
+if not WIN32:
     if not args.m3u and not args.cloud_m3u:
         import fcntl
 

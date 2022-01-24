@@ -20,10 +20,10 @@ from sanic.compat import open_async
 from sanic.log import logger as log, LOGGING_CONFIG_DEFAULTS
 from xml.sax.saxutils import unescape
 
-from vod import MOVISTAR_DNS, MVTV_URL, TMP_EXT, UA, YEAR_SECONDS, check_dns
+from vod import MOVISTAR_DNS, MVTV_URL, TMP_EXT, UA, WIN32, YEAR_SECONDS, check_dns
 
 
-if os.name != "nt":
+if not WIN32:
     from setproctitle import setproctitle
 
     setproctitle("movistar_epg")
@@ -114,7 +114,7 @@ async def before_server_start(app, loop):
         except (AttributeError, KeyError):
             pass
 
-    if os.name != "nt":
+    if not WIN32:
         await asyncio.create_subprocess_exec("pkill", "tv_grab_es_movistartv")
 
     _SESSION = aiohttp.ClientSession(
@@ -125,7 +125,7 @@ async def before_server_start(app, loop):
     _SESSION_CLOUD = aiohttp.ClientSession(
         connector=aiohttp.TCPConnector(
             keepalive_timeout=YEAR_SECONDS,
-            resolver=AsyncResolver(nameservers=[MOVISTAR_DNS]) if os.name != "nt" else None,
+            resolver=AsyncResolver(nameservers=[MOVISTAR_DNS]) if not WIN32 else None,
         ),
         headers={"User-Agent": UA},
         json_serialize=ujson.dumps,
@@ -207,7 +207,7 @@ def get_epg(channel_id, program_id):
 
 
 async def get_ffmpeg_procs():
-    if os.name == "nt":
+    if WIN32:
         return [
             process.CommandLine
             for process in WMI().Win32_Process(name="ffmpeg.exe")
@@ -579,7 +579,7 @@ async def timers_check():
         log.warning(f"No timers.conf found")
         return
 
-    if os.name != "nt":
+    if not WIN32:
         async with await open_async("/proc/uptime") as f:
             proc = await f.read()
         uptime = int(float(proc.split()[1]))
