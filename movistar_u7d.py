@@ -367,12 +367,15 @@ async def handle_flussonic(request, channel_id, url, cloud=False):
     elif record:
         cmd = (
             f"{VOD_EXEC} {channel_id} {program_id} -s {offset}"
-            f" -p {client_port} -i {request.ip} -a {_IPTV}"
+            f" -p {client_port} -i {request.ip} -a {_IPTV} -w"
         )
         record = int(record)
-        record_time = record if record > 1 else duration - offset
+        if record > 1:
+            record_time = record
+            cmd += f" -t {record_time}"
+        else:
+            record_time = duration - offset
 
-        cmd += f" -t {record_time} -w"
         if cloud:
             cmd += " --cloud"
         if MP4_OUTPUT or request.args.get("mp4", False):

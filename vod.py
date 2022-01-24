@@ -228,12 +228,12 @@ async def postprocess():
         )
 
         duration = int(int(recording_data["container"]["properties"]["duration"]) / 1000000000)
-        bad = duration + 30 < _args.time
+        bad = duration < (_args.time - 30)
         log.info(
             f"{_log_prefix} Recording {'INCOMPLETE:' if bad else 'COMPLETE:'} "
             f"[{duration}s] / {_log_suffix}"
         )
-        missing_time = _args.time - duration if bad else 0
+        missing_time = (_args.time - duration) if bad else 0
 
         cleanup(VID_EXT, _args.mp4)
         if _args.mp4:
