@@ -350,11 +350,21 @@ async def record_stream():
 
 
 async def save_metadata():
+    cache_metadata = os.path.join(CACHE_DIR, f"{_args.broadcast}.json")
     try:
-        async with await open_async(os.path.join(CACHE_DIR, f"{_args.broadcast}.json")) as f:
-            metadata = ujson.loads(await f.read())["data"]
-    except (FileNotFoundError, TypeError, ValueError) as ex:
-        log.warning(f"{_log_prefix} Extended info not found: {repr(ex)}")
+        if os.path.exists(cache_metadata):
+            async with await open_async(cache_metadata, encoding="utf8") as f:
+                metadata = ujson.loads(await f.read())["data"]
+        else:
+            log.info(f"{_log_prefix} Getting extended info: {_log_suffix}")
+            async with _SESSION.get(
+                f"{MVTV_URL}?action=epgInfov2&productID={_args.broadcast}&channelID={_args.channel}&extra=1"
+            ) as resp:
+                metadata = (await resp.json())["resultData"]
+            async with await open_async(cache_metadata, "w", encoding="utf8") as f:
+                await f.write(ujson.dumps({"data": metadata}, ensure_ascii=False, indent=4, sort_keys=True))
+    except (TypeError, ValueError) as ex:
+        log.warning(f"{_log_prefix} Extended info not found: {_log_suffix} => {repr(ex)}")
         return
 
     for t in ["beginTime", "endTime", "expDate"]:
