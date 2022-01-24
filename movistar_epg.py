@@ -107,8 +107,8 @@ async def before_server_start(app, loop):
             # let's control dynamically the number of allowed clients
             iface_rx = f"/sys/class/net/{iface}/statistics/rx_bytes"
             if os.path.exists(iface_rx):
-                with open(NETWORK_FSIGNAL, "w") as f:
-                    f.write(iface_rx)
+                async with await open_async(NETWORK_FSIGNAL, "w") as f:
+                    await f.write(iface_rx)
                 log.info("Ignoring RECORDING_THREADS, using dynamic limit")
                 RECORDING_THREADS = 0
         except (AttributeError, KeyError):
@@ -404,8 +404,8 @@ async def handle_program_name(request, channel_id, program_id):
     except ValueError:
         pass
 
-    with open(recordings, "w", encoding="utf8") as f:
-        ujson.dump(_RECORDINGS, f, ensure_ascii=False, indent=4, sort_keys=True)
+    async with await open_async(recordings, "w", encoding="utf8") as f:
+        await f.write(ujson.dumps(_RECORDINGS, ensure_ascii=False, indent=4, sort_keys=True))
 
     await update_recordings_m3u()
 
@@ -780,8 +780,8 @@ async def update_cloud(forced=False):
 
     if updated:
         _CLOUD = new_cloud
-        with open(cloud_data, "w", encoding="utf8") as fp:
-            ujson.dump({"data": _CLOUD}, fp, ensure_ascii=False, indent=4, sort_keys=True)
+        async with await open_async(cloud_data, "w", encoding="utf8") as f:
+            await f.write(ujson.dumps({"data": _CLOUD}, ensure_ascii=False, indent=4, sort_keys=True))
         log.info("Updated Cloud Recordings data")
 
     if updated or not os.path.exists(CHANNELS_CLOUD) or not os.path.exists(GUIDE_CLOUD):
@@ -870,8 +870,8 @@ async def update_recordings_m3u():
     m3u = dump_files(m3u, sorted(files))
 
     log.info(f"Local Recordings Updated => {SANIC_URL}/recordings.m3u")
-    with open(CHANNELS_RECORDINGS, "w", encoding="utf8") as f:
-        f.write(m3u)
+    async with await open_async(CHANNELS_RECORDINGS, "w", encoding="utf8") as f:
+        await f.write(m3u)
 
 
 if __name__ == "__main__":

@@ -21,6 +21,7 @@ from dict2xml import dict2xml
 from ffmpeg import FFmpeg
 from glob import glob
 from random import randint
+from sanic.compat import open_async
 from time import sleep
 from threading import Thread
 
@@ -340,8 +341,8 @@ async def record_stream():
 
 async def save_metadata():
     try:
-        with open(os.path.join(CACHE_DIR, f"{_args.broadcast}.json")) as f:
-            metadata = ujson.loads(f.read())["data"]
+        async with await open_async(os.path.join(CACHE_DIR, f"{_args.broadcast}.json")) as f:
+            metadata = ujson.loads(await f.read())["data"]
     except (FileNotFoundError, TypeError, ValueError) as ex:
         log.warning(f"{_log_prefix} Extended info not found: {repr(ex)}")
         return
@@ -353,8 +354,8 @@ async def save_metadata():
         if resp.status == 200:
             img_ext = os.path.splitext(cover)[1]
             img_name = _filename + img_ext
-            with open(img_name, "wb") as f:
-                f.write(await resp.read())
+            async with await open_async(img_name, "wb") as f:
+                await f.write(await resp.read())
             metadata["cover"] = os.path.basename(img_name)
     if "covers" in metadata:
         covers = {}
@@ -369,8 +370,8 @@ async def save_metadata():
                 img_ext = os.path.splitext(cover)[1]
                 img_rel = f"{os.path.basename(_filename)}-{img}" + img_ext
                 img_name = os.path.join(metadata_dir, img_rel)
-                with open(img_name, "wb") as f:
-                    f.write(await resp.read())
+                async with await open_async(img_name, "wb") as f:
+                    await f.write(await resp.read())
                 covers[img] = os.path.join("metadata", img_rel)
         if covers:
             metadata["covers"] = covers
@@ -380,8 +381,8 @@ async def save_metadata():
     metadata["title"] = _full_title
     metadata.pop("logos", None)
     metadata.pop("name", None)
-    with open(_filename + NFO_EXT, "w", encoding="utf8") as f:
-        f.write(dict2xml(metadata, wrap="metadata", indent="    "))
+    async with await open_async(_filename + NFO_EXT, "w", encoding="utf8") as f:
+        await f.write(dict2xml(metadata, wrap="metadata", indent="    "))
 
 
 async def VodLoop(args, vod_data=None):
