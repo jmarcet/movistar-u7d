@@ -12,6 +12,7 @@ import timeit
 import ujson
 import urllib.parse
 
+from aiohttp.client_exceptions import ClientConnectorError
 from aiohttp.resolver import AsyncResolver
 from collections import namedtuple
 from contextlib import closing
@@ -124,7 +125,7 @@ async def before_server_start(app, loop):
                 else:
                     log.error("Failed to get channel list from EPG service")
                     await asyncio.sleep(5)
-        except (ConnectionRefusedError, aiohttp.client_exceptions.ClientConnectorError):
+        except (ClientConnectorError, ConnectionRefusedError):
             log.debug("Waiting for EPG service...")
             await asyncio.sleep(5)
 
@@ -503,7 +504,7 @@ async def handle_prometheus(request):
     try:
         async with _SESSION.get(f"{SANIC_EPG_URL}/metrics") as r:
             return response.text((await r.read()).decode())
-    except (aiohttp.client_exceptions.ClientConnectorError, AttributeError):
+    except (ClientConnectorError, ConnectionRefusedError):
         raise exceptions.ServiceUnavailable("Not available")
 
 

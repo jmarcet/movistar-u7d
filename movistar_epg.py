@@ -11,6 +11,7 @@ import tomli
 import ujson
 import urllib.parse
 
+from aiohttp.client_exceptions import ClientConnectorError
 from aiohttp.resolver import AsyncResolver
 from datetime import datetime
 from glob import glob
@@ -704,7 +705,7 @@ async def update_cloud(forced=False):
             f"{MVTV_URL}?action=recordingList&mode=0&state=2&firstItem=0&numItems=999"
         ) as r:
             cloud_recordings = (await r.json())["resultData"]["result"]
-    except (aiohttp.client_exceptions.ClientConnectorError, AttributeError, KeyError) as ex:
+    except (ClientConnectorError, ConnectionRefusedError, KeyError) as ex:
         cloud_recordings = None
     if not cloud_recordings:
         log.info("No cloud recordings found")
