@@ -55,6 +55,12 @@ _args = _epg_url = _ffmpeg = _filename = _full_title = _log_prefix = _log_suffix
 _nice = ("nice", "-n", "15", "ionice", "-c", "3") if not WIN32 else ()
 
 
+if not WIN32:
+    from setproctitle import setproctitle
+
+    setproctitle("vod %s" % " ".join(sys.argv[1:]))
+
+
 class RtspClient(object):
     def __init__(self, reader, writer, url):
         self.reader = reader

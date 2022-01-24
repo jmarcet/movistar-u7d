@@ -54,16 +54,13 @@ log.basicConfig(
     format="%(asctime)s [TVG] [%(levelname)s] %(message)s",
     level=log.DEBUG if DEBUG else log.INFO,
 )
-log.info("---------------------------------------------------")
-log.info("MovistarTV EPG Grabber")
-log.info("Parámetros: %s" % sys.argv[1:])
-log.info("---------------------------------------------------")
 
 
 if not WIN32:
     from setproctitle import setproctitle
 
-    setproctitle("tv_grab_es_movistartv")
+    setproctitle("tv_grab_es_movistartv  %s" % " ".join(sys.argv[1:]))
+
 
 epg_channels = [
     "2543",
@@ -1346,6 +1343,11 @@ sanic = "%s:%s" % (lan_ip, os.getenv("SANIC_PORT", "8888"))
 _iptv = check_dns()
 if not _iptv:
     sys.exit(1)
+
+log.info("---------------------------------------------------")
+log.info("MovistarTV EPG Grabber")
+log.info("Parámetros: %s" % sys.argv[1:])
+log.info("---------------------------------------------------")
 
 # Número de hilos para descarga de la EPG
 epg_threads = min(8, int(os.getenv("EPG_THREADS", os.cpu_count())))
