@@ -20,7 +20,7 @@ RUN apk del --purge build-base libffi-dev linux-headers
 
 COPY . .
 
-RUN if [ "$TARGETARCH" = "amd64" -o "$TARGETARCH" = "arm64" ]; then apk add wrk && pip install ipython; fi
+RUN if [ "$TARGETARCH" = "amd64" -o "$TARGETARCH" = "arm64" ]; then apk add ipython wrk; fi
 
 CMD /app/start.sh
 
