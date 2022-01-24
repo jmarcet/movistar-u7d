@@ -533,7 +533,7 @@ if __name__ == "__main__":
     parser.add_argument("--iptv_ip", "-a", help="iptv address")
     parser.add_argument("--client_ip", "-i", help="client ip address")
     parser.add_argument("--client_port", "-p", help="client udp port", type=int)
-    parser.add_argument("--start", "-s", help="stream start offset", type=int)
+    parser.add_argument("--start", "-s", help="stream start offset", type=int, default=0)
     parser.add_argument("--time", "-t", help="recording time in seconds", type=int)
     parser.add_argument("--cloud", help="the event is from a cloud recording", action="store_true")
     parser.add_argument("--debug", help="enable debug logs", action="store_true")
