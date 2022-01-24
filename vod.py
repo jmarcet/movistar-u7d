@@ -288,6 +288,8 @@ async def get_vod_info(channel_id, program_id, cloud, vod_client):
 
 def handle_cleanup(signum, frame):
     if __name__ == "__main__":
+        if _ffmpeg:
+            _ffmpeg.join()
         raise TimeoutError()
     else:
         return
@@ -405,7 +407,10 @@ async def VodLoop(args, vod_data=None):
             json_serialize=ujson.dumps,
         )
 
-        vod_data = await VodSetup(args, _SESSION)
+        try:
+            vod_data = await VodSetup(args, _SESSION)
+        except TimeoutError:
+            vod_data = None
         if not isinstance(vod_data, VodData):
             return
 
@@ -442,8 +447,6 @@ async def VodLoop(args, vod_data=None):
             pass
 
         if __name__ == "__main__":
-            if _ffmpeg:
-                _ffmpeg.join()
             await _SESSION.close()
 
 
