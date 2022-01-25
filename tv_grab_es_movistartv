@@ -544,15 +544,17 @@ class MovistarTV:
     def get_service_config(self):
         cfg = cache.load_config()
         if cfg:
-            log.info("tvPackages: %s" % cfg["tvPackages"])
-            log.info("Demarcation: %s" % cfg["demarcation"])
+            if _VERBOSE:
+                log.info("tvPackages: %s" % cfg["tvPackages"])
+                log.info("Demarcation: %s" % cfg["demarcation"])
             return cfg
         client = self.__get_client_profile()
         platform = self.__get_platform_profile()
         params = self.__get_config_params()
         dvb_entry_point = platform["dvbConfig"]["dvbipiEntryPoint"].split(":")
-        log.info("tvPackages: %s" % client["tvPackages"])
-        log.info("Demarcation: %s" % client["demarcation"])
+        if _VERBOSE:
+            log.info("tvPackages: %s" % client["tvPackages"])
+            log.info("Demarcation: %s" % client["demarcation"])
         conf = {
             "tvPackages": client["tvPackages"],
             "demarcation": client["demarcation"],
@@ -684,7 +686,8 @@ class MulticastIPTV:
                     print(".", end="", flush=True)
                 max_files -= 1
                 if str(chunk["filetype"]) + "_" + str(chunk["fileid"]) == first_file or max_files == 0:
-                    log.info(f"{mc_grp}:{mc_port} -> XML descargado")
+                    if _VERBOSE:
+                        log.info(f"{mc_grp}:{mc_port} -> XML descargado")
                     loop = False
             except Exception as ex:
                 log.debug(f"Error 2 al descargar los archivos XML: {repr(ex)}")
@@ -715,7 +718,8 @@ class MulticastIPTV:
                     channel_list[channel_id]["replacement"] = i[2][4][0].attrib["ServiceName"]
             except (KeyError, IndexError) as ex:
                 log.debug(f"El canal {channel_id} no tiene la estructura correcta: {repr(ex)}")
-        log.info("Canales: %i" % len(channel_list))
+        if _VERBOSE:
+            log.info("Canales: %i" % len(channel_list))
         return channel_list
 
     @staticmethod
@@ -738,7 +742,8 @@ class MulticastIPTV:
                         package_list[package_name]["services"][service_id] = service[1].text
             except (KeyError, ElTr.ParseError) as ex:
                 log.warning(f"El paquete {package_name} no tiene la estructura correcta: {repr(ex)}")
-        log.info(f"Paquetes: {len(package_list)}")
+        if _VERBOSE:
+            log.info(f"Paquetes: {len(package_list)}")
         return package_list
 
     @staticmethod
@@ -761,7 +766,8 @@ class MulticastIPTV:
                     segment_list[source]["Segments"][segment_id] = segment.attrib["Version"]
             except KeyError:
                 log.warning(f"El segmento {source} no tiene la estructura correcta")
-        log.info("Días de EPG: %i" % len(segment_list))
+        if _VERBOSE:
+            log.info("Días de EPG: %i" % len(segment_list))
         return segment_list
 
     @staticmethod
@@ -773,7 +779,8 @@ class MulticastIPTV:
 
     def __get_service_provider_ip(self):
         try:
-            log.info("Buscando el Proveedor de Servicios de %s" % self.__get_demarcation_name())
+            if _VERBOSE:
+                log.info("Buscando el Proveedor de Servicios de %s" % self.__get_demarcation_name())
             data = cache.load_service_provider_data()
             if not data:
                 xml = self.__get_xml_files(config["mcast_grp"], config["mcast_port"])["1_0"]
@@ -784,7 +791,8 @@ class MulticastIPTV:
                 )[0]
                 data = {"mcast_grp": result[0], "mcast_port": result[1]}
                 cache.save_service_provider_data(data)
-            log.info("Proveedor de Servicios de %s: %s" % (self.__get_demarcation_name(), data["mcast_grp"]))
+            if _VERBOSE:
+                log.info("Proveedor de Servicios de %s: %s" % (self.__get_demarcation_name(), data["mcast_grp"]))
             return data
         except Exception as ex:
             log.warning(f"Usando el Proveedor de Servicios por defecto: 239.0.2.150 {repr(ex)}")
@@ -946,16 +954,19 @@ class MulticastIPTV:
             if "2_0" in xml and "5_0" in xml and "6_0" in xml:
                 if DEBUG:
                     print("", flush=True)
-                log.info(f"Ficheros XML descargados: {_msg}")
+                if _VERBOSE:
+                    log.info(f"Ficheros XML descargados: {_msg}")
                 break
             else:
                 log.warning(f"Ficheros XML incompletos: {_msg}")
                 time.sleep(10)
-        log.info("Descargando canales y paquetes")
+        if _VERBOSE:
+            log.info("Descargando canales y paquetes")
         try:
             self.__xml_data["channels"] = self.__get_channels(xml["2_0"])
             self.__xml_data["packages"] = self.__get_packages(xml["5_0"])
-            log.info("Descargando índices")
+            if _VERBOSE:
+                log.info("Descargando índices")
             self.__xml_data["segments"] = self.__get_segments(xml["6_0"])
         except Exception as ex:
             log.debug(f"{repr(ex)}")
@@ -1053,7 +1064,8 @@ class XMLTV:
         self.__packages = data["packages"]
 
     def generate_xml(self, parsed_epg, verbose):
-        log.info("Generando la guía XMLTV...")
+        if _VERBOSE:
+            log.info("Generando la guía XMLTV...")
         root = ElTr.Element(
             "tv",
             {
@@ -1072,7 +1084,8 @@ class XMLTV:
             else:
                 log.debug(f"El canal {channel_id} no tiene EPG")
 
-        log.info(f"XML: Descargando info extendida con {epg_threads * 2} descargas simultáneas")
+        if _VERBOSE:
+            log.info(f"XML: Descargando info extendida con {epg_threads * 2} descargas simultáneas")
         for channel_id in [
             cid
             for cid in sorted(services, key=lambda key: int(services[key]))
@@ -1084,7 +1097,7 @@ class XMLTV:
                 continue
 
             _res = {}
-            if verbose:
+            if verbose and _VERBOSE:
                 log.info(f'XML: "{channel_name}"')
             with concurrent.futures.ThreadPoolExecutor(max_workers=epg_threads * 2) as executor:
                 _futures = {
@@ -1340,11 +1353,6 @@ _iptv = check_dns()
 if not _iptv:
     sys.exit(1)
 
-log.info("---------------------------------------------------")
-log.info("MovistarTV EPG Grabber")
-log.info("Parámetros: %s" % sys.argv[1:])
-log.info("---------------------------------------------------")
-
 # Número de hilos para descarga de la EPG
 epg_threads = min(8, int(os.getenv("EPG_THREADS", os.cpu_count())))
 
@@ -1354,6 +1362,19 @@ deadline = int(datetime.combine(date.today() - timedelta(days=7), datetime.min.t
 
 # Obtiene los argumentos de entrada
 args = create_args_parser().parse_args()
+
+if args.cloud_m3u or args.cloud_recordings:
+    _VERBOSE = False
+    if args.cloud_m3u:
+        log.info("Generando Lista de canales de Grabaciones en la Nube...")
+    if args.cloud_recordings:
+        log.info("Generando Guía XMLTV de Grabaciones en la Nube...")
+else:
+    _VERBOSE = True
+    log.info("---------------------------------------------------")
+    log.info("MovistarTV EPG Grabber")
+    log.info("Parámetros: %s" % sys.argv[1:])
+    log.info("---------------------------------------------------")
 
 if not WIN32:
     if not args.m3u and not args.cloud_m3u:
