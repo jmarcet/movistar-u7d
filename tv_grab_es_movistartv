@@ -418,10 +418,33 @@ class Cache:
     def load_cloud_epg(self):
         return self.__load("cloud.json")
 
-    def load_epg(self):
+    async def load_epg(self):
         data = self.__load("epg.json")
         if not data:
-            log.warning("Caché: EPG no encontrada")
+            async with aiohttp.ClientSession() as session:
+                for i in range(5):
+                    log.info(f"Intentando obtener Caché de EPG actualizada...")
+                    try:
+                        async with session.get("https://openwrt.marcet.info/epg.json") as r:
+                            if r.status == 200:
+                                data = (await r.json())["data"]
+                                log.info("Obtenida Caché de EPG actualizada")
+                                break
+                            if i < 4:
+                                log.warning(f"No ha habido suerte. Reintentando en 15s... [{i+2}/5]")
+                                await asyncio.sleep(15)
+                    except Exception as ex:
+                        data = None
+                        if i < 4:
+                            log.warning(
+                                f"No ha habido suerte. Reintentando en 15s... [{i+2}/5] => {repr(ex)}"
+                            )
+                            await asyncio.sleep(15)
+            if not data:
+                log.warning(
+                    "Caché de EPG no encontrada. "
+                    "Tendrá que esperar unos días para poder acceder a todo el archivo de los útimos 7 días."
+                )
         return data
 
     def save_epg(self, data):
@@ -803,8 +826,8 @@ class MulticastIPTV:
     def get_cloud_epg(self):
         return self.__drop_encrypted_channels(cache.load_cloud_epg())
 
-    def get_epg(self):
-        cached_epg = cache.load_epg()
+    async def get_epg(self):
+        cached_epg = await cache.load_epg()
         if cached_epg:
             cached_epg = (
                 self.__drop_encrypted_channels(self.__get_sane_epg(cached_epg))
@@ -819,7 +842,7 @@ class MulticastIPTV:
             new_epg = self.__drop_encrypted_channels(self.__get_sane_epg(self.__parse_bin_epg()))
         except Exception as ex:
             log.debug(f"{repr(ex)}")
-            return iptv.get_epg()
+            return await self.get_epg()
 
         fixed = 0
         log.info("Comprobando si el nuevo EPG necesita arreglos...")
@@ -1370,7 +1393,7 @@ async def main():
                 return
             cached = False
         else:
-            epg, cached = iptv.get_epg()
+            epg, cached = await iptv.get_epg()
 
         # Genera el árbol XMLTV de los paquetes contratados
         epg_x = await xmltv.generate_xml(epg, verbose=not cached)
