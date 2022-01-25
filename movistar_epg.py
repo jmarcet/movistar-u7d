@@ -449,8 +449,15 @@ async def handle_prom_event_add(request):
             request.json["id"],
         ).observe(float(request.json["lat"]))
         log.info(
-            '%s [%s] [%s] "%s" _ %s'
-            % (request.json["msg"], _event["channel"], _event["start"], _epg["full_title"], _offset)
+            '%s [%s] [%s] [%s] "%s" _ %s'
+            % (
+                request.json["msg"],
+                _event["channel"],
+                _event["start"],
+                _event["program_id"],
+                _epg["full_title"],
+                _offset,
+            )
         )
     except KeyError:
         return response.empty(404)
@@ -486,8 +493,15 @@ async def handle_prom_event_remove(request):
             )
             _offset = "[%d/%d]" % (_event["offset"] + request.json["offset"], _event["duration"])
         log.info(
-            '%s [%s] [%s] "%s" _ %s'
-            % (request.json["msg"], _event["channel"], _event["start"], _epg["full_title"], _offset)
+            '%s [%s] [%s] [%s] "%s" _ %s'
+            % (
+                request.json["msg"],
+                _event["channel"],
+                _event["start"],
+                _event["program_id"],
+                _epg["full_title"],
+                _offset,
+            )
         )
     except KeyError:
         return response.empty(404)
