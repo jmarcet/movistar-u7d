@@ -664,7 +664,7 @@ class MulticastIPTV:
                     first_file = str(chunk["filetype"]) + "_" + str(chunk["fileid"])
                     break
             except Exception as ex:
-                log.warning(f"Error 1 al descargar los archivos XML: {repr(ex)}")
+                log.debug(f"Error 1 al descargar los archivos XML: {repr(ex)}")
         # Loop until firstfile
         while loop:
             try:
@@ -687,7 +687,7 @@ class MulticastIPTV:
                     log.info(f"{mc_grp}:{mc_port} -> XML descargado")
                     loop = False
             except Exception as ex:
-                log.warning(f"Error 2 al descargar los archivos XML: {repr(ex)}")
+                log.debug(f"Error 2 al descargar los archivos XML: {repr(ex)}")
         sock.close()
         return _files
 
@@ -987,41 +987,37 @@ class MulticastIPTV:
 
     def __parse_bin_epg_body(self, data):
         epg_dt = data[:-4]
-        try:
-            programs = {}
-            while epg_dt:
-                start = struct.unpack(">I", epg_dt[4:8])[0]
-                duration = struct.unpack(">H", epg_dt[8:10])[0]
-                title_end = struct.unpack("B", epg_dt[31:32])[0] + 32
-                episode = struct.unpack("B", epg_dt[title_end + 8 : title_end + 9])[0]
-                season = struct.unpack("B", epg_dt[title_end + 11 : title_end + 12])[0]
-                full_title = self.__decode_string(epg_dt[32:title_end])
-                serie_id = struct.unpack(">H", epg_dt[title_end + 5 : title_end + 7])[0]
-                meta_data = get_title_meta(full_title, serie_id)
-                programs[start] = {
-                    "pid": struct.unpack(">I", epg_dt[:4])[0],
-                    "start": start,
-                    "duration": duration,
-                    "end": start + duration,
-                    "genre": "{:02X}".format(struct.unpack("B", epg_dt[20:21])[0]),
-                    "age_rating": struct.unpack("B", epg_dt[24:25])[0],
-                    "full_title": meta_data["full_title"],
-                    "serie_id": serie_id,
-                    "episode": meta_data["episode"] if meta_data["episode"] else episode,
-                    "year": str(struct.unpack(">H", epg_dt[title_end + 9 : title_end + 11])[0]),
-                    "serie": meta_data["serie"],
-                    "season": meta_data["season"] if meta_data["season"] else season,
-                    "is_serie": meta_data["is_serie"],
-                }
-                if meta_data["episode_title"]:
-                    programs[start]["episode_title"] = meta_data["episode_title"]
-                pr_title_end = struct.unpack("B", epg_dt[title_end + 12 : title_end + 13])[0] + title_end + 13
-                cut = pr_title_end if pr_title_end else title_end
-                epg_dt = epg_dt[struct.unpack("B", epg_dt[cut + 3 : cut + 4])[0] + cut + 4 :]
-            return programs
-        except Exception as ex:
-            log.warning(f"Error al procesar la guía: {repr(ex)}")
-            raise
+        programs = {}
+        while epg_dt:
+            start = struct.unpack(">I", epg_dt[4:8])[0]
+            duration = struct.unpack(">H", epg_dt[8:10])[0]
+            title_end = struct.unpack("B", epg_dt[31:32])[0] + 32
+            episode = struct.unpack("B", epg_dt[title_end + 8 : title_end + 9])[0]
+            season = struct.unpack("B", epg_dt[title_end + 11 : title_end + 12])[0]
+            full_title = self.__decode_string(epg_dt[32:title_end])
+            serie_id = struct.unpack(">H", epg_dt[title_end + 5 : title_end + 7])[0]
+            meta_data = get_title_meta(full_title, serie_id)
+            programs[start] = {
+                "pid": struct.unpack(">I", epg_dt[:4])[0],
+                "start": start,
+                "duration": duration,
+                "end": start + duration,
+                "genre": "{:02X}".format(struct.unpack("B", epg_dt[20:21])[0]),
+                "age_rating": struct.unpack("B", epg_dt[24:25])[0],
+                "full_title": meta_data["full_title"],
+                "serie_id": serie_id,
+                "episode": meta_data["episode"] if meta_data["episode"] else episode,
+                "year": str(struct.unpack(">H", epg_dt[title_end + 9 : title_end + 11])[0]),
+                "serie": meta_data["serie"],
+                "season": meta_data["season"] if meta_data["season"] else season,
+                "is_serie": meta_data["is_serie"],
+            }
+            if meta_data["episode_title"]:
+                programs[start]["episode_title"] = meta_data["episode_title"]
+            pr_title_end = struct.unpack("B", epg_dt[title_end + 12 : title_end + 13])[0] + title_end + 13
+            cut = pr_title_end if pr_title_end else title_end
+            epg_dt = epg_dt[struct.unpack("B", epg_dt[cut + 3 : cut + 4])[0] + cut + 4 :]
+        return programs
 
     def __merge_dicts(self, dict1, dict2, path=None):
         path = [] if path is None else path
