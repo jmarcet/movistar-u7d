@@ -173,8 +173,6 @@ def check_dns():
     try:
         s.connect((MOVISTAR_DNS, 53))
         return s.getsockname()[0]
-    except Exception as ex:
-        log.error("Unable to connect to Movistar DNS")
     finally:
         s.close()
 
@@ -557,8 +555,10 @@ if __name__ == "__main__":
         sys.exit(1)
 
     if not _args.iptv_ip:
-        _args.iptv_ip = check_dns()
-        if not _args.iptv_ip:
+        try:
+            _args.iptv_ip = check_dns()
+        except Exception:
+            log.error("Unable to connect to Movistar DNS")
             sys.exit(1)
 
     if not _args.client_port:

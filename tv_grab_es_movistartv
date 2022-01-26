@@ -1312,8 +1312,10 @@ sanic = "%s:%s" % (lan_ip, os.getenv("SANIC_PORT", "8888"))
 epg_threads = min(8, int(os.getenv("EPG_THREADS", os.cpu_count())))
 
 # Determina la dirección IP para el IPTV y la conectividad con las DNS de Movistar
-_iptv = check_dns()
-if not _iptv:
+try:
+    _iptv = check_dns()
+except Exception:
+    log.error("Unable to connect to Movistar DNS")
     sys.exit(1)
 
 _VERBOSE = cache = config = deadline = epg = iptv = mtv = session = xmltv = None
