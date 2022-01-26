@@ -20,7 +20,7 @@ RUN apk del --purge build-base libffi-dev linux-headers
 
 COPY . .
 
-RUN if [ "$TARGETARCH" = "amd64" -o "$TARGETARCH" = "arm64" ]; then apk add ipython wrk; fi
+RUN if [ "$TARGETARCH" = "amd64" -o "$TARGETARCH" = "arm64" ]; then apk add sqlite-libs wrk && pip install ipython; fi
 
 CMD /app/start.sh
 
