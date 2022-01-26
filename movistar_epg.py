@@ -47,7 +47,7 @@ DEBUG = bool(int(os.getenv("DEBUG", 0)))
 GUIDE = os.path.join(HOME, "guide.xml")
 GUIDE_CLOUD = os.path.join(HOME, "cloud.xml")
 IPTV_BW = int(os.getenv("IPTV_BW", "0"))
-NETWORK_FSIGNAL = os.path.join(os.getenv("TMP", "/tmp"), ".u7d_bw")
+IPTV_IFACE = os.getenv("IPTV_IFACE", None)
 RECORDINGS = os.getenv("RECORDINGS", None)
 SANIC_PORT = int(os.getenv("SANIC_PORT", "8888"))
 SANIC_URL = f"http://{SANIC_HOST}:{SANIC_PORT}"
@@ -88,32 +88,34 @@ tv_cloud1 = tv_cloud2 = tvgrab = None
 async def before_server_start(app, loop):
     global RECORDING_THREADS, _RECORDINGS, _SESSION, _SESSION_CLOUD, _t_cloud1, _t_epg1, _t_timers_d
 
+    if not WIN32 and IPTV_IFACE:
+        import netifaces
+
+        while True:
+            try:
+                iptv = netifaces.ifaddresses(IPTV_IFACE)[2][0]["addr"]
+                log.info(f"IPTV interface: {IPTV_IFACE}")
+                break
+            except (KeyError, ValueError):
+                log.info(f"IPTV interface: waiting for {IPTV_IFACE} to be up...")
+                await asyncio.sleep(5)
+
     while True:
-        _IPTV = check_dns()
-        if _IPTV:
-            break
-        else:
-            await asyncio.sleep(5)
-
-    if IPTV_BW and os.path.exists("/proc/net/route"):
-        async with await open_async("/proc/net/route") as f:
-            route = await f.read()
-
         try:
-            iface = list(
-                set([u[0] for u in [t.split()[0:3] for t in route.splitlines()] if u[2] == "0100400A"])
-            )[0]
-            # u[2] -> gw=10.64.0.1
+            _IPTV = check_dns()
+            if _IPTV:
+                if (not WIN32 and IPTV_IFACE and iptv == _IPTV) or not IPTV_IFACE or WIN32:
+                    log.info(f"IPTV address: {_IPTV}")
+                    break
+                else:
+                    log.debug(f"IPTV address: waiting for interface to be routed...")
+        except Exception:
+            log.error("Unable to connect to Movistar DNS")
+        await asyncio.sleep(5)
 
-            # let's control dynamically the number of allowed clients
-            iface_rx = f"/sys/class/net/{iface}/statistics/rx_bytes"
-            if os.path.exists(iface_rx):
-                async with await open_async(NETWORK_FSIGNAL, "w") as f:
-                    await f.write(iface_rx)
-                log.info("Ignoring RECORDING_THREADS, using dynamic limit")
-                RECORDING_THREADS = 0
-        except (AttributeError, KeyError):
-            pass
+    if not WIN32 and IPTV_BW and IPTV_IFACE:
+        log.info("Ignoring RECORDING_THREADS, using dynamic limit")
+        RECORDING_THREADS = 0
 
     if not WIN32:
         await asyncio.create_subprocess_exec("pkill", "tv_grab_es_movistartv")

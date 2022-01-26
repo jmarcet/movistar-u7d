@@ -62,11 +62,11 @@ GUIDE = os.path.join(HOME, "guide.xml")
 GUIDE_CLOUD = os.path.join(HOME, "cloud.xml")
 IPTV_BW = int(os.getenv("IPTV_BW", "0"))
 IPTV_BW = 85000 if IPTV_BW > 90000 else IPTV_BW
+IPTV_IFACE = os.getenv("IPTV_IFACE", None)
 MIME_M3U = "audio/x-mpegurl"
 MIME_TS = "video/MP2T;audio/mp3"
 MIME_WEBM = "video/webm"
 MP4_OUTPUT = bool(os.getenv("MP4_OUTPUT", False))
-NETWORK_FSIGNAL = os.path.join(os.getenv("TMP", "/tmp"), ".u7d_bw")
 RECORDINGS = os.getenv("RECORDINGS", None)
 SANIC_EPG_URL = "http://127.0.0.1:8889"
 SANIC_PORT = int(os.getenv("SANIC_PORT", "8888"))
@@ -104,13 +104,6 @@ app.ctx.vod_client = _t_tp = None
 async def before_server_start(app, loop):
     global _CHANNELS, _IPTV, _SESSION, _t_tp
 
-    while True:
-        _IPTV = check_dns()
-        if _IPTV:
-            break
-        else:
-            await asyncio.sleep(5)
-
     _SESSION = aiohttp.ClientSession(
         connector=aiohttp.TCPConnector(keepalive_timeout=YEAR_SECONDS, limit_per_host=1),
         json_serialize=ujson.dumps,
@@ -129,10 +122,9 @@ async def before_server_start(app, loop):
             log.debug("Waiting for EPG service...")
             await asyncio.sleep(5)
 
-    if IPTV_BW and os.path.exists(NETWORK_FSIGNAL):
-        async with await open_async(NETWORK_FSIGNAL) as f:
-            iface_rx = await f.read()
-        log.info("Setting dynamic limit of clients from " + iface_rx.split("/")[4] + " bw")
+    if not WIN32 and IPTV_BW and IPTV_IFACE:
+        iface_rx = f"/sys/class/net/{IPTV_IFACE}/statistics/rx_bytes"
+        log.info(f"Setting dynamic limit of clients from {IPTV_IFACE} bw")
         _t_tp = app.add_task(throughput(iface_rx))
 
     if not app.ctx.vod_client:
@@ -144,6 +136,8 @@ async def before_server_start(app, loop):
             headers={"User-Agent": UA},
             json_serialize=ujson.dumps,
         )
+
+    _IPTV = check_dns()
 
 
 @app.listener("before_server_stop")

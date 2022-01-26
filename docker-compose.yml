@@ -21,6 +21,7 @@ services:
     # - DEBUG=${DEBUG}
     # - EPG_THREADS=${EPG_THREADS}
     # - IPTV_BW=${IPTV_BW}
+    # - IPTV_IFACE=${IPTV_IFACE}
     # - LAN_IP=${LAN_IP}
     # - MP4_OUTPUT=${MP4_OUTPUT}
     # - RECORDING_THREADS=${RECORDING_THREADS}

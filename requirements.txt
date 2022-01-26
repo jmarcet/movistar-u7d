@@ -3,6 +3,7 @@ aiohttp
 asyncio_dgram
 black
 dict2xml
+netifaces
 python-ffmpeg
 sanic
 git+https://github.com/jmarcet/sanic-prometheus
