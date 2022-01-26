@@ -45,6 +45,7 @@ from queue import Queue
 from threading import Thread
 
 from movistar_epg import get_title_meta
+from version import _version
 from vod import MOVISTAR_DNS, UA, WIN32, YEAR_SECONDS, check_dns
 
 DEBUG = bool(int(os.getenv("DEBUG", 0)))
@@ -421,7 +422,7 @@ class Cache:
     async def load_epg(self):
         data = self.__load("epg.json")
         if not data:
-            async with aiohttp.ClientSession() as session:
+            async with aiohttp.ClientSession(headers={"User-Agent": f"movistar-u7d v{_version}"}) as session:
                 for i in range(5):
                     log.info(f"Intentando obtener Caché de EPG actualizada...")
                     try:

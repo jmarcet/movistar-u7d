@@ -1,4 +1,5 @@
 from cx_Freeze import Executable, setup
+from version import _version
 
 build_exe_options = {
     "include_files": ["movistar-u7d.ps1", "ffmpeg.exe", "mkvmerge.exe", "timers.conf"],
@@ -16,7 +17,7 @@ executables = [
 
 setup(
     name="movistar-u7d",
-    version="4.3",
+    version=_version,
     description="Movistar IPTV U7D to flussonic catchup proxy",
     options={"build_exe": build_exe_options},
     executables=executables,
