@@ -139,7 +139,7 @@ async def before_server_start(app, loop):
     _t_cloud1 = asyncio.create_task(update_cloud_delayed())
 
     if RECORDINGS:
-        log.info("Manual timers check => http://127.0.0.1:8889/timers_check")
+        log.info(f"Manual timers check => {SANIC_URL}/timers_check")
         if not os.path.exists(RECORDINGS):
             os.mkdir(RECORDINGS)
         await update_recordings_m3u()
@@ -590,17 +590,32 @@ async def handle_timers_check(request):
     if not RECORDINGS:
         return response.json({"status": "RECORDINGS not configured"}, 404)
 
-    global _t_timers_t
+    if not os.path.exists(timers):
+        return response.json({"status": "No timers check possible: timers.conf does not exist"}, 404)
+
     if timers_lock.locked():
         return response.json({"status": "Busy"}, 201)
 
-    _t_timers_t = asyncio.create_task(timers_check())
-    return response.json({"status": "Timers check queued"}, 200)
+    global _t_timers_t, _t_timers
+    if not _t_timers:
+        log.info("Enabling automatic recordings")
+        _t_timers = asyncio.create_task(every(900, timers_check))
+        return response.json({"status": "Automatic recordings enabled & timers check queued"}, 200)
+    else:
+        _t_timers_t = asyncio.create_task(timers_check())
+        return response.json({"status": "Timers check queued"}, 200)
 
 
 async def timers_check():
+    global _t_timers
+
     if not os.path.exists(timers):
-        log.warning(f"No timers.conf found")
+        if _t_timers:
+            _t_timers.cancel()
+            _t_timers = None
+            log.info("No timers.conf found, automatic recordings disabled")
+        else:
+            log.warning("No timers.conf found")
         return
 
     if not WIN32:

@@ -504,6 +504,15 @@ async def handle_prometheus(request):
         raise exceptions.ServiceUnavailable("Not available")
 
 
+@app.get("/timers_check")
+async def handle_timers_check(request):
+    try:
+        async with _SESSION.get(f"{SANIC_EPG_URL}/timers_check") as r:
+            return response.json(await r.json())
+    except (ClientConnectorError, ConnectionRefusedError):
+        raise exceptions.ServiceUnavailable("Not available")
+
+
 async def throughput(iface_rx):
     global _NETWORK_SATURATED
     cur = last = 0
