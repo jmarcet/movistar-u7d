@@ -1219,9 +1219,9 @@ class XMLTV:
     def __generate_m3u(self, cloud=None):
         m3u = '#EXTM3U name="'
         m3u += "Cloud " if cloud else ""
-        m3u += 'MovistarTV" catchup="flussonic" catchup-days='
-        m3u += "365 " if cloud else "8 "
-        m3u += f'dlna_extras=mpeg_ps_pal url-tvg="http://{sanic}/'
+        m3u += 'MovistarTV" catchup="flussonic-ts" catchup-days="'
+        m3u += '9999" ' if cloud else '8" '
+        m3u += f'dlna_extras=mpeg_ps_pal max-conn="12" refresh="1200" url-tvg="http://{sanic}/'
         m3u += "cloud.xml" if cloud else "guide.xml"
         m3u += '"\n'
         services = self.__get_client_channels()
@@ -1237,7 +1237,7 @@ class XMLTV:
         for channel_id in channels:
             if channel_id in self.__channels:
                 channel_name = self.__channels[channel_id]["name"]
-                channel_tag = "Cloud" if cloud else "IPTV"
+                channel_tag = "Cloud" if cloud else "U7D"
                 channel_tag += " - TDT Movistar.es"
                 channel_number = services[channel_id]
                 if channel_number == "0":
@@ -1246,7 +1246,7 @@ class XMLTV:
                 if channel_id not in epg_channels:
                     log.debug("M3U: Saltando canal encriptado " f'"{channel_name}" {channel_id}')
                     continue
-                m3u += f'#EXTINF:-1 tvg-chnum="{channel_number}" '
+                m3u += f'#EXTINF:-1 ch-number="{channel_number}" '
                 m3u += f'tvg-id="{channel_id}.movistar.tv" '
                 m3u += f'group-title="{channel_tag}" '
                 m3u += f'tvg-logo="{channel_logo}" '
