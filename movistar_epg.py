@@ -47,6 +47,7 @@ DEBUG = bool(int(os.getenv("DEBUG", 0)))
 GUIDE = os.path.join(HOME, "guide.xml")
 GUIDE_CLOUD = os.path.join(HOME, "cloud.xml")
 IPTV_BW = int(os.getenv("IPTV_BW", "0"))
+IPTV_BW = 85000 if IPTV_BW > 90000 else IPTV_BW
 IPTV_IFACE = os.getenv("IPTV_IFACE", None)
 RECORDINGS = os.getenv("RECORDINGS", None)
 SANIC_PORT = int(os.getenv("SANIC_PORT", "8888"))
@@ -114,7 +115,7 @@ async def before_server_start(app, loop):
         await asyncio.sleep(5)
 
     if not WIN32 and IPTV_BW and IPTV_IFACE:
-        log.info("Ignoring RECORDING_THREADS, using dynamic limit")
+        log.info(f"Ignoring RECORDING_THREADS: BW {IPTV_BW} kbps / {IPTV_IFACE}")
         RECORDING_THREADS = 0
 
     if not WIN32:

@@ -124,7 +124,7 @@ async def before_server_start(app, loop):
 
     if not WIN32 and IPTV_BW and IPTV_IFACE:
         iface_rx = f"/sys/class/net/{IPTV_IFACE}/statistics/rx_bytes"
-        log.info(f"Setting dynamic limit of clients from {IPTV_IFACE} bw")
+        log.info(f"BW: {IPTV_BW} kbps / {IPTV_IFACE}")
         _t_tp = app.add_task(throughput(iface_rx))
 
     if not app.ctx.vod_client:
