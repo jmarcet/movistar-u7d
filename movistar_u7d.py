@@ -366,7 +366,7 @@ async def handle_flussonic(request, channel_id, url, cloud=False):
                 f'[{request.ip}] {_raw_url} -> Killed ffmpeg "' + procs[-1].split(RECORDINGS)[1] + '"'
             )
     elif record:
-        cmd = f"{VOD_EXEC} {channel_id} {program_id} -p {client_port} -i {request.ip} -a {_IPTV} -w"
+        cmd = f"{VOD_EXEC} {channel_id} {program_id} -p {client_port} -w"
         record = int(record)
         if record > 1:
             record_time = record

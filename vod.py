@@ -49,9 +49,9 @@ Response = namedtuple("Response", ["version", "status", "url", "headers", "body"
 VodData = namedtuple("VodData", ["client", "get_parameter", "session"])
 ffmpeg = FFmpeg().option("y").option("xerror")
 
-_LOOP = _SESSION = _SESSION_CLOUD = None
+_IPTV = _LOOP = _SESSION = _SESSION_CLOUD = None
 
-_args = _epg_url = _ffmpeg = _filename = _full_title = _log_prefix = _log_suffix = _path = None
+_args = _epg_url = _ffmpeg = _filename = _full_title = _log_suffix = _path = None
 _nice = ("nice", "-n", "15", "ionice", "-c", "3") if not WIN32 else ()
 
 
@@ -146,7 +146,7 @@ class RtspClient(object):
 
 @ffmpeg.on("completed")
 def ffmpeg_completed():
-    log.info(f"{_log_prefix} Recording ENDED: {_log_suffix}")
+    log.info(f"Recording ENDED: {_log_suffix}")
     asyncio.run_coroutine_threadsafe(postprocess(), _LOOP).result()
 
 
@@ -159,12 +159,12 @@ def ffmpeg_error(code):
 # def ffmpeg_stderr(line):
 #     if line.startswith("frame="):
 #         return
-#     log.debug(f"{_log_prefix} [ffmpeg] {line}")
+#     log.debug(f"[ffmpeg] {line}")
 
 
 @ffmpeg.on("terminated")
 def ffmpeg_terminated():
-    log.info(f"{_log_prefix} [ffmpeg] TERMINATED: {_log_suffix}")
+    log.info(f"[ffmpeg] TERMINATED: {_log_suffix}")
     ffmpeg_completed()
 
 
@@ -226,10 +226,7 @@ async def postprocess():
 
         duration = int(int(recording_data["container"]["properties"]["duration"]) / 1000000000)
         bad = duration < (_args.time - 30)
-        log.info(
-            f"{_log_prefix} Recording {'INCOMPLETE:' if bad else 'COMPLETE:'} "
-            f"[{duration}s] / {_log_suffix}"
-        )
+        log.info(f"Recording {'INCOMPLETE:' if bad else 'COMPLETE:'} [{duration}s] / {_log_suffix}")
         missing_time = (_args.time - duration) if bad else 0
 
         cleanup(VID_EXT, _args.mp4)
@@ -269,7 +266,7 @@ async def postprocess():
             cleanup(VID_EXT, _args.mp4)
 
     except Exception as ex:
-        log.error(f"{_log_prefix} Recording FAILED: {_log_suffix} => {repr(ex)}")
+        log.error(f"Recording FAILED: {_log_suffix} => {repr(ex)}")
         try:
             await _SESSION.put(_epg_url + f"?missing={randint(1, _args.time)}")
         except (ClientConnectorError, ConnectionRefusedError):
@@ -302,16 +299,14 @@ async def record_stream():
             options["metadata:s:v"] = f"title={_full_title}"
 
             if not os.path.exists(_path):
-                log.info(f"{_log_prefix} Creating recording subdir {_path}")
+                log.info(f"Creating recording subdir {_path}")
                 os.mkdir(_path)
         else:
             _filename = os.path.join(RECORDINGS, f"{_args.channel}-{_args.broadcast}")
 
     _log_suffix += f' "{_filename[len(RECORDINGS) + 1:]}"'
 
-    ffmpeg.input(
-        f"udp://@{_args.iptv_ip}:{_args.client_port}", fifo_size=5572, pkt_size=1316, timeout=500000
-    ).output(
+    ffmpeg.input(f"udp://@{_IPTV}:{_args.client_port}", fifo_size=5572, pkt_size=1316, timeout=500000).output(
         _filename + TMP_EXT,
         options,
         t=str(
@@ -329,7 +324,7 @@ async def record_stream():
     _ffmpeg = Thread(target=asyncio.run, args=(ffmpeg.execute(),))
     _ffmpeg.start()
 
-    log.info(f"{_log_prefix} Recording STARTED: {_log_suffix}")
+    log.info(f"Recording STARTED: {_log_suffix}")
 
 
 async def save_metadata():
@@ -339,7 +334,7 @@ async def save_metadata():
             async with await open_async(cache_metadata, encoding="utf8") as f:
                 metadata = ujson.loads(await f.read())["data"]
         else:
-            log.info(f"{_log_prefix} Getting extended info: {_log_suffix}")
+            log.info(f"Getting extended info: {_log_suffix}")
             async with _SESSION_CLOUD.get(
                 f"{MVTV_URL}?action=epgInfov2&productID={_args.broadcast}&channelID={_args.channel}&extra=1"
             ) as resp:
@@ -347,7 +342,7 @@ async def save_metadata():
             async with await open_async(cache_metadata, "w", encoding="utf8") as f:
                 await f.write(ujson.dumps({"data": metadata}, ensure_ascii=False, indent=4, sort_keys=True))
     except (TypeError, ValueError) as ex:
-        log.warning(f"{_log_prefix} Extended info not found: {_log_suffix} => {repr(ex)}")
+        log.warning(f"Extended info not found: {_log_suffix} => {repr(ex)}")
         return
 
     for t in ["beginTime", "endTime", "expDate"]:
@@ -434,7 +429,7 @@ async def VodLoop(args, vod_data=None):
     except (AttributeError, TimeoutError, TypeError, ValueError):
         pass
     except Exception as ex:
-        log.error(f"{_log_prefix}: {repr(ex)}")
+        log.error(f"{repr(ex)}")
 
     finally:
         try:
@@ -455,10 +450,10 @@ async def VodLoop(args, vod_data=None):
 
 
 async def VodSetup(args, vod_client):
-    global _epg_url, _log_prefix, _log_suffix
+    global _epg_url, _log_suffix
 
     _epg_url = f"{SANIC_EPG_URL}/program_name/{args.channel}/{args.broadcast}"
-    _log_prefix = f"{('[' + args.client_ip + ']') if args.client_ip else ''}"
+    log_prefix = f"{('[' + args.client_ip + '] ') if args.client_ip else ''}"
 
     client = None
     headers = {"CSeq": "", "User-Agent": UA}
@@ -479,12 +474,12 @@ async def VodSetup(args, vod_client):
         uri = urllib.parse.urlparse(vod_info["url"])
     except Exception as ex:
         if isinstance(ex, (ClientConnectorError, ConnectionRefusedError)):
-            log.error(f"{_log_prefix} Movistar IPTV catchup service DOWN")
+            log.error(f"{log_prefix}Movistar IPTV catchup service DOWN")
             if __name__ == "__main__":
                 if args.write_to_file:
                     await _SESSION.put(_epg_url + f"?missing={randint(1, args.time)}")
         else:
-            log.error(f"{_log_prefix} Could not get uri for: [{args.channel}] [{args.broadcast}]: {repr(ex)}")
+            log.error(f"{log_prefix}Could not get uri for: [{args.channel}] [{args.broadcast}]: {repr(ex)}")
         return
 
     if not WIN32:
@@ -525,8 +520,7 @@ if __name__ == "__main__":
     parser = argparse.ArgumentParser("Stream content from the Movistar VOD service.")
     parser.add_argument("channel", help="channel id")
     parser.add_argument("broadcast", help="broadcast id")
-    parser.add_argument("--iptv_ip", "-a", help="iptv address")
-    parser.add_argument("--client_ip", "-i", help="client ip address")
+    parser.add_argument("--client_ip", "-c", help="client ip address")
     parser.add_argument("--client_port", "-p", help="client udp port", type=int)
     parser.add_argument("--start", "-s", help="stream start offset", type=int, default=0)
     parser.add_argument("--time", "-t", help="recording time in seconds", type=int)
@@ -551,15 +545,14 @@ if __name__ == "__main__":
         log.error(f"RECORDINGS path not set")
         sys.exit(1)
 
-    if not _args.iptv_ip:
-        try:
-            _args.iptv_ip = check_dns()
-        except Exception:
-            log.error("Unable to connect to Movistar DNS")
-            sys.exit(1)
+    try:
+        _IPTV = check_dns()
+    except Exception:
+        log.error("Unable to connect to Movistar DNS")
+        sys.exit(1)
 
     if not _args.client_port:
-        _args.client_port = find_free_port(_args.iptv_ip)
+        _args.client_port = find_free_port(_IPTV)
 
     if _args.mp4:
         VID_EXT = ".mp4"
