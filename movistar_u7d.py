@@ -55,8 +55,8 @@ else:
 
 HOME = os.getenv("HOME", os.getenv("HOMEPATH"))
 CHANNELS = os.path.join(HOME, "MovistarTV.m3u")
-CHANNELS_CLOUD = os.path.join(HOME, "cloud.m3u")
-CHANNELS_RECORDINGS = os.path.join(HOME, "recordings.m3u")
+CHANNELS_CLOUD = os.path.join(HOME, "MovistarTVCloud.m3u")
+CHANNELS_RECORDINGS = os.path.join(HOME, "Recordings.m3u")
 DEBUG = bool(int(os.getenv("DEBUG", 0)))
 GUIDE = os.path.join(HOME, "guide.xml")
 GUIDE_CLOUD = os.path.join(HOME, "cloud.xml")
@@ -166,6 +166,8 @@ async def after_server_stop(app, loop):
 
 @app.get("/canales.m3u")
 @app.get("/channels.m3u")
+@app.get("/Canales.m3u")
+@app.get("/Channels.m3u")
 @app.get("/MovistarTV.m3u")
 async def handle_channels(request):
     log.info(f"[{request.ip}] {request.method} {request.url}")
@@ -176,6 +178,9 @@ async def handle_channels(request):
 
 @app.get("/cloud.m3u")
 @app.get("/nube.m3u")
+@app.get("/Cloud.m3u")
+@app.get("/Nube.m3u")
+@app.get("/MovistarTVCloud.m3u")
 async def handle_channels_cloud(request):
     log.info(f"[{request.ip}] {request.method} {request.url}")
     if not os.path.exists(CHANNELS_CLOUD):
@@ -185,6 +190,8 @@ async def handle_channels_cloud(request):
 
 @app.get("/grabaciones.m3u")
 @app.get("/recordings.m3u")
+@app.get("/Grabaciones.m3u")
+@app.get("/Recordings.m3u")
 async def handle_channels_recordings(request):
     log.info(f"[{request.ip}] {request.method} {request.url}")
     if not os.path.exists(CHANNELS_RECORDINGS):

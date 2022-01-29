@@ -33,7 +33,7 @@ Ofrece compatibilidad completa con:
 
 Una vez instalado, tendremos las siguientes URLs disponibles, donde 192.168.1.10 sería la IP donde está funcionando el proxy:
 
- 1. Canales: `http://192.168.1.10:8888/MovistarTV.m3u` `http://192.168.1.10:8888/canales.m3u` o `http://192.168.1.10:8888/channels.m3u`
+ 1. Canales: `http://192.168.1.10:8888/MovistarTV.m3u` `http://192.168.1.10:8888/Canales.m3u` o `http://192.168.1.10:8888/Channels.m3u`
 
  2. Guía de programación (EPG): `http://192.168.1.10:8888/guia.xml` o `http://192.168.1.10:8888/guide.xml`
 
@@ -44,7 +44,7 @@ Una vez instalado, tendremos las siguientes URLs disponibles, donde 192.168.1.10
 
  Como novedad, ahora también es posible acceder a las grabaciones que tengamos en la nube de [Movistar](https://www.movistar.es/particulares/internet/). De tener alguna grabación en dicha nube, tendremos disponibles una nueva lista de canales y una nueva guía de programación que, análoga a la general, incluirá solamente información de aquellos programas que tengamos grabados. El resultado es una forma muy cómoda de acceder a estas grabaciones en la nube.
 
- 3. Canales con grabaciones en la nube de [Movistar](https://www.movistar.es/particulares/internet/): `http://192.168.1.10:8888/cloud.m3u` o `http://192.168.1.10:8888/nube.m3u`
+ 3. Canales con grabaciones en la nube de [Movistar](https://www.movistar.es/particulares/internet/): `http://192.168.1.10:8888/MovistarTVCloud.m3u`, `http://192.168.1.10:8888/Cloud.m3u` o `http://192.168.1.10:8888/Nube.m3u`
 
  4. Guía de programación de las grabaciones en la nube (EPG): `http://192.168.1.10:8888/cloud.xml` o `http://192.168.1.10:8888/nube.xml`
 
@@ -53,7 +53,7 @@ Una vez instalado, tendremos las siguientes URLs disponibles, donde 192.168.1.10
 
  También es novedad tanto una funcionalidad de grabaciones locales automáticas, o temporizadores, así como el acceso a las mismas a través de una nueva lista de canales `.m3u` de tipo `VOD`, que por lo menos el `TiviMate` admite y que resulta especialmente útil para almacenar de forma local programas y series, y así crear colecciones. El resultado es increíblemente cómodo de usar.
 
- 5. Lista VOD de Grabaciones Locales: `http://192.168.1.10:8888/recordings.m3u` o `http://192.168.1.10:8888/grabaciones.m3u`
+ 5. Lista VOD de Grabaciones Locales: `http://192.168.1.10:8888/Recordings.m3u` o `http://192.168.1.10:8888/Grabaciones.m3u`
 
 Ésta última sólo se activará cuando la variable de entorno `RECORDINGS` esté definida.
 

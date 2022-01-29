@@ -41,8 +41,8 @@ else:
 
 HOME = os.getenv("HOME", os.getenv("HOMEPATH"))
 CHANNELS = os.path.join(HOME, "MovistarTV.m3u")
-CHANNELS_CLOUD = os.path.join(HOME, "cloud.m3u")
-CHANNELS_RECORDINGS = os.path.join(HOME, "recordings.m3u")
+CHANNELS_CLOUD = os.path.join(HOME, "MovistarTVCloud.m3u")
+CHANNELS_RECORDINGS = os.path.join(HOME, "Recordings.m3u")
 DEBUG = bool(int(os.getenv("DEBUG", 0)))
 GUIDE = os.path.join(HOME, "guide.xml")
 GUIDE_CLOUD = os.path.join(HOME, "cloud.xml")
@@ -838,7 +838,7 @@ async def update_cloud(forced=False):
                 GUIDE_CLOUD,
             )
     if forced and not updated:
-        log.info(f"Loaded Cloud Recordings data => {SANIC_URL}/cloud.m3u & {SANIC_URL}/cloud.xml")
+        log.info(f"Loaded Cloud Recordings data => {SANIC_URL}/MovistarTVCloud.m3u & {SANIC_URL}/cloud.xml")
 
 
 async def update_cloud_delayed():
@@ -924,7 +924,7 @@ async def update_recordings(archive=False):
         async with await open_async(CHANNELS_RECORDINGS, "w", encoding="utf8") as f:
             await f.write(m3u)
 
-        log.info(f"Local Recordings Updated => {SANIC_URL}/recordings.m3u")
+        log.info(f"Local Recordings Updated => {SANIC_URL}/Recordings.m3u")
 
 
 if __name__ == "__main__":
