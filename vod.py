@@ -147,7 +147,7 @@ class RtspClient(object):
 @ffmpeg.on("completed")
 def ffmpeg_completed():
     log.info(f"{_log_prefix} Recording ENDED: {_log_suffix}")
-    asyncio.run_coroutine_threadsafe(postprocess(), _LOOP)
+    asyncio.run_coroutine_threadsafe(postprocess(), _LOOP).result()
 
 
 @ffmpeg.on("error")
@@ -201,8 +201,6 @@ async def get_vod_info(channel_id, program_id, cloud, vod_client):
 
 def handle_cleanup(signum, frame):
     if __name__ == "__main__":
-        if _ffmpeg:
-            _ffmpeg.join()
         raise TimeoutError()
     else:
         return
@@ -215,6 +213,7 @@ async def postprocess():
         command += ["--track-order", "0:2,0:1,0:4,0:3,0:6,0:5"]
         command += ["--default-track", "2:1"]
     command += [_filename + TMP_EXT]
+
     try:
         proc = subprocess.run(command, capture_output=True)
         cleanup(TMP_EXT)
@@ -257,18 +256,8 @@ async def postprocess():
             cleanup(TMP_EXT2)
         else:
             os.rename(_filename + TMP_EXT2, _filename + VID_EXT)
-    except Exception as ex:
-        log.error(f"{_log_prefix} Recording FAILED: {_log_suffix} => {repr(ex)}")
-        try:
-            await _SESSION.put(_epg_url + f"?missing={randint(1, _args.time)}")
-        finally:
-            await _SESSION_CLOUD.close()
-            await _SESSION.close()
-            cleanup(TMP_EXT2)
-        return
 
-    resp = None
-    try:
+        resp = None
         if not missing_time:
             resp = await _SESSION.put(_epg_url)
         else:
@@ -278,9 +267,15 @@ async def postprocess():
             await save_metadata()
         else:
             cleanup(VID_EXT, _args.mp4)
-    finally:
-        await _SESSION_CLOUD.close()
-        await _SESSION.close()
+
+    except Exception as ex:
+        log.error(f"{_log_prefix} Recording FAILED: {_log_suffix} => {repr(ex)}")
+        try:
+            await _SESSION.put(_epg_url + f"?missing={randint(1, _args.time)}")
+        except (ClientConnectorError, ConnectionRefusedError):
+            pass
+        cleanup(TMP_EXT2)
+        cleanup(VID_EXT, _args.mp4)
 
 
 async def record_stream():
@@ -419,7 +414,7 @@ async def VodLoop(args, vod_data=None):
 
             _LOOP = asyncio.get_event_loop()
             _SESSION = aiohttp.ClientSession(
-                connector=aiohttp.TCPConnector(keepalive_timeout=YEAR_SECONDS, limit_per_host=1),
+                connector=aiohttp.TCPConnector(keepalive_timeout=YEAR_SECONDS),
                 json_serialize=ujson.dumps,
             )
 
@@ -453,8 +448,10 @@ async def VodLoop(args, vod_data=None):
             pass
 
         if __name__ == "__main__":
-            if not args.write_to_file:
-                await _SESSION_CLOUD.close()
+            if args.write_to_file:
+                _ffmpeg.join()
+                await _SESSION.close()
+            await _SESSION_CLOUD.close()
 
 
 async def VodSetup(args, vod_client):

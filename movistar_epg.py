@@ -78,16 +78,18 @@ recordings = os.path.join(HOME, "recordings.json")
 timers = os.path.join(HOME, "timers.conf")
 
 epg_lock = asyncio.Lock()
+recordings_lock = asyncio.Lock()
 timers_lock = asyncio.Lock()
 tvgrab_lock = asyncio.Lock()
 
-_t_cloud1 = _t_cloud2 = _t_epg1 = _t_epg2 = _t_timers = _t_timers_d = _t_timers_r = _t_timers_t = None
+_t_cloud1 = _t_cloud2 = _t_epg1 = _t_epg2 = _t_recs = None
+_t_timers = _t_timers_d = _t_timers_r = _t_timers_t = None
 tv_cloud1 = tv_cloud2 = tvgrab = None
 
 
 @app.listener("before_server_start")
 async def before_server_start(app, loop):
-    global RECORDING_THREADS, _RECORDINGS, _SESSION, _SESSION_CLOUD, _t_cloud1, _t_epg1, _t_timers_d
+    global RECORDING_THREADS, _RECORDINGS, _SESSION, _SESSION_CLOUD, _t_cloud1, _t_epg1, _t_recs, _t_timers_d
 
     if not WIN32 and IPTV_IFACE:
         import netifaces
@@ -143,7 +145,7 @@ async def before_server_start(app, loop):
         log.info(f"Manual timers check => {SANIC_URL}/timers_check")
         if not os.path.exists(RECORDINGS):
             os.mkdir(RECORDINGS)
-        await update_recordings_m3u()
+        _t_recs = asyncio.create_task(update_recordings())
         try:
             async with await open_async(recordings, encoding="utf8") as f:
                 recordingsdata = ujson.loads(await f.read())
@@ -179,6 +181,7 @@ async def after_server_stop(app, loop):
         _t_cloud2,
         _t_epg2,
         _t_epg1,
+        _t_recs,
         _t_timers,
         _t_timers_d,
         _t_timers_r,
@@ -415,10 +418,8 @@ async def handle_program_name(request, channel_id, program_id):
     except ValueError:
         pass
 
-    async with await open_async(recordings, "w", encoding="utf8") as f:
-        await f.write(ujson.dumps(_RECORDINGS, ensure_ascii=False, indent=4, sort_keys=True))
-
-    await update_recordings_m3u()
+    global _t_recs
+    _t_recs = asyncio.create_task(update_recordings(True))
 
     global _t_timers_r
     _t_timers_r = asyncio.create_task(timers_check())
@@ -874,7 +875,7 @@ async def update_epg_delayed():
     _t_epg2 = asyncio.create_task(every(3600, update_epg))
 
 
-async def update_recordings_m3u():
+async def update_recordings(archive=False):
     m3u = '#EXTM3U name="Recordings" dlna_extras=mpeg_ps_pal\n'
 
     def dump_files(m3u, files, latest=False):
@@ -899,19 +900,31 @@ async def update_recordings_m3u():
             m3u += urllib.parse.quote(relname + ext) + "\n"
         return m3u
 
-    files = [
-        file
-        for file in glob(f"{RECORDINGS}/**", recursive=True)
-        if os.path.splitext(file)[1] in (".avi", ".mkv", ".mp4", ".mpeg", ".mpg", ".ts")
-    ]
+    async with recordings_lock:
+        if archive:
+            async with await open_async(recordings, "w", encoding="utf8") as f:
+                await f.write(ujson.dumps(_RECORDINGS, ensure_ascii=False, indent=4, sort_keys=True))
 
-    files.sort(key=os.path.getmtime, reverse=True)
-    m3u = dump_files(m3u, files, latest=True)
-    m3u = dump_files(m3u, sorted(files))
+        while True:
+            try:
+                files = [
+                    file
+                    for file in glob(f"{RECORDINGS}/**", recursive=True)
+                    if os.path.splitext(file)[1] in (".avi", ".mkv", ".mp4", ".mpeg", ".mpg", ".ts")
+                ]
 
-    log.info(f"Local Recordings Updated => {SANIC_URL}/recordings.m3u")
-    async with await open_async(CHANNELS_RECORDINGS, "w", encoding="utf8") as f:
-        await f.write(m3u)
+                files.sort(key=os.path.getmtime, reverse=True)
+                break
+            except FileNotFoundError:
+                await asyncio.sleep(1)
+
+        m3u = dump_files(m3u, files, latest=True)
+        m3u = dump_files(m3u, sorted(files))
+
+        async with await open_async(CHANNELS_RECORDINGS, "w", encoding="utf8") as f:
+            await f.write(m3u)
+
+        log.info(f"Local Recordings Updated => {SANIC_URL}/recordings.m3u")
 
 
 if __name__ == "__main__":
