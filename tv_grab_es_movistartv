@@ -806,7 +806,6 @@ class MulticastIPTV:
         clean_channels = {}
         for channel in list(set(epg) & set(epg_channels)):
             clean_channels[channel] = epg[channel]
-        log.info(f"Conservando {len(clean_channels)} canales en abierto")
         return clean_channels
 
     def __get_sane_epg(self, epg):
@@ -827,16 +826,15 @@ class MulticastIPTV:
     def check_epg(self, epg):
         has_errors = False
         for channel in epg:
-            prev_end = prev_timestamp = 0
+            prev_end = 0
             for timestamp in sorted(epg[channel]):
                 if prev_end > timestamp:
-                    log.warning(f"[{channel}] prev_end={prev_end} > {timestamp}")
+                    log.debug(f"[{channel}] prev_end={prev_end} > {timestamp}")
                     has_errors = True
                 prev_end = epg[channel][timestamp]["end"]
-                prev_timestamp = timestamp
         return has_errors
 
-    def fix_epg(self, new_epg, cached_epg=None, broken=0, fixed=0):
+    def fix_epg(self, new_epg, cached_epg=None, broken=0, fixed=0, times=0):
         epg_name = "Cached" if cached_epg else "Nuevo"
         fixed_diff = fixed_over = 0
         epg = cached_epg if cached_epg else new_epg
@@ -856,32 +854,34 @@ class MulticastIPTV:
                         f"{timestamp} duration={_duration} -> {_end - _start}"
                     )
                     fixed_diff += 1
-                timestamp_next = sorted_epg[i + 1]
-                _next = epg[channel][timestamp_next]["start"]
+                _next = epg[channel][sorted_epg[i + 1]]["start"]
                 if _end > _next:
                     if cached_epg:
-                        if _start not in new_epg[channel]:
+                        if _next in new_epg[channel]:
                             stales.add(_start)
-                            log.warning(f"[{channel}] _start={_start} _end={_end} _next={_next} stale 1")
-                        elif _next not in new_epg[channel]:
+                            log.debug(f"[{channel}] _start={_start} _end={_end} _next={_next} stale 1")
+                        elif _start in new_epg[channel]:
                             stales.add(_next)
-                            log.warning(f"[{channel}] _start={_start} _end={_end} _next={_next} stale 2")
+                            log.debug(f"[{channel}] _start={_start} _end={_end} _next={_next} stale 2")
                         else:
                             log.error(
-                                f"[{epg_name}] [{channel}] both "
-                                f"{_start}->{_end} & {_next} in epg, they collapse!"
+                                f"[{epg_name}] [{channel}] COLLAPSE {_start}->{_end} & {_next} in EPG!!!"
                             )
+                            if times > 5:
+                                log.error(
+                                    f"[{epg_name}] [{channel}] UGLILY COERCED {_start}->{_end} TO {_next}"
+                                )
+                                epg[channel][timestamp]["end"] = _next
+                                epg[channel][timestamp]["duration"] = _next - _start
                     else:
                         if _end not in epg[channel]:
-                            log.warning(
-                                f"[{epg_name}] [{channel}] OVER {timestamp} end={_end} -> next={_next}"
-                            )
+                            log.debug(f"[{epg_name}] [{channel}] OVER {timestamp} end={_end} -> next={_next}")
                             epg[channel][timestamp]["end"] = _next
+                            epg[channel][timestamp]["duration"] = _next - _start
                             fixed_over += 1
                         else:
                             log.error(
-                                f"[{epg_name}] [{channel}] both "
-                                f"{_start}->{_end} & {_next} in epg, they collapse!"
+                                f"[{epg_name}] [{channel}] COLLAPSE {_start}->{_end} & {_next} in EPG!!!"
                             )
             if cached_epg:
                 for timestamp in stales:
@@ -906,13 +906,14 @@ class MulticastIPTV:
                             )
                             fixed_over += 1
                     prev_end = epg[channel][timestamp]["end"]
-                    prev_timestamp = timestamp
+                    prev_timestamp = epg[channel][timestamp]["start"]
             if self.check_epg(epg):
-                return self.fix_epg(new_epg, epg, broken, fixed + fixed_diff + fixed_over)
+                return self.fix_epg(new_epg, epg, broken, fixed + fixed_diff + fixed_over, times + 1)
         else:
-            self.check_epg(epg)
+            if DEBUG:
+                self.check_epg(epg)
             if fixed_diff or fixed_over:
-                log.warning(f"[{epg_name}] EPG contenía errores")
+                log.warning("El nuevo EPG contenía errores")
                 if fixed_diff:
                     _s = "programas no duraban" if fixed_diff > 1 else "programa no duraba"
                     log.warning(f"{fixed_diff} {_s} el tiempo hasta al siguiente programa")
@@ -920,7 +921,7 @@ class MulticastIPTV:
                     _s = "programas acababan" if fixed_over > 1 else "programa acababa"
                     log.warning(f"{fixed_over} {_s} después de que el siguiente empezara")
             else:
-                log.info(f"[{epg_name}] EPG sin errores")
+                log.info("Nuevo EPG sin errores")
 
         return (epg, broken, fixed + fixed_diff + fixed_over)
 
@@ -941,12 +942,20 @@ class MulticastIPTV:
             self.__get_bin_epg()
         try:
             new_epg = self.__drop_encrypted_channels(self.__get_sane_epg(self.__parse_bin_epg()))
+            log.info(f"Conservando {len(new_epg)} canales en abierto")
         except Exception as ex:
             log.debug(f"{repr(ex)}")
             log.warning("Error descargando la EPG. Reintentando...")
             return await self.get_epg()
 
-        log.info("[Nuevo] Comprobando si el EPG necesita arreglos...")
+        clean_new_epg = {}
+        for channel in new_epg:
+            clean_new_epg[channel] = {}
+            for timestamp in sorted(new_epg[channel]):
+                clean_new_epg[channel][int(timestamp)] = new_epg[channel][timestamp]
+        new_epg = clean_new_epg
+
+        log.info("Comprobando si el nuevo EPG necesita arreglos...")
         new_epg, broken, fixed = self.fix_epg(new_epg)
 
         if not cached_epg:
@@ -955,7 +964,7 @@ class MulticastIPTV:
             return (new_epg, False)
 
         expired = 0
-        log.info(f"Fecha de caducidad: [{time.ctime(deadline)}] [{deadline}]")
+        log.debug(f"Fecha de caducidad: [{time.ctime(deadline)}] [{deadline}]")
         for channel in new_epg:
             if channel not in cached_epg:
                 cached_epg[channel] = {}
@@ -968,13 +977,13 @@ class MulticastIPTV:
                     clean_channel_epg[int(timestamp)] = cached_epg[channel][timestamp]
                 cached_epg[channel] = clean_channel_epg
             for timestamp in new_epg[channel]:
-                cached_epg[channel][timestamp] = new_epg[channel][timestamp]
+                cached_epg[channel][int(timestamp)] = new_epg[channel][timestamp]
 
-        log.info("[Cached] Comprobando si el EPG necesita arreglos...")
-        cached_epg, broken, fixed = self.fix_epg(new_epg, cached_epg)
+        log.info("Comprobando si el EPG resultante necesita arreglos...")
+        cached_epg, broken, fixed = self.fix_epg(new_epg, cached_epg, broken, fixed)
 
         cache.save_epg(cached_epg)
-        log.info(f"Eventos: Caducados = {expired} _ Arreglados = {fixed} _ Rotos = {broken}")
+        log.info(f"Eventos: Arreglados = {fixed} _ Caducados = {expired} _ Descartados = {broken}")
         return (cached_epg, True)
 
     def __get_epg_data(self, mcast_grp, mcast_port):
@@ -1124,7 +1133,7 @@ class XMLTV:
         ]:
             channel_name = self.__channels[channel_id]["name"]
             if channel_id not in epg_channels:
-                log.debug(f'XML: Saltando canal encriptado "{channel_name}"')
+                log.debug(f'XML: Saltando canal encriptado "{channel_name}" {channel_id}')
                 continue
 
             if verbose and _VERBOSE:
@@ -1307,7 +1316,7 @@ class XMLTV:
                     channel_number = "999"
                 channel_logo = f"http://{sanic}/Logos/" + self.__channels[channel_id]["logo_uri"]
                 if channel_id not in epg_channels:
-                    log.debug("M3U: Saltando canal encriptado " f'"{channel_name}" {channel_id}')
+                    log.debug(f'M3U: Saltando canal encriptado "{channel_name}" {channel_id}')
                     continue
                 m3u += f'#EXTINF:-1 ch-number="{channel_number}" '
                 m3u += f'tvg-id="{channel_id}.movistar.tv" '
