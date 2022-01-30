@@ -16,6 +16,7 @@ from aiohttp.client_exceptions import ClientConnectorError
 from aiohttp.resolver import AsyncResolver
 from collections import namedtuple
 from contextlib import closing
+from random import randint
 from sanic import Sanic, exceptions, response
 from sanic.compat import open_async, stat_async
 from sanic.handlers import ContentRangeHandler
@@ -81,8 +82,8 @@ LOG_SETTINGS["formatters"]["generic"]["datefmt"] = LOG_SETTINGS["formatters"]["a
     "datefmt"
 ] = "[%Y-%m-%d %H:%M:%S]"
 
-_CHANNELS = {}
-_IPTV = _SESSION = _SESSION_LOGOS = None
+_CHANNELS = _CHILDREN = {}
+_IPTV = _LOOP = _SESSION = _SESSION_LOGOS = None
 _NETWORK_SATURATED = False
 _RESPONSES = []
 
@@ -102,8 +103,9 @@ app.ctx.vod_client = _t_tp = None
 
 @app.listener("before_server_start")
 async def before_server_start(app, loop):
-    global _CHANNELS, _IPTV, _SESSION, _t_tp
+    global _CHANNELS, _IPTV, _LOOP, _SESSION, _t_tp
 
+    _LOOP = asyncio.get_event_loop()
     _SESSION = aiohttp.ClientSession(
         connector=aiohttp.TCPConnector(keepalive_timeout=YEAR_SECONDS, limit_per_host=1),
         json_serialize=ujson.dumps,
@@ -138,6 +140,9 @@ async def before_server_start(app, loop):
         )
 
     _IPTV = check_dns()
+
+    if not WIN32:
+        signal.signal(signal.SIGCHLD, signal_handler)
 
 
 @app.listener("before_server_stop")
@@ -361,7 +366,7 @@ async def handle_flussonic(request, channel_id, url, cloud=False):
             log.warning(f"[{request.ip}] {_raw_url} -> Network Saturated")
             raise exceptions.ServiceUnavailable("Network Saturated")
         else:
-            os.kill(int(procs[-1].split()[0]), signal.SIGINT)
+            os.kill(int(procs[-1].split()[0]), signal.SIGTERM)
             log.warning(
                 f'[{request.ip}] {_raw_url} -> Killed ffmpeg "' + procs[-1].split(RECORDINGS)[1] + '"'
             )
@@ -383,11 +388,14 @@ async def handle_flussonic(request, channel_id, url, cloud=False):
         if offset:
             cmd += f" -s {offset}"
 
-        if not WIN32:
-            signal.signal(signal.SIGCHLD, signal.SIG_IGN)
-
         log.debug(f"Launching {cmd}")
-        subprocess.Popen(cmd.split())
+        if not WIN32:
+            global _CHILDREN
+            p = subprocess.Popen(cmd.split())
+            _CHILDREN[p.pid] = (cmd, (client_port, channel_id, program_id, record_time))
+        else:
+            subprocess.Popen(cmd.split())
+
         return response.json(
             {
                 "status": "OK",
@@ -518,6 +526,40 @@ async def handle_timers_check(request):
             return response.json(await r.json())
     except (ClientConnectorError, ConnectionRefusedError):
         raise exceptions.ServiceUnavailable("Not available")
+
+
+async def recording_cleanup(channel, broadcast, record_time):
+    log.debug(f"cleanup_recording: {channel} {broadcast} {record_time}")
+    if record_time:
+        await _SESSION.put(
+            f"{SANIC_EPG_URL}/program_name/{channel}/{broadcast}?missing={randint(1, record_time)}"
+        )
+        await asyncio.sleep(3)
+    if not _NETWORK_SATURATED:
+        await _SESSION.get(f"{SANIC_EPG_URL}/timers_check")
+    log.debug(f"cleanup_recording: {channel} {broadcast} {record_time} DONE")
+
+
+def signal_handler(signum, frame):
+    global _CHILDREN
+
+    pid, status = os.waitpid(-1, os.WNOHANG | os.WUNTRACED | os.WCONTINUED)
+    log.debug(f"[{pid}]:{status} WIFCONTINUED={os.WIFCONTINUED(status)}")
+    log.debug(f"[{pid}]:{status} WIFSTOPPED={os.WIFSTOPPED(status)}")
+    log.debug(f"[{pid}]:{status} WIFSIGNALED={os.WIFSIGNALED(status)}")
+    log.debug(f"[{pid}]:{status} WIFEXITED={os.WIFEXITED(status)}")
+    if pid in _CHILDREN:
+        log.info(f'[{pid}]:{status} "{_CHILDREN[pid][0]}" died')
+        port, channel, broadcast, record_time = _CHILDREN[pid][1]
+        del _CHILDREN[pid]
+        if status:
+            if status == 256:
+                record_time = 0
+            else:
+                subprocess.run(["pkill", "-f", f"ffmpeg .+ -i udp://@{_IPTV}:{port}"])
+            log.debug(f"signal_handler: {channel} {broadcast} {record_time}")
+            asyncio.run_coroutine_threadsafe(recording_cleanup(channel, broadcast, record_time), _LOOP)
+            log.debug(f"signal_handler: {channel} {broadcast} {record_time} DONE")
 
 
 async def throughput(iface_rx):

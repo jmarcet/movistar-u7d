@@ -13,8 +13,9 @@ import sys
 import ujson
 import urllib.parse
 
-from aiohttp.client_exceptions import ClientConnectorError
+from aiohttp.client_exceptions import ClientConnectorError, ServerDisconnectedError
 from aiohttp.resolver import AsyncResolver
+from asyncio.exceptions import CancelledError
 from collections import namedtuple
 from contextlib import closing
 from dict2xml import dict2xml
@@ -200,13 +201,13 @@ async def get_vod_info(channel_id, program_id, cloud, vod_client):
 
 
 def handle_cleanup(signum, frame):
-    if __name__ == "__main__":
-        raise TimeoutError()
-    else:
-        return
+    raise TimeoutError()
 
 
 async def postprocess():
+    if not WIN32:
+        signal.signal(signal.SIGCHLD, signal.SIG_DFL)
+
     command = list(_nice)
     command += ["mkvmerge", "--abort-on-warnings", "-q", "-o", _filename + TMP_EXT2]
     if _args.vo:
@@ -269,7 +270,7 @@ async def postprocess():
         log.error(f"Recording FAILED: {_log_suffix} => {repr(ex)}")
         try:
             await _SESSION.put(_epg_url + f"?missing={randint(1, _args.time)}")
-        except (ClientConnectorError, ConnectionRefusedError):
+        except (ClientConnectorError, ConnectionRefusedError, ServerDisconnectedError):
             pass
         cleanup(TMP_EXT2)
         cleanup(VID_EXT, _args.mp4)
@@ -396,10 +397,7 @@ async def VodLoop(args, vod_data=None):
             json_serialize=ujson.dumps,
         )
 
-        try:
-            vod_data = await VodSetup(args, _SESSION_CLOUD)
-        except TimeoutError:
-            vod_data = None
+        vod_data = await VodSetup(args, _SESSION_CLOUD)
         if not isinstance(vod_data, VodData):
             await _SESSION_CLOUD.close()
             return
@@ -426,7 +424,7 @@ async def VodLoop(args, vod_data=None):
                     break
             await vod_data.client.send_request("GET_PARAMETER", vod_data.get_parameter)
 
-    except (AttributeError, TimeoutError, TypeError, ValueError):
+    except (AttributeError, CancelledError, TypeError, ValueError):
         pass
     except Exception as ex:
         log.error(f"{repr(ex)}")
@@ -444,7 +442,7 @@ async def VodLoop(args, vod_data=None):
 
         if __name__ == "__main__":
             if args.write_to_file:
-                _ffmpeg.join()
+                _ffmpeg.join(timeout=1)
                 await _SESSION.close()
             await _SESSION_CLOUD.close()
 
@@ -482,9 +480,8 @@ async def VodSetup(args, vod_client):
             log.error(f"{log_prefix}Could not get uri for: [{args.channel}] [{args.broadcast}]: {repr(ex)}")
         return
 
-    if not WIN32:
-        signal.signal(signal.SIGHUP, handle_cleanup)
-    signal.signal(signal.SIGTERM, handle_cleanup)
+    if __name__ == "__main__" and not WIN32:
+        signal.signal(signal.SIGCHLD, handle_cleanup)
 
     reader, writer = await asyncio.open_connection(uri.hostname, uri.port)
     client = RtspClient(reader, writer, vod_info["url"])
