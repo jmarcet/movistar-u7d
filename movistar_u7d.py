@@ -152,7 +152,7 @@ async def before_server_stop(app, loop):
         try:
             await resp.eof()
             log.info(f"[{req_ip}] " f"{SANIC_URL if VERBOSE_LOGS else ''}" f"{raw_url} -> Stopped 2")
-        except AttributeError:
+        except Exception:
             pass
 
 
