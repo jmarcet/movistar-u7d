@@ -9,7 +9,7 @@ ENV PYTHONUNBUFFERED=1
 RUN sed -e 's:alpine\/[.0-9v]\+\/:alpine/edge/:g' -i /etc/apk/repositories
 RUN apk update && apk upgrade --available --prune --purge
 RUN apk add build-base libffi-dev linux-headers
-RUN apk add bash ffmpeg git htop mkvtoolnix s6 vim
+RUN apk add bash curl ffmpeg git htop mkvtoolnix s6 vim
 
 RUN mkdir /app
 WORKDIR /app
