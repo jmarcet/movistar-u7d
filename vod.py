@@ -50,7 +50,7 @@ Response = namedtuple("Response", ["version", "status", "url", "headers", "body"
 VodData = namedtuple("VodData", ["client", "get_parameter", "session"])
 ffmpeg = FFmpeg().option("y").option("xerror")
 
-_IPTV = _LOOP = _SESSION = _SESSION_CLOUD = None
+_IPTV = _LOOP = _PP_DONE = _SESSION = _SESSION_CLOUD = None
 
 _args = _epg_url = _ffmpeg = _filename = _full_title = _log_suffix = _path = None
 _nice = ("nice", "-n", "15", "ionice", "-c", "3") if not WIN32 else ()
@@ -205,6 +205,9 @@ def handle_cleanup(signum, frame):
 
 
 async def postprocess():
+    global _PP_DONE
+    log.debug(f"Recording Postprocess: {_log_suffix}")
+
     if not WIN32:
         signal.signal(signal.SIGCHLD, signal.SIG_DFL)
 
@@ -227,7 +230,8 @@ async def postprocess():
 
         duration = int(int(recording_data["container"]["properties"]["duration"]) / 1000000000)
         bad = duration < (_args.time - 30)
-        log.info(f"Recording {'INCOMPLETE:' if bad else 'COMPLETE:'} [{duration}s] / {_log_suffix}")
+        msg = f"Recording {'INCOMPLETE:' if bad else 'COMPLETE:'} [{duration}s] / {_log_suffix}"
+        log.warning(msg) if bad else log.info(msg)
         missing_time = (_args.time - duration) if bad else 0
 
         cleanup(VID_EXT, _args.mp4)
@@ -269,11 +273,16 @@ async def postprocess():
     except Exception as ex:
         log.error(f"Recording FAILED: {_log_suffix} => {repr(ex)}")
         try:
-            await _SESSION.put(_epg_url + f"?missing={randint(1, _args.time)}")
+            async with aiohttp.ClientSession() as session:
+                await session.put(_epg_url + f"?missing={randint(1, _args.time)}")
         except (ClientConnectorError, ConnectionRefusedError, ServerDisconnectedError):
             pass
         cleanup(TMP_EXT2)
         cleanup(VID_EXT, _args.mp4)
+
+    finally:
+        log.debug(f"Recording Postprocess ENDED: {_log_suffix}")
+        _PP_DONE = True
 
 
 async def record_stream():
@@ -329,6 +338,7 @@ async def record_stream():
 
 
 async def save_metadata():
+    log.debug(f"Saving metadata: {_log_suffix}")
     cache_metadata = os.path.join(CACHE_DIR, f"{_args.broadcast}.json")
     try:
         if os.path.exists(cache_metadata):
@@ -349,13 +359,18 @@ async def save_metadata():
     for t in ["beginTime", "endTime", "expDate"]:
         metadata[t] = int(metadata[t] / 1000)
     cover = metadata["cover"]
+    log.debug(f'Getting cover "{cover}": {_log_suffix}')
     async with _SESSION_CLOUD.get(f"{COVER_URL}/{cover}") as resp:
         if resp.status == 200:
+            log.debug(f'Got cover "{cover}": {_log_suffix}')
             img_ext = os.path.splitext(cover)[1]
             img_name = _filename + img_ext
+            log.debug(f'Saving cover "{cover}" -> "{img_name}": {_log_suffix}')
             async with await open_async(img_name, "wb") as f:
                 await f.write(await resp.read())
             metadata["cover"] = os.path.basename(img_name)
+        else:
+            log.debug(f'Failed to get cover "{cover}": {_log_suffix}')
     if "covers" in metadata:
         covers = {}
         metadata_dir = os.path.join(_path, "metadata")
@@ -363,12 +378,16 @@ async def save_metadata():
             os.mkdir(metadata_dir)
         for img in metadata["covers"]:
             cover = metadata["covers"][img]
+            log.debug(f'Getting covers "{img}": {_log_suffix}')
             async with _SESSION_CLOUD.get(cover) as resp:
                 if resp.status != 200:
+                    log.debug(f'Failed to get covers "{img}": {_log_suffix}')
                     continue
+                log.debug(f'Got covers "{img}": {_log_suffix}')
                 img_ext = os.path.splitext(cover)[1]
                 img_rel = f"{os.path.basename(_filename)}-{img}" + img_ext
                 img_name = os.path.join(metadata_dir, img_rel)
+                log.debug(f'Saving covers "{img}" -> "{img_name}": {_log_suffix}')
                 async with await open_async(img_name, "wb") as f:
                     await f.write(await resp.read())
                 covers[img] = os.path.join("metadata", img_rel)
@@ -382,6 +401,7 @@ async def save_metadata():
     metadata.pop("name", None)
     async with await open_async(_filename + NFO_EXT, "w", encoding="utf8") as f:
         await f.write(dict2xml(metadata, wrap="metadata", indent="    "))
+    log.debug(f"Metadata saved: {_log_suffix}")
 
 
 async def VodLoop(args, vod_data=None):
@@ -432,6 +452,8 @@ async def VodLoop(args, vod_data=None):
     finally:
         try:
             await vod_data.client.send_request("TEARDOWN", vod_data.session)
+            if __name__ == "__main__" and not WIN32:
+                signal.signal(signal.SIGCHLD, signal.SIG_DFL)
         except (AttributeError, OSError, RuntimeError):
             pass
 
@@ -442,7 +464,12 @@ async def VodLoop(args, vod_data=None):
 
         if __name__ == "__main__":
             if args.write_to_file:
+                while True:
+                    if _PP_DONE:
+                        break
+                    await asyncio.sleep(1)
                 _ffmpeg.join(timeout=1)
+                await asyncio.sleep(1)
                 await _SESSION.close()
             await _SESSION_CLOUD.close()
 
@@ -480,8 +507,14 @@ async def VodSetup(args, vod_client):
             log.error(f"{log_prefix}Could not get uri for: [{args.channel}] [{args.broadcast}]: {repr(ex)}")
         return
 
-    if __name__ == "__main__" and not WIN32:
-        signal.signal(signal.SIGCHLD, handle_cleanup)
+    if __name__ == "__main__":
+        if not WIN32:
+            signal.signal(signal.SIGCHLD, handle_cleanup)
+            signal.signal(signal.SIGHUP, handle_cleanup)
+        else:
+            signal.signal(signal.SIGBREAK, handle_cleanup)
+        signal.signal(signal.SIGINT, handle_cleanup)
+        signal.signal(signal.SIGTERM, handle_cleanup)
 
     reader, writer = await asyncio.open_connection(uri.hostname, uri.port)
     client = RtspClient(reader, writer, vod_info["url"])

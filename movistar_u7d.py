@@ -99,6 +99,7 @@ app.config.update(
     }
 )
 app.ctx.vod_client = _t_tp = None
+children_lock = asyncio.Lock()
 
 
 @app.listener("before_server_start")
@@ -140,9 +141,6 @@ async def before_server_start(app, loop):
         )
 
     _IPTV = check_dns()
-
-    if not WIN32:
-        signal.signal(signal.SIGCHLD, signal_handler)
 
 
 @app.listener("before_server_stop")
@@ -396,7 +394,9 @@ async def handle_flussonic(request, channel_id, url, cloud=False):
         if not WIN32:
             global _CHILDREN
             p = subprocess.Popen(cmd.split())
-            _CHILDREN[p.pid] = (cmd, (client_port, channel_id, program_id, record_time))
+            async with children_lock:
+                _CHILDREN[p.pid] = (cmd, (client_port, channel_id, program_id, record_time))
+            app.add_task(reap_child(p))
         else:
             subprocess.Popen(cmd.split())
 
@@ -532,38 +532,41 @@ async def handle_timers_check(request):
         raise exceptions.ServiceUnavailable("Not available")
 
 
-async def recording_cleanup(channel, broadcast, record_time):
-    log.debug(f"cleanup_recording: {channel} {broadcast} {record_time}")
-    if record_time:
-        await _SESSION.put(
-            f"{SANIC_EPG_URL}/program_name/{channel}/{broadcast}?missing={randint(1, record_time)}"
-        )
-        await asyncio.sleep(3)
-    if not _NETWORK_SATURATED:
-        await _SESSION.get(f"{SANIC_EPG_URL}/timers_check")
-    log.debug(f"cleanup_recording: {channel} {broadcast} {record_time} DONE")
+async def reap_child(p):
+    while True:
+        try:
+            retcode = p.wait(timeout=0.001)
+            log.debug(f"reap_child: [{p.pid}]:{retcode}")
+            return await recording_cleanup(p.pid, retcode)
+        except subprocess.TimeoutExpired:
+            await asyncio.sleep(1)
 
 
-def signal_handler(signum, frame):
+async def recording_cleanup(pid, status):
     global _CHILDREN
-
-    pid, status = os.waitpid(-1, os.WNOHANG | os.WUNTRACED | os.WCONTINUED)
-    log.debug(f"[{pid}]:{status} WIFCONTINUED={os.WIFCONTINUED(status)}")
-    log.debug(f"[{pid}]:{status} WIFSTOPPED={os.WIFSTOPPED(status)}")
-    log.debug(f"[{pid}]:{status} WIFSIGNALED={os.WIFSIGNALED(status)}")
-    log.debug(f"[{pid}]:{status} WIFEXITED={os.WIFEXITED(status)}")
-    if pid in _CHILDREN:
-        log.info(f'[{pid}]:{status} "{_CHILDREN[pid][0]}" died')
-        port, channel, broadcast, record_time = _CHILDREN[pid][1]
+    async with children_lock:
+        if abs(status) == 15:
+            port, channel, broadcast, record_time = _CHILDREN[pid][1]
         del _CHILDREN[pid]
-        if status:
-            if status == 256:
-                record_time = 0
-            else:
-                subprocess.run(["pkill", "-f", f"ffmpeg .+ -i udp://@{_IPTV}:{port}"])
-            log.debug(f"signal_handler: {channel} {broadcast} {record_time}")
-            asyncio.run_coroutine_threadsafe(recording_cleanup(channel, broadcast, record_time), _LOOP)
-            log.debug(f"signal_handler: {channel} {broadcast} {record_time} DONE")
+
+    if abs(status) == 15:
+        log.debug(f"recording_cleanup: [{pid}]:{status} {channel} {broadcast} {record_time}")
+        subprocess.run(["pkill", "-f", f"ffmpeg .+ -i udp://@{_IPTV}:{port}"])
+        try:
+            await _SESSION.put(
+                f"{SANIC_EPG_URL}/program_name/{channel}/{broadcast}?missing={randint(1, record_time)}"
+            )
+        except (ClientConnectorError, ConnectionRefusedError):
+            pass
+
+    await asyncio.sleep(3)
+    if not _NETWORK_SATURATED:
+        try:
+            await _SESSION.get(f"{SANIC_EPG_URL}/timers_check")
+        except (ClientConnectorError, ConnectionRefusedError):
+            pass
+
+    log.debug(f"recording_cleanup: [{pid}]:{status} DONE")
 
 
 async def throughput(iface_rx):
