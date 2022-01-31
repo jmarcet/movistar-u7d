@@ -162,11 +162,12 @@ async def before_server_start(app, loop):
 
         if os.path.exists(timers):
             _ffmpeg = str(await get_ffmpeg_procs())
-            [
-                os.remove(t)
-                for t in glob(f"{RECORDINGS}/**/*{TMP_EXT}*", recursive=True)
-                if os.path.basename(t) not in _ffmpeg
-            ]
+            for t in glob(f"{RECORDINGS}/**/*{TMP_EXT}*", recursive=True):
+                if os.path.basename(t) not in _ffmpeg:
+                    try:
+                        os.remove(t)
+                    except FileNotFoundError:
+                        pass
             _t_timers_d = asyncio.create_task(timers_check_delayed())
         else:
             log.info("No timers.conf found, automatic recordings disabled")
