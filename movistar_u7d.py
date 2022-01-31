@@ -264,16 +264,18 @@ async def handle_channel(request, channel_id):
     _start = timeit.default_timer()
     _raw_url = request.raw_url.decode()
     _sanic_url = (SANIC_URL + _raw_url + " ") if VERBOSE_LOGS else ""
+
     if _NETWORK_SATURATED:
         procs = await get_ffmpeg_procs()
         if procs:
-            os.kill(int(procs[-1].split()[0]), signal.SIGINT)
-            log.warning(
-                f'[{request.ip}] {_raw_url} -> Killed ffmpeg "' + procs[-1].split(RECORDINGS)[1] + '"'
-            )
+            pid = int(procs[-1].split()[0])
+            ffmpeg = procs[-1].split(RECORDINGS)[1].split(".tmp")[0]
+            os.kill(pid, signal.SIGINT)
+            log.warning(f'[{request.ip}] {_raw_url} -> Killed ffmpeg [{pid}] "{ffmpeg}"')
         else:
             log.warning(f"[{request.ip}] {_raw_url} -> Network Saturated")
             raise exceptions.ServiceUnavailable("Network Saturated")
+
     try:
         name, mc_grp, mc_port = [_CHANNELS[str(channel_id)][t] for t in ["name", "address", "port"]]
     except (AttributeError, KeyError):
@@ -340,12 +342,14 @@ async def handle_flussonic(request, channel_id, url, cloud=False):
     _start = timeit.default_timer()
     _raw_url = request.raw_url.decode()
     _sanic_url = (SANIC_URL + _raw_url + " ") if VERBOSE_LOGS else ""
+
     procs = None
     if _NETWORK_SATURATED:
         procs = await get_ffmpeg_procs()
         if not procs:
             log.warning(f"[{request.ip}] {_raw_url} -> Network Saturated")
             raise exceptions.ServiceUnavailable("Network Saturated")
+
     try:
         async with _SESSION.get(
             f"{SANIC_EPG_URL}/program_id/{channel_id}/{url}" + ("?cloud=1" if cloud else "")
@@ -366,10 +370,10 @@ async def handle_flussonic(request, channel_id, url, cloud=False):
             log.warning(f"[{request.ip}] {_raw_url} -> Network Saturated")
             raise exceptions.ServiceUnavailable("Network Saturated")
         else:
-            os.kill(int(procs[-1].split()[0]), signal.SIGTERM)
-            log.warning(
-                f'[{request.ip}] {_raw_url} -> Killed ffmpeg "' + procs[-1].split(RECORDINGS)[1] + '"'
-            )
+            pid = int(procs[-1].split()[0])
+            ffmpeg = procs[-1].split(RECORDINGS)[1].split(".tmp")[0]
+            os.kill(pid, signal.SIGINT)
+            log.warning(f'[{request.ip}] {_raw_url} -> Killed ffmpeg [{pid}] "{ffmpeg}"')
     elif record:
         cmd = f"{VOD_EXEC} {channel_id} {program_id} -p {client_port} -w"
         record = int(record)
