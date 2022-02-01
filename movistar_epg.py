@@ -85,7 +85,7 @@ tvgrab_lock = asyncio.Lock()
 
 _t_cloud1 = _t_cloud2 = _t_epg1 = _t_epg2 = _t_recs = None
 _t_timers = _t_timers_d = _t_timers_r = _t_timers_t = None
-tv_cloud1 = tv_cloud2 = tvgrab = None
+tv_cloud = tvgrab = None
 
 
 @app.listener("before_server_start")
@@ -193,8 +193,7 @@ async def after_server_stop(app, loop):
         _t_timers_d,
         _t_timers_r,
         _t_timers_t,
-        tv_cloud1,
-        tv_cloud2,
+        tv_cloud,
         tvgrab,
     ]:
         try:
@@ -555,7 +554,7 @@ async def reload_epg():
                 for event in epgdata[channel]:
                     int_epgdata[int(channel)][int(event)] = epgdata[channel][event]
             _EPGDATA = int_epgdata
-            log.info(f"Loaded fresh EPG data => {SANIC_URL}/guide.xml")
+            log.info(f"Loaded fresh EPG data => {SANIC_URL}/guide.xml.gz")
         except (FileNotFoundError, TypeError, ValueError) as ex:
             log.error(f"Failed to load EPG data {repr(ex)}")
             if os.path.exists(epg_data):
@@ -725,7 +724,7 @@ async def timers_check_delayed():
 
 
 async def update_cloud(forced=False):
-    global cloud_data, tv_cloud1, tv_cloud2, _CLOUD, _EPGDATA
+    global cloud_data, tv_cloud, _CLOUD, _EPGDATA
 
     try:
         async with await open_async(cloud_data, encoding="utf8") as f:
@@ -833,17 +832,13 @@ async def update_cloud(forced=False):
         log.info("Updated Cloud Recordings data")
 
     if updated or not os.path.exists(CHANNELS_CLOUD) or not os.path.exists(GUIDE_CLOUD):
-        tv_cloud1 = await asyncio.create_subprocess_exec(
+        tv_cloud = await asyncio.create_subprocess_exec(
             "tv_grab_es_movistartv",
             "--cloud_m3u",
             CHANNELS_CLOUD,
+            "--cloud_recordings",
+            GUIDE_CLOUD,
         )
-        async with tvgrab_lock:
-            tv_cloud2 = await asyncio.create_subprocess_exec(
-                "tv_grab_es_movistartv",
-                "--cloud_recordings",
-                GUIDE_CLOUD,
-            )
     if forced and not updated:
         log.info(f"Loaded Cloud Recordings data => {SANIC_URL}/MovistarTVCloud.m3u & {SANIC_URL}/cloud.xml")
 
@@ -860,9 +855,9 @@ async def update_epg():
         async with tvgrab_lock:
             tvgrab = await asyncio.create_subprocess_exec(
                 "tv_grab_es_movistartv",
-                "--update",
+                "--m3u",
                 CHANNELS,
-                "--output",
+                "--guide",
                 GUIDE,
             )
             await tvgrab.wait()

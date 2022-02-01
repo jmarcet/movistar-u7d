@@ -27,6 +27,7 @@ import asyncio
 import codecs
 import concurrent.futures
 import glob
+import gzip
 import logging as log
 import os
 import random
@@ -1294,7 +1295,7 @@ class XMLTV:
         m3u += 'MovistarTV" catchup="flussonic-ts" catchup-days="'
         m3u += '9999" ' if cloud else '8" '
         m3u += f'dlna_extras=mpeg_ps_pal max-conn="12" refresh="1200" url-tvg="http://{sanic}/'
-        m3u += "cloud.xml" if cloud else "guide.xml"
+        m3u += "cloud.xml" if cloud else "guide.xml.gz"
         m3u += '"\n'
         services = self.__get_client_channels()
         if cloud:
@@ -1350,11 +1351,7 @@ def create_args_parser():
     )
     parser = argparse.ArgumentParser(description=desc)
     parser.add_argument("--m3u", help="Exporta lista de canales en formato m3u a este fichero.")
-    parser.add_argument("--update", help="Actualiza la EPG y exporta canales en formato m3u a este fichero.")
-    parser.add_argument(
-        "--output",
-        help="Redirige la guía xmltv a este fichero. De lo contrario la vuelca a la consola.",
-    )
+    parser.add_argument("--guide", help="Actualiza y exporta la guía xmltv a este fichero.")
     parser.add_argument(
         "--cloud_m3u", help="Exporta canales con Grabaciones en la Nube, en formato m3u, a este fichero."
     )
@@ -1455,46 +1452,39 @@ async def main():
 
         if args.m3u:
             export_channels(args.m3u)
-            return
+            if not args.guide:
+                return
 
         # Descarga los segments de cada EPG_X_BIN.imagenio.es y devuelve la guía decodificada
-        if args.cloud_m3u or args.cloud_recordings:
+        if args.guide:
+            epg, cached = await iptv.get_epg()
+        elif args.cloud_m3u or args.cloud_recordings:
             epg = cache.load_cloud_epg()
             if not epg:
                 log.error("No existe caché de grabaciones en la nube. Debe generarla con movistar_epg")
                 return
             if args.cloud_m3u:
                 export_channels(args.cloud_m3u, list(epg))
+            if not args.cloud_recordings:
                 return
             cached = False
-        else:
-            epg, cached = await iptv.get_epg()
 
         # Genera el árbol XMLTV de los paquetes contratados
         epg_x = await xmltv.generate_xml(epg, verbose=not cached)
-
-        _saved = None
         xml = epg_x.getroot()
         try:
             ElTr.indent(xml)
         except AttributeError:
             pass
-        if args.cloud_recordings:
-            log.info(f"Guía XMLTV de Grabaciones en la Nube guardada: {args.cloud_recordings}")
-            _saved = sys.stdout
-            sys.stdout = open(args.cloud_recordings, "w")
-        if args.output:
-            log.info(f"Guía XMLTV guardada: {args.output}")
-            _saved = sys.stdout
-            sys.stdout = open(args.output, "w", encoding="utf8")
-        if args.update:
-            export_channels(args.update)
-        print("<?xml version='1.0' encoding='UTF-8'?>", flush=True)
-        ElTr.dump(xml)
-        if _saved:
-            sys.stdout = _saved
+        guide = ElTr.tostring(xml, encoding="utf8")
 
-        if not args.cloud_recordings:
+        if args.guide:
+            with open(args.guide, "wb") as f:
+                f.write(guide)
+            with gzip.open(args.guide + ".gz", "wb") as f:
+                f.write(guide)
+            log.info(f"Guía XMLTV guardada: {args.guide}")
+
             total = (int(time.time()) - time_start) / 60
             log.info(
                 "EPG de %i canales y %i días %s"
@@ -1506,6 +1496,11 @@ async def main():
                     else "generada en %i segundos" % (int(time.time()) - time_start),
                 )
             )
+        elif args.cloud_recordings:
+            with open(args.cloud_recordings, "wb") as f:
+                f.write(guide)
+            log.info(f"Guía XMLTV de Grabaciones en la Nube guardada: {args.cloud_recordings}")
+
     finally:
         await session.close()
 

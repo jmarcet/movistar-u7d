@@ -35,7 +35,7 @@ Una vez instalado, tendremos las siguientes URLs disponibles, donde 192.168.1.10
 
  1. Canales: `http://192.168.1.10:8888/MovistarTV.m3u` `http://192.168.1.10:8888/Canales.m3u` o `http://192.168.1.10:8888/Channels.m3u`
 
- 2. Guía de programación (EPG): `http://192.168.1.10:8888/guia.xml` o `http://192.168.1.10:8888/guide.xml`
+ 2. Guía de programación (EPG): `http://192.168.1.10:8888/guide.xml.gz` `http://192.168.1.10:8888/guia.xml.gz` `http://192.168.1.10:8888/guide.xml` o `http://192.168.1.10:8888/guia.xml`
 
  Con estas dos ya tendremos acceso a los directos y a los últimos 7 días en cualquier cliente IPTV con soporte de catchup flussonic. De hecho, con configurar la primera suele ser suficiente, ya que la guía la saca de la propia lista de canales, que incluye un enlace a la misma.
 

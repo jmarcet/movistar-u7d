@@ -223,6 +223,15 @@ async def handle_guide(request):
     return await response.file(GUIDE)
 
 
+@app.get("/guia.xml.gz")
+@app.get("/guide.xml.gz")
+async def handle_guide(request):
+    log.info(f"[{request.ip}] {request.method} {request.url}")
+    if not os.path.exists(GUIDE + ".gz"):
+        raise exceptions.NotFound(f"Requested URL {request.raw_url.decode()} not found")
+    return await response.file(GUIDE + ".gz")
+
+
 @app.get("/cloud.xml")
 @app.get("/nube.xml")
 async def handle_guide_cloud(request):
