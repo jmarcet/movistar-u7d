@@ -202,7 +202,7 @@ Configuración de clientes
 
  - Por último, aseguraos de que el cliente que uséis guarda al menos 8 días de historial del EPG y en el caso de las Grabaciones en la Nube lo óptimo sería que no caducasen nunca. Desconozco el tiempo exacto que [Movistar](https://www.movistar.es/particulares/internet/) permite tener dichas grabaciones almacenadas. Grabaciones que no son más que eventos de la EPG que no se borran de la parrilla, así es como funcionan, de manera que las grabaciones se comparten entre los clientes.
 
-  - En el caso del `Kodi IPTV Simple`, además de añadir la lista de canales y la guía (sin caché) en los ajustes del addon, deberemos activar el Timeshift y el Catchup. Éste último en modo Default con 8 días de catchup y la opción de Reproducir desde la EPG en modo Live TV. De esta manera conseguiremos una experiencia de uso prácticamente idéntica a la del `TiviMate`, manteniendo la interfaz de LiveTV con el Catchup, con reproducción continua, etc.
+  - En el caso del `Kodi IPTV Simple`, además de añadir la lista de canales y la guía (sin caché) en los ajustes del addon, deberemos activar el Catchup en modo Flussonic con 8 días de catchup y la opción de Reproducir desde la EPG en modo Live TV. De esta manera conseguiremos una experiencia de uso prácticamente idéntica a la del `TiviMate`, manteniendo la interfaz de LiveTV con el Catchup, con reproducción continua, etc.
 
 
 Posibles problemas
