@@ -21,6 +21,7 @@ from sanic.compat import open_async
 from sanic.log import logger as log, LOGGING_CONFIG_DEFAULTS
 from xml.sax.saxutils import unescape
 
+from version import _version
 from vod import MOVISTAR_DNS, MVTV_URL, TMP_EXT, UA, WIN32, YEAR_SECONDS, check_dns
 
 
@@ -90,6 +91,11 @@ tv_cloud1 = tv_cloud2 = tvgrab = None
 @app.listener("before_server_start")
 async def before_server_start(app, loop):
     global RECORDING_THREADS, _RECORDINGS, _SESSION, _SESSION_CLOUD, _t_cloud1, _t_epg1, _t_recs, _t_timers_d
+
+    banner = f"Movistar U7D - EPG v{_version}"
+    log.info("-" * len(banner))
+    log.info(banner)
+    log.info("-" * len(banner))
 
     if not WIN32 and IPTV_IFACE:
         import netifaces

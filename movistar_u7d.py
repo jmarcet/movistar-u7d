@@ -26,6 +26,7 @@ from sanic.server import HttpProtocol
 from sanic.touchup.meta import TouchUpMeta
 
 from movistar_epg import get_ffmpeg_procs
+from version import _version
 from vod import (
     COVER_URL,
     IMAGENIO_URL,
@@ -141,6 +142,17 @@ async def before_server_start(app, loop):
         )
 
     _IPTV = check_dns()
+
+
+@app.listener("after_server_start")
+async def after_server_start(app, loop):
+    banner = f"Movistar U7D v{_version}"
+    if SANIC_THREADS > 1:
+        log.info(f"*** {banner} ***")
+    else:
+        log.info("-" * len(banner))
+        log.info(banner)
+        log.info("-" * len(banner))
 
 
 @app.listener("before_server_stop")

@@ -26,6 +26,8 @@ from sanic.compat import open_async
 from time import sleep
 from threading import Thread
 
+from version import _version
+
 
 CACHE_DIR = os.path.join(os.getenv("HOME", os.getenv("HOMEPATH")), ".xmltv/cache/programs")
 DEBUG = bool(int(os.getenv("DEBUG", 0)))
@@ -547,7 +549,7 @@ async def VodSetup(args, vod_client):
 
 
 if __name__ == "__main__":
-    parser = argparse.ArgumentParser("Stream content from the Movistar VOD service.")
+    parser = argparse.ArgumentParser(f"Movistar U7D - VOD v{_version}")
     parser.add_argument("channel", help="channel id")
     parser.add_argument("broadcast", help="broadcast id")
     parser.add_argument("--client_ip", "-c", help="client ip address")

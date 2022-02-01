@@ -1411,10 +1411,11 @@ async def main():
             log.info("Generando Guía XMLTV de Grabaciones en la Nube...")
     else:
         _VERBOSE = True
-        log.info("---------------------------------------------------")
-        log.info("MovistarTV EPG Grabber")
-        log.info("Parámetros: %s" % sys.argv[1:])
-        log.info("---------------------------------------------------")
+        banner = f"Movistar U7D - TVG v{_version}"
+        log.info("-" * len(banner))
+        log.info(banner)
+        log.info("-" * len(banner))
+        log.debug(" ".join(sys.argv[1:]))
 
     if not WIN32:
         if not args.m3u and not args.cloud_m3u:
