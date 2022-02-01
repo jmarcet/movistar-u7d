@@ -1344,24 +1344,23 @@ class XMLTV:
 
 def create_args_parser():
     now = datetime.now()
-    desc = "Grab Movistar TV EPG guide via Multicast from %s to %s" % (
+    desc = "Descarga guía EPG de Movistar TV desde %s hasta %s" % (
         (now - timedelta(hours=2)).strftime("%d/%m/%Y"),
         (now + timedelta(days=6)).strftime("%d/%m/%Y"),
     )
     parser = argparse.ArgumentParser(description=desc)
-    parser.add_argument("--description", help="Show 'Spain (MovistarTV)'")
-    parser.add_argument("--capabilities", help="Show xmltv capabilities")
-    parser.add_argument("--m3u", help="Dump channels in m3u format to the specified file.")
-    parser.add_argument("--tvheadend", help="Grab EPG and dump channels in m3u format to the specified file.")
+    parser.add_argument("--m3u", help="Exporta lista de canales en formato m3u a este fichero.")
+    parser.add_argument("--update", help="Actualiza la EPG y exporta canales en formato m3u a este fichero.")
     parser.add_argument(
         "--output",
-        help="Redirect the xmltv output to the specified file. Otherwise output goes to stdout.",
+        help="Redirige la guía xmltv a este fichero. De lo contrario la vuelca a la consola.",
     )
     parser.add_argument(
-        "--cloud_m3u", help="Dump channels with Cloud Recordings in m3u format to the specified file."
+        "--cloud_m3u", help="Exporta canales con Grabaciones en la Nube, en formato m3u, a este fichero."
     )
-    parser.add_argument("--cloud_recordings", help="Write xmltv for Cloud Recordings to the specified file.")
-    parser.add_argument("--reset", help="Delete saved configuration, log file and caches.")
+    parser.add_argument(
+        "--cloud_recordings", help="Exporta guía xmltv de Grabaciones en la Nube a este fichero."
+    )
     return parser
 
 
@@ -1488,8 +1487,8 @@ async def main():
             log.info(f"Guía XMLTV guardada: {args.output}")
             _saved = sys.stdout
             sys.stdout = open(args.output, "w", encoding="utf8")
-        if args.tvheadend:
-            export_channels(args.tvheadend)
+        if args.update:
+            export_channels(args.update)
         print("<?xml version='1.0' encoding='UTF-8'?>", flush=True)
         ElTr.dump(xml)
         if _saved:

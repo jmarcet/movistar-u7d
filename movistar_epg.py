@@ -860,7 +860,7 @@ async def update_epg():
         async with tvgrab_lock:
             tvgrab = await asyncio.create_subprocess_exec(
                 "tv_grab_es_movistartv",
-                "--tvheadend",
+                "--update",
                 CHANNELS,
                 "--output",
                 GUIDE,
