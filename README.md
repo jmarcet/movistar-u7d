@@ -286,7 +286,7 @@ Por último, las grabaciones se realizan en carpetas con el nombre de la serie o
 Cómo funciona
 -------------
 
- - Los canales son accesibles en URLs como: `http://192.168.1.10:8888/{canal}/live`
+ - Los canales son accesibles en URLs como: `http://192.168.1.10:8888/{canal}/mpegts`
 
 Donde `canal` es el número identificador de los canales según figuran en la lista de canales `.m3u` principal
 

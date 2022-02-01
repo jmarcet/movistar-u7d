@@ -270,6 +270,7 @@ async def handle_logos(request, cover=None, logo=None, path=None):
 
 
 @app.route("/<channel_id:int>/live", methods=["GET", "HEAD"])
+@app.route("/<channel_id:int>/mpegts", methods=["GET", "HEAD"])
 async def handle_channel(request, channel_id):
     _start = timeit.default_timer()
     _raw_url = request.raw_url.decode()
@@ -490,7 +491,7 @@ async def handle_flussonic(request, channel_id, url, cloud=False):
 
 @app.route("/cloud/<channel_id:int>/<url>", methods=["GET", "HEAD"])
 async def handle_flussonic_cloud(request, channel_id, url):
-    if url == "live":
+    if url == "live" or url == "mpegts":
         return await handle_channel(request, channel_id)
     return await handle_flussonic(request, channel_id, url, cloud=True)
 

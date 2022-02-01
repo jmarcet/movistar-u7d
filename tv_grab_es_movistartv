@@ -1332,7 +1332,7 @@ class XMLTV:
                 m3u += "#KODIPROP:inputstream.ffmpegdirect.stream_mode=timeshift\n"
                 m3u += f"http://{sanic}"
                 m3u += "/cloud" if cloud else ""
-                m3u += f"/{channel_id}/live\n"
+                m3u += f"/{channel_id}/mpegts\n"
         return m3u
 
     @staticmethod
