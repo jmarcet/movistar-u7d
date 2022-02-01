@@ -363,6 +363,9 @@ async def handle_flussonic(request, channel_id, url, cloud=False):
     _raw_url = request.raw_url.decode()
     _sanic_url = (SANIC_URL + _raw_url + " ") if VERBOSE_LOGS else ""
 
+    if not url:
+        return response.empty(404)
+
     procs = None
     if _NETWORK_SATURATED:
         procs = await get_ffmpeg_procs()

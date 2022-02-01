@@ -80,7 +80,7 @@ Enseguida se abrirá una ventana de un terminal, donde aparecerán mensajes de i
 
 ![movistar-u7d-inicio](../../raw/data/movistar-u7d-inicio.png)
 
-Por defecto la(s) lista(s) de canales y la(s) guía(s) las generará en vuestra carpeta de usuario, que o bien podemos abrir directamente, o podemos acceder a través de las [URLs normales](#uso). Podemos usar [VLC](https://www.videolan.org/vlc/) o [mpv](https://mpv.io/installation/) por ejemplo, que aunque no soportan en sí el catchup, es decir, no hay forma de seleccionar de forma cómoda programas de la parrilla, sí pueden reproducir todo. `Kodi` con `IPTV Simple` es una opción con catchup, aunque personalmente no me ha resultado nada estable en Windows.
+Por defecto la(s) lista(s) de canales y la(s) guía(s) las generará en vuestra carpeta de usuario, que o bien podemos abrir directamente, o podemos acceder a través de las [URLs normales](#uso). Podemos usar [VLC](https://www.videolan.org/vlc/) o [mpv](https://mpv.io/installation/) por ejemplo, que aunque no soportan en sí el catchup, es decir, no hay forma de seleccionar de forma cómoda programas de la parrilla, sí pueden reproducir todo. Mucho más completo resulta `Kodi` con `IPTV Simple` para usar en el ordenador.
 
 ![movistar-u8d-escritorio](../../raw/data/movistar-u7d-escritorio.png)
 
@@ -202,7 +202,13 @@ Configuración de clientes
 
  - Por último, aseguraos de que el cliente que uséis guarda al menos 8 días de historial del EPG y en el caso de las Grabaciones en la Nube lo óptimo sería que no caducasen nunca. Desconozco el tiempo exacto que [Movistar](https://www.movistar.es/particulares/internet/) permite tener dichas grabaciones almacenadas. Grabaciones que no son más que eventos de la EPG que no se borran de la parrilla, así es como funcionan, de manera que las grabaciones se comparten entre los clientes.
 
-  - En el caso del `Kodi IPTV Simple`, además de añadir la lista de canales y la guía (sin caché) en los ajustes del addon, deberemos activar el Catchup en modo Flussonic con 8 días de catchup y la opción de Reproducir desde la EPG en modo Live TV. De esta manera conseguiremos una experiencia de uso prácticamente idéntica a la del `TiviMate`, manteniendo la interfaz de LiveTV con el Catchup, con reproducción continua, etc.
+ - En el caso del `Kodi IPTV Simple`, además de añadir la lista de canales y la guía (sin caché) en los ajustes del addon, deberemos activar el Catchup en modo Flussonic con 8 días de catchup y la opción de Reproducir desde la EPG en modo Live TV. De esta manera conseguiremos una experiencia de uso prácticamente idéntica a la del `TiviMate`, manteniendo la interfaz de LiveTV con el Catchup, con reproducción continua, etc.
+
+![Kodi-PVR-General](../../raw/data/Kodi-PVR-General.png)
+![Kodi-PVR-Guia](../../raw/data/Kodi-PVR-Guia.png)
+![Kodi-IPTV_Simple-General](../../raw/data/Kodi-IPTV_Simple-General.png)
+![Kodi-IPTV_Simple-EPG](../../raw/data/Kodi-IPTV_Simple-EPG.png)
+![Kodi-IPTV_Simple-Catchup](../../raw/data/Kodi-IPTV_Simple-Catchup.png)
 
 
 Posibles problemas
