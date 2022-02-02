@@ -302,15 +302,18 @@ Donde `canal` es el número identificador de los canales según figuran en la li
 
  - Opcionalmente, el timestamp puede ir precedido de una palabra y/o seguido de una duración en segundos así como de una extensión: `http://192.168.1.10:8888/{canal}/{palabra}-{timestamp}-{duracion}.{extension}`. Esto es para tener la mayor compatibilidad posible con diferentes clientes.
 
- - Adicionalmente, la funcionalidad de realizar grabaciones es accesible añadiendo unos parámetros a las URLs flussonic, es decir, no valen para los directos:
+ - Adicionalmente, la funcionalidad de realizar grabaciones es accesible en el endpoint: `/record/{canal}/{timestamp}?cloud=1&mp4=1&time=1200&vo=1` donde en lugar del timestamp también valen los formatos de fecha `{YYYYMMDDHHMM}` y `{YYYYMMDDHHMMSS}` y los parámetros, todos opcionales, indican:
 
-   1. `?record=`: 1 para activarlo, un número mayor que 1 para indicar el tiempo en segundos que deseamos grabar, a partir del timestamp indicado en la url, con el formato indicado arriba. El límite actual será el de la duración del programa de catchup en cuestión, es decir, si le indicamos que grabe más allá de lo que dura un programa, se detendrá tan pronto como [Movistar](https://www.movistar.es/particulares/internet/) corte la transmisión del mismo. Si bien en ocasiones las transmisiones se extienden y no se cortan al finalizar, no es lo habitual.
-   2. `&mp4=1`: para que le grabación se realice en un fichero `.mp4` sin subtítulos, y un fichero `.sub` en caso de tener subs.
-   3. `&vo=1`: indica versión original, es decir, la que se recibe como segunda pista de audio, habitualmente con audio en versión original, será la pista de audio principal en la grabación creada.
+   1. `cloud=1`: queremos grabar en local una grabación existente en nuestra nube de Movistar.
+   2. `mp4=1`: queremos la grabación en un fichero `.mp4` sin subtítulos más un fichero `.sub` en caso de tenerlos.
+   3. `time=segundos`: tiempo en segundos que deseamos grabar. El límite actual será el de la duración del programa de catchup en cuestión, es decir, si le indicamos que grabe más allá de lo que dura un programa, se detendrá tan pronto como [Movistar](https://www.movistar.es/particulares/internet/) corte la transmisión del mismo. Si bien en ocasiones las transmisiones se extienden, lo habitual es que duren un minuto por encima de la duración que figura en la EPG.
+   4. `vo=1`: queremos la pista de audio secundaria, habitualmente con audio en versión original, como pista de audio principal.
 
-Esta funcionalidad se puede usar tanto con las URLs para el catchup normal como con las que dan acceso a la nube de [Movistar](https://www.movistar.es/particulares/internet/), así que es posible hacer una grabación `a mano` con sólo abrir una URL, incluso de grabaciones que tengamos en la nube.
+Esto nos permite grabar con facilidad pequeños fragmentos de programas o programas enteros. No vale, sin embargo, para grabar directos ni varios programas seguidos. Para directos siempre tenemos la opción de guardar la dirección del canal directo con algo como `wget`.
 
 Las grabaciones llevan las pistas de audio `mp2` transcodeadas a `aac` para que se puedan reproducir sin problemas con un navegador como el Chrome.
+
+Todas ellas quedan almacenadas con el nombre del programa, carátula, etc, tal como sucede con los temporizadores.
 
  - Por último, las grabaciones son accesibles desde `http://192.168.1.10:8888/recording/?{fichero}`
 

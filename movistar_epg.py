@@ -634,6 +634,33 @@ async def reap_child(p):
             await asyncio.sleep(1)
 
 
+@app.get("/record/<channel_id:int>/<url>")
+async def handle_record_program(request, channel_id, url):
+    cloud = bool(request.args.get("cloud"))
+    mp4 = bool(request.args.get("mp4"))
+    vo = bool(request.args.get("vo"))
+    channel, program_id, start, duration, offset = get_program_id(channel_id, url, cloud).values()
+    if request.args.get("time"):
+        record_time = int(request.args.get("time"))
+    else:
+        record_time = duration - offset
+
+    if await record_program(channel_id, program_id, offset, record_time, cloud, mp4, vo):
+        raise exceptions.ServiceUnavailable("Network Saturated")
+
+    return response.json(
+        {
+            "status": "OK",
+            "channel": channel,
+            "channel_id": channel_id,
+            "program_id": program_id,
+            "start": start,
+            "offset": offset,
+            "time": record_time,
+        }
+    )
+
+
 async def record_program(channel_id, program_id, offset=0, record_time=0, cloud=False, mp4=False, vo=False):
     if _NETWORK_SATURATED:
         log.warning("Network Saturated")

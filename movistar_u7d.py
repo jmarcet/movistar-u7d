@@ -474,6 +474,19 @@ async def handle_prometheus(request):
         raise exceptions.ServiceUnavailable("Not available")
 
 
+@app.get("/record/<channel_id:int>/<url>")
+async def handle_record_program(request, channel_id, url):
+    if not url:
+        log.warning("Cannot record live channels! Use wget for that.")
+        return response.empty(404)
+
+    try:
+        async with _SESSION.get(f"{SANIC_EPG_URL}{request.raw_url.decode()}") as r:
+            return response.json(await r.json())
+    except (ClientConnectorError, ConnectionRefusedError):
+        raise exceptions.ServiceUnavailable("Not available")
+
+
 @app.route("/recording/", methods=["GET", "HEAD"])
 async def handle_recording(request):
     if not RECORDINGS:
