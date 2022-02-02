@@ -406,6 +406,25 @@ async def save_metadata():
     log.debug(f"Metadata saved: {_log_suffix}")
 
 
+async def vod_ongoing(channel_id, program_id):
+    cmd = f"vod.* {channel_id} {program_id}.* -w"
+
+    if WIN32:
+        from wmi import WMI
+
+        return len(
+            [
+                process.CommandLine
+                for process in WMI().Win32_Process(name="vod.exe")
+                if cmd in process.CommandLine
+            ]
+        )
+
+    p = await asyncio.create_subprocess_exec("pgrep", "-af", cmd, stdout=asyncio.subprocess.PIPE)
+    stdout, _ = await p.communicate()
+    return len(stdout.splitlines())
+
+
 async def VodLoop(args, vod_data=None):
     if __name__ == "__main__":
         global _SESSION_CLOUD
@@ -481,6 +500,11 @@ async def VodSetup(args, vod_client):
 
     _epg_url = f"{SANIC_EPG_URL}/program_name/{args.channel}/{args.broadcast}"
     log_prefix = f"{('[' + args.client_ip + '] ') if args.client_ip else ''}"
+
+    if __name__ == "__main__":
+        if args.write_to_file and (await vod_ongoing(args.channel, args.broadcast)) > 1:
+            log.error(f"{log_prefix}Recording already ongoing: [{args.channel}] [{args.broadcast}]")
+            return
 
     client = None
     headers = {"CSeq": "", "User-Agent": UA}

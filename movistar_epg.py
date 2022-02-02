@@ -24,7 +24,17 @@ from sanic.log import logger as log, LOGGING_CONFIG_DEFAULTS
 from xml.sax.saxutils import unescape
 
 from version import _version
-from vod import MOVISTAR_DNS, MVTV_URL, TMP_EXT, UA, WIN32, YEAR_SECONDS, check_dns, find_free_port
+from vod import (
+    MOVISTAR_DNS,
+    MVTV_URL,
+    TMP_EXT,
+    UA,
+    WIN32,
+    YEAR_SECONDS,
+    check_dns,
+    find_free_port,
+    vod_ongoing,
+)
 
 
 if not WIN32:
@@ -644,6 +654,9 @@ async def handle_record_program(request, channel_id, url):
         record_time = int(request.args.get("time"))
     else:
         record_time = duration - offset
+
+    if await vod_ongoing(channel_id, program_id):
+        raise exceptions.ServiceUnavailable("Recording already ongoing")
 
     if await record_program(channel_id, program_id, offset, record_time, cloud, mp4, vo):
         raise exceptions.ServiceUnavailable("Network Saturated")
