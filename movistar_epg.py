@@ -5,6 +5,7 @@ import asyncio
 import os
 import re
 import socket
+import subprocess
 import sys
 import time
 import tomli
@@ -15,6 +16,7 @@ from aiohttp.client_exceptions import ClientConnectorError
 from aiohttp.resolver import AsyncResolver
 from datetime import datetime
 from glob import glob
+from random import randint
 from sanic import Sanic, exceptions, response
 from sanic_prometheus import monitor
 from sanic.compat import open_async
@@ -22,7 +24,7 @@ from sanic.log import logger as log, LOGGING_CONFIG_DEFAULTS
 from xml.sax.saxutils import unescape
 
 from version import _version
-from vod import MOVISTAR_DNS, MVTV_URL, TMP_EXT, UA, WIN32, YEAR_SECONDS, check_dns
+from vod import MOVISTAR_DNS, MVTV_URL, TMP_EXT, UA, WIN32, YEAR_SECONDS, check_dns, find_free_port
 
 
 if not WIN32:
@@ -50,11 +52,13 @@ GUIDE_CLOUD = os.path.join(HOME, "cloud.xml")
 IPTV_BW = int(os.getenv("IPTV_BW", "0"))
 IPTV_BW = 85000 if IPTV_BW > 90000 else IPTV_BW
 IPTV_IFACE = os.getenv("IPTV_IFACE", None)
+MP4_OUTPUT = bool(os.getenv("MP4_OUTPUT", False))
 RECORDINGS = os.getenv("RECORDINGS", None)
 SANIC_PORT = int(os.getenv("SANIC_PORT", "8888"))
 SANIC_URL = f"http://{SANIC_HOST}:{SANIC_PORT}"
 RECORDING_THREADS = int(os.getenv("RECORDING_THREADS", "4"))
 RECORDINGS = os.getenv("RECORDINGS", None)
+VOD_EXEC = "vod.exe" if os.path.exists("vod.exe") else "vod.py"
 
 LOG_SETTINGS = LOGGING_CONFIG_DEFAULTS
 LOG_SETTINGS["formatters"]["generic"]["format"] = "%(asctime)s [EPG] [%(levelname)s] %(message)s"
@@ -62,7 +66,9 @@ LOG_SETTINGS["formatters"]["generic"]["datefmt"] = LOG_SETTINGS["formatters"]["a
     "datefmt"
 ] = "[%Y-%m-%d %H:%M:%S]"
 
-_CHANNELS = _CLOUD = _EPGDATA = _RECORDINGS = _RECORDINGS_INC = _SESSION = _SESSION_CLOUD = {}
+_CHANNELS = _CHILDREN = _CLOUD = _EPGDATA = _RECORDINGS = _RECORDINGS_INC = _SESSION = _SESSION_CLOUD = {}
+_IPTV = None
+_NETWORK_SATURATED = False
 _TIMERS_ADDED = []
 
 app = Sanic("movistar_epg")
@@ -79,18 +85,20 @@ recordings = os.path.join(HOME, "recordings.json")
 timers = os.path.join(HOME, "timers.conf")
 
 epg_lock = asyncio.Lock()
+children_lock = asyncio.Lock()
 recordings_lock = asyncio.Lock()
 timers_lock = asyncio.Lock()
 tvgrab_lock = asyncio.Lock()
 
 _t_cloud1 = _t_cloud2 = _t_epg1 = _t_epg2 = _t_recs = None
-_t_timers = _t_timers_d = _t_timers_r = _t_timers_t = None
+_t_timers = _t_timers_d = _t_timers_r = _t_timers_t = _t_tp = None
 tv_cloud = tvgrab = None
 
 
 @app.listener("before_server_start")
 async def before_server_start(app, loop):
-    global RECORDING_THREADS, _RECORDINGS, _SESSION, _SESSION_CLOUD, _t_cloud1, _t_epg1, _t_recs, _t_timers_d
+    global RECORDING_THREADS, _IPTV, _RECORDINGS, _SESSION, _SESSION_CLOUD
+    global _t_cloud1, _t_epg1, _t_recs, _t_timers_d, _t_tp
 
     banner = f"Movistar U7D - EPG v{_version}"
     log.info("-" * len(banner))
@@ -124,6 +132,7 @@ async def before_server_start(app, loop):
 
     if not WIN32 and IPTV_BW and IPTV_IFACE:
         log.info(f"Ignoring RECORDING_THREADS: BW {IPTV_BW} kbps / {IPTV_IFACE}")
+        _t_tp = app.add_task(network_saturated())
         RECORDING_THREADS = 0
 
     if not WIN32:
@@ -193,6 +202,7 @@ async def after_server_stop(app, loop):
         _t_timers_d,
         _t_timers_r,
         _t_timers_t,
+        _t_tp,
         tv_cloud,
         tvgrab,
     ]:
@@ -369,7 +379,7 @@ async def handle_program_id(request, channel_id, url):
 
 
 @app.route("/program_name/<channel_id:int>/<program_id:int>", methods=["GET", "PUT"])
-async def handle_program_name(request, channel_id, program_id):
+async def handle_program_name(request, channel_id, program_id, missing=0):
     global _RECORDINGS
     try:
         _epg, event = get_epg(channel_id, program_id)
@@ -378,7 +388,7 @@ async def handle_program_name(request, channel_id, program_id):
 
     path, filename = get_recording_path(channel_id, event)
 
-    if request.method == "GET":
+    if request and request.method == "GET":
         return response.json(
             {
                 "status": "OK",
@@ -397,7 +407,7 @@ async def handle_program_name(request, channel_id, program_id):
         program_id,
         _epg["full_title"],
     )
-    missing = request.args.get("missing", 0)
+    missing = request.args.get("missing", 0) if request else missing
     if missing:
         if channel_id not in _RECORDINGS_INC:
             _RECORDINGS_INC[channel_id] = {}
@@ -614,6 +624,65 @@ async def handle_timers_check(request):
         return response.json({"status": "Timers check queued"}, 200)
 
 
+async def reap_child(p):
+    while True:
+        try:
+            retcode = p.wait(timeout=0.001)
+            log.debug(f"reap_child: [{p.pid}]:{retcode}")
+            return await recording_cleanup(p.pid, retcode)
+        except subprocess.TimeoutExpired:
+            await asyncio.sleep(1)
+
+
+async def record_program(channel_id, program_id, offset=0, record_time=0, cloud=False, mp4=False, vo=False):
+    if _NETWORK_SATURATED:
+        log.warning("Network Saturated")
+        return True
+
+    client_port = find_free_port(_IPTV)
+    cmd = f"{VOD_EXEC} {channel_id} {program_id} -p {client_port}"
+    if offset:
+        cmd += f" -s {offset}"
+    if record_time:
+        cmd += f" -t {record_time}"
+    if cloud:
+        cmd += " --cloud"
+    if mp4:
+        cmd += " --mp4"
+    if vo:
+        cmd += " --vo"
+    cmd += " -w"
+
+    log.debug(f"Launching {cmd}")
+    if not WIN32:
+        global _CHILDREN
+        p = subprocess.Popen(cmd.split())
+        async with children_lock:
+            _CHILDREN[p.pid] = (cmd, (client_port, channel_id, program_id))
+        app.add_task(reap_child(p))
+    else:
+        subprocess.Popen(cmd.split())
+
+
+async def recording_cleanup(pid, status):
+    global _CHILDREN
+    async with children_lock:
+        if abs(status) == 15:
+            client_port, channel_id, program_id = _CHILDREN[pid][1]
+        del _CHILDREN[pid]
+
+    if abs(status) == 15:
+        log.debug(f"recording_cleanup: [{pid}]:{status} {channel_id} {program_id}")
+        subprocess.run(["pkill", "-f", f"ffmpeg .+ -i udp://@{_IPTV}:{client_port}"])
+        await handle_program_name(None, channel_id, program_id, missing=randint(1, 9999))
+
+    await asyncio.sleep(3)
+    if not _NETWORK_SATURATED and os.path.exists(timers):
+        await timers_check()
+
+    log.debug(f"recording_cleanup: [{pid}]:{status} DONE")
+
+
 async def timers_check():
     global _t_timers
 
@@ -664,7 +733,9 @@ async def timers_check():
             for timestamp in reversed(_EPGDATA[channel_id]):
                 if timestamp > _time_limit:
                     continue
-                pid, title = [_EPGDATA[channel_id][timestamp][t] for t in ["pid", "full_title"]]
+                duration, pid, title = [
+                    _EPGDATA[channel_id][timestamp][t] for t in ["duration", "pid", "full_title"]
+                ]
                 deflang = (
                     _timers["language"]["default"]
                     if ("language" in _timers and "default" in _timers["language"])
@@ -691,26 +762,15 @@ async def timers_check():
                             % (_CHANNELS[channel_id]["name"], channel_id, timestamp, pid, _name)
                             + f'{" [VO]" if vo else ""}'
                         )
-                        sanic_url = f"{SANIC_URL}"
-                        if channel_id in _CLOUD and timestamp in _CLOUD[channel_id]:
-                            sanic_url += "/cloud"
-                        sanic_url += f"/{channel_id}/{timestamp}?record=1"
-                        if vo:
-                            sanic_url += "&vo=1"
-                        try:
-                            async with _SESSION.get(sanic_url) as r:
-                                log.debug(f"{sanic_url} => {await r.json()}")
-                                if r.status == 200:
-                                    _TIMERS_ADDED.append(filename)
-                                    nr_procs += 1
-                                    if RECORDING_THREADS and not nr_procs < RECORDING_THREADS:
-                                        log.info(f"Already recording {nr_procs} streams")
-                                        return
-                                    await asyncio.sleep(3)
-                                elif r.status == 503:
-                                    return
-                        except Exception as ex:
-                            log.warning(f"{repr(ex)}")
+                        cloud = channel_id in _CLOUD and timestamp in _CLOUD[channel_id]
+                        if await record_program(channel_id, pid, 0, duration, cloud, MP4_OUTPUT, vo):
+                            return
+                        _TIMERS_ADDED.append(filename)
+                        nr_procs += 1
+                        if RECORDING_THREADS and not nr_procs < RECORDING_THREADS:
+                            log.info(f"Already recording {nr_procs} streams")
+                            return
+                        await asyncio.sleep(3)
 
 
 async def timers_check_delayed():
@@ -721,6 +781,20 @@ async def timers_check_delayed():
     else:
         await asyncio.sleep(5)
     _t_timers = asyncio.create_task(every(900, timers_check))
+
+
+async def network_saturated():
+    global _NETWORK_SATURATED
+    cur = last = 0
+    iface_rx = f"/sys/class/net/{IPTV_IFACE}/statistics/rx_bytes"
+    while True:
+        async with await open_async(iface_rx) as f:
+            cur = int((await f.read())[:-1])
+        if last:
+            tp = int((cur - last) * 8 / 1000 / 3)
+            _NETWORK_SATURATED = tp > IPTV_BW
+        last = cur
+        await asyncio.sleep(3)
 
 
 async def update_cloud(forced=False):

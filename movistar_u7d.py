@@ -16,7 +16,6 @@ from aiohttp.client_exceptions import ClientConnectorError
 from aiohttp.resolver import AsyncResolver
 from collections import namedtuple
 from contextlib import closing
-from random import randint
 from sanic import Sanic, exceptions, response
 from sanic.compat import open_async, stat_async
 from sanic.handlers import ContentRangeHandler
@@ -68,14 +67,12 @@ IPTV_IFACE = os.getenv("IPTV_IFACE", None)
 MIME_M3U = "audio/x-mpegurl"
 MIME_TS = "video/MP2T;audio/mp3"
 MIME_WEBM = "video/webm"
-MP4_OUTPUT = bool(os.getenv("MP4_OUTPUT", False))
 RECORDINGS = os.getenv("RECORDINGS", None)
 SANIC_EPG_URL = "http://127.0.0.1:8889"
 SANIC_PORT = int(os.getenv("SANIC_PORT", "8888"))
 SANIC_URL = f"http://{SANIC_HOST}:{SANIC_PORT}"
 SANIC_THREADS = int(os.getenv("SANIC_THREADS", "4")) if not WIN32 else 1
 VERBOSE_LOGS = bool(int(os.getenv("VERBOSE_LOGS", 1)))
-VOD_EXEC = "vod.exe" if os.path.exists("vod.exe") else "vod.py"
 
 LOG_SETTINGS = LOGGING_CONFIG_DEFAULTS
 LOG_SETTINGS["formatters"]["generic"]["format"] = "%(asctime)s [U7D] [%(levelname)s] %(message)s"
@@ -100,7 +97,6 @@ app.config.update(
     }
 )
 app.ctx.vod_client = _t_tp = None
-children_lock = asyncio.Lock()
 
 
 @app.listener("before_server_start")
@@ -127,9 +123,8 @@ async def before_server_start(app, loop):
             await asyncio.sleep(5)
 
     if not WIN32 and IPTV_BW and IPTV_IFACE:
-        iface_rx = f"/sys/class/net/{IPTV_IFACE}/statistics/rx_bytes"
         log.info(f"BW: {IPTV_BW} kbps / {IPTV_IFACE}")
-        _t_tp = app.add_task(throughput(iface_rx))
+        _t_tp = app.add_task(network_saturated())
 
     if not app.ctx.vod_client:
         app.ctx.vod_client = aiohttp.ClientSession(
@@ -387,54 +382,11 @@ async def handle_flussonic(request, channel_id, url, cloud=False):
 
     client_port = find_free_port(_IPTV)
 
-    record = request.args.get("record", 0)
     if procs:
-        if record:
-            log.warning(f"[{request.ip}] {_raw_url} -> Network Saturated")
-            raise exceptions.ServiceUnavailable("Network Saturated")
-        else:
-            pid = int(procs[-1].split()[0])
-            ffmpeg = procs[-1].split(RECORDINGS)[1].split(".tmp")[0]
-            os.kill(pid, signal.SIGINT)
-            log.warning(f'[{request.ip}] {_raw_url} -> Killed ffmpeg [{pid}] "{ffmpeg}"')
-    elif record:
-        cmd = f"{VOD_EXEC} {channel_id} {program_id} -p {client_port} -w"
-        record = int(record)
-        if record > 1:
-            record_time = record
-            cmd += f" -t {record_time}"
-        else:
-            record_time = duration - offset
-
-        if cloud:
-            cmd += " --cloud"
-        if MP4_OUTPUT or request.args.get("mp4", False):
-            cmd += " --mp4"
-        if request.args.get("vo", False):
-            cmd += " --vo"
-        if offset:
-            cmd += f" -s {offset}"
-
-        log.debug(f"Launching {cmd}")
-        if not WIN32:
-            global _CHILDREN
-            p = subprocess.Popen(cmd.split())
-            async with children_lock:
-                _CHILDREN[p.pid] = (cmd, (client_port, channel_id, program_id, record_time))
-            app.add_task(reap_child(p))
-        else:
-            subprocess.Popen(cmd.split())
-
-        return response.json(
-            {
-                "status": "OK",
-                "channel_id": channel_id,
-                "program_id": program_id,
-                "start": start,
-                "offset": offset,
-                "time": record_time,
-            }
-        )
+        pid = int(procs[-1].split()[0])
+        ffmpeg = procs[-1].split(RECORDINGS)[1].split(".tmp")[0]
+        os.kill(pid, signal.SIGINT)
+        log.warning(f'[{request.ip}] {_raw_url} -> Killed ffmpeg [{pid}] "{ffmpeg}"')
 
     _args = VodArgs(channel_id, program_id, _IPTV, request.ip, client_port, offset, cloud)
     vod_data = await VodSetup(_args, app.ctx.vod_client)
@@ -557,54 +509,18 @@ async def handle_timers_check(request):
         raise exceptions.ServiceUnavailable("Not available")
 
 
-async def reap_child(p):
-    while True:
-        try:
-            retcode = p.wait(timeout=0.001)
-            log.debug(f"reap_child: [{p.pid}]:{retcode}")
-            return await recording_cleanup(p.pid, retcode)
-        except subprocess.TimeoutExpired:
-            await asyncio.sleep(1)
-
-
-async def recording_cleanup(pid, status):
-    global _CHILDREN
-    async with children_lock:
-        if abs(status) == 15:
-            port, channel, broadcast, record_time = _CHILDREN[pid][1]
-        del _CHILDREN[pid]
-
-    if abs(status) == 15:
-        log.debug(f"recording_cleanup: [{pid}]:{status} {channel} {broadcast} {record_time}")
-        subprocess.run(["pkill", "-f", f"ffmpeg .+ -i udp://@{_IPTV}:{port}"])
-        try:
-            await _SESSION.put(
-                f"{SANIC_EPG_URL}/program_name/{channel}/{broadcast}?missing={randint(1, record_time)}"
-            )
-        except (ClientConnectorError, ConnectionRefusedError):
-            pass
-
-    await asyncio.sleep(3)
-    if not _NETWORK_SATURATED:
-        try:
-            await _SESSION.get(f"{SANIC_EPG_URL}/timers_check")
-        except (ClientConnectorError, ConnectionRefusedError):
-            pass
-
-    log.debug(f"recording_cleanup: [{pid}]:{status} DONE")
-
-
-async def throughput(iface_rx):
+async def network_saturated():
     global _NETWORK_SATURATED
     cur = last = 0
+    iface_rx = f"/sys/class/net/{IPTV_IFACE}/statistics/rx_bytes"
     while True:
         async with await open_async(iface_rx) as f:
             cur = int((await f.read())[:-1])
-            if last:
-                tp = int((cur - last) * 8 / 1000 / 3)
-                _NETWORK_SATURATED = tp > IPTV_BW
-            last = cur
-            await asyncio.sleep(3)
+        if last:
+            tp = int((cur - last) * 8 / 1000 / 3)
+            _NETWORK_SATURATED = tp > IPTV_BW
+        last = cur
+        await asyncio.sleep(3)
 
 
 class VodHttpProtocol(HttpProtocol, metaclass=TouchUpMeta):

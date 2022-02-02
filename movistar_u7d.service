@@ -15,7 +15,6 @@ Environment=PYTHONUNBUFFERED=1
 # Environment=IPTV_BW=85000
 # Environment=IPTV_IFACE=eth0.2
 # Environment=LAN_IP=192.168.1.10
-# Environment=MP4_OUTPUT=1
 # Environment=RECORDINGS=/mnt/recordings
 # Environment=SANIC_PORT=8888
 # Environment=SANIC_THREADS=4
