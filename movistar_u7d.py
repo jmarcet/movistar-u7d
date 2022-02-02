@@ -508,6 +508,20 @@ async def handle_flussonic_cloud(request, channel_id, url):
     return await handle_flussonic(request, channel_id, url, cloud=True)
 
 
+@app.get("/favicon.ico")
+async def handle_notfound(request):
+    return response.empty(404)
+
+
+@app.get("/metrics")
+async def handle_prometheus(request):
+    try:
+        async with _SESSION.get(f"{SANIC_EPG_URL}/metrics") as r:
+            return response.text((await r.read()).decode())
+    except (ClientConnectorError, ConnectionRefusedError):
+        raise exceptions.ServiceUnavailable("Not available")
+
+
 @app.route("/recording/", methods=["GET", "HEAD"])
 async def handle_recording(request):
     if not RECORDINGS:
@@ -532,20 +546,6 @@ async def handle_recording(request):
             return await response.file_stream(file, mime_type=MIME_WEBM, _range=_range)
 
     raise exceptions.NotFound(f"Requested URL {request.raw_url.decode()} not found")
-
-
-@app.get("/favicon.ico")
-async def handle_notfound(request):
-    return response.empty(404)
-
-
-@app.get("/metrics")
-async def handle_prometheus(request):
-    try:
-        async with _SESSION.get(f"{SANIC_EPG_URL}/metrics") as r:
-            return response.text((await r.read()).decode())
-    except (ClientConnectorError, ConnectionRefusedError):
-        raise exceptions.ServiceUnavailable("Not available")
 
 
 @app.get("/timers_check")
