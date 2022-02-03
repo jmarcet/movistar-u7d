@@ -748,14 +748,6 @@ async def timers_check():
     if not os.path.exists(timers) or timers_lock.locked() or _NETWORK_SATURATED:
         return
 
-    if not WIN32:
-        async with await open_async("/proc/uptime") as f:
-            proc = await f.read()
-        uptime = int(float(proc.split()[1]))
-        if uptime < 300:
-            log.info("Waiting 300s to check timers after rebooting...")
-            await asyncio.sleep(300)
-
     _ffmpeg = await get_ffmpeg_procs()
     nr_procs = len(_ffmpeg)
     if RECORDING_THREADS and not nr_procs < RECORDING_THREADS:
@@ -827,11 +819,21 @@ async def timers_check():
 
 async def timers_check_delayed():
     global _t_timers
-    if not IPTV_BW or RECORDING_THREADS:
+
+    if not WIN32:
+        async with await open_async("/proc/uptime") as f:
+            proc = await f.read()
+        uptime = int(float(proc.split()[1]))
+        if uptime < 300:
+            log.info("Waiting 300s to check timers after rebooting...")
+            await asyncio.sleep(300)
+
+    if WIN32 or (uptime > 300 and not IPTV_BW):
         log.info("Waiting 60s to check timers (ensuring no stale rtsp is present)...")
         await asyncio.sleep(60)
-    else:
-        await asyncio.sleep(5)
+    elif IPTV_BW and uptime > 300:
+        await asyncio.sleep(10)
+
     _t_timers = asyncio.create_task(every(900, timers_check))
 
 
