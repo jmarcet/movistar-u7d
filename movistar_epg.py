@@ -215,7 +215,7 @@ async def after_server_stop(app, loop):
         _t_tp,
         tv_cloud,
         tvgrab,
-    ]:
+    ] + [_CHILDREN[pid][2] for pid in _CHILDREN if len(_CHILDREN[pid]) == 3]:
         try:
             task.cancel()
             await asyncio.wait({task})
@@ -650,8 +650,7 @@ async def record_program(channel_id, program_id, offset=0, record_time=0, cloud=
         global _CHILDREN
         p = subprocess.Popen(cmd.split())
         async with children_lock:
-            _CHILDREN[p.pid] = (cmd, (client_port, channel_id, program_id))
-        app.add_task(reap_vod_child(p))
+            _CHILDREN[p.pid] = (cmd, (client_port, channel_id, program_id), app.add_task(reap_vod_child(p)))
     else:
         subprocess.Popen(cmd.split())
 
