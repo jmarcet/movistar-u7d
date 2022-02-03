@@ -447,8 +447,9 @@ async def handle_program_name(request, channel_id, program_id, missing=0):
     global _t_recs
     _t_recs = asyncio.create_task(update_recordings(True))
 
-    global _t_timers_r
-    _t_timers_r = asyncio.create_task(timers_check())
+    if not _NETWORK_SATURATED:
+        global _t_timers_r
+        _t_timers_r = asyncio.create_task(timers_check())
 
     log.info(f"Recording ARCHIVED: {log_suffix}")
     return response.json(
@@ -615,30 +616,37 @@ async def reload_epg():
 
 @app.get("/timers_check")
 async def handle_timers_check(request):
+    global _t_timers_t, _t_timers
+
     if not RECORDINGS:
         return response.json({"status": "RECORDINGS not configured"}, 404)
 
     if not os.path.exists(timers):
-        return response.json({"status": "No timers check possible: timers.conf does not exist"}, 404)
+        if _t_timers:
+            log.info("Disabling automatic recordings")
+            _t_timers.cancel()
+            _t_timers = None
+        raise exceptions.ServiceUnavailable("No timers.conf found")
 
     if timers_lock.locked():
-        return response.json({"status": "Busy"}, 201)
+        raise exceptions.ServiceUnavailable("Busy processing timers")
 
-    global _t_timers_t, _t_timers
+    if _NETWORK_SATURATED:
+        raise exceptions.ServiceUnavailable("Network Saturated")
+
     if not _t_timers:
         log.info("Enabling automatic recordings")
         _t_timers = asyncio.create_task(every(900, timers_check))
-        return response.json({"status": "Automatic recordings enabled & timers check queued"}, 200)
     else:
         _t_timers_t = asyncio.create_task(timers_check())
-        return response.json({"status": "Timers check queued"}, 200)
+    return response.json({"status": "Timers check queued"}, 200)
 
 
-async def reap_child(p):
+async def reap_vod_child(p):
     while True:
         try:
             retcode = p.wait(timeout=0.001)
-            log.debug(f"reap_child: [{p.pid}]:{retcode}")
+            log.debug(f"reap_vod_child: [{p.pid}]:{retcode}")
             return await recording_cleanup(p.pid, retcode)
         except subprocess.TimeoutExpired:
             await asyncio.sleep(1)
@@ -659,6 +667,7 @@ async def handle_record_program(request, channel_id, url):
         raise exceptions.ServiceUnavailable("Recording already ongoing")
 
     if await record_program(channel_id, program_id, offset, record_time, cloud, mp4, vo):
+        log.warning("Network Saturated")
         raise exceptions.ServiceUnavailable("Network Saturated")
 
     return response.json(
@@ -676,7 +685,6 @@ async def handle_record_program(request, channel_id, url):
 
 async def record_program(channel_id, program_id, offset=0, record_time=0, cloud=False, mp4=False, vo=False):
     if _NETWORK_SATURATED:
-        log.warning("Network Saturated")
         return True
 
     client_port = find_free_port(_IPTV)
@@ -699,7 +707,7 @@ async def record_program(channel_id, program_id, offset=0, record_time=0, cloud=
         p = subprocess.Popen(cmd.split())
         async with children_lock:
             _CHILDREN[p.pid] = (cmd, (client_port, channel_id, program_id))
-        app.add_task(reap_child(p))
+        app.add_task(reap_vod_child(p))
     else:
         subprocess.Popen(cmd.split())
 
@@ -717,22 +725,14 @@ async def recording_cleanup(pid, status):
         await handle_program_name(None, channel_id, program_id, missing=randint(1, 9999))
 
     await asyncio.sleep(3)
-    if not _NETWORK_SATURATED and os.path.exists(timers):
+    if not _NETWORK_SATURATED:
         await timers_check()
 
     log.debug(f"recording_cleanup: [{pid}]:{status} DONE")
 
 
 async def timers_check():
-    global _t_timers
-
-    if not os.path.exists(timers):
-        if _t_timers:
-            _t_timers.cancel()
-            _t_timers = None
-            log.info("No timers.conf found, automatic recordings disabled")
-        else:
-            log.warning("No timers.conf found")
+    if not os.path.exists(timers) or timers_lock.locked() or _NETWORK_SATURATED:
         return
 
     if not WIN32:
@@ -743,8 +743,13 @@ async def timers_check():
             log.info("Waiting 300s to check timers after rebooting...")
             await asyncio.sleep(300)
 
-    log.info("Processing timers")
+    _ffmpeg = await get_ffmpeg_procs()
+    nr_procs = len(_ffmpeg)
+    if RECORDING_THREADS and not nr_procs < RECORDING_THREADS:
+        return
+
     async with timers_lock:
+        log.debug("Processing timers")
         _timers = {}
         try:
             async with await open_async(timers, encoding="utf8") as f:
@@ -754,12 +759,6 @@ async def timers_check():
                     _timers = ujson.loads(await f.read())
         except (TypeError, ValueError) as ex:
             log.error(f"handle_timers: {repr(ex)}")
-            return
-
-        _ffmpeg = await get_ffmpeg_procs()
-        nr_procs = len(_ffmpeg)
-        if RECORDING_THREADS and not nr_procs < RECORDING_THREADS:
-            log.info(f"Already recording {nr_procs} streams")
             return
 
         global _TIMERS_ADDED
@@ -797,20 +796,20 @@ async def timers_check():
                         if channel_id in _RECORDINGS:
                             if (_name or title) in str(_RECORDINGS[channel_id]):
                                 continue
+                        cloud = channel_id in _CLOUD and timestamp in _CLOUD[channel_id]
+                        if await record_program(channel_id, pid, 0, duration, cloud, MP4_OUTPUT, vo):
+                            return
                         log.info(
                             'Found MATCH: [%s] [%s] [%s] [%s] "%s"'
                             % (_CHANNELS[channel_id]["name"], channel_id, timestamp, pid, _name)
                             + f'{" [VO]" if vo else ""}'
                         )
-                        cloud = channel_id in _CLOUD and timestamp in _CLOUD[channel_id]
-                        if await record_program(channel_id, pid, 0, duration, cloud, MP4_OUTPUT, vo):
-                            return
                         _TIMERS_ADDED.append(filename)
                         nr_procs += 1
-                        if RECORDING_THREADS and not nr_procs < RECORDING_THREADS:
+                        await asyncio.sleep(3)
+                        if _NETWORK_SATURATED or (RECORDING_THREADS and not nr_procs < RECORDING_THREADS):
                             log.info(f"Already recording {nr_procs} streams")
                             return
-                        await asyncio.sleep(3)
 
 
 async def timers_check_delayed():

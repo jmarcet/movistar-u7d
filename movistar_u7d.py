@@ -285,8 +285,8 @@ async def handle_channel(request, channel_id):
         if procs:
             pid = int(procs[-1].split()[0])
             ffmpeg = procs[-1].split(RECORDINGS)[1].split(".tmp")[0]
+            log.warning(f'[{request.ip}] -> KILLING ffmpeg [{pid}] "{ffmpeg}"')
             os.kill(pid, signal.SIGINT)
-            log.warning(f'[{request.ip}] {_raw_url} -> Killed ffmpeg [{pid}] "{ffmpeg}"')
         else:
             log.warning(f"[{request.ip}] {_raw_url} -> Network Saturated")
             raise exceptions.ServiceUnavailable("Network Saturated")
@@ -385,8 +385,8 @@ async def handle_flussonic(request, channel_id, url, cloud=False):
     if procs:
         pid = int(procs[-1].split()[0])
         ffmpeg = procs[-1].split(RECORDINGS)[1].split(".tmp")[0]
+        log.warning(f'[{request.ip}] -> KILLING ffmpeg [{pid}] "{ffmpeg}"')
         os.kill(pid, signal.SIGINT)
-        log.warning(f'[{request.ip}] {_raw_url} -> Killed ffmpeg [{pid}] "{ffmpeg}"')
 
     _args = VodArgs(channel_id, program_id, _IPTV, request.ip, client_port, offset, cloud)
     vod_data = await VodSetup(_args, app.ctx.vod_client)
