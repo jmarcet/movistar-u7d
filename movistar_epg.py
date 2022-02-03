@@ -539,9 +539,140 @@ async def handle_prom_event_remove(request):
     return response.empty(200)
 
 
+@app.get("/record/<channel_id:int>/<url>")
+async def handle_record_program(request, channel_id, url):
+    cloud = bool(request.args.get("cloud"))
+    mp4 = bool(request.args.get("mp4"))
+    vo = bool(request.args.get("vo"))
+    channel, program_id, start, duration, offset = get_program_id(channel_id, url, cloud).values()
+    if request.args.get("time"):
+        record_time = int(request.args.get("time"))
+    else:
+        record_time = duration - offset
+
+    if await vod_ongoing(channel_id, program_id):
+        raise exceptions.ServiceUnavailable("Recording already ongoing")
+
+    if await record_program(channel_id, program_id, offset, record_time, cloud, mp4, vo):
+        log.warning("Network Saturated")
+        raise exceptions.ServiceUnavailable("Network Saturated")
+
+    return response.json(
+        {
+            "status": "OK",
+            "channel": channel,
+            "channel_id": channel_id,
+            "program_id": program_id,
+            "start": start,
+            "offset": offset,
+            "time": record_time,
+        }
+    )
+
+
 @app.get("/reload_epg")
 async def handle_reload_epg(request):
     return await reload_epg()
+
+
+@app.get("/timers_check")
+async def handle_timers_check(request):
+    global _t_timers_t, _t_timers
+
+    if not RECORDINGS:
+        return response.json({"status": "RECORDINGS not configured"}, 404)
+
+    if not os.path.exists(timers):
+        if _t_timers:
+            log.info("Disabling automatic recordings")
+            _t_timers.cancel()
+            _t_timers = None
+        raise exceptions.ServiceUnavailable("No timers.conf found")
+
+    if timers_lock.locked():
+        raise exceptions.ServiceUnavailable("Busy processing timers")
+
+    if _NETWORK_SATURATED:
+        raise exceptions.ServiceUnavailable("Network Saturated")
+
+    if not _t_timers:
+        log.info("Enabling automatic recordings")
+        _t_timers = asyncio.create_task(every(900, timers_check))
+    else:
+        _t_timers_t = asyncio.create_task(timers_check())
+    return response.json({"status": "Timers check queued"}, 200)
+
+
+async def network_saturated():
+    global _NETWORK_SATURATED
+    cur = last = 0
+    iface_rx = f"/sys/class/net/{IPTV_IFACE}/statistics/rx_bytes"
+    while True:
+        async with await open_async(iface_rx) as f:
+            cur = int((await f.read())[:-1])
+        if last:
+            tp = int((cur - last) * 8 / 1000 / 3)
+            _NETWORK_SATURATED = tp > IPTV_BW
+        last = cur
+        await asyncio.sleep(3)
+
+
+async def reap_vod_child(p):
+    while True:
+        try:
+            retcode = p.wait(timeout=0.001)
+            log.debug(f"reap_vod_child: [{p.pid}]:{retcode}")
+            return await recording_cleanup(p.pid, retcode)
+        except subprocess.TimeoutExpired:
+            await asyncio.sleep(1)
+
+
+async def record_program(channel_id, program_id, offset=0, record_time=0, cloud=False, mp4=False, vo=False):
+    if _NETWORK_SATURATED:
+        return True
+
+    client_port = find_free_port(_IPTV)
+    cmd = f"{VOD_EXEC} {channel_id} {program_id} -p {client_port}"
+    if offset:
+        cmd += f" -s {offset}"
+    if record_time:
+        cmd += f" -t {record_time}"
+    if cloud:
+        cmd += " --cloud"
+    if mp4:
+        cmd += " --mp4"
+    if vo:
+        cmd += " --vo"
+    cmd += " -w"
+
+    log.debug(f"Launching {cmd}")
+    if not WIN32:
+        global _CHILDREN
+        p = subprocess.Popen(cmd.split())
+        async with children_lock:
+            _CHILDREN[p.pid] = (cmd, (client_port, channel_id, program_id))
+        app.add_task(reap_vod_child(p))
+    else:
+        subprocess.Popen(cmd.split())
+
+
+async def recording_cleanup(pid, status):
+    global _CHILDREN
+    async with children_lock:
+        if abs(status) == 15:
+            client_port, channel_id, program_id = _CHILDREN[pid][1]
+        del _CHILDREN[pid]
+
+    if abs(status) == 15:
+        log.debug(f"recording_cleanup: [{pid}]:{status} {channel_id} {program_id}")
+        subprocess.run(["pkill", "-f", f"ffmpeg .+ -i udp://@{_IPTV}:{client_port}"])
+        await handle_program_name(None, channel_id, program_id, missing=randint(1, 9999))
+
+    await asyncio.sleep(3)
+    if not _NETWORK_SATURATED:
+        await timers_check()
+
+    log.debug(f"recording_cleanup: [{pid}]:{status} DONE")
 
 
 async def reload_epg():
@@ -612,123 +743,6 @@ async def reload_epg():
         log.info(f"Total EPG entries: {nr_epg}")
         log.info("EPG Updated")
     return response.json({"status": "EPG Updated"}, 200)
-
-
-@app.get("/timers_check")
-async def handle_timers_check(request):
-    global _t_timers_t, _t_timers
-
-    if not RECORDINGS:
-        return response.json({"status": "RECORDINGS not configured"}, 404)
-
-    if not os.path.exists(timers):
-        if _t_timers:
-            log.info("Disabling automatic recordings")
-            _t_timers.cancel()
-            _t_timers = None
-        raise exceptions.ServiceUnavailable("No timers.conf found")
-
-    if timers_lock.locked():
-        raise exceptions.ServiceUnavailable("Busy processing timers")
-
-    if _NETWORK_SATURATED:
-        raise exceptions.ServiceUnavailable("Network Saturated")
-
-    if not _t_timers:
-        log.info("Enabling automatic recordings")
-        _t_timers = asyncio.create_task(every(900, timers_check))
-    else:
-        _t_timers_t = asyncio.create_task(timers_check())
-    return response.json({"status": "Timers check queued"}, 200)
-
-
-async def reap_vod_child(p):
-    while True:
-        try:
-            retcode = p.wait(timeout=0.001)
-            log.debug(f"reap_vod_child: [{p.pid}]:{retcode}")
-            return await recording_cleanup(p.pid, retcode)
-        except subprocess.TimeoutExpired:
-            await asyncio.sleep(1)
-
-
-@app.get("/record/<channel_id:int>/<url>")
-async def handle_record_program(request, channel_id, url):
-    cloud = bool(request.args.get("cloud"))
-    mp4 = bool(request.args.get("mp4"))
-    vo = bool(request.args.get("vo"))
-    channel, program_id, start, duration, offset = get_program_id(channel_id, url, cloud).values()
-    if request.args.get("time"):
-        record_time = int(request.args.get("time"))
-    else:
-        record_time = duration - offset
-
-    if await vod_ongoing(channel_id, program_id):
-        raise exceptions.ServiceUnavailable("Recording already ongoing")
-
-    if await record_program(channel_id, program_id, offset, record_time, cloud, mp4, vo):
-        log.warning("Network Saturated")
-        raise exceptions.ServiceUnavailable("Network Saturated")
-
-    return response.json(
-        {
-            "status": "OK",
-            "channel": channel,
-            "channel_id": channel_id,
-            "program_id": program_id,
-            "start": start,
-            "offset": offset,
-            "time": record_time,
-        }
-    )
-
-
-async def record_program(channel_id, program_id, offset=0, record_time=0, cloud=False, mp4=False, vo=False):
-    if _NETWORK_SATURATED:
-        return True
-
-    client_port = find_free_port(_IPTV)
-    cmd = f"{VOD_EXEC} {channel_id} {program_id} -p {client_port}"
-    if offset:
-        cmd += f" -s {offset}"
-    if record_time:
-        cmd += f" -t {record_time}"
-    if cloud:
-        cmd += " --cloud"
-    if mp4:
-        cmd += " --mp4"
-    if vo:
-        cmd += " --vo"
-    cmd += " -w"
-
-    log.debug(f"Launching {cmd}")
-    if not WIN32:
-        global _CHILDREN
-        p = subprocess.Popen(cmd.split())
-        async with children_lock:
-            _CHILDREN[p.pid] = (cmd, (client_port, channel_id, program_id))
-        app.add_task(reap_vod_child(p))
-    else:
-        subprocess.Popen(cmd.split())
-
-
-async def recording_cleanup(pid, status):
-    global _CHILDREN
-    async with children_lock:
-        if abs(status) == 15:
-            client_port, channel_id, program_id = _CHILDREN[pid][1]
-        del _CHILDREN[pid]
-
-    if abs(status) == 15:
-        log.debug(f"recording_cleanup: [{pid}]:{status} {channel_id} {program_id}")
-        subprocess.run(["pkill", "-f", f"ffmpeg .+ -i udp://@{_IPTV}:{client_port}"])
-        await handle_program_name(None, channel_id, program_id, missing=randint(1, 9999))
-
-    await asyncio.sleep(3)
-    if not _NETWORK_SATURATED:
-        await timers_check()
-
-    log.debug(f"recording_cleanup: [{pid}]:{status} DONE")
 
 
 async def timers_check():
@@ -820,20 +834,6 @@ async def timers_check_delayed():
     else:
         await asyncio.sleep(5)
     _t_timers = asyncio.create_task(every(900, timers_check))
-
-
-async def network_saturated():
-    global _NETWORK_SATURATED
-    cur = last = 0
-    iface_rx = f"/sys/class/net/{IPTV_IFACE}/statistics/rx_bytes"
-    while True:
-        async with await open_async(iface_rx) as f:
-            cur = int((await f.read())[:-1])
-        if last:
-            tp = int((cur - last) * 8 / 1000 / 3)
-            _NETWORK_SATURATED = tp > IPTV_BW
-        last = cur
-        await asyncio.sleep(3)
 
 
 async def update_cloud(forced=False):
