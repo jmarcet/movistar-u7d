@@ -33,6 +33,7 @@ CACHE_DIR = os.path.join(os.getenv("HOME", os.getenv("HOMEPATH")), ".xmltv/cache
 DEBUG = bool(int(os.getenv("DEBUG", 0)))
 RECORDINGS = os.getenv("RECORDINGS", None)
 SANIC_EPG_URL = "http://127.0.0.1:8889"
+LOCK_FILE = os.path.join(os.getenv("TMP", "/tmp"), ".u7d-pp.lock")
 
 IMAGENIO_URL = "http://html5-static.svc.imagenio.telefonica.net/appclientv/nux/incoming/epg"
 COVER_URL = f"{IMAGENIO_URL}/covers/programmeImages/portrait/290x429"
@@ -55,7 +56,7 @@ ffmpeg = FFmpeg().option("y").option("xerror")
 _IPTV = _LOOP = _PP_DONE = _SESSION = _SESSION_CLOUD = None
 
 _args = _epg_url = _ffmpeg = _filename = _full_title = _log_suffix = _path = None
-_nice = ("nice", "-n", "15", "ionice", "-c", "3", "flock", "/tmp/.u7d-pp.lock") if not WIN32 else ()
+_nice = ("nice", "-n", "15", "ionice", "-c", "3", "flock", LOCK_FILE) if not WIN32 else ()
 
 
 if not WIN32:
@@ -281,6 +282,11 @@ async def postprocess():
             pass
         cleanup(TMP_EXT2)
         cleanup(VID_EXT, _args.mp4)
+        if os.path.exists(LOCK_FILE):
+            try:
+                os.remove(LOCK_FILE)
+            except FileNotFoundError:
+                pass
 
     finally:
         log.debug(f"Recording Postprocess ENDED: {_log_suffix}")
