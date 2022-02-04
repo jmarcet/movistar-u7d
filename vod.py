@@ -321,13 +321,7 @@ async def record_stream():
     ffmpeg.input(f"udp://@{_IPTV}:{_args.client_port}", fifo_size=5572, pkt_size=1316, timeout=500000).output(
         _filename + TMP_EXT,
         options,
-        t=str(
-            _args.time + 600
-            if _args.time > 7200
-            else _args.time + 300
-            if _args.time > 1800
-            else _args.time + 60
-        ),
+        t=str(_args.time),
         v="panic",
         vsync="0",
         f="matroska",
@@ -496,7 +490,7 @@ async def VodLoop(args, vod_data=None):
 
 
 async def VodSetup(args, vod_client):
-    global _epg_url, _log_suffix
+    global _epg_url
 
     _epg_url = f"{SANIC_EPG_URL}/program_name/{args.channel}/{args.broadcast}"
     log_prefix = f"{('[' + args.client_ip + '] ') if args.client_ip else ''}"
@@ -515,13 +509,26 @@ async def VodSetup(args, vod_client):
 
     try:
         vod_info = await get_vod_info(args.channel, args.broadcast, args.cloud, vod_client)
-        _log_suffix = "[%ds] - [%s] [%s] [%d] [%s]" % (
-            vod_info["duration"],
-            vod_info["channelName"],
-            args.channel,
-            vod_info["beginTime"] / 1000,
-            args.broadcast,
-        )
+        if __name__ == "__main__" and args.write_to_file:
+            global _args, _log_suffix
+            if not _args.time:
+                _args.time = vod_info["duration"]
+            else:
+                _args.time = min(
+                    vod_info["duration"],
+                    _args.time + 600
+                    if _args.time > 7200
+                    else _args.time + 300
+                    if _args.time > 1800
+                    else _args.time + 60,
+                )
+            _log_suffix = "[%ds] - [%s] [%s] [%d] [%s]" % (
+                _args.time,
+                vod_info["channelName"],
+                args.channel,
+                vod_info["beginTime"] / 1000,
+                args.broadcast,
+            )
         uri = urllib.parse.urlparse(vod_info["url"])
     except Exception as ex:
         if isinstance(ex, (ClientConnectorError, ConnectionRefusedError)):
@@ -564,10 +571,6 @@ async def VodSetup(args, vod_client):
         get_parameter.update({"Content-type": "text/parameters", "Content-length": 10})
 
     await client.send_request("PLAY", play)
-
-    if __name__ == "__main__":
-        if args.write_to_file and not args.time:
-            args.time = vod_info["duration"]
 
     return VodData(client, get_parameter, session)
 
