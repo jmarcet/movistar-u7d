@@ -55,7 +55,7 @@ ffmpeg = FFmpeg().option("y").option("xerror")
 _IPTV = _LOOP = _PP_DONE = _SESSION = _SESSION_CLOUD = None
 
 _args = _epg_url = _ffmpeg = _filename = _full_title = _log_suffix = _path = None
-_nice = ("nice", "-n", "15", "ionice", "-c", "3") if not WIN32 else ()
+_nice = ("nice", "-n", "15", "ionice", "-c", "3", "flock", "/tmp/.u7d-pp.lock") if not WIN32 else ()
 
 
 if not WIN32:
