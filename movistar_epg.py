@@ -63,11 +63,10 @@ IPTV_BW = int(os.getenv("IPTV_BW", "0"))
 IPTV_BW = 85000 if IPTV_BW > 90000 else IPTV_BW
 IPTV_IFACE = os.getenv("IPTV_IFACE", None)
 MP4_OUTPUT = bool(os.getenv("MP4_OUTPUT", False))
+RECORDING_THREADS = int(os.getenv("RECORDING_THREADS", "4"))
 RECORDINGS = os.getenv("RECORDINGS", None)
 SANIC_PORT = int(os.getenv("SANIC_PORT", "8888"))
 SANIC_URL = f"http://{SANIC_HOST}:{SANIC_PORT}"
-RECORDING_THREADS = int(os.getenv("RECORDING_THREADS", "4"))
-RECORDINGS = os.getenv("RECORDINGS", None)
 VOD_EXEC = "vod.exe" if os.path.exists("vod.exe") else "vod.py"
 
 LOG_SETTINGS = LOGGING_CONFIG_DEFAULTS
@@ -177,8 +176,8 @@ async def before_server_start(app, loop):
             int_recordings = {}
             for channel in recordingsdata:
                 int_recordings[int(channel)] = {}
-                for event in recordingsdata[channel]:
-                    int_recordings[int(channel)][int(event)] = recordingsdata[channel][event]
+                for timestamp in recordingsdata[channel]:
+                    int_recordings[int(channel)][int(timestamp)] = recordingsdata[channel][timestamp]
             _RECORDINGS = int_recordings
         except (TypeError, ValueError) as ex:
             log.error(f"{repr(ex)}")
@@ -233,10 +232,10 @@ def get_epg(channel_id, program_id):
         log.error(f"{channel_id} not found")
         return
 
-    for event in sorted(_EPGDATA[channel_id]):
-        _epg = _EPGDATA[channel_id][event]
+    for timestamp in sorted(_EPGDATA[channel_id]):
+        _epg = _EPGDATA[channel_id][timestamp]
         if program_id == _epg["pid"]:
-            return _epg, event
+            return _epg, timestamp
 
 
 async def get_ffmpeg_procs():
@@ -267,17 +266,17 @@ def get_program_id(channel_id, url=None, cloud=False):
         return
 
     channel = _CHANNELS[channel_id]["name"]
-    last_event = new_start = 0
+    last_timestamp = new_start = 0
 
     if not cloud:
         if start not in _EPGDATA[channel_id]:
-            for event in _EPGDATA[channel_id]:
-                if event > start:
+            for timestamp in _EPGDATA[channel_id]:
+                if timestamp > start:
                     break
-                last_event = event
-            if not last_event:
+                last_timestamp = timestamp
+            if not last_timestamp:
                 return
-            start, new_start = last_event, start
+            start, new_start = last_timestamp, start
         program_id, duration = [_EPGDATA[channel_id][start][t] for t in ["pid", "duration"]]
     else:
         if channel_id not in _CLOUD:
@@ -285,10 +284,10 @@ def get_program_id(channel_id, url=None, cloud=False):
         if start in _CLOUD[channel_id]:
             duration = _CLOUD[channel_id][start]["duration"]
         else:
-            for event in _CLOUD[channel_id]:
-                duration = _CLOUD[channel_id][event]["duration"]
-                if start > event and start < event + duration:
-                    start, new_start = event, start
+            for timestamp in _CLOUD[channel_id]:
+                duration = _CLOUD[channel_id][timestamp]["duration"]
+                if start > timestamp and start < timestamp + duration:
+                    start, new_start = timestamp, start
             if not new_start:
                 return
         program_id = _CLOUD[channel_id][start]["pid"]
@@ -392,11 +391,11 @@ async def handle_program_id(request, channel_id, url):
 async def handle_program_name(request, channel_id, program_id, missing=0):
     global _RECORDINGS
     try:
-        _epg, event = get_epg(channel_id, program_id)
+        _epg, timestamp = get_epg(channel_id, program_id)
     except TypeError:
         raise exceptions.NotFound(f"Requested URL {request.raw_url.decode()} not found")
 
-    path, filename = get_recording_path(channel_id, event)
+    path, filename = get_recording_path(channel_id, timestamp)
 
     if request and request.method == "GET":
         return response.json(
@@ -413,7 +412,7 @@ async def handle_program_name(request, channel_id, program_id, missing=0):
     log_suffix = '[%s] [%s] [%s] [%s] "%s"' % (
         _CHANNELS[channel_id]["name"],
         channel_id,
-        event,
+        timestamp,
         program_id,
         _epg["full_title"],
     )
@@ -702,8 +701,8 @@ async def reload_epg():
             int_epgdata = {}
             for channel in epgdata:
                 int_epgdata[int(channel)] = {}
-                for event in epgdata[channel]:
-                    int_epgdata[int(channel)][int(event)] = epgdata[channel][event]
+                for timestamp in epgdata[channel]:
+                    int_epgdata[int(channel)][int(timestamp)] = epgdata[channel][timestamp]
             _EPGDATA = int_epgdata
             log.info(f"Loaded fresh EPG data => {SANIC_URL}/guide.xml.gz")
         except (FileNotFoundError, TypeError, ValueError) as ex:
@@ -846,8 +845,8 @@ async def update_cloud(forced=False):
         int_clouddata = {}
         for channel in clouddata:
             int_clouddata[int(channel)] = {}
-            for event in clouddata[channel]:
-                int_clouddata[int(channel)][int(event)] = clouddata[channel][event]
+            for timestamp in clouddata[channel]:
+                int_clouddata[int(channel)][int(timestamp)] = clouddata[channel][timestamp]
         _CLOUD = int_clouddata
     except (FileNotFoundError, TypeError, ValueError):
         if os.path.exists(cloud_data):
@@ -865,9 +864,9 @@ async def update_cloud(forced=False):
         return
 
     new_cloud = {}
-    for event in cloud_recordings:
-        channel_id = event["serviceUID"]
-        _start = int(event["beginTime"] / 1000)
+    for _event in cloud_recordings:
+        channel_id = _event["serviceUID"]
+        _start = int(_event["beginTime"] / 1000)
         if channel_id not in new_cloud:
             new_cloud[channel_id] = {}
         if _start not in new_cloud[channel_id]:
@@ -876,7 +875,7 @@ async def update_cloud(forced=False):
             elif channel_id in _CLOUD and _start in _CLOUD[channel_id]:
                 new_cloud[channel_id][_start] = _CLOUD[channel_id][_start]
             else:
-                product_id = event["productID"]
+                product_id = _event["productID"]
                 try:
                     async with _SESSION_CLOUD.get(
                         f"{MVTV_URL}?action=epgInfov2&" f"productID={product_id}&channelID={channel_id}"
@@ -925,13 +924,13 @@ async def update_cloud(forced=False):
             for channel_id in new_cloud:
                 if channel_id not in _EPGDATA:
                     _EPGDATA[channel_id] = {}
-                for event in list(set(new_cloud[channel_id]) - set(_EPGDATA[channel_id])):
-                    _EPGDATA[channel_id][event] = new_cloud[channel_id][event]
+                for timestamp in list(set(new_cloud[channel_id]) - set(_EPGDATA[channel_id])):
+                    _EPGDATA[channel_id][timestamp] = new_cloud[channel_id][timestamp]
             if not forced:
                 for channel_id in _CLOUD:
-                    for event in list(set(_CLOUD[channel_id]) - set(new_cloud[channel_id])):
-                        if event in _EPGDATA[channel_id]:
-                            del _EPGDATA[channel_id][event]
+                    for timestamp in list(set(_CLOUD[channel_id]) - set(new_cloud[channel_id])):
+                        if timestamp in _EPGDATA[channel_id]:
+                            del _EPGDATA[channel_id][timestamp]
 
         if forced:
             merge()
