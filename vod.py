@@ -311,7 +311,7 @@ async def record_stream():
             options["metadata:s:v"] = f"title={_full_title}"
 
             if not os.path.exists(_path):
-                log.info(f"Creating recording subdir {_path}")
+                log.debug(f"Creating recording subdir {_path}")
                 os.mkdir(_path)
         else:
             _filename = os.path.join(RECORDINGS, f"{_args.channel}-{_args.broadcast}")
