@@ -311,10 +311,8 @@ async def record_stream():
 
     async with _SESSION.get(_epg_url) as resp:
         if resp.status == 200:
-            data = await resp.json()
-
-            _full_title, _path, _filename = [data[t] for t in ["full_title", "path", "filename"]]
-            options["metadata:s:v"] = f"title={_full_title}"
+            _, _path, _filename = (await resp.json()).values()
+            options["metadata:s:v"] = f"title={os.path.basename(_filename)}"
 
             if not os.path.exists(_path):
                 log.debug(f"Creating recording subdir {_path}")

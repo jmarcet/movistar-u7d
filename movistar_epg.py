@@ -419,7 +419,6 @@ async def handle_program_name(request, channel_id, program_id, missing=0):
         return response.json(
             {
                 "status": "OK",
-                "full_title": _epg["full_title"],
                 "path": path,
                 "filename": filename,
             },
