@@ -225,12 +225,19 @@ async def after_server_stop(app, loop):
         _t_tp,
         tv_cloud,
         tvgrab,
-    ] + [_CHILDREN[pid][2] for pid in _CHILDREN if len(_CHILDREN[pid]) == 3]:
+    ]:
         try:
             task.cancel()
             await asyncio.wait({task})
         except (AttributeError, ProcessLookupError):
             pass
+    async with children_lock:
+        for pid in _CHILDREN:
+            try:
+                _CHILDREN[pid][2].cancel()
+                await asyncio.wait({_CHILDREN[pid][2]})
+            except (AttributeError, KeyError, ProcessLookupError):
+                pass
 
 
 async def every(timeout, stuff):
