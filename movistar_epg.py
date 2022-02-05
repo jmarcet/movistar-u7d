@@ -14,7 +14,7 @@ import urllib.parse
 
 from aiohttp.client_exceptions import ClientConnectorError
 from aiohttp.resolver import AsyncResolver
-from datetime import datetime
+from datetime import date, datetime, timedelta
 from glob import glob
 from random import randint
 from sanic import Sanic, exceptions, response
@@ -800,40 +800,47 @@ async def timers_check():
                 log.info(f"Channel [{channel_id}] not found in EPG")
                 continue
 
-            _time_limit = int(datetime.now().timestamp()) - (3600 * 3)
-            for timestamp in reversed(_EPGDATA[channel_id]):
-                if timestamp > _time_limit:
-                    continue
-                duration, pid, title = [
-                    _EPGDATA[channel_id][timestamp][t] for t in ["duration", "pid", "full_title"]
-                ]
-                deflang = (
-                    _timers["language"]["default"]
-                    if ("language" in _timers and "default" in _timers["language"])
-                    else ""
-                )
-                for timer_match in _timers["match"][str(channel_id)]:
-                    if " ## " in timer_match:
-                        timer_match, lang = timer_match.split(" ## ")
-                    else:
-                        lang = deflang
-                    vo = True if lang == "VO" else False
+            deflang = (
+                _timers["language"]["default"]
+                if ("language" in _timers and "default" in _timers["language"])
+                else ""
+            )
+            end_of_day = (
+                int(datetime.combine(date.today() + timedelta(days=1), datetime.min.time()).timestamp())
+                + 3600
+            )  # 1h after the next midnight, it's odd for any program to premiere after this
+            time_limit = int(datetime.now().timestamp()) - 7200
+
+            for timer_match in _timers["match"][str(channel_id)]:
+                premieres_later = False
+                if " ## " in timer_match:
+                    timer_match, lang = timer_match.split(" ## ")
+                else:
+                    lang = deflang
+                vo = lang == "VO"
+                for timestamp in [ts for ts in reversed(_EPGDATA[channel_id]) if ts < end_of_day]:
                     _, filename = get_recording_path(channel_id, timestamp)
-                    _name = os.path.basename(filename)
+                    name = os.path.basename(filename)
+                    duration, pid, title = [
+                        _EPGDATA[channel_id][timestamp][t] for t in ["duration", "pid", "full_title"]
+                    ]
+                    if channel_id in _RECORDINGS and (name or title) in str(_RECORDINGS[channel_id]):
+                        continue
                     if (
                         re.match(timer_match, title)
                         and filename not in _TIMERS_ADDED
-                        and _name not in str(_ffmpeg)
+                        and name not in str(_ffmpeg)
+                        and not premieres_later
                     ):
-                        if channel_id in _RECORDINGS:
-                            if (_name or title) in str(_RECORDINGS[channel_id]):
-                                continue
+                        if timestamp > time_limit:
+                            premieres_later = True
+                            continue
                         cloud = channel_id in _CLOUD and timestamp in _CLOUD[channel_id]
                         if await record_program(channel_id, pid, 0, duration, cloud, MP4_OUTPUT, vo):
                             return
                         log.info(
                             'Found MATCH: [%s] [%s] [%s] [%s] "%s"'
-                            % (_CHANNELS[channel_id]["name"], channel_id, timestamp, pid, _name)
+                            % (_CHANNELS[channel_id]["name"], channel_id, timestamp, pid, name)
                             + f'{" [VO]" if vo else ""}'
                         )
                         _TIMERS_ADDED.append(filename)
