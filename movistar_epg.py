@@ -75,10 +75,18 @@ LOG_SETTINGS["formatters"]["generic"]["datefmt"] = LOG_SETTINGS["formatters"]["a
     "datefmt"
 ] = "[%Y-%m-%d %H:%M:%S]"
 
-_CHANNELS = _CHILDREN = _CLOUD = _EPGDATA = _RECORDINGS = _RECORDINGS_INC = _SESSION = _SESSION_CLOUD = {}
+_CHANNELS = {}
+_CHILDREN = {}
+_CLOUD = {}
+_EPGDATA = {}
+_RECORDINGS = {}
+_RECORDINGS_INC = {}
+_SESSION = {}
+_SESSION_CLOUD = {}
+_TIMERS_ADDED = []
+
 _IPTV = None
 _NETWORK_SATURATED = False
-_TIMERS_ADDED = []
 
 app = Sanic("movistar_epg")
 app.config.update({"FALLBACK_ERROR_FORMAT": "json", "KEEP_ALIVE_TIMEOUT": YEAR_SECONDS})

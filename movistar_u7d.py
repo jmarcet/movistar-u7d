@@ -80,10 +80,12 @@ LOG_SETTINGS["formatters"]["generic"]["datefmt"] = LOG_SETTINGS["formatters"]["a
     "datefmt"
 ] = "[%Y-%m-%d %H:%M:%S]"
 
-_CHANNELS = _CHILDREN = {}
+_CHANNELS = {}
+_CHILDREN = {}
+_RESPONSES = []
+
 _IPTV = _LOOP = _SESSION = _SESSION_LOGOS = None
 _NETWORK_SATURATED = False
-_RESPONSES = []
 
 VodArgs = namedtuple("Vod", ["channel", "broadcast", "iptv_ip", "client_ip", "client_port", "start", "cloud"])
 
