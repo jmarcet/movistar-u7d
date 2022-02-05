@@ -197,6 +197,17 @@ async def before_server_start(app, loop):
             log.info("No timers.conf found, automatic recordings disabled")
 
 
+@app.listener("after_server_start")
+async def after_server_start(app, loop):
+    async with aiohttp.ClientSession(headers={"User-Agent": f"movistar-u7d v{_version}"}) as session:
+        for i in range(5):
+            try:
+                await session.get("https://openwrt.marcet.info/u7d/alive")
+                break
+            except Exception:
+                await asyncio.sleep(5)
+
+
 @app.listener("after_server_stop")
 async def after_server_stop(app, loop):
     await _SESSION.close()
