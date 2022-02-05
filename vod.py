@@ -465,23 +465,21 @@ async def VodLoop(args, vod_data=None):
                     break
             await vod_data.client.send_request("GET_PARAMETER", vod_data.get_parameter)
 
-    except (AttributeError, CancelledError, TypeError, ValueError):
-        pass
     except Exception as ex:
-        log.error(f"{repr(ex)}")
+        log.debug(f"1 {repr(ex)}")
 
     finally:
         try:
             await vod_data.client.send_request("TEARDOWN", vod_data.session)
             if __name__ == "__main__" and not WIN32:
                 signal.signal(signal.SIGCHLD, signal.SIG_DFL)
-        except (AttributeError, OSError, RuntimeError):
-            pass
+        except Exception as ex:
+            log.debug(f"2 {repr(ex)}")
 
         try:
             vod_data.client.close_connection()
-        except AttributeError:
-            pass
+        except Exception as ex:
+            log.debug(f"3 {repr(ex)}")
 
         if __name__ == "__main__":
             if args.write_to_file:
