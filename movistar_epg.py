@@ -375,7 +375,7 @@ def get_title_meta(title, serie_id=None):
         episode_title = _x[3].strip() if _x[3] else episode_title
         if episode_title and "-" in episode_title:
             episode_title = episode_title.replace("- ", "-").replace(" -", "-").replace("-", " - ")
-        is_serie = True if (serie and episode) else False
+        is_serie = serie and episode
         if ": " in serie and episode and not episode_title:
             episode_title = serie.split(":")[1].strip()
             serie = serie.split(":")[0].strip()
