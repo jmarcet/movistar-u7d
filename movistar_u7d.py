@@ -122,7 +122,7 @@ async def before_server_start(app, loop):
                     await asyncio.sleep(5)
         except (ClientConnectorError, ConnectionRefusedError):
             log.debug("Waiting for EPG service...")
-            await asyncio.sleep(5)
+            await asyncio.sleep(0.1)
 
     if not WIN32 and IPTV_BW and IPTV_IFACE:
         log.info(f"BW: {IPTV_BW} kbps / {IPTV_IFACE}")

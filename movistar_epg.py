@@ -114,8 +114,7 @@ tv_cloud = tvgrab = None
 
 @app.listener("before_server_start")
 async def before_server_start(app, loop):
-    global RECORDING_THREADS, _IPTV, _RECORDINGS, _SESSION, _SESSION_CLOUD
-    global _t_cloud1, _t_epg1, _t_recs, _t_timers_d, _t_tp
+    global RECORDING_THREADS, _IPTV, _RECORDINGS, _SESSION, _SESSION_CLOUD, _t_tp
 
     banner = f"Movistar U7D - EPG v{_version}"
     log.info("-" * len(banner))
@@ -142,7 +141,7 @@ async def before_server_start(app, loop):
                     log.info(f"IPTV address: {_IPTV}")
                     break
                 else:
-                    log.debug(f"IPTV address: waiting for interface to be routed...")
+                    log.debug("IPTV address: waiting for interface to be routed...")
         except Exception:
             log.error("Unable to connect to Movistar DNS")
         await asyncio.sleep(5)
@@ -170,6 +169,12 @@ async def before_server_start(app, loop):
     )
 
     await reload_epg()
+
+
+@app.listener("after_server_start")
+async def after_server_start(app, loop):
+    global _RECORDINGS, _t_cloud1, _t_epg1, _t_recs, _t_timers_d
+
     _t_epg1 = asyncio.create_task(update_epg_delayed())
     _t_cloud1 = asyncio.create_task(update_cloud_delayed())
 
@@ -205,8 +210,6 @@ async def before_server_start(app, loop):
             log.info("No timers.conf found, automatic recordings disabled")
 
 
-@app.listener("after_server_start")
-async def after_server_start(app, loop):
     async with aiohttp.ClientSession(headers={"User-Agent": f"movistar-u7d v{_version}"}) as session:
         for i in range(5):
             try:
