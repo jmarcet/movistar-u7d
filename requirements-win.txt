@@ -1,5 +1,5 @@
 aiohttp
-git+https://github.com/jmarcet/asyncio-dgram
+asyncio-dgram
 black
 dict2xml
 python-ffmpeg
