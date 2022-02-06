@@ -16,7 +16,6 @@ import ujson
 import urllib.parse
 
 from aiohttp.client_exceptions import ClientOSError, ServerDisconnectedError
-from aiohttp.resolver import AsyncResolver
 from asyncio.subprocess import DEVNULL, PIPE, STDOUT
 from datetime import timedelta
 from dict2xml import dict2xml
@@ -27,7 +26,7 @@ if hasattr(asyncio, "exceptions"):
 else:
     from asyncio import CancelledError
 
-from mu7d import EPG_URL, IPTV_DNS, TERMINATE, UA, URL_COVER, URL_MVTV, WIN32, YEAR_SECONDS
+from mu7d import EPG_URL, TERMINATE, UA, URL_COVER, URL_MVTV, WIN32, YEAR_SECONDS
 from mu7d import find_free_port, get_iptv_ip, glob_safe, mu7d_config, ongoing_vods, remove, _version
 
 
@@ -104,7 +103,6 @@ async def _open_sessions():
     _SESSION_CLOUD = aiohttp.ClientSession(
         connector=aiohttp.TCPConnector(
             keepalive_timeout=YEAR_SECONDS,
-            resolver=AsyncResolver(nameservers=[IPTV_DNS]) if not WIN32 else None,
         ),
         headers={"User-Agent": UA},
         json_serialize=ujson.dumps,

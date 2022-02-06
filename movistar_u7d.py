@@ -14,7 +14,6 @@ import ujson
 import urllib.parse
 
 from aiohttp.client_exceptions import ClientOSError, ServerDisconnectedError
-from aiohttp.resolver import AsyncResolver
 from collections import namedtuple
 from contextlib import closing
 from filelock import FileLock, Timeout
@@ -32,7 +31,7 @@ if hasattr(asyncio, "exceptions"):
 else:
     from asyncio import CancelledError
 
-from mu7d import EPG_URL, IPTV_DNS, MIME_M3U, MIME_TS, MIME_WEBM, UA, URL_COVER, URL_LOGO, WIN32, YEAR_SECONDS
+from mu7d import EPG_URL, MIME_M3U, MIME_TS, MIME_WEBM, UA, URL_COVER, URL_LOGO, WIN32, YEAR_SECONDS
 from mu7d import find_free_port, get_iptv_ip, mu7d_config, ongoing_vods, _version
 from movistar_vod import Vod
 
@@ -58,7 +57,6 @@ async def before_server_start(app, loop):
     _SESSION_LOGOS = aiohttp.ClientSession(
         connector=aiohttp.TCPConnector(
             keepalive_timeout=YEAR_SECONDS,
-            resolver=AsyncResolver(nameservers=[IPTV_DNS]) if not WIN32 else None,
         ),
         headers={"User-Agent": UA},
         json_serialize=ujson.dumps,
@@ -91,7 +89,6 @@ async def after_server_start(app, loop):
     app.ctx.vod_client = aiohttp.ClientSession(
         connector=aiohttp.TCPConnector(
             keepalive_timeout=YEAR_SECONDS,
-            resolver=AsyncResolver(nameservers=[IPTV_DNS]) if not WIN32 else None,
         ),
         headers={"User-Agent": UA},
         json_serialize=ujson.dumps,

@@ -1,4 +1,3 @@
-aiodns
 aiohttp
 asyncio
 asyncio_dgram

@@ -21,7 +21,6 @@ import threading
 import time
 import ujson as json
 
-from aiohttp.resolver import AsyncResolver
 from contextlib import closing
 from datetime import date, datetime, timedelta
 from filelock import FileLock, Timeout
@@ -29,7 +28,7 @@ from queue import Queue
 from xml.dom import minidom  # nosec B408
 from xml.etree.ElementTree import Element, ElementTree, SubElement  # nosec B405
 
-from mu7d import IPTV_DNS, UA, UA_U7D, WIN32, YEAR_SECONDS
+from mu7d import UA, UA_U7D, WIN32, YEAR_SECONDS
 from mu7d import get_iptv_ip, get_title_meta, mu7d_config, _version
 
 
@@ -1306,7 +1305,6 @@ async def tvg_main():
     session = aiohttp.ClientSession(
         connector=aiohttp.TCPConnector(
             keepalive_timeout=YEAR_SECONDS,
-            resolver=AsyncResolver(nameservers=[IPTV_DNS]) if not WIN32 else None,
         ),
         headers={"User-Agent": UA},
         json_serialize=json.dumps,
