@@ -114,7 +114,7 @@ Dentro del `docker` queda todo lo necesario y se ejecutará muy rápidamente, s�
 
  2. Si por el contrario preferimos instalarlo y usarlo directamente:
 
- - Necesitamos Python 3, con pip, e instalar las dependencias:
+ - Necesitamos los paquetes `git`, `libffi-dev` y `python3-pip` instalados con el gestor de paquetes de nuestra distro. Debería funcionar desde `Python 3.7` A continuación instalamos las dependencias:
 
 ```
 pip3 install -r requirements.txt
@@ -147,8 +147,6 @@ systemctl start movistar_u7d
 ```
 
 Sin systemd, tendremos que lanzar directamente los dos [movistar_u7d.py](movistar_u7d.py) y [movistar_epg.py](movistar_epg.py).
-
-En cualquier caso, si lo usas sin docker, es importante que el proxy tenga acceso a las DNS de [Movistar](https://www.movistar.es/particulares/internet/), 172.26.23.3
 
 
 Instalación en el propio router
