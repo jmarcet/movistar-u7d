@@ -329,6 +329,13 @@ async def record_stream():
 
     _log_suffix += f' "{_filename[len(RECORDINGS) + 1:]}"'
 
+    if _args.channel in ("578", "884", "3603"):
+        # matroska is not compatible with dvb_teletext subs
+        # Boing, DKISS & Energy use them, so we drop them
+        global ffmpeg
+        log.warning(f"Recording dropping dvb_teletext subs: {_log_suffix}")
+        ffmpeg = ffmpeg.option("-sn")
+
     ffmpeg.input(f"udp://@{_IPTV}:{_args.client_port}", fifo_size=5572, pkt_size=1316, timeout=500000).output(
         _filename + TMP_EXT,
         options,
