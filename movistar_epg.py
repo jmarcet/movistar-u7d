@@ -67,6 +67,7 @@ RECORDING_THREADS = int(os.getenv("RECORDING_THREADS", "4"))
 RECORDINGS = os.getenv("RECORDINGS", None)
 SANIC_PORT = int(os.getenv("SANIC_PORT", "8888"))
 SANIC_URL = f"http://{SANIC_HOST}:{SANIC_PORT}"
+UA_U7D = f"movistar-u7d v{_version} [{sys.platform}]"
 VOD_EXEC = "vod.exe" if os.path.exists("vod.exe") else "vod.py"
 
 LOG_SETTINGS = LOGGING_CONFIG_DEFAULTS
@@ -209,8 +210,7 @@ async def after_server_start(app, loop):
         else:
             log.info("No timers.conf found, automatic recordings disabled")
 
-
-    async with aiohttp.ClientSession(headers={"User-Agent": f"movistar-u7d v{_version}"}) as session:
+    async with aiohttp.ClientSession(headers={"User-Agent": UA_U7D}) as session:
         for i in range(5):
             try:
                 await session.get("https://openwrt.marcet.info/u7d/alive")
