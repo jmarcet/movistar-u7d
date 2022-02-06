@@ -123,7 +123,7 @@ pip3 install -r requirements.txt
  - Copiamos [movistar_u7d.py](movistar_u7d.py), [movistar_epg.py](movistar_epg.py), [tv_grab_es_movistartv](tv_grab_es_movistartv) y [vod.py](vod.py) a alguna ruta que tengamos en el PATH:
 
 ```
-cp movistar_u7d.py movistar_epg.py tv_grab_es_movistartv vod.py /usr/local/bin/
+cp movistar_u7d.py movistar_epg.py tv_grab_es_movistartv version.py vod.py /usr/local/bin/
 ```
 
  - Para hacer uso de la funcionalidad de grabaciones también necesitamos tener instalados tanto `ffmpeg` como `mkvtoolnix`.
