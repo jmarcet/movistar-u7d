@@ -397,8 +397,8 @@ async def save_metadata():
             metadata.pop("covers", None)
             os.rmdir(metadata_dir)
     metadata["title"] = _full_title
-    metadata.pop("logos", None)
-    metadata.pop("name", None)
+    for t in ("isuserfavorite", "lockdata", "logos", "name", "playcount", "resume", "watched"):
+        metadata.pop(t, None)
     async with await open_async(_filename + NFO_EXT, "w", encoding="utf8") as f:
         await f.write(dict2xml(metadata, wrap="metadata", indent="    "))
     log.debug(f"Metadata saved: {_log_suffix}")
