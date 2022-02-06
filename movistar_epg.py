@@ -470,10 +470,10 @@ async def handle_program_name(request, channel_id, program_id, missing=0):
         _RECORDINGS_INC[channel_id][program_id].append(missing)
         _t = _RECORDINGS_INC[channel_id][program_id]
         if len(_t) > 2 and _t[-3] == _t[-2] and _t[-2] == _t[-1]:
-            log.info(f"Recording Incomplete KEEP: {log_suffix}: {_t}")
+            log.warning(f"Recording Incomplete KEEP: {log_suffix}: {_t}")
             del _RECORDINGS_INC[channel_id][program_id]
         else:
-            log.warning(f"Recording Incomplete RETRY: {log_suffix}: {_t}")
+            log.error(f"Recording Incomplete RETRY: {log_suffix}: {_t}")
             try:
                 _TIMERS_ADDED.remove(filename)
             except ValueError:

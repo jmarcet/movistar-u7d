@@ -13,6 +13,7 @@ import signal
 import socket
 import subprocess
 import sys
+import timeit
 import ujson
 import urllib.parse
 
@@ -63,7 +64,7 @@ ffmpeg = FFmpeg().option("y").option("xerror")
 
 _IPTV = _LOOP = _PP_DONE = _SESSION = _SESSION_CLOUD = None
 
-_args = _epg_url = _ffmpeg = _filename = _full_title = _log_suffix = _path = None
+_args = _epg_url = _ffmpeg = _filename = _full_title = _log_suffix = _path = _start = None
 _nice = ("nice", "-n", "15", "ionice", "-c", "3", "flock", LOCK_FILE) if not WIN32 else ()
 
 
@@ -158,13 +159,20 @@ class RtspClient(object):
 
 @ffmpeg.on("completed")
 def ffmpeg_completed():
+    global _log_suffix
+    record_time = int(timeit.default_timer() - _start)
+    _log_suffix = f"[~{record_time}s] / {_log_suffix}"
     log.info(f"Recording ENDED: {_log_suffix}")
     asyncio.run_coroutine_threadsafe(postprocess(), _LOOP).result()
 
 
 @ffmpeg.on("error")
 def ffmpeg_error(code):
-    ffmpeg_completed()
+    global _log_suffix
+    record_time = int(timeit.default_timer() - _start)
+    _log_suffix = f"[~{record_time}s] / {_log_suffix}"
+    bad = record_time < (_args.time - 30)
+    asyncio.run_coroutine_threadsafe(postprocess(record_time if bad else 0), _LOOP).result()
 
 
 @ffmpeg.on("stderr")
@@ -176,8 +184,8 @@ def ffmpeg_stderr(line):
 
 @ffmpeg.on("terminated")
 def ffmpeg_terminated():
-    log.info(f"[ffmpeg] TERMINATED: {_log_suffix}")
-    ffmpeg_completed()
+    log.error(f"[ffmpeg] TERMINATED: {_log_suffix}")
+    ffmpeg_error()
 
 
 def check_dns():
@@ -215,21 +223,30 @@ def handle_cleanup(signum, frame):
     raise TimeoutError()
 
 
-async def postprocess():
-    global _PP_DONE
+async def postprocess(record_time=0):
+    global _PP_DONE, _log_suffix
     log.debug(f"Recording Postprocess: {_log_suffix}")
 
     if not WIN32:
         signal.signal(signal.SIGCHLD, signal.SIG_DFL)
 
-    command = list(_nice)
-    command += ["mkvmerge", "--abort-on-warnings", "-q", "-o", _filename + TMP_EXT2]
-    if _args.vo:
-        command += ["--track-order", "0:2,0:1,0:4,0:3,0:6,0:5"]
-        command += ["--default-track", "2:1"]
-    command += [_filename + TMP_EXT]
-
     try:
+        if record_time:
+            missing = _args.time - record_time
+            resp = await _SESSION.put(_epg_url + f"?missing={missing}")
+
+            if resp and resp.status == 200:
+                return await postprocess()
+            else:
+                raise ValueError(f"Too short, missing: {missing}s")
+
+        command = list(_nice)
+        command += ["mkvmerge", "--abort-on-warnings", "-q", "-o", _filename + TMP_EXT2]
+        if _args.vo:
+            command += ["--track-order", "0:2,0:1,0:4,0:3,0:6,0:5"]
+            command += ["--default-track", "2:1"]
+        command += [_filename + TMP_EXT]
+
         proc = subprocess.run(command, capture_output=True)
         cleanup(TMP_EXT)
         if proc.stdout:
@@ -241,7 +258,8 @@ async def postprocess():
 
         duration = int(int(recording_data["container"]["properties"]["duration"]) / 1000000000)
         bad = duration < (_args.time - 30)
-        msg = f"Recording {'INCOMPLETE:' if bad else 'COMPLETE:'} [{duration}s] / {_log_suffix}"
+        _log_suffix = f"[{duration}s] / {_log_suffix}"
+        msg = f"Recording {'INCOMPLETE:' if bad else 'COMPLETE:'} {_log_suffix}"
         log.warning(msg) if bad else log.info(msg)
         missing_time = (_args.time - duration) if bad else 0
         _log_suffix = _log_suffix[_log_suffix.find(" - ") + 3:]
@@ -284,11 +302,12 @@ async def postprocess():
 
     except Exception as ex:
         log.error(f"Recording FAILED: {_log_suffix} => {repr(ex)}")
-        try:
-            async with aiohttp.ClientSession() as session:
-                await session.put(_epg_url + f"?missing={randint(1, _args.time)}")
-        except (ClientConnectorError, ConnectionRefusedError, ServerDisconnectedError):
-            pass
+        if not record_time:
+            try:
+                async with aiohttp.ClientSession() as session:
+                    await session.put(_epg_url + f"?missing={randint(1, _args.time)}")
+            except (ClientConnectorError, ConnectionRefusedError, ServerDisconnectedError):
+                pass
         cleanup(TMP_EXT2)
         cleanup(VID_EXT, _args.mp4)
         if os.path.exists(LOCK_FILE):
@@ -303,7 +322,7 @@ async def postprocess():
 
 
 async def record_stream():
-    global _ffmpeg, _filename, _full_title, _log_suffix, _path
+    global _ffmpeg, _filename, _full_title, _log_suffix, _path, _start
     options = {
         "map": "0",
         "c": "copy",
@@ -351,6 +370,7 @@ async def record_stream():
     _ffmpeg.start()
 
     log.info(f"Recording STARTED: {_log_suffix}")
+    _start = timeit.default_timer()
 
 
 async def save_metadata():
