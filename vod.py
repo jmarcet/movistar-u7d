@@ -159,11 +159,11 @@ def ffmpeg_error(code):
     ffmpeg_completed()
 
 
-# @ffmpeg.on("stderr")
-# def ffmpeg_stderr(line):
-#     if line.startswith("frame="):
-#         return
-#     log.debug(f"[ffmpeg] {line}")
+@ffmpeg.on("stderr")
+def ffmpeg_stderr(line):
+    if line.startswith("frame="):
+        return
+    log.info(f"[ffmpeg] {line}")
 
 
 @ffmpeg.on("terminated")
