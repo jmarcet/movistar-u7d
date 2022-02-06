@@ -1,0 +1,17 @@
+diff --git a/mpeg2dec.c b/mpeg2dec.c
+index 34f027a..ef7595d 100755
+--- a/mpeg2dec.c
++++ b/mpeg2dec.c
+@@ -2208,12 +2208,6 @@ int main (int argc, char ** argv)
+ 
+         fprintf (stderr, "%s, made using ffmpeg\n", PACKAGE_STRING);
+ 
+-#ifndef DONATOR
+-        fprintf (stderr, "Public build\n");
+-#else
+-        fprintf (stderr, "Donator build\n");
+-#endif
+-
+ #ifdef _WIN32
+ #ifdef HAVE_IO_H
+ //		_setmode (_fileno (stdin), O_BINARY);
