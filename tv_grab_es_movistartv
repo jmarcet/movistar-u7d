@@ -30,13 +30,10 @@ from movistar_epg import UA_U7D, get_title_meta
 from version import _version
 from vod import MOVISTAR_DNS, UA, WIN32, YEAR_SECONDS, check_dns
 
+
 DEBUG = bool(int(os.getenv("DEBUG", 0)))
 
-log.basicConfig(
-    datefmt="[%Y-%m-%d %H:%M:%S]",
-    format="%(asctime)s [TVG] [%(levelname)s] %(message)s",
-    level=log.DEBUG if DEBUG else log.INFO,
-)
+_VERBOSE = cache = config = deadline = epg = iptv = mtv = session = xmltv = None
 
 
 if not WIN32:
@@ -271,30 +268,6 @@ genre_map = {
         "F": "Adult movie / Drama",
     },
 }
-
-
-app_dir = os.path.join(os.getenv("HOME", os.getenv("HOMEPATH")), ".xmltv")
-sep = "\\" if WIN32 else "/"
-use_multithread = True
-
-cookie_file = "tv_grab_es_movistartv.cookie"
-end_points_file = "tv_grab_es_movistartv.endpoints"
-
-max_credits = 4
-
-lang = {"es": {"lang": "es"}, "en": {"lang": "en"}}
-
-age_rating = ["0", "0", "0", "7", "12", "16", "17", "18"]
-
-
-class Error(Exception):
-    pass
-
-
-class MulticastError(Error):
-    def __init__(self, message=""):
-        if message:
-            self.message = message.replace("\n", "")
 
 
 class MulticastEPGFetcher(Thread):
@@ -594,7 +567,7 @@ class MulticastIPTV:
             }
             return chunk
         except Exception as ex:
-            raise MulticastError(f"get_chunk: error al analizar los datos {repr(ex)}")
+            raise ValueError(f"get_chunk: error al analizar los datos {repr(ex)}")
 
     def __get_xml_files(self, mc_grp, mc_port):
         loop = True
@@ -1340,29 +1313,6 @@ def export_channels(m3u_file, cloud=None):
     log.info(f"Lista de canales " f'{"de Grabaciones en la Nube " if cloud else ""}' f"exportada: {m3u_file}")
 
 
-if "LAN_IP" in os.environ:
-    lan_ip = os.getenv("LAN_IP")
-else:
-    s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
-    s.connect(("8.8.8.8", 53))
-    lan_ip = s.getsockname()[0]
-    s.close
-
-# Endpoint del backend principal
-sanic = "%s:%s" % (lan_ip, os.getenv("SANIC_PORT", "8888"))
-# Número de hilos para descarga de la EPG
-epg_threads = min(8, int(os.getenv("EPG_THREADS", os.cpu_count())))
-
-# Determina la dirección IP para el IPTV y la conectividad con las DNS de Movistar
-try:
-    _iptv = check_dns()
-except Exception:
-    log.error("Unable to connect to Movistar DNS")
-    sys.exit(1)
-
-_VERBOSE = cache = config = deadline = epg = iptv = mtv = session = xmltv = None
-
-
 async def main():
     global _VERBOSE, cache, config, deadline, epg, iptv, mtv, session, xmltv
 
@@ -1480,6 +1430,40 @@ async def main():
 
 
 if __name__ == "__main__":
+    log.basicConfig(
+        datefmt="[%Y-%m-%d %H:%M:%S]",
+        format="%(asctime)s [TVG] [%(levelname)s] %(message)s",
+        level=log.DEBUG if DEBUG else log.INFO,
+    )
+
+    if "LAN_IP" in os.environ:
+        lan_ip = os.getenv("LAN_IP")
+    else:
+        s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+        s.connect(("8.8.8.8", 53))
+        lan_ip = s.getsockname()[0]
+        s.close
+
+    app_dir = os.path.join(os.getenv("HOME", os.getenv("HOMEPATH")), ".xmltv")
+    epg_threads = min(8, int(os.getenv("EPG_THREADS", os.cpu_count())))
+    sanic = "%s:%s" % (lan_ip, os.getenv("SANIC_PORT", "8888"))
+    sep = "\\" if WIN32 else "/"
+    use_multithread = True
+
+    age_rating = ["0", "0", "0", "7", "12", "16", "17", "18"]
+    lang = {"es": {"lang": "es"}, "en": {"lang": "en"}}
+    max_credits = 4
+
+    cookie_file = "tv_grab_es_movistartv.cookie"
+    end_points_file = "tv_grab_es_movistartv.endpoints"
+
+    # Determina la dirección IP para el IPTV y la conectividad con las DNS de Movistar
+    try:
+        _iptv = check_dns()
+    except Exception:
+        log.error("Unable to connect to Movistar DNS")
+        sys.exit(1)
+
     try:
         asyncio.run(main())
     except KeyboardInterrupt:
