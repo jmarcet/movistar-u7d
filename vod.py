@@ -1,4 +1,7 @@
 #!/usr/bin/env python3
+#
+# Based on MovistarU7D by XXLuigiMario:
+# Source: https://github.com/XXLuigiMario/MovistarU7D
 
 import aiohttp
 import argparse
