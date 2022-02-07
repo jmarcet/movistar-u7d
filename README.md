@@ -170,13 +170,15 @@ Configuración y Observaciones
 
    4. `MP4_OUTPUT`: por defecto las grabaciones se harán en `.mkv`, conservando todas las pistas originales, con el audio `mp2` transcodeado a `aac` para que se puedan reproducir directamente con un navegador. Los subtítulos pueden dar incompatibilidad con algunos clientes, por lo que con esta variables definida obtendremos en su lugar un archivo `.mp4` sin subtítulos y un `.sub` adicional con los mismos si existen.
 
-   5. `RECORDINGS`: define la ruta para las grabaciones. Si se define, permite usar la funcionalidad de temporizadores y hace que se exporte la lista de grabaciones locales. Las grabaciones se realizarán aquí y la lista de canales `VOD` se generará con todo el contenido desde aquí indexado. Esto quiere decir que puede ser útil para exponer una carpeta aunque no utilicemos los temporizadores.
+   5. `NOSUBS`: si no queremos grabar subtítulos, tanto si es de forma general como para subsanar un problema puntual con un canal/programa que no se deja grabar. Hay 3 canales que emiten siempre con subtítulos de teletexto y estos resultan problemáticos a la hora de grabarse por lo que son descartados pero desconozco si hay más emisiones puntuales que los usan, para eso esta opción.
 
    6. `RECORDING_THREADS`: número máximo de grabaciones locales simultáneas, por defecto 4. Si se establece `IPTV_BW` las grabaciones máximas también serán ajustadas dinámicamente. Si probáis un temporizador con algo que se repita mucho toda la semana, algo como `Los Simpson`, con la variable `IPTV_BW` definida con valor 85000, veréis como se lanzan en paralelo un montón de procesos `vod.py` y `ffmpeg`, un par por cada grabación. Podrás comprobar luego como todas las grabaciones están perfectas.
 
-   7. `SANIC_THREADS`: número de procesos simultáneos para el microservicio principal, por defecto 4.
+   7. `RECORDINGS`: define la ruta para las grabaciones. Si se define, permite usar la funcionalidad de temporizadores y hace que se exporte la lista de grabaciones locales. Las grabaciones se realizarán aquí y la lista de canales `VOD` se generará con todo el contenido desde aquí indexado. Esto quiere decir que puede ser útil para exponer una carpeta aunque no utilicemos los temporizadores.
 
-   8. Para el resto, que es inusual necesitar cambiarlas, mirad el fichero [env-example](env-example).
+   8. `SANIC_THREADS`: número de procesos simultáneos para el microservicio principal, por defecto 4.
+
+   9. Para el resto, que es inusual necesitar cambiarlas, mirad el fichero [env-example](env-example).
 
 - Si usamos docker y docker-compose, tenemos [env-example](env-example) con explicación de todas las variables de entorno que podemos ajustar. Editamos el `docker-compose.yml` y borramos los `#` de delante y definimos las variables necesarias, para después ejecutar `docker-compose up -d`
 

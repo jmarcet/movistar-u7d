@@ -38,6 +38,7 @@ from version import _version
 
 CACHE_DIR = os.path.join(os.getenv("HOME", os.getenv("HOMEPATH")), ".xmltv/cache/programs")
 DEBUG = bool(int(os.getenv("DEBUG", 0)))
+NOSUBS = bool(int(os.getenv("NOSUBS", 0)))
 RECORDINGS = os.getenv("RECORDINGS", None)
 SANIC_EPG_URL = "http://127.0.0.1:8889"
 LOCK_FILE = os.path.join(os.getenv("TMP", "/tmp"), ".u7d-pp.lock")
@@ -330,7 +331,7 @@ async def record_stream():
 
     _log_suffix += f' "{_filename[len(RECORDINGS) + 1:]}"'
 
-    if _args.channel in ("578", "884", "3603"):
+    if _args.channel in ("578", "884", "3603") or NOSUBS:
         # matroska is not compatible with dvb_teletext subs
         # Boing, DKISS & Energy use them, so we drop them
         global ffmpeg

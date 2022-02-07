@@ -5,6 +5,7 @@
 # IPTV_IFACE=eth0.2                  # interface de red en el que esperamos recibir la IPTV y sobre el que podemos querer aplicar el ancho de banda dinámico
 # LAN_IP=192.168.1.10                # ip donde queremos tener el proxy funcionando
 # MP4_OUTPUT=1                       # hacer grabaciones a fichero .mp4 y .sub por separado
+# NOSUBS=1                           # no grabar subtítulos, puede ser útil tanto si no los queremos como con emisiones con subtítulos de teletexto
 # RECORDING_THREADS=4                # número de grabaciones simultáneas
 # RECORDINGS=/mnt/recordings         # directorio para grabaciones, si se establece se activará la comprobación periódica de timers.conf
 # SANIC_PORT=8888                    # puerto en el que el proxy será accesible
