@@ -1,4 +1,5 @@
 aiohttp
+asyncio
 asyncio-dgram
 black
 dict2xml

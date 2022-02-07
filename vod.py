@@ -15,7 +15,6 @@ import urllib.parse
 
 from aiohttp.client_exceptions import ClientConnectorError, ServerDisconnectedError
 from aiohttp.resolver import AsyncResolver
-from asyncio.exceptions import CancelledError
 from collections import namedtuple
 from contextlib import closing
 from dict2xml import dict2xml
@@ -25,6 +24,11 @@ from random import randint
 from sanic.compat import open_async
 from time import sleep
 from threading import Thread
+
+try:
+    from asyncio.exceptions import CancelledError
+except ModuleNotFoundError:
+    from asyncio import CancelledError
 
 from version import _version
 

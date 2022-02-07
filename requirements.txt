@@ -1,5 +1,6 @@
 aiodns
 aiohttp
+asyncio
 asyncio_dgram
 black
 dict2xml
