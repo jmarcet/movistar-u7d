@@ -450,7 +450,7 @@ async def handle_program_name(request, channel_id, program_id, missing=0):
         channel_id,
         timestamp,
         program_id,
-        _epg["full_title"],
+        filename,
     )
     missing = request.args.get("missing", 0) if request else missing
     if missing:
