@@ -243,6 +243,7 @@ async def postprocess():
         msg = f"Recording {'INCOMPLETE:' if bad else 'COMPLETE:'} [{duration}s] / {_log_suffix}"
         log.warning(msg) if bad else log.info(msg)
         missing_time = (_args.time - duration) if bad else 0
+        _log_suffix = _log_suffix[_log_suffix.find(" - ") + 3:]
 
         cleanup(VID_EXT, _args.mp4)
         if _args.mp4:
