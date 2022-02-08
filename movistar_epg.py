@@ -448,14 +448,16 @@ async def handle_program_name(request, channel_id, program_id, missing=0):
             ensure_ascii=False,
         )
 
-    global _TIMERS_ADDED
+    _filename = filename[len(RECORDINGS) + 1 :]
     log_suffix = '[%s] [%s] [%s] [%s] "%s"' % (
         _CHANNELS[channel_id]["name"],
         channel_id,
         timestamp,
         program_id,
-        filename,
+        _filename,
     )
+
+    global _TIMERS_ADDED
     missing = request.args.get("missing", 0) if request else missing
     if missing:
         if channel_id not in _RECORDINGS_INC:
@@ -477,7 +479,7 @@ async def handle_program_name(request, channel_id, program_id, missing=0):
 
     if channel_id not in _RECORDINGS:
         _RECORDINGS[channel_id] = {}
-    _RECORDINGS[channel_id][timestamp] = {"full_title": filename}
+    _RECORDINGS[channel_id][timestamp] = {"full_title": _filename}
     try:
         _TIMERS_ADDED.remove(filename)
     except ValueError:
