@@ -339,7 +339,7 @@ def get_recording_path(channel_id, timestamp):
 
     if _EPGDATA[channel_id][timestamp]["serie"]:
         path = os.path.join(path, get_safe_filename(_EPGDATA[channel_id][timestamp]["serie"]))
-    else:
+    elif not _EPGDATA[channel_id][timestamp]["is_serie"] and _EPGDATA[channel_id][timestamp]["genre"] == "06":
         path = os.path.join(path, get_safe_filename(_EPGDATA[channel_id][timestamp]["full_title"]))
 
     path = path.rstrip(".").rstrip(",")
