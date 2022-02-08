@@ -98,6 +98,7 @@ title_1_regex = re.compile(r"(.+(?!T\d)) +T(\d+)(?: *Ep?.? *(\d+))?[ -]*(.*)")
 title_2_regex = re.compile(r"(.+(?!T\d))(?: +T(\d+))? *Ep?.? *(\d+)[ -]*(.*)")
 
 cloud_data = os.path.join(HOME, ".xmltv/cache/cloud.json")
+config_data = os.path.join(HOME, ".xmltv/cache/config.json")
 epg_data = os.path.join(HOME, ".xmltv/cache/epg.json")
 epg_metadata = os.path.join(HOME, ".xmltv/cache/epg_metadata.json")
 recordings = os.path.join(HOME, "recordings.json")
@@ -333,7 +334,9 @@ def get_program_id(channel_id, url=None, cloud=False):
 
 def get_recording_path(channel_id, timestamp):
     if RECORDINGS_PER_CHANNEL:
-        path = os.path.join(RECORDINGS, _CHANNELS[channel_id]["name"])
+        path = os.path.join(
+            RECORDINGS, "%03d. %s" % (_CHANNELS[channel_id]["number"], _CHANNELS[channel_id]["name"])
+        )
     else:
         path = RECORDINGS
 
@@ -720,6 +723,7 @@ async def reload_epg():
 
     if (
         not os.path.exists(CHANNELS)
+        and os.path.exists(config_data)
         and os.path.exists(epg_data)
         and os.path.exists(epg_metadata)
         and os.path.exists(GUIDE)
@@ -732,7 +736,12 @@ async def reload_epg():
                 CHANNELS,
             )
             await tvgrab.wait()
-    elif not os.path.exists(epg_data) or not os.path.exists(epg_metadata) or not os.path.exists(GUIDE):
+    elif (
+        not os.path.exists(config_data)
+        or not os.path.exists(epg_data)
+        or not os.path.exists(epg_metadata)
+        or not os.path.exists(GUIDE)
+    ):
         log.warning("Missing channels data! Need to download it. Please be patient...")
         return await update_epg()
 
@@ -755,11 +764,16 @@ async def reload_epg():
 
         try:
             async with await open_async(epg_metadata, encoding="utf8") as f:
-                channels = ujson.loads(await f.read())["data"]["channels"]
+                metadata = ujson.loads(await f.read())["data"]
+            async with await open_async(config_data, encoding="utf8") as f:
+                package = ujson.loads(await f.read())["data"]["tvPackages"]
+            channels = metadata["channels"]
+            services = metadata["packages"][package]["services"]
             int_channels = {}
-            for channel in channels:
+            for channel in [chan for chan in channels if chan in services]:
                 int_channels[int(channel)] = channels[channel]
                 int_channels[int(channel)]["id"] = int(channels[channel]["id"])
+                int_channels[int(channel)]["number"] = int(services[channel])
                 if "replacement" in channels[channel]:
                     int_channels[int(channel)]["replacement"] = int(channels[channel]["replacement"])
             _CHANNELS = int_channels
