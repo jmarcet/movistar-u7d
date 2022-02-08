@@ -19,6 +19,7 @@ Environment=PYTHONUNBUFFERED=1
 # Environment=NOSUBS=1
 # Environment=RECORDING_THREADS=4
 # Environment=RECORDINGS=/mnt/recordings
+# Environment=RECORDINGS_PER_CHANNEL=1
 # Environment=SANIC_PORT=8888
 
 ExecStart=movistar_epg.py

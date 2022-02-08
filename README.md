@@ -176,9 +176,11 @@ Configuración y Observaciones
 
    7. `RECORDINGS`: define la ruta para las grabaciones. Si se define, permite usar la funcionalidad de temporizadores y hace que se exporte la lista de grabaciones locales. Las grabaciones se realizarán aquí y la lista de canales `VOD` se generará con todo el contenido desde aquí indexado. Esto quiere decir que puede ser útil para exponer una carpeta aunque no utilicemos los temporizadores.
 
-   8. `SANIC_THREADS`: número de procesos simultáneos para el microservicio principal, por defecto 4.
+   8. `RECORDINGS_PER_CHANNEL`: realizar las grabaciones organizadas en subdirectorios por canal.
 
-   9. Para el resto, que es inusual necesitar cambiarlas, mirad el fichero [env-example](env-example).
+   9. `SANIC_THREADS`: número de procesos simultáneos para el microservicio principal, por defecto 4.
+
+   10. Para el resto, que es inusual necesitar cambiarlas, mirad el fichero [env-example](env-example).
 
 - Si usamos docker y docker-compose, tenemos [env-example](env-example) con explicación de todas las variables de entorno que podemos ajustar. Editamos el `docker-compose.yml` y borramos los `#` de delante y definimos las variables necesarias, para después ejecutar `docker-compose up -d`
 
@@ -286,7 +288,9 @@ Como se mencionó antes, las grabaciones se realizan desde el catchup, empezando
 
 El control de qué grabaciones se reintentan, o no, viene determinado por el fichero `recordings.json` que se generará automáticamente y se actualizará con cada grabación hecha. Si queremos que una grabación existente se sobreescriba, bastará con eliminarla de este `recordings.json` y reiniciar [movistar_epg.py](movistar_epg.py). Si el temporizador que la generó sigue existiendo en el fichero [timers.conf](timers.conf), la grabación se repetirá poco después, hasta que sea satisfactoria. En el caso de resultar incompleta tres veces seguidas pero con la misma duración total las tres veces, se archivará como correcta.
 
-Por último, las grabaciones se realizan en carpetas con el nombre de la serie o programa. En caso de programas periódicos de noticias, no clasificados como series, serán grabados en una carpeta con el nombre del programa y cada grabación llevará añadida la fecha, de manera que se puedan grabar noticias diarias. En todos los casos, las grabaciones serán expuestas en la `.m3u` de grabaciones locales: `recordings.m3u` o `grabaciones.m3u`.
+Por último, las grabaciones se realizan en carpetas con el nombre de la serie si lo son. En caso de programas periódicos de noticias, no clasificados como series, serán grabados en una carpeta con el nombre del programa y cada grabación llevará añadida la fecha, de manera que se puedan grabar noticias diarias. En todos los casos, las grabaciones serán expuestas en la `.m3u` de grabaciones locales: `recordings.m3u` o `grabaciones.m3u`.
+
+Si se activa la opción `RECORDINGS_PER_CHANNEL` irán además dentro de una carpeta por cada canal.
 
 
 Cómo funciona

@@ -325,7 +325,7 @@ async def record_stream():
 
             if not os.path.exists(_path):
                 log.debug(f"Creating recording subdir {_path}")
-                os.mkdir(_path)
+                os.makedirs(_path)
         else:
             _filename = os.path.join(RECORDINGS, f"{_args.channel}-{_args.broadcast}")
 

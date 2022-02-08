@@ -8,6 +8,7 @@
 # NOSUBS=1                           # no grabar subtítulos, puede ser útil tanto si no los queremos como con emisiones con subtítulos de teletexto
 # RECORDING_THREADS=4                # número de grabaciones simultáneas
 # RECORDINGS=/mnt/recordings         # directorio para grabaciones, si se establece se activará la comprobación periódica de timers.conf
+# RECORDINGS_PER_CHANNEL=1           # realizar grabaciones en subdirectorios por canal
 # SANIC_PORT=8888                    # puerto en el que el proxy será accesible
 # SANIC_THREADS=4                    # número de procesos simultáneos de movistar_u7d.py
 # U7D_UID=nobody                     # usuario con el que ejecutar los microservicios y para las grabaciones y cachés

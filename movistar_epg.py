@@ -65,6 +65,7 @@ IPTV_IFACE = os.getenv("IPTV_IFACE", None)
 MP4_OUTPUT = bool(os.getenv("MP4_OUTPUT", False))
 RECORDING_THREADS = int(os.getenv("RECORDING_THREADS", "4"))
 RECORDINGS = os.getenv("RECORDINGS", None)
+RECORDINGS_PER_CHANNEL = bool(int(os.getenv("RECORDINGS_PER_CHANNEL", 0)))
 SANIC_PORT = int(os.getenv("SANIC_PORT", "8888"))
 SANIC_URL = f"http://{SANIC_HOST}:{SANIC_PORT}"
 UA_U7D = f"movistar-u7d v{_version} [{sys.platform}]"
@@ -331,10 +332,15 @@ def get_program_id(channel_id, url=None, cloud=False):
 
 
 def get_recording_path(channel_id, timestamp):
-    if _EPGDATA[channel_id][timestamp]["serie"]:
-        path = os.path.join(RECORDINGS, get_safe_filename(_EPGDATA[channel_id][timestamp]["serie"]))
+    if RECORDINGS_PER_CHANNEL:
+        path = os.path.join(RECORDINGS, _CHANNELS[channel_id]["name"])
     else:
-        path = os.path.join(RECORDINGS, get_safe_filename(_EPGDATA[channel_id][timestamp]["full_title"]))
+        path = RECORDINGS
+
+    if _EPGDATA[channel_id][timestamp]["serie"]:
+        path = os.path.join(path, get_safe_filename(_EPGDATA[channel_id][timestamp]["serie"]))
+    else:
+        path = os.path.join(path, get_safe_filename(_EPGDATA[channel_id][timestamp]["full_title"]))
 
     filename = os.path.join(path, get_safe_filename(_EPGDATA[channel_id][timestamp]["full_title"]))
     if not _EPGDATA[channel_id][timestamp]["is_serie"] and _EPGDATA[channel_id][timestamp]["genre"] == "06":

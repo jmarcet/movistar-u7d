@@ -9,6 +9,7 @@ $env:PYTHONUNBUFFERED = "1"
 # $env:MP4_OUTPUT = "1"                           # hacer grabaciones a fichero .mp4 y .sub por separado
 # $env:RECORDING_THREADS = "4"                    # número de grabaciones simultáneas
 # $env:RECORDINGS = "C:\\Users\\usuario\\Videos"  # directorio para grabaciones, si se establece se activará la comprobación periódica de timers.conf
+# $env:RECORDINGS_PER_CHANNEL=1                   # realizar grabaciones en subdirectorios por canal
 # $env:SANIC_PORT = "8888"                        # puerto en el que el proxy será accesible
 # $env:VERBOSE_LOGS = "0"                         # no mostrar la url a la que se accede en los logs
 
