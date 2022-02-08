@@ -479,7 +479,7 @@ async def handle_program_name(request, channel_id, program_id, missing=0):
 
     if channel_id not in _RECORDINGS:
         _RECORDINGS[channel_id] = {}
-    _RECORDINGS[channel_id][timestamp] = {"full_title": _filename}
+    _RECORDINGS[channel_id][timestamp] = {"filename": _filename}
     try:
         _TIMERS_ADDED.remove(filename)
     except ValueError:
