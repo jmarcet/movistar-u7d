@@ -337,18 +337,22 @@ def get_recording_path(channel_id, timestamp):
     else:
         path = RECORDINGS
 
+    daily_news_program = (
+        not _EPGDATA[channel_id][timestamp]["is_serie"] and _EPGDATA[channel_id][timestamp]["genre"] == "06"
+    )
+
     if _EPGDATA[channel_id][timestamp]["serie"]:
         path = os.path.join(path, get_safe_filename(_EPGDATA[channel_id][timestamp]["serie"]))
-    elif not _EPGDATA[channel_id][timestamp]["is_serie"] and _EPGDATA[channel_id][timestamp]["genre"] == "06":
+    elif daily_news_program:
         path = os.path.join(path, get_safe_filename(_EPGDATA[channel_id][timestamp]["full_title"]))
 
     path = path.rstrip(".").rstrip(",")
 
     filename = os.path.join(path, get_safe_filename(_EPGDATA[channel_id][timestamp]["full_title"]))
-    if not _EPGDATA[channel_id][timestamp]["is_serie"] and _EPGDATA[channel_id][timestamp]["genre"] == "06":
+    if daily_news_program:
         filename += f' - {datetime.fromtimestamp(timestamp).strftime("%Y%m%d")}'
 
-    return (path, filename)
+    return (path, filename, daily_news_program)
 
 
 def get_safe_filename(filename):
@@ -432,7 +436,7 @@ async def handle_program_name(request, channel_id, program_id, missing=0):
     except TypeError:
         raise exceptions.NotFound(f"Requested URL {request.raw_url.decode()} not found")
 
-    path, filename = get_recording_path(channel_id, timestamp)
+    path, filename, _ = get_recording_path(channel_id, timestamp)
 
     if request and request.method == "GET":
         return response.json(
@@ -827,7 +831,9 @@ async def timers_check():
                     lang = deflang
                 vo = lang == "VO"
                 for timestamp in [ts for ts in reversed(_EPGDATA[channel_id]) if ts < end_of_day]:
-                    _, filename = get_recording_path(channel_id, timestamp)
+                    _, filename, daily_news_program = get_recording_path(channel_id, timestamp)
+                    if not daily_news_program and timestamp > time_limit:
+                        continue
                     name = os.path.basename(filename)
                     duration, pid, title = [
                         _EPGDATA[channel_id][timestamp][t] for t in ["duration", "pid", "full_title"]
