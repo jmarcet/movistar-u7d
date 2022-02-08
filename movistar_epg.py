@@ -819,10 +819,10 @@ async def timers_check():
                 if ("language" in _timers and "default" in _timers["language"])
                 else ""
             )
-            end_of_day = (
-                int(datetime.combine(date.today() + timedelta(days=1), datetime.min.time()).timestamp())
-                + 3600
-            )  # 1h after the next midnight, it's odd for any program to premiere after this
+            end_of_day = int(
+                datetime.combine(date.today() + timedelta(days=1), datetime.min.time()).timestamp()
+            )  # the next midnight, it's odd for any program with reruns to premiere after this
+            yesterday = end_of_day - 24 * 3600
             time_limit = int(datetime.now().timestamp()) - 7200
 
             for timer_match in _timers["match"][str(channel_id)]:
@@ -846,7 +846,7 @@ async def timers_check():
                         re.match(timer_match, title)
                         and filename not in _TIMERS_ADDED
                         and name not in str(_ffmpeg)
-                        and not premieres_later
+                        and (not premieres_later if (timestamp > yesterday) else True)
                     ):
                         if timestamp > time_limit:
                             premieres_later = True
