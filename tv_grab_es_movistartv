@@ -1401,7 +1401,7 @@ async def main():
             ElTr.indent(xml)
         except AttributeError:
             pass
-        guide = ElTr.tostring(xml, encoding="utf8")
+        guide = ElTr.tostring(xml, encoding="UTF-8", xml_declaration=True)
 
         if args.guide:
             with open(args.guide, "wb") as f:
