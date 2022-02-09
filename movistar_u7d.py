@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
 
+import aiofiles
 import aiohttp
 import asyncio
 import asyncio_dgram
@@ -17,7 +18,7 @@ from aiohttp.resolver import AsyncResolver
 from collections import namedtuple
 from contextlib import closing
 from sanic import Sanic, exceptions, response
-from sanic.compat import open_async, stat_async
+from sanic.compat import stat_async
 from sanic.handlers import ContentRangeHandler
 from sanic.log import error_logger, logger as log, LOGGING_CONFIG_DEFAULTS
 from sanic.models.server_types import ConnInfo
@@ -529,7 +530,7 @@ async def network_saturated():
     cur = last = 0
     iface_rx = f"/sys/class/net/{IPTV_IFACE}/statistics/rx_bytes"
     while True:
-        async with await open_async(iface_rx) as f:
+        async with aiofiles.open(iface_rx) as f:
             cur = int((await f.read())[:-1])
         if last:
             tp = int((cur - last) * 8 / 1000 / 3)

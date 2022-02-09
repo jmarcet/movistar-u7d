@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
 
+import aiofiles
 import aiohttp
 import asyncio
 import os
@@ -19,7 +20,6 @@ from glob import glob
 from random import randint
 from sanic import Sanic, exceptions, response
 from sanic_prometheus import monitor
-from sanic.compat import open_async
 from sanic.log import logger as log, LOGGING_CONFIG_DEFAULTS
 from xml.sax.saxutils import unescape
 
@@ -187,7 +187,7 @@ async def after_server_start(app, loop):
             os.mkdir(RECORDINGS)
         _t_recs = asyncio.create_task(update_recordings())
         try:
-            async with await open_async(recordings, encoding="utf8") as f:
+            async with aiofiles.open(recordings, encoding="utf8") as f:
                 recordingsdata = ujson.loads(await f.read())
             int_recordings = {}
             for channel in recordingsdata:
@@ -652,7 +652,7 @@ async def network_saturated():
     cur = last = 0
     iface_rx = f"/sys/class/net/{IPTV_IFACE}/statistics/rx_bytes"
     while True:
-        async with await open_async(iface_rx) as f:
+        async with aiofiles.open(iface_rx) as f:
             cur = int((await f.read())[:-1])
         if last:
             tp = int((cur - last) * 8 / 1000 / 3)
@@ -747,7 +747,7 @@ async def reload_epg():
 
     async with epg_lock:
         try:
-            async with await open_async(epg_data, encoding="utf8") as f:
+            async with aiofiles.open(epg_data, encoding="utf8") as f:
                 epgdata = ujson.loads(await f.read())["data"]
             int_epgdata = {}
             for channel in epgdata:
@@ -763,9 +763,9 @@ async def reload_epg():
             return await reload_epg()
 
         try:
-            async with await open_async(epg_metadata, encoding="utf8") as f:
+            async with aiofiles.open(epg_metadata, encoding="utf8") as f:
                 metadata = ujson.loads(await f.read())["data"]
-            async with await open_async(config_data, encoding="utf8") as f:
+            async with aiofiles.open(config_data, encoding="utf8") as f:
                 package = ujson.loads(await f.read())["data"]["tvPackages"]
             channels = metadata["channels"]
             services = metadata["packages"][package]["services"]
@@ -812,7 +812,7 @@ async def timers_check():
         log.debug("Processing timers")
         _timers = {}
         try:
-            async with await open_async(timers, encoding="utf8") as f:
+            async with aiofiles.open(timers, encoding="utf8") as f:
                 try:
                     _timers = tomli.loads(await f.read())
                 except ValueError:
@@ -911,7 +911,7 @@ async def timers_check_delayed():
     global _t_timers
 
     if not WIN32:
-        async with await open_async("/proc/uptime") as f:
+        async with aiofiles.open("/proc/uptime") as f:
             proc = await f.read()
         uptime = int(float(proc.split()[1]))
         if uptime < 300:
@@ -931,7 +931,7 @@ async def update_cloud(forced=False):
     global cloud_data, tv_cloud, _CLOUD, _EPGDATA
 
     try:
-        async with await open_async(cloud_data, encoding="utf8") as f:
+        async with aiofiles.open(cloud_data, encoding="utf8") as f:
             clouddata = ujson.loads(await f.read())["data"]
         int_clouddata = {}
         for channel in clouddata:
@@ -1031,7 +1031,7 @@ async def update_cloud(forced=False):
 
     if updated:
         _CLOUD = new_cloud
-        async with await open_async(cloud_data, "w", encoding="utf8") as f:
+        async with aiofiles.open(cloud_data, "w", encoding="utf8") as f:
             await f.write(ujson.dumps({"data": _CLOUD}, ensure_ascii=False, indent=4, sort_keys=True))
         log.info("Updated Cloud Recordings data")
 
@@ -1108,7 +1108,7 @@ async def update_recordings(archive=False):
 
     async with recordings_lock:
         if archive:
-            async with await open_async(recordings, "w", encoding="utf8") as f:
+            async with aiofiles.open(recordings, "w", encoding="utf8") as f:
                 await f.write(ujson.dumps(_RECORDINGS, ensure_ascii=False, indent=4, sort_keys=True))
 
         while True:
@@ -1127,7 +1127,7 @@ async def update_recordings(archive=False):
         m3u = dump_files(m3u, files, latest=True)
         m3u = dump_files(m3u, sorted(files))
 
-        async with await open_async(CHANNELS_RECORDINGS, "w", encoding="utf8") as f:
+        async with aiofiles.open(CHANNELS_RECORDINGS, "w", encoding="utf8") as f:
             await f.write(m3u)
 
         log.info(f"Local Recordings Updated => {SANIC_URL}/Recordings.m3u")

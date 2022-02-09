@@ -3,6 +3,7 @@
 # Based on MovistarU7D by XXLuigiMario:
 # Source: https://github.com/XXLuigiMario/MovistarU7D
 
+import aiofiles
 import aiohttp
 import argparse
 import asyncio
@@ -25,7 +26,6 @@ from dict2xml import dict2xml
 from ffmpeg import FFmpeg
 from glob import glob
 from random import randint
-from sanic.compat import open_async
 from time import sleep
 from threading import Thread
 
@@ -378,7 +378,7 @@ async def save_metadata():
     cache_metadata = os.path.join(CACHE_DIR, f"{_args.broadcast}.json")
     try:
         if os.path.exists(cache_metadata):
-            async with await open_async(cache_metadata, encoding="utf8") as f:
+            async with aiofiles.open(cache_metadata, encoding="utf8") as f:
                 metadata = ujson.loads(await f.read())["data"]
         else:
             log.info(f"Getting extended info: {_log_suffix}")
@@ -386,7 +386,7 @@ async def save_metadata():
                 f"{MVTV_URL}?action=epgInfov2&productID={_args.broadcast}&channelID={_args.channel}&extra=1"
             ) as resp:
                 metadata = (await resp.json())["resultData"]
-            async with await open_async(cache_metadata, "w", encoding="utf8") as f:
+            async with aiofiles.open(cache_metadata, "w", encoding="utf8") as f:
                 await f.write(ujson.dumps({"data": metadata}, ensure_ascii=False, indent=4, sort_keys=True))
     except (TypeError, ValueError) as ex:
         log.warning(f"Extended info not found: {_log_suffix} => {repr(ex)}")
@@ -402,7 +402,7 @@ async def save_metadata():
             img_ext = os.path.splitext(cover)[1]
             img_name = _filename + img_ext
             log.debug(f'Saving cover "{cover}" -> "{img_name}": {_log_suffix}')
-            async with await open_async(img_name, "wb") as f:
+            async with aiofiles.open(img_name, "wb") as f:
                 await f.write(await resp.read())
             metadata["cover"] = os.path.basename(img_name)
         else:
@@ -424,7 +424,7 @@ async def save_metadata():
                 img_rel = f"{os.path.basename(_filename)}-{img}" + img_ext
                 img_name = os.path.join(metadata_dir, img_rel)
                 log.debug(f'Saving covers "{img}" -> "{img_name}": {_log_suffix}')
-                async with await open_async(img_name, "wb") as f:
+                async with aiofiles.open(img_name, "wb") as f:
                     await f.write(await resp.read())
                 covers[img] = os.path.join("metadata", img_rel)
         if covers:
@@ -435,7 +435,7 @@ async def save_metadata():
     metadata["title"] = _full_title
     for t in ("isuserfavorite", "lockdata", "logos", "name", "playcount", "resume", "watched"):
         metadata.pop(t, None)
-    async with await open_async(_filename + NFO_EXT, "w", encoding="utf8") as f:
+    async with aiofiles.open(_filename + NFO_EXT, "w", encoding="utf8") as f:
         await f.write(dict2xml(metadata, wrap="metadata", indent="    "))
     log.debug(f"Metadata saved: {_log_suffix}")
 
