@@ -270,6 +270,8 @@ default = "VO"
     ".*Venus.*",
 ]
 4714 = [
+    "American Dad ## 13:45",
+    "American Dad ## Esp ## 15:15",
     "Los Simpson S(24|25|26|27|28|29|30|31|32|33)E\\d\\d[ $] ## Esp",
 ]
 ```
@@ -282,7 +284,11 @@ Lás búsquedas se hacen de forma recurrente y las grabaciones se hacen no de lo
 
 Cada cadena de texto es en realidad una [expresión regular](https://es.wikipedia.org/wiki/Expresi%C3%B3n_regular), como podéis ver en alguno de los ejemplos con símbolos extraños.
 
-Podemos también definir por temporizador qué pista de audio queremos como principal. Si el temporizador finaliza con `" ## Esp"` o `" ## VO"`, estaremos indicando la pista que queremos, si la primera o la segunda. En el ejemplo de arriba se define la `VO` como comportamiento por defecto, es decir se especifica que las grabaciones deben tener como pista de audio principal la que llega como secundaria y, por separado, se definen varios temporizadores en los que se especifica que las grabaciones se hagan con la pista de audio normal como principal `" ## Esp"`.
+Podemos definir por temporizador qué pista de audio queremos como principal. Si el temporizador finaliza con `" ## Esp"` o `" ## VO"`, estaremos indicando la pista que queremos, si la primera o la segunda. En el ejemplo de arriba se define la `VO` como comportamiento por defecto, es decir se especifica que las grabaciones deben tener como pista de audio principal la que llega como secundaria y, por separado, se definen varios temporizadores en los que se especifica que las grabaciones se hagan con la pista de audio normal como principal `" ## Esp"`.
+
+Tenemos también la posibilidad de especificar a qué hora queremos grabar un programa. Igual que podemos especificar la pista de audio, separado por `" ## "`, podemos poner la hora y minuto de emisión del programa que nos interesa: `" ## HH:MM`. Esto se puede combinar con lo anterior, como se ve en los ejemplos de arriba. Si queremos grabar un programa en varios horarios diferentes, simplemente repetimos el temporizador, como se ve arriba. La hora que especificamos tiene cierta flexibilidad, serán incluídos todos los programas emitidos dentro de un margen de 10 minutos.
+
+El orden de los dos campos anteriores, pista de audio y horario, no importa. Si repetimos el mismo, como poner dos veces un idioma o dos veces una hora, la última opción ganará. Y si añadimos más opciones, separadas por `" ## "`, serán ignoradas por completo.
 
 Como se mencionó antes, las grabaciones se realizan desde el catchup, empezando unas horas después de ser emitidas. Esto es con la intención de que cualquier cambio en el horario esté reflejado ya en la guía y así tener más posibilidades de grabar entero el evento. Esto también implica que se pueden reintentar en caso de problemas, por lo que las grabaciones se comprueban antes de ser archivadas como correctas. En caso de cualquier error, se reintentan poco después. De esta manera, podemos confiar en que todo lo grabado quede perfecto, sin el más mínimo error.
 

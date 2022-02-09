@@ -355,7 +355,7 @@ def get_recording_path(channel_id, timestamp):
     if daily_news_program:
         filename += f' - {datetime.fromtimestamp(timestamp).strftime("%Y%m%d")}'
 
-    return (path, filename, daily_news_program)
+    return (path, filename)
 
 
 def get_safe_filename(filename):
@@ -439,7 +439,7 @@ async def handle_program_name(request, channel_id, program_id, missing=0):
     except TypeError:
         raise exceptions.NotFound(f"Requested URL {request.raw_url.decode()} not found")
 
-    path, filename, _ = get_recording_path(channel_id, timestamp)
+    path, filename = get_recording_path(channel_id, timestamp)
 
     if request and request.method == "GET":
         return response.json(
@@ -827,29 +827,59 @@ async def timers_check():
             if channel_id not in _EPGDATA:
                 log.info(f"Channel [{channel_id}] not found in EPG")
                 continue
+            channel_name = _CHANNELS[channel_id]["name"]
 
             deflang = (
                 _timers["language"]["default"]
                 if ("language" in _timers and "default" in _timers["language"])
                 else ""
             )
-            end_of_day = int(
-                datetime.combine(date.today() + timedelta(days=1), datetime.min.time()).timestamp()
-            )  # the next midnight, it's odd for any program with reruns to premiere after this
-            yesterday = end_of_day - 24 * 3600
             time_limit = int(datetime.now().timestamp()) - 7200
 
             for timer_match in _timers["match"][str(channel_id)]:
-                premieres_later = False
+                fixed_time = False
                 if " ## " in timer_match:
-                    timer_match, lang = timer_match.split(" ## ")
+                    match_split = timer_match.split(" ## ")
+                    timer_match = match_split[0]
+                    for rest in match_split[1:3]:
+                        if rest[0].isnumeric():
+                            try:
+                                hour, minute = [int(t) for t in rest.split(":")]
+                                fixed_today = int(
+                                    datetime.now().replace(hour=hour, minute=minute, second=0).timestamp()
+                                )
+                                fixed_time = True
+                                log.debug(
+                                    f'[{channel_name}] "{timer_match}" {hour:02}:{minute:02} {fixed_today}'
+                                )
+                            except ValueError:
+                                pass
+                        else:
+                            lang = rest
                 else:
                     lang = deflang
                 vo = lang == "VO"
-                for timestamp in [ts for ts in reversed(_EPGDATA[channel_id]) if ts < end_of_day]:
-                    _, filename, daily_news_program = get_recording_path(channel_id, timestamp)
-                    if not daily_news_program and timestamp > time_limit:
-                        continue
+
+                timestamps = [ts for ts in reversed(_EPGDATA[channel_id]) if ts < time_limit]
+                if fixed_time:
+                    fixed_timestamps = [
+                        fixed_today - i * 24 * 3600
+                        for i in range(9)
+                        if (fixed_today - i * 24 * 3600) < time_limit
+                    ]
+                    log.debug(f'[{channel_name}] "{timer_match}" wants {fixed_timestamps}')
+
+                    found_ts = []
+                    for ts in timestamps:
+                        for fixed_ts in fixed_timestamps:
+                            if abs(ts - fixed_ts) <= 900:
+                                found_ts.append(ts)
+                                break
+                    timestamps = found_ts
+                    log.debug(f"[{channel_name}] has {timestamps}")
+
+                for timestamp in timestamps:
+                    _, filename = get_recording_path(channel_id, timestamp)
                     name = os.path.basename(filename)
                     duration, pid, title = [
                         _EPGDATA[channel_id][timestamp][t] for t in ["duration", "pid", "full_title"]
@@ -860,18 +890,14 @@ async def timers_check():
                         re.match(timer_match, title)
                         and filename not in _TIMERS_ADDED
                         and name not in str(_ffmpeg)
-                        and (not premieres_later if (timestamp > yesterday) else True)
                     ):
-                        if timestamp > time_limit:
-                            premieres_later = True
-                            continue
                         cloud = channel_id in _CLOUD and timestamp in _CLOUD[channel_id]
                         if await record_program(channel_id, pid, 0, duration, cloud, MP4_OUTPUT, vo):
                             return
+                        fname = filename[len(RECORDINGS) + 1 :]
                         log.info(
-                            'Found MATCH: [%s] [%s] [%s] [%s] "%s"'
-                            % (_CHANNELS[channel_id]["name"], channel_id, timestamp, pid, name)
-                            + f'{" [VO]" if vo else ""}'
+                            f'Found MATCH: [{channel_name}] [{channel_id}] [{timestamp}] [{pid}] "{fname}"'
+                            f'{" [VO]" if vo else ""}'
                         )
                         _TIMERS_ADDED.append(filename)
                         nr_procs += 1
