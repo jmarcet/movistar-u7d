@@ -507,7 +507,7 @@ async def VodLoop(args, vod_data=None):
             await _SESSION_CLOUD.close()
 
 
-async def VodSetup(args, vod_client):
+async def VodSetup(args, vod_client, failed=False):
     global _epg_url
 
     _epg_url = f"{SANIC_EPG_URL}/program_name/{args.channel}/{args.broadcast}"
@@ -554,6 +554,9 @@ async def VodSetup(args, vod_client):
             if __name__ == "__main__":
                 if args.write_to_file:
                     await _SESSION.put(_epg_url + f"?missing={randint(1, args.time)}")
+        elif not failed:
+            log.warning(f"{log_prefix}[{args.channel}] [{args.broadcast}]: {repr(ex)}")
+            return await VodSetup(args, vod_client, True)
         else:
             log.error(f"{log_prefix}Could not get uri for: [{args.channel}] [{args.broadcast}]: {repr(ex)}")
         return
