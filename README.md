@@ -176,7 +176,7 @@ Configuración y Observaciones
 
    7. `RECORDINGS`: define la ruta para las grabaciones. Si se define, permite usar la funcionalidad de temporizadores y hace que se exporte la lista de grabaciones locales. Las grabaciones se realizarán aquí y la lista de canales `VOD` se generará con todo el contenido desde aquí indexado. Esto quiere decir que puede ser útil para exponer una carpeta aunque no utilicemos los temporizadores.
 
-   8. `RECORDINGS_PER_CHANNEL`: realizar las grabaciones organizadas en subdirectorios por canal.
+   8. `RECORDINGS_PER_CHANNEL`: realizar las grabaciones organizadas en subdirectorios por canal. También activará la generación de un `m3u` en cada directorio de canal, con las grabaciones ordenadas de más antiguas a más nuevas.
 
    9. `SANIC_THREADS`: número de procesos simultáneos para el microservicio principal, por defecto 4.
 

@@ -55,7 +55,6 @@ else:
 HOME = os.getenv("HOME", os.getenv("HOMEPATH"))
 CHANNELS = os.path.join(HOME, "MovistarTV.m3u")
 CHANNELS_CLOUD = os.path.join(HOME, "MovistarTVCloud.m3u")
-CHANNELS_RECORDINGS = os.path.join(HOME, "Recordings.m3u")
 DEBUG = bool(int(os.getenv("DEBUG", 0)))
 GUIDE = os.path.join(HOME, "guide.xml")
 GUIDE_CLOUD = os.path.join(HOME, "cloud.xml")
@@ -64,7 +63,8 @@ IPTV_BW = 85000 if IPTV_BW > 90000 else IPTV_BW
 IPTV_IFACE = os.getenv("IPTV_IFACE", None)
 MP4_OUTPUT = bool(os.getenv("MP4_OUTPUT", False))
 RECORDING_THREADS = int(os.getenv("RECORDING_THREADS", "4"))
-RECORDINGS = os.getenv("RECORDINGS", None)
+RECORDINGS = os.getenv("RECORDINGS", "").rstrip("/").rstrip("\\")
+RECORDINGS_M3U = os.path.join(RECORDINGS, "Recordings.m3u")
 RECORDINGS_PER_CHANNEL = bool(int(os.getenv("RECORDINGS_PER_CHANNEL", 0)))
 SANIC_PORT = int(os.getenv("SANIC_PORT", "8888"))
 SANIC_URL = f"http://{SANIC_HOST}:{SANIC_PORT}"
@@ -258,6 +258,10 @@ async def every(timeout, stuff):
         await asyncio.gather(asyncio.sleep(timeout), stuff())
 
 
+def get_channel_dir(channel_id):
+    return "%03d. %s" % (_CHANNELS[channel_id]["number"], _CHANNELS[channel_id]["name"])
+
+
 def get_epg(channel_id, program_id):
     if channel_id not in _CHANNELS:
         log.error(f"{channel_id} not found")
@@ -333,22 +337,18 @@ def get_program_id(channel_id, url=None, cloud=False):
 
 
 def get_recording_path(channel_id, timestamp):
-    if RECORDINGS_PER_CHANNEL:
-        path = os.path.join(
-            RECORDINGS, "%03d. %s" % (_CHANNELS[channel_id]["number"], _CHANNELS[channel_id]["name"])
-        )
-    else:
-        path = RECORDINGS
-
     daily_news_program = (
         not _EPGDATA[channel_id][timestamp]["is_serie"] and _EPGDATA[channel_id][timestamp]["genre"] == "06"
     )
 
+    if RECORDINGS_PER_CHANNEL:
+        path = os.path.join(RECORDINGS, get_channel_dir(channel_id))
+    else:
+        path = RECORDINGS
     if _EPGDATA[channel_id][timestamp]["serie"]:
         path = os.path.join(path, get_safe_filename(_EPGDATA[channel_id][timestamp]["serie"]))
     elif daily_news_program:
         path = os.path.join(path, get_safe_filename(_EPGDATA[channel_id][timestamp]["full_title"]))
-
     path = path.rstrip(".").rstrip(",")
 
     filename = os.path.join(path, get_safe_filename(_EPGDATA[channel_id][timestamp]["full_title"]))
@@ -451,13 +451,16 @@ async def handle_program_name(request, channel_id, program_id, missing=0):
             ensure_ascii=False,
         )
 
-    _filename = filename[len(RECORDINGS) + 1 :]
+    if not RECORDINGS:
+        return response.json({"status": "RECORDINGS not configured"}, 404)
+
+    fname = filename[len(RECORDINGS) + 1 :]
     log_suffix = '[%s] [%s] [%s] [%s] "%s"' % (
         _CHANNELS[channel_id]["name"],
         channel_id,
         timestamp,
         program_id,
-        _filename,
+        fname,
     )
 
     global _TIMERS_ADDED
@@ -475,21 +478,21 @@ async def handle_program_name(request, channel_id, program_id, missing=0):
         else:
             log.error(f"Recording Incomplete RETRY: {log_suffix}: {_t}")
             try:
-                _TIMERS_ADDED.remove(filename)
+                _TIMERS_ADDED.remove(fname)
             except ValueError:
                 pass
             return response.json({"status": "Recording Incomplete"}, status=201)
 
     if channel_id not in _RECORDINGS:
         _RECORDINGS[channel_id] = {}
-    _RECORDINGS[channel_id][timestamp] = {"filename": _filename}
+    _RECORDINGS[channel_id][timestamp] = {"filename": fname}
     try:
-        _TIMERS_ADDED.remove(filename)
+        _TIMERS_ADDED.remove(fname)
     except ValueError:
         pass
 
     global _t_recs
-    _t_recs = asyncio.create_task(update_recordings(True))
+    _t_recs = asyncio.create_task(update_recordings(channel_id))
 
     if not _NETWORK_SATURATED:
         global _t_timers_r
@@ -880,7 +883,7 @@ async def timers_check():
 
                 for timestamp in timestamps:
                     _, filename = get_recording_path(channel_id, timestamp)
-                    name = os.path.basename(filename)
+                    fname, name = filename[len(RECORDINGS) + 1 :], os.path.basename(filename)
                     duration, pid, title = [
                         _EPGDATA[channel_id][timestamp][t] for t in ["duration", "pid", "full_title"]
                     ]
@@ -888,18 +891,17 @@ async def timers_check():
                         continue
                     if (
                         re.match(timer_match, title)
-                        and filename not in _TIMERS_ADDED
+                        and fname not in _TIMERS_ADDED
                         and name not in str(_ffmpeg)
                     ):
                         cloud = channel_id in _CLOUD and timestamp in _CLOUD[channel_id]
                         if await record_program(channel_id, pid, 0, duration, cloud, MP4_OUTPUT, vo):
                             return
-                        fname = filename[len(RECORDINGS) + 1 :]
                         log.info(
                             f'Found MATCH: [{channel_name}] [{channel_id}] [{timestamp}] [{pid}] "{fname}"'
                             f'{" [VO]" if vo else ""}'
                         )
-                        _TIMERS_ADDED.append(filename)
+                        _TIMERS_ADDED.append(fname)
                         nr_procs += 1
                         await asyncio.sleep(3)
                         if _NETWORK_SATURATED or (RECORDING_THREADS and not nr_procs < RECORDING_THREADS):
@@ -1081,14 +1083,12 @@ async def update_epg_delayed():
     _t_epg2 = asyncio.create_task(every(3600, update_epg))
 
 
-async def update_recordings(archive=False):
-    m3u = '#EXTM3U name="Recordings" dlna_extras=mpeg_ps_pal\n'
-
-    def dump_files(m3u, files, latest=False):
+async def update_recordings(archive=None):
+    def dump_files(files, channel=False, latest=False):
+        m3u = ""
         for file in files:
             filename, ext = os.path.splitext(file)
             relname = filename[len(RECORDINGS) + 1 :]
-            path, name = os.path.split(relname)
             if os.path.exists(filename + ".jpg"):
                 logo = relname + ".jpg"
             else:
@@ -1097,38 +1097,64 @@ async def update_recordings(archive=False):
                     logo = _logo[0][len(RECORDINGS) + 1 :]
                 else:
                     logo = ""
-            m3u += '#EXTINF:-1 tvg-id=""'
+            path, name = [t.replace(",", ":").replace(" - ", ": ") for t in os.path.split(relname)]
+            m3u += '#EXTINF:-1 group-title="'
+            m3u += '# Recientes"' if latest else f'{path}"' if path else '#"'
             m3u += f' tvg-logo="{SANIC_URL}/recording/?' if logo else ""
             m3u += (urllib.parse.quote(logo) + '"') if logo else ""
-            m3u += ' group-title="'
-            m3u += "# Recientes" if latest else path if path else "#"
-            m3u += f'",{name}\n{SANIC_URL}/recording/?'
+            m3u += f",{path} - " if (channel and path) else ","
+            m3u += f"{name}\n{SANIC_URL}/recording/?"
             m3u += urllib.parse.quote(relname + ext) + "\n"
         return m3u
+
+    async def find_videos(path):
+        while True:
+            try:
+                files = [
+                    file
+                    for file in glob(f"{path}/**", recursive=True)
+                    if os.path.splitext(file)[1] in (".avi", ".mkv", ".mp4", ".mpeg", ".mpg", ".ts")
+                ]
+                files.sort(key=os.path.getmtime)
+                return files
+            except FileNotFoundError:
+                await asyncio.sleep(1)
 
     async with recordings_lock:
         if archive:
             async with aiofiles.open(recordings, "w", encoding="utf8") as f:
                 await f.write(ujson.dumps(_RECORDINGS, ensure_ascii=False, indent=4, sort_keys=True))
 
-        while True:
-            try:
-                files = [
-                    file
-                    for file in glob(f"{RECORDINGS}/**", recursive=True)
-                    if os.path.splitext(file)[1] in (".avi", ".mkv", ".mp4", ".mpeg", ".mpg", ".ts")
-                ]
+        if RECORDINGS_PER_CHANNEL:
+            if archive and not isinstance(archive, bool):
+                topdirs = [get_channel_dir(archive)]
+            else:
+                topdirs = sorted(
+                    [dir for dir in os.listdir(RECORDINGS) if os.path.isdir(os.path.join(RECORDINGS, dir))]
+                )
+        else:
+            topdirs = []
 
-                files.sort(key=os.path.getmtime, reverse=True)
-                break
-            except FileNotFoundError:
-                await asyncio.sleep(1)
+        _files = await find_videos(RECORDINGS)
+        for dir in [RECORDINGS] + topdirs:
+            log.debug(f'Looking for recordings in "{dir}"')
+            files = (
+                _files
+                if dir == RECORDINGS
+                else [file for file in _files if file.startswith(os.path.join(RECORDINGS, dir))]
+            )
+            m3u = f"#EXTM3U name=\"{'Recordings' if dir == RECORDINGS else dir}\" dlna_extras=mpeg_ps_pal\n"
+            if dir == RECORDINGS:
+                m3u += dump_files(reversed(files), latest=True)
+                m3u += dump_files(sorted(files))
+                m3u_file = RECORDINGS_M3U
+            else:
+                m3u += dump_files(files, channel=True)
+                m3u_file = os.path.join(os.path.join(RECORDINGS, dir), f"{dir}.m3u")
 
-        m3u = dump_files(m3u, files, latest=True)
-        m3u = dump_files(m3u, sorted(files))
-
-        async with aiofiles.open(CHANNELS_RECORDINGS, "w", encoding="utf8") as f:
-            await f.write(m3u)
+            log.debug(f"Writing m3u [{m3u_file[len(RECORDINGS) + 1 :]}]")
+            async with aiofiles.open(m3u_file, "w", encoding="utf8") as f:
+                await f.write(m3u)
 
         log.info(f"Local Recordings Updated => {SANIC_URL}/Recordings.m3u")
 

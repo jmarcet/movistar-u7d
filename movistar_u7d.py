@@ -58,7 +58,6 @@ else:
 HOME = os.getenv("HOME", os.getenv("HOMEPATH"))
 CHANNELS = os.path.join(HOME, "MovistarTV.m3u")
 CHANNELS_CLOUD = os.path.join(HOME, "MovistarTVCloud.m3u")
-CHANNELS_RECORDINGS = os.path.join(HOME, "Recordings.m3u")
 DEBUG = bool(int(os.getenv("DEBUG", 0)))
 GUIDE = os.path.join(HOME, "guide.xml")
 GUIDE_CLOUD = os.path.join(HOME, "cloud.xml")
@@ -68,7 +67,8 @@ IPTV_IFACE = os.getenv("IPTV_IFACE", None)
 MIME_M3U = "audio/x-mpegurl"
 MIME_TS = "video/MP2T;audio/mp3"
 MIME_WEBM = "video/webm"
-RECORDINGS = os.getenv("RECORDINGS", None)
+RECORDINGS = os.getenv("RECORDINGS", "").rstrip("/").rstrip("\\")
+RECORDINGS_M3U = os.path.join(RECORDINGS, "Recordings.m3u")
 SANIC_EPG_URL = "http://127.0.0.1:8889"
 SANIC_PORT = int(os.getenv("SANIC_PORT", "8888"))
 SANIC_URL = f"http://{SANIC_HOST}:{SANIC_PORT}"
@@ -207,9 +207,9 @@ async def handle_channels_cloud(request):
 @app.get("/Recordings.m3u")
 async def handle_channels_recordings(request):
     log.info(f"[{request.ip}] {request.method} {request.url}")
-    if not os.path.exists(CHANNELS_RECORDINGS):
+    if not os.path.exists(RECORDINGS_M3U):
         raise exceptions.NotFound(f"Requested URL {request.raw_url.decode()} not found")
-    return await response.file(CHANNELS_RECORDINGS, mime_type=MIME_M3U)
+    return await response.file(RECORDINGS_M3U, mime_type=MIME_M3U)
 
 
 @app.get("/guia.xml")
