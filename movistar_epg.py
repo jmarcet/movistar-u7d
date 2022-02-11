@@ -69,6 +69,7 @@ RECORDINGS_PER_CHANNEL = bool(int(os.getenv("RECORDINGS_PER_CHANNEL", 0)))
 SANIC_PORT = int(os.getenv("SANIC_PORT", "8888"))
 SANIC_URL = f"http://{SANIC_HOST}:{SANIC_PORT}"
 UA_U7D = f"movistar-u7d v{_version} [{sys.platform}]"
+VID_EXTS = (".avi", ".mkv", ".mp4", ".mpeg", ".mpg", ".ts")
 VOD_EXEC = "vod.exe" if os.path.exists("vod.exe") else "vod.py"
 
 LOG_SETTINGS = LOGGING_CONFIG_DEFAULTS
@@ -185,20 +186,36 @@ async def after_server_start(app, loop):
         log.info(f"Manual timers check => {SANIC_URL}/timers_check")
         if not os.path.exists(RECORDINGS):
             os.mkdir(RECORDINGS)
-        _t_recs = asyncio.create_task(update_recordings())
-        try:
-            async with aiofiles.open(recordings, encoding="utf8") as f:
-                recordingsdata = ujson.loads(await f.read())
-            int_recordings = {}
-            for channel in recordingsdata:
-                int_recordings[int(channel)] = {}
-                for timestamp in recordingsdata[channel]:
-                    int_recordings[int(channel)][int(timestamp)] = recordingsdata[channel][timestamp]
-            _RECORDINGS = int_recordings
-        except (TypeError, ValueError) as ex:
-            log.error(f"{repr(ex)}")
-        except FileNotFoundError:
-            pass
+        else:
+            try:
+                async with aiofiles.open(recordings, encoding="utf8") as f:
+                    recordingsdata = ujson.loads(await f.read())
+                int_recordings = {}
+                for channel in recordingsdata:
+                    int_recordings[int(channel)] = {}
+                    for timestamp in recordingsdata[channel]:
+                        recording = recordingsdata[channel][timestamp]
+                        try:
+                            filename = recording["filename"]
+                        except KeyError:
+                            log.warning(f'Dropping old style "{recording}" from recordings.json')
+                            continue
+                        if len(
+                            [
+                                file
+                                for file in glob(os.path.join(RECORDINGS, filename) + ".*")
+                                if os.path.splitext(file)[1] in VID_EXTS
+                            ]
+                        ):
+                            int_recordings[int(channel)][int(timestamp)] = recording
+                        else:
+                            log.warning(f'Dropping not found "{filename}" from recordings.json')
+                _RECORDINGS = int_recordings
+            except (TypeError, ValueError) as ex:
+                log.error(f"{repr(ex)}")
+            except FileNotFoundError:
+                pass
+            _t_recs = asyncio.create_task(update_recordings(True))
 
         if os.path.exists(timers):
             _ffmpeg = str(await get_ffmpeg_procs())
@@ -1113,7 +1130,7 @@ async def update_recordings(archive=None):
                 files = [
                     file
                     for file in glob(f"{path}/**", recursive=True)
-                    if os.path.splitext(file)[1] in (".avi", ".mkv", ".mp4", ".mpeg", ".mpg", ".ts")
+                    if os.path.splitext(file)[1] in VID_EXTS
                 ]
                 files.sort(key=os.path.getmtime)
                 return files
