@@ -306,11 +306,15 @@ Si se activa la opción `RECORDINGS_PER_CHANNEL` irán además dentro de una car
 Cómo funciona
 -------------
 
- - Los canales son accesibles en URLs como: `http://192.168.1.10:8888/{canal}/mpegts`
+ - Los canales son accesibles en URLs como: `http://192.168.1.10:8888/{nombre_canal}.ts` o `http://192.168.1.10:8888/{numero_canal}/mpegts`
 
-Donde `canal` es el número identificador de los canales según figuran en la lista de canales `.m3u` principal
+El nombre de canal debe ir sin espacios, podemos evitar tanto las palabras `HD` como `TV`, y es insensible a mayúsculas/minúsculas. Así podemos ver el directo de `Neox HD` accediendo a `http://192.168.1.10:8888/neox.ts`
+
+El número de canal es el interno, tal como figuran en la lista de canales principal.
 
  - Se puede acceder a cualquier instante de los últimos 7 días en URLs como: `http://192.168.1.10:8888/{canal}/{YYYYMMDDHHMM}`, `http://192.168.1.10:8888/{canal}/{YYYYMMDDHHMMSS}` y `http://192.168.1.10:8888/{canal}/{timestamp}`
+
+Aquí como canal podemos usar tanto el nombre como el número interno, con las mismas premisas para el nombre que en los directos.
 
  - Y a las grabaciones en la nube de [Movistar](https://www.movistar.es/particulares/internet/), con mucho más tiempo de almacenado: `http://192.168.1.10:8888/cloud/{canal}/{YYYYMMDDHHMM}`, `http://192.168.1.10:8888/cloud/{canal}/{YYYYMMDDHHMMSS}` y `http://192.168.1.10:8888/cloud/{canal}/{timestamp}`
 

@@ -4,6 +4,7 @@ import aiofiles
 import aiohttp
 import asyncio
 import asyncio_dgram
+import json
 import os
 import signal
 import socket
@@ -117,7 +118,10 @@ async def before_server_start(app, loop):
         try:
             async with _SESSION.get(f"{SANIC_EPG_URL}/channels/") as r:
                 if r.status == 200:
-                    _CHANNELS = await r.json()
+                    _CHANNELS = json.loads(
+                        await r.text(),
+                        object_hook=lambda d: {int(k) if k.isdigit() else k: v for k, v in d.items()},
+                    )
                     break
                 else:
                     log.error("Failed to get channel list from EPG service")
@@ -178,6 +182,15 @@ async def after_server_stop(app, loop):
         pass
 
 
+def get_channel_id(channel_name):
+    return [
+        chan
+        for chan in _CHANNELS
+        if channel_name.lower().replace("hd", "").replace("tv", "")
+        == _CHANNELS[chan]["name"].lower().replace(" ", "").rstrip("hd").rstrip("tv").rstrip("+").rstrip(".")
+    ][0]
+
+
 @app.get(r"/<m3u_file:([A-Za-z1-9]+)\.m3u$>")
 async def handle_m3u_files(request, m3u_file):
     log.info(f"[{request.ip}] {request.method} {request.url}")
@@ -190,20 +203,19 @@ async def handle_m3u_files(request, m3u_file):
     elif m3u in ("grabaciones", "recordings"):
         m3u_matched = RECORDINGS_M3U
     elif RECORDINGS_PER_CHANNEL:
-        for channel_id in [
-            chan
-            for chan in _CHANNELS
-            if m3u.rstrip("hd") == _CHANNELS[chan]["name"].lower().replace(" ", "").rstrip("hd")
-        ]:
+        try:
+            channel_id = get_channel_id(m3u)
             channel_tag = "%03d. %s" % (_CHANNELS[channel_id]["number"], _CHANNELS[channel_id]["name"])
             m3u_matched = os.path.join(os.path.join(RECORDINGS, channel_tag), f"{channel_tag}.m3u")
             msg = f"[{channel_tag}]"
+        except IndexError:
+            pass
 
     if m3u_matched and os.path.exists(m3u_matched):
         log.info(f'[{request.ip}] Found {msg} m3u: "{m3u_matched}"')
         return await response.file(m3u_matched, mime_type=MIME_M3U)
     else:
-        log.warning(f'[{request.ip}] {msg} m3u: Not Found')
+        log.warning(f"[{request.ip}] {msg} m3u: Not Found")
         raise exceptions.NotFound(f"Requested URL {request.raw_url.decode()} not found")
 
 
@@ -273,10 +285,16 @@ async def handle_logos(request, cover=None, logo=None, path=None):
 
 @app.route("/<channel_id:int>/live", methods=["GET", "HEAD"])
 @app.route("/<channel_id:int>/mpegts", methods=["GET", "HEAD"])
-async def handle_channel(request, channel_id):
+@app.route(r"/<channel_name:([A-Za-z1-9]+)\.ts$>", methods=["GET", "HEAD"])
+async def handle_channel(request, channel_id=None, channel_name=None):
     _start = timeit.default_timer()
     _raw_url = request.raw_url.decode()
     _sanic_url = (SANIC_URL + _raw_url + " ") if VERBOSE_LOGS else ""
+    if channel_name:
+        try:
+            channel_id = get_channel_id(channel_name)
+        except IndexError:
+            raise exceptions.NotFound(f"Requested URL {_raw_url} not found")
 
     if _NETWORK_SATURATED:
         procs = await get_ffmpeg_procs()
@@ -290,7 +308,7 @@ async def handle_channel(request, channel_id):
             raise exceptions.ServiceUnavailable("Network Saturated")
 
     try:
-        name, mc_grp, mc_port = [_CHANNELS[str(channel_id)][t] for t in ["name", "address", "port"]]
+        name, mc_grp, mc_port = [_CHANNELS[channel_id][t] for t in ["name", "address", "port"]]
     except (AttributeError, KeyError):
         log.error(f"{_raw_url} not found")
         raise exceptions.NotFound(f"Requested URL {_raw_url} not found")
@@ -351,10 +369,16 @@ async def handle_channel(request, channel_id):
 
 
 @app.route("/<channel_id:int>/<url>", methods=["GET", "HEAD"])
-async def handle_flussonic(request, channel_id, url, cloud=False):
+@app.route(r"/<channel_name:([A-Za-z1-9]+)>/<url>", methods=["GET", "HEAD"])
+async def handle_flussonic(request, url, channel_id=None, channel_name=None, cloud=False):
     _start = timeit.default_timer()
     _raw_url = request.raw_url.decode()
     _sanic_url = (SANIC_URL + _raw_url + " ") if VERBOSE_LOGS else ""
+    if channel_name:
+        try:
+            channel_id = get_channel_id(channel_name)
+        except IndexError:
+            raise exceptions.NotFound(f"Requested URL {_raw_url} not found")
 
     if not url:
         return response.empty(404)
@@ -394,7 +418,7 @@ async def handle_flussonic(request, channel_id, url, cloud=False):
         else:
             raise exceptions.NotFound(f"Requested URL {_raw_url} not found")
     vod = asyncio.create_task(VodLoop(_args, vod_data))
-    _endpoint = _CHANNELS[str(channel_id)]["name"] + f" _ {request.ip} _ "
+    _endpoint = _CHANNELS[channel_id]["name"] + f" _ {request.ip} _ "
     with closing(await asyncio_dgram.bind((_IPTV, client_port))) as stream:
         try:
             _response = await request.respond(content_type=MIME_TS)
@@ -455,7 +479,7 @@ async def handle_flussonic(request, channel_id, url, cloud=False):
 async def handle_flussonic_cloud(request, channel_id, url):
     if url == "live" or url == "mpegts":
         return await handle_channel(request, channel_id)
-    return await handle_flussonic(request, channel_id, url, cloud=True)
+    return await handle_flussonic(request, url, channel_id, cloud=True)
 
 
 @app.get("/favicon.ico")
