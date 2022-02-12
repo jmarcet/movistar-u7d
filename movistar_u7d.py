@@ -69,6 +69,7 @@ MIME_TS = "video/MP2T;audio/mp3"
 MIME_WEBM = "video/webm"
 RECORDINGS = os.getenv("RECORDINGS", "").rstrip("/").rstrip("\\")
 RECORDINGS_M3U = os.path.join(RECORDINGS, "Recordings.m3u")
+RECORDINGS_PER_CHANNEL = bool(int(os.getenv("RECORDINGS_PER_CHANNEL", 0)))
 SANIC_EPG_URL = "http://127.0.0.1:8889"
 SANIC_PORT = int(os.getenv("SANIC_PORT", "8888"))
 SANIC_URL = f"http://{SANIC_HOST}:{SANIC_PORT}"
@@ -177,39 +178,33 @@ async def after_server_stop(app, loop):
         pass
 
 
-@app.get("/canales.m3u")
-@app.get("/channels.m3u")
-@app.get("/Canales.m3u")
-@app.get("/Channels.m3u")
-@app.get("/MovistarTV.m3u")
-async def handle_channels(request):
+@app.get(r"/<m3u_file:([A-Za-z1-9]+)\.m3u$>")
+async def handle_m3u_files(request, m3u_file):
     log.info(f"[{request.ip}] {request.method} {request.url}")
-    if not os.path.exists(CHANNELS):
+    m3u, m3u_matched = m3u_file.lower(), None
+    msg = f'"{m3u_file}"'
+    if m3u in ("movistartv", "canales", "channels"):
+        m3u_matched = CHANNELS
+    elif m3u in ("movistartvcloud", "cloud", "nube"):
+        m3u_matched = CHANNELS_CLOUD
+    elif m3u in ("grabaciones", "recordings"):
+        m3u_matched = RECORDINGS_M3U
+    elif RECORDINGS_PER_CHANNEL:
+        for channel_id in [
+            chan
+            for chan in _CHANNELS
+            if m3u.rstrip("hd") == _CHANNELS[chan]["name"].lower().replace(" ", "").rstrip("hd")
+        ]:
+            channel_tag = "%03d. %s" % (_CHANNELS[channel_id]["number"], _CHANNELS[channel_id]["name"])
+            m3u_matched = os.path.join(os.path.join(RECORDINGS, channel_tag), f"{channel_tag}.m3u")
+            msg = f"[{channel_tag}]"
+
+    if m3u_matched and os.path.exists(m3u_matched):
+        log.info(f'[{request.ip}] Found {msg} m3u: "{m3u_matched}"')
+        return await response.file(m3u_matched, mime_type=MIME_M3U)
+    else:
+        log.warning(f'[{request.ip}] {msg} m3u: Not Found')
         raise exceptions.NotFound(f"Requested URL {request.raw_url.decode()} not found")
-    return await response.file(CHANNELS, mime_type=MIME_M3U)
-
-
-@app.get("/cloud.m3u")
-@app.get("/nube.m3u")
-@app.get("/Cloud.m3u")
-@app.get("/Nube.m3u")
-@app.get("/MovistarTVCloud.m3u")
-async def handle_channels_cloud(request):
-    log.info(f"[{request.ip}] {request.method} {request.url}")
-    if not os.path.exists(CHANNELS_CLOUD):
-        raise exceptions.NotFound(f"Requested URL {request.raw_url.decode()} not found")
-    return await response.file(CHANNELS_CLOUD, mime_type=MIME_M3U)
-
-
-@app.get("/grabaciones.m3u")
-@app.get("/recordings.m3u")
-@app.get("/Grabaciones.m3u")
-@app.get("/Recordings.m3u")
-async def handle_channels_recordings(request):
-    log.info(f"[{request.ip}] {request.method} {request.url}")
-    if not os.path.exists(RECORDINGS_M3U):
-        raise exceptions.NotFound(f"Requested URL {request.raw_url.decode()} not found")
-    return await response.file(RECORDINGS_M3U, mime_type=MIME_M3U)
 
 
 @app.get("/guia.xml")

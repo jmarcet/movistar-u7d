@@ -62,7 +62,11 @@ Una vez instalado, tendremos las siguientes URLs disponibles, donde 192.168.1.10
 ![overview](../../raw/data/TiviMate_20211010_200214.png)
 ![settings](../../raw/data/TiviMate_20211010_200007.png)
 
- 6. Métricas de utilización para [Prometheus](https://prometheus.io/docs/introduction/overview/): `http://192.168.1.10:8888/metrics`
+ 6. Si tenemos además activa la opción `RECORDINGS_PER_CHANNEL`, en los canales de los que tengamos grabaciones realizadas, se generará una lista `m3u` por cada uno. Ésta será ligeramente diferente de las anteriores, más pensada para consumir con reproductores como `vlc` o `mpv`. Las encontraremos en la carpeta correspondiente a cada canal y podremos acceder a ellas con el nombre del canal sin espacios, el `hd` no es necesario: `http://192.168.1.10:8888/neox.m3u` o `http://192.168.1.10:8888/la2.m3u`
+
+En todos los casos, las URL de las listas `m3u` son insensibles a mayúsculas o minúsculas.
+
+ 7. Métricas de utilización para [Prometheus](https://prometheus.io/docs/introduction/overview/): `http://192.168.1.10:8888/metrics`
 
 Éstas contienen información en tiempo real de los clientes activos, separados por directos y catchups, y ordenados por la latencia inicial que tuvo cada stream para llegar. Perfectas para conectar con [Grafana](https://grafana.com/grafana/) y así poder visualizarlas y también tener un archivo histórico de uso:
 

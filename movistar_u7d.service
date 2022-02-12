@@ -16,6 +16,7 @@ Environment=PYTHONUNBUFFERED=1
 # Environment=IPTV_IFACE=eth0.2
 # Environment=LAN_IP=192.168.1.10
 # Environment=RECORDINGS=/mnt/recordings
+# Environment=RECORDINGS_PER_CHANNEL=1
 # Environment=SANIC_PORT=8888
 # Environment=SANIC_THREADS=4
 # Environment=VERBOSE_LOGS=0
