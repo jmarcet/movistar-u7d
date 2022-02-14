@@ -631,12 +631,10 @@ async def handle_record_program(request, channel_id, url):
     else:
         record_time = duration - offset
 
-    if await vod_ongoing(channel_id, program_id):
-        raise exceptions.ServiceUnavailable("Recording already ongoing")
-
-    if await record_program(channel_id, program_id, offset, record_time, cloud, mp4, vo):
-        log.warning("Network Saturated")
-        raise exceptions.ServiceUnavailable("Network Saturated")
+    msg = await record_program(channel_id, program_id, offset, record_time, cloud, mp4, vo)
+    if msg:
+        log.warning(msg)
+        raise exceptions.ServiceUnavailable(msg)
 
     return response.json(
         {
@@ -710,7 +708,9 @@ async def reap_vod_child(p):
 
 async def record_program(channel_id, program_id, offset=0, record_time=0, cloud=False, mp4=False, vo=False):
     if _NETWORK_SATURATED:
-        return True
+        return "Network Saturated"
+    if await vod_ongoing(channel_id, program_id):
+        return "Recording already ongoing"
 
     client_port = find_free_port(_IPTV)
     cmd = f"{VOD_EXEC} {channel_id} {program_id} -p {client_port}"
@@ -930,7 +930,10 @@ async def timers_check():
                     ):
                         cloud = channel_id in _CLOUD and timestamp in _CLOUD[channel_id]
                         if await record_program(channel_id, pid, 0, duration, cloud, MP4_OUTPUT, vo):
-                            return
+                            if _NETWORK_SATURATED:
+                                return
+                            else:
+                                break
                         log.info(
                             f'Found MATCH: [{channel_name}] [{channel_id}] [{timestamp}] [{pid}] "{fname}"'
                             f'{" [VO]" if vo else ""}'
