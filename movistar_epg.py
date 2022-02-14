@@ -200,13 +200,7 @@ async def after_server_start(app, loop):
                         except KeyError:
                             log.warning(f'Dropping old style "{recording}" from recordings.json')
                             continue
-                        if len(
-                            [
-                                file
-                                for file in glob(os.path.join(RECORDINGS, filename) + ".*")
-                                if os.path.splitext(file)[1] in VID_EXTS
-                            ]
-                        ):
+                        if does_recording_exist(filename):
                             int_recordings[int(channel)][int(timestamp)] = recording
                         else:
                             log.warning(f'Dropping not found "{filename}" from recordings.json')
@@ -268,6 +262,16 @@ async def after_server_stop(app, loop):
                 await asyncio.wait({_CHILDREN[pid][2]})
             except (AttributeError, KeyError, ProcessLookupError):
                 pass
+
+
+def does_recording_exist(filename):
+    return bool(
+        [
+            file
+            for file in glob(os.path.join(RECORDINGS, f"{filename.replace('[', '?').replace(']', '?')}.*"))
+            if os.path.splitext(file)[1] in VID_EXTS
+        ]
+    )
 
 
 async def every(timeout, stuff):
@@ -500,29 +504,42 @@ async def handle_program_name(request, channel_id, program_id, missing=0):
                 pass
             return response.json({"status": "Recording Incomplete"}, status=201)
 
-    if channel_id not in _RECORDINGS:
-        _RECORDINGS[channel_id] = {}
-    _RECORDINGS[channel_id][timestamp] = {"filename": fname}
     try:
         _TIMERS_ADDED.remove(fname)
     except ValueError:
         pass
 
-    global _t_recs
-    _t_recs = asyncio.create_task(update_recordings(channel_id))
-
     if not _NETWORK_SATURATED:
         global _t_timers_r
         _t_timers_r = asyncio.create_task(timers_check())
 
-    log.info(f"Recording ARCHIVED: {log_suffix}")
-    return response.json(
-        {
-            "status": "Recorded OK",
-            "full_title": _epg["full_title"],
-        },
-        ensure_ascii=False,
-    )
+    if does_recording_exist(fname):
+        async with recordings_lock:
+            if channel_id not in _RECORDINGS:
+                _RECORDINGS[channel_id] = {}
+            _RECORDINGS[channel_id][timestamp] = {"filename": fname}
+
+        global _t_recs
+        _t_recs = asyncio.create_task(update_recordings(channel_id))
+
+        log.info(f"Recording ARCHIVED: {log_suffix}")
+        return response.json(
+            {
+                "status": "Recorded OK",
+                "full_title": _epg["full_title"],
+            },
+            ensure_ascii=False,
+        )
+    else:
+        log.error(f"Recording NOT ARCHIVED: {log_suffix}")
+        return response.json(
+            {
+                "status": "Recording Failed",
+                "full_title": _epg["full_title"],
+            },
+            ensure_ascii=False,
+            status=201,
+        )
 
 
 @app.post("/prom_event/add")
