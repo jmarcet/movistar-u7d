@@ -201,7 +201,7 @@ def cleanup(ext, subs=False):
     if os.path.exists(_filename + ext):
         os.remove(_filename + ext)
     if subs:
-        [os.remove(t) for t in glob(f"{_filename}.*.sub")]
+        [os.remove(t) for t in glob(f"{_filename.replace('[', '?').replace(']', '?')}.*.sub")]
 
 
 def find_free_port(iface=""):
