@@ -452,7 +452,7 @@ async def handle_program_id(request, channel_id, url):
         raise exceptions.NotFound(f"Requested URL {request.raw_url.decode()} not found")
 
 
-@app.route("/program_name/<channel_id:int>/<program_id:int>", methods=["GET", "PUT"])
+@app.route("/program_name/<channel_id:int>/<program_id:int>", methods=["GET", "OPTIONS", "PUT"])
 async def handle_program_name(request, channel_id, program_id, missing=0):
     global _RECORDINGS
     try:
@@ -493,8 +493,11 @@ async def handle_program_name(request, channel_id, program_id, missing=0):
             _RECORDINGS_INC[channel_id][program_id] = []
         _RECORDINGS_INC[channel_id][program_id].append(missing)
         _t = _RECORDINGS_INC[channel_id][program_id]
-        if len(_t) > 2 and _t[-3] == _t[-2] and _t[-2] == _t[-1]:
+        if request and request.method == "OPTIONS" and len(_t) > 2 and _t[-3] == _t[-2] and _t[-2] == _t[-1]:
             log.warning(f"Recording Incomplete KEEP: {log_suffix}: {_t}")
+            return response.json({"status": "Recording Incomplete KEEP"}, status=200)
+        elif request and request.method == "PUT" and len(_t) > 3 and _t[-4] == _t[-3] and _t[-3] == _t[-2]:
+            log.warning(f"Recording Incomplete KEPT: {log_suffix}: {_t}")
             del _RECORDINGS_INC[channel_id][program_id]
         else:
             log.error(f"Recording Incomplete RETRY: {log_suffix}: {_t}")
@@ -502,7 +505,7 @@ async def handle_program_name(request, channel_id, program_id, missing=0):
                 _TIMERS_ADDED.remove(fname)
             except ValueError:
                 pass
-            return response.json({"status": "Recording Incomplete"}, status=201)
+            return response.json({"status": "Recording Incomplete RETRY"}, status=201)
 
     try:
         _TIMERS_ADDED.remove(fname)

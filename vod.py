@@ -233,7 +233,7 @@ async def postprocess(record_time=0):
     try:
         if record_time:
             missing = _args.time - record_time
-            resp = await _SESSION.put(_epg_url + f"?missing={missing}")
+            resp = await _SESSION.options(_epg_url + f"?missing={missing}")
 
             if resp and resp.status == 200:
                 return await postprocess()
@@ -262,7 +262,7 @@ async def postprocess(record_time=0):
         msg = f"Recording {'INCOMPLETE:' if bad else 'COMPLETE:'} {_log_suffix}"
         log.warning(msg) if bad else log.info(msg)
         missing_time = (_args.time - duration) if bad else 0
-        _log_suffix = _log_suffix[_log_suffix.find(" - ") + 3:]
+        _log_suffix = _log_suffix[_log_suffix.find(" - ") + 3 :]
 
         cleanup(VID_EXT, _args.mp4)
         if _args.mp4:
