@@ -197,9 +197,11 @@ def check_dns():
         s.close()
 
 
-def cleanup(ext, subs=False):
+def cleanup(ext, meta=False, subs=False):
     if os.path.exists(_filename + ext):
         os.remove(_filename + ext)
+    if meta:
+        [os.remove(t) for t in glob(f"{_filename.replace('[', '?').replace(']', '?')}.*.jpg")]
     if subs:
         [os.remove(t) for t in glob(f"{_filename.replace('[', '?').replace(']', '?')}.*.sub")]
 
@@ -240,8 +242,11 @@ async def postprocess(record_time=0):
             else:
                 raise ValueError(f"Too short, missing: {missing}s")
 
+        img_mime, img_name = await save_metadata()
+
         command = list(_nice)
         command += ["mkvmerge", "--abort-on-warnings", "-q", "-o", _filename + TMP_EXT2]
+        command += ["--attachment-mime-type", img_mime, "--attach-file", img_name]
         if _args.vo:
             command += ["--track-order", "0:2,0:1,0:4,0:3,0:6,0:5"]
             command += ["--default-track", "2:1"]
@@ -264,7 +269,7 @@ async def postprocess(record_time=0):
         missing_time = (_args.time - duration) if bad else 0
         _log_suffix = _log_suffix[_log_suffix.find(" - ") + 3 :]
 
-        cleanup(VID_EXT, _args.mp4)
+        cleanup(VID_EXT, subs=_args.mp4)
         if _args.mp4:
             command = list(_nice)
             command += ["ffmpeg", "-i", _filename + TMP_EXT2]
@@ -282,7 +287,7 @@ async def postprocess(record_time=0):
                 command += ["-map", "0:%d" % track["id"], "-c:s", "dvbsub"]
                 command += ["-f", "mpegts", "-v", "panic", filesub]
                 if subprocess.run(command).returncode:
-                    cleanup(VID_EXT, _args.mp4)
+                    cleanup(VID_EXT, meta=True, subs=True)
                     raise ValueError("Failed to write " + filesub)
 
             cleanup(TMP_EXT2)
@@ -296,9 +301,9 @@ async def postprocess(record_time=0):
             resp = await _SESSION.put(_epg_url + f"?missing={missing_time}")
 
         if resp and resp.status == 200:
-            await save_metadata()
+            await save_metadata(extra=True)
         else:
-            cleanup(VID_EXT, _args.mp4)
+            cleanup(VID_EXT, meta=True, subs=_args.mp4)
 
     except Exception as ex:
         log.error(f"Recording FAILED: {_log_suffix} => {repr(ex)}")
@@ -309,7 +314,7 @@ async def postprocess(record_time=0):
             except (ClientConnectorError, ConnectionRefusedError, ServerDisconnectedError):
                 pass
         cleanup(TMP_EXT2)
-        cleanup(VID_EXT, _args.mp4)
+        cleanup(VID_EXT, meta=True, subs=True)
         if os.path.exists(LOCK_FILE):
             try:
                 os.remove(LOCK_FILE)
@@ -373,7 +378,7 @@ async def record_stream():
     _start = timeit.default_timer()
 
 
-async def save_metadata():
+async def save_metadata(extra=False):
     log.debug(f"Saving metadata: {_log_suffix}")
     cache_metadata = os.path.join(CACHE_DIR, f"{_args.broadcast}.json")
     try:
@@ -392,21 +397,25 @@ async def save_metadata():
         log.warning(f"Extended info not found: {_log_suffix} => {repr(ex)}")
         return
 
-    for t in ["beginTime", "endTime", "expDate"]:
-        metadata[t] = int(metadata[t] / 1000)
-    cover = metadata["cover"]
-    log.debug(f'Getting cover "{cover}": {_log_suffix}')
-    async with _SESSION_CLOUD.get(f"{COVER_URL}/{cover}") as resp:
-        if resp.status == 200:
-            log.debug(f'Got cover "{cover}": {_log_suffix}')
-            img_ext = os.path.splitext(cover)[1]
-            img_name = _filename + img_ext
-            log.debug(f'Saving cover "{cover}" -> "{img_name}": {_log_suffix}')
-            async with aiofiles.open(img_name, "wb") as f:
-                await f.write(await resp.read())
-            metadata["cover"] = os.path.basename(img_name)
-        else:
-            log.debug(f'Failed to get cover "{cover}": {_log_suffix}')
+    if not extra:
+        for t in ["beginTime", "endTime", "expDate"]:
+            metadata[t] = int(metadata[t] / 1000)
+        cover = metadata["cover"]
+        log.debug(f'Getting cover "{cover}": {_log_suffix}')
+        async with _SESSION_CLOUD.get(f"{COVER_URL}/{cover}") as resp:
+            if resp.status == 200:
+                log.debug(f'Got cover "{cover}": {_log_suffix}')
+                img_ext = os.path.splitext(cover)[1]
+                img_name = _filename + img_ext
+                log.debug(f'Saving cover "{cover}" -> "{img_name}": {_log_suffix}')
+                async with aiofiles.open(img_name, "wb") as f:
+                    await f.write(await resp.read())
+                metadata["cover"] = os.path.basename(img_name)
+            else:
+                log.debug(f'Failed to get cover "{cover}": {_log_suffix}')
+        img_mime = "image/jpeg" if img_ext in (".jpeg", ".jpg") else "image/png"
+        return img_mime, img_name
+
     if "covers" in metadata:
         covers = {}
         metadata_dir = os.path.join(_path, "metadata")
