@@ -52,7 +52,7 @@ MVTV_URL = "http://www-60.svc.imagenio.telefonica.net:2001/appserver/mvtv.do"
 NFO_EXT = "-movistar.nfo"
 TMP_EXT = ".tmp"
 TMP_EXT2 = ".tmp2"
-UA = "MICA-IP-STB"
+UA = "libcurl-agent/1.0 [IAL] WidgetManager Safari/538.1 CAP:803fd12a 1"
 
 WIN32 = sys.platform == "win32"
 
@@ -548,7 +548,7 @@ async def VodSetup(args, vod_client, failed=False):
             return
 
     client = None
-    headers = {"CSeq": "", "User-Agent": UA}
+    headers = {"CSeq": "", "User-Agent": "MICA-IP-STB"}
 
     setup = session = play = describe = headers.copy()
     describe["Accept"] = "application/sdp"
@@ -612,7 +612,7 @@ async def VodSetup(args, vod_client, failed=False):
             log.error(f"{r}")
             return
 
-    play["Range"] = f"npt={args.start}-end"
+    play["Range"] = f"npt={args.start:.3f}-end"
     play.update({"Scale": "1.000", "x-playNow": "", "x-noFlush": ""})
     play["Session"] = session["Session"] = r.headers["Session"].split(";")[0]
 
