@@ -820,7 +820,7 @@ class MulticastIPTV:
                             stales.add(_next)
                             log.debug(f"[{channel}] _start={_start} _end={_end} _next={_next} stale 2")
                         else:
-                            log.error(
+                            log.debug(
                                 f"[{epg_name}] [{channel}] COLLAPSE {_start}->{_end} & {_next} in EPG!!!"
                             )
                             if times > 5:
@@ -856,7 +856,7 @@ class MulticastIPTV:
                         ):
                             epg[channel][prev_timestamp]["duration"] = timestamp - prev_timestamp
                             epg[channel][prev_timestamp]["end"] = timestamp
-                            log.warning(
+                            log.debug(
                                 f"[{epg_name}] [{channel}] OVER "
                                 f"{prev_timestamp} end={prev_end} -> next={timestamp}"
                             )
