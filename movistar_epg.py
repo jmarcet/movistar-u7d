@@ -784,6 +784,9 @@ async def reload_epg():
     ):
         log.warning("Missing channels data! Need to download it. Please be patient...")
         return await update_epg()
+    elif int(os.path.getmtime(GUIDE)) < int(datetime.now().replace(minute=0, second=0).timestamp()):
+        log.warning("Guide too old. Need to update it. Please be patient...")
+        return await update_epg()
 
     async with epg_lock:
         try:
