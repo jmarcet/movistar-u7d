@@ -11,6 +11,7 @@ SyslogIdentifier=movistar-u7d
 Environment=PYTHONUNBUFFERED=1
 # Environment=DEBUG=1
 # Environment=EPG_THREADS=4
+# Environment=EXTRA_CHANNELS="4917 5066"
 # Environment=HOME=/home
 # Environment=IPTV_BW=85000
 # Environment=IPTV_IFACE=eth0.2

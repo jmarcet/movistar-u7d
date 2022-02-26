@@ -74,6 +74,8 @@ epg_channels = [
     "3103",
     "4990",
 ]
+if os.getenv("EXTRA_CHANNELS"):
+    epg_channels += os.getenv("EXTRA_CHANNELS").split(" ")
 
 default_service_provider = {"mcast_grp": "239.0.2.150", "mcast_port": "3937"}
 

@@ -2,6 +2,7 @@ $env:Path = "."
 $env:PYTHONUNBUFFERED = "1"
 
 # $env:DEBUG = "1"                                # mostrar logs de depuración
+# $env:EXTRA_CHANNELS = "4917 5066"               # canales adicionales a los que queremos acceder
 # $env:HOME = "C:\\Users\\usuario"                # ruta donde queremos que se generen las listas m3u, la guía y el directorio oculto .xmltv
 # $env:LAN_IP = "192.168.1.15"                    # dirección IP, de las disponibles en el sistema, en la que queremos que el proxy funcione
 # $env:EPG_THREADS = "4"                          # número de hilos para descargar la epg

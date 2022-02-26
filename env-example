@@ -1,5 +1,6 @@
 # DEBUG=1                            # mostrar logs de depuración
 # EPG_THREADS=4                      # número de hilos para descargar la epg
+# EXTRA_CHANNELS="4917 5066"         # canales extras a los que queremos acceder
 # HOME=/home                         # directorio donde quedará guardada la caché de tv_grab_es_movistartv
 # IPTV_BW=85000                      # máximo ancho de banda (en kbps) permitido para el total de clientes, la vlan de iptv de Movistar tiene un tope de 100000 kbps
 # IPTV_IFACE=eth0.2                  # interface de red en el que esperamos recibir la IPTV y sobre el que podemos querer aplicar el ancho de banda dinámico
