@@ -809,10 +809,10 @@ async def reload_epg():
             async with aiofiles.open(epg_metadata, encoding="utf8") as f:
                 metadata = ujson.loads(await f.read())["data"]
             async with aiofiles.open(config_data, encoding="utf8") as f:
-                packages = ujson.loads(await f.read())["data"]["tvPackages"].split("|")
+                packages = ujson.loads(await f.read())["data"]["tvPackages"]
             channels = metadata["channels"]
             services = {}
-            for package in packages:
+            for package in packages.split("|") if packages != "ALL" else metadata["packages"]:
                 services = {**services, **metadata["packages"][package]["services"]}
             int_channels = {}
             for channel in [chan for chan in channels if chan in services]:
