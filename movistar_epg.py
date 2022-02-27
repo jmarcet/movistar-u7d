@@ -52,7 +52,7 @@ else:
     SANIC_HOST = s.getsockname()[0]
     s.close
 
-HOME = os.getenv("HOME", os.getenv("HOMEPATH"))
+HOME = os.getenv("HOME", os.getenv("USERPROFILE"))
 CHANNELS = os.path.join(HOME, "MovistarTV.m3u")
 CHANNELS_CLOUD = os.path.join(HOME, "MovistarTVCloud.m3u")
 DEBUG = bool(int(os.getenv("DEBUG", 0)))

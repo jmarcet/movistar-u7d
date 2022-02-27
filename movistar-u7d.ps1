@@ -14,7 +14,7 @@ $env:PYTHONUNBUFFERED = "1"
 # $env:SANIC_PORT = "8888"                        # puerto en el que el proxy será accesible
 # $env:VERBOSE_LOGS = "0"                         # no mostrar la url a la que se accede en los logs
 
-$env:RECORDINGS = "$env:HOMEPATH\Videos\movistar-u7d"
+$env:RECORDINGS = "$env:USERPROFILE\Videos\movistar-u7d"
 
 start .\movistar_epg.exe -NoNewWindow
 start .\movistar_u7d.exe -NoNewWindow -Wait

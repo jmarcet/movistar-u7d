@@ -1447,7 +1447,7 @@ if __name__ == "__main__":
         lan_ip = s.getsockname()[0]
         s.close
 
-    app_dir = os.path.join(os.getenv("HOME", os.getenv("HOMEPATH")), ".xmltv")
+    app_dir = os.path.join(os.getenv("HOME", os.getenv("USERPROFILE")), ".xmltv")
     epg_threads = min(8, int(os.getenv("EPG_THREADS", os.cpu_count())))
     sanic = "%s:%s" % (lan_ip, os.getenv("SANIC_PORT", "8888"))
     sep = "\\" if WIN32 else "/"

@@ -37,7 +37,7 @@ except ModuleNotFoundError:
 from version import _version
 
 
-CACHE_DIR = os.path.join(os.getenv("HOME", os.getenv("HOMEPATH")), ".xmltv/cache/programs")
+CACHE_DIR = os.path.join(os.getenv("HOME", os.getenv("USERPROFILE")), ".xmltv/cache/programs")
 DEBUG = bool(int(os.getenv("DEBUG", 0)))
 NOSUBS = bool(int(os.getenv("NOSUBS", 0)))
 RECORDINGS = os.getenv("RECORDINGS", "").rstrip("/").rstrip("\\")
