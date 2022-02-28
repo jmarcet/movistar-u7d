@@ -185,7 +185,7 @@ async def after_server_start(app, loop):
     if RECORDINGS:
         log.info(f"Manual timers check => {SANIC_URL}/timers_check")
         if not os.path.exists(RECORDINGS):
-            os.mkdir(RECORDINGS)
+            os.makedirs(RECORDINGS)
         else:
             try:
                 async with aiofiles.open(recordings, encoding="utf8") as f:
