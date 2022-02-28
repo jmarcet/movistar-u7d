@@ -1018,7 +1018,8 @@ async def update_cloud(forced=False):
                     async with _SESSION_CLOUD.get(
                         f"{MVTV_URL}?action=epgInfov2&" f"productID={product_id}&channelID={channel_id}"
                     ) as r:
-                        year = (await r.json())["resultData"]["productionDate"]
+                        _data = (await r.json())["resultData"]
+                        year = _data["productionDate"] if "productionDate" in _data else None
                     async with _SESSION_CLOUD.get(
                         f"{MVTV_URL}?action=getRecordingData&"
                         f"extInfoID={product_id}&channelID={channel_id}&mode=1"
@@ -1031,15 +1032,27 @@ async def update_cloud(forced=False):
                         "age_rating": _data["ageRatingID"],
                         "duration": _data["duration"],
                         "end": int(str(_data["endTime"])[:-3]),
-                        "episode": meta_data["episode"] if meta_data["episode"] else _data["episode"],
+                        "episode": meta_data["episode"]
+                        if meta_data["episode"]
+                        else _data["episode"]
+                        if "episode" in _data
+                        else None,
                         "full_title": meta_data["full_title"],
                         "genre": _data["theme"],
                         "is_serie": meta_data["is_serie"],
                         "pid": product_id,
-                        "season": meta_data["season"] if meta_data["season"] else _data["season"],
+                        "season": meta_data["season"]
+                        if meta_data["season"]
+                        else _data["season"]
+                        if "season" in _data
+                        else None,
                         "start": int(_start),
                         "year": year,
-                        "serie": meta_data["serie"] if meta_data["serie"] else _data["seriesName"],
+                        "serie": meta_data["serie"]
+                        if meta_data["serie"]
+                        else _data["seriesName"]
+                        if "seriesName" in _data
+                        else None,
                         "serie_id": _data["seriesID"] if "seriesID" in _data else None,
                     }
                     if meta_data["episode_title"]:
