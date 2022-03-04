@@ -42,6 +42,7 @@ if not WIN32:
 
     setproctitle("movistar_epg")
 else:
+    import ctypes
     from wmi import WMI
 
 if "LAN_IP" in os.environ:
@@ -111,14 +112,12 @@ recordings_lock = asyncio.Lock()
 timers_lock = asyncio.Lock()
 tvgrab_lock = asyncio.Lock()
 
-_t_cloud1 = _t_cloud2 = _t_epg1 = _t_epg2 = _t_recs = None
-_t_timers = _t_timers_d = _t_timers_r = _t_timers_t = _t_tp = None
-tv_cloud = tvgrab = None
+_last_epg = _t_epg = _t_recs = _t_timers = _t_tp = tv_cloud = tvgrab = None
 
 
 @app.listener("before_server_start")
 async def before_server_start(app, loop):
-    global RECORDING_THREADS, _IPTV, _RECORDINGS, _SESSION, _SESSION_CLOUD, _t_tp
+    global RECORDING_THREADS, _IPTV, _SESSION, _SESSION_CLOUD, _t_epg, _t_tp
 
     banner = f"Movistar U7D - EPG v{_version}"
     log.info("-" * len(banner))
@@ -147,7 +146,7 @@ async def before_server_start(app, loop):
                 else:
                     log.debug("IPTV address: waiting for interface to be routed...")
         except Exception:
-            log.error("Unable to connect to Movistar DNS")
+            log.debug("Unable to connect to Movistar DNS")
         await asyncio.sleep(5)
 
     if not WIN32 and IPTV_BW and IPTV_IFACE:
@@ -174,54 +173,71 @@ async def before_server_start(app, loop):
 
     await reload_epg()
 
+    delay = 3600 - (time.localtime().tm_min * 60 + time.localtime().tm_sec)
+    _t_epg = asyncio.create_task(every(3600, update_epg, delay))
+
+    if RECORDINGS:
+        global _RECORDINGS, _last_epg
+
+        if not _last_epg:
+            _last_epg = int(datetime.now().replace(minute=0, second=0).timestamp())
+
+        if not os.path.exists(RECORDINGS):
+            os.makedirs(RECORDINGS)
+            return
+
+        try:
+            async with aiofiles.open(recordings, encoding="utf8") as f:
+                recordingsdata = ujson.loads(await f.read())
+            int_recordings = {}
+            for channel in recordingsdata:
+                int_recordings[int(channel)] = {}
+                for timestamp in recordingsdata[channel]:
+                    recording = recordingsdata[channel][timestamp]
+                    try:
+                        filename = recording["filename"]
+                    except KeyError:
+                        log.warning(f'Dropping old style "{recording}" from recordings.json')
+                        continue
+                    if does_recording_exist(filename):
+                        int_recordings[int(channel)][int(timestamp)] = recording
+                    else:
+                        log.warning(f'Dropping not found "{filename}" from recordings.json')
+            _RECORDINGS = int_recordings
+        except (TypeError, ValueError) as ex:
+            log.error(f"{repr(ex)}")
+        except FileNotFoundError:
+            pass
+
+        await update_recordings(True)
+
 
 @app.listener("after_server_start")
 async def after_server_start(app, loop):
-    global _RECORDINGS, _t_cloud1, _t_epg1, _t_recs, _t_timers_d
-
-    _t_epg1 = asyncio.create_task(update_epg_delayed())
-    _t_cloud1 = asyncio.create_task(update_cloud_delayed())
-
     if RECORDINGS:
-        log.info(f"Manual timers check => {SANIC_URL}/timers_check")
-        if not os.path.exists(RECORDINGS):
-            os.makedirs(RECORDINGS)
-        else:
-            try:
-                async with aiofiles.open(recordings, encoding="utf8") as f:
-                    recordingsdata = ujson.loads(await f.read())
-                int_recordings = {}
-                for channel in recordingsdata:
-                    int_recordings[int(channel)] = {}
-                    for timestamp in recordingsdata[channel]:
-                        recording = recordingsdata[channel][timestamp]
-                        try:
-                            filename = recording["filename"]
-                        except KeyError:
-                            log.warning(f'Dropping old style "{recording}" from recordings.json')
-                            continue
-                        if does_recording_exist(filename):
-                            int_recordings[int(channel)][int(timestamp)] = recording
-                        else:
-                            log.warning(f'Dropping not found "{filename}" from recordings.json')
-                _RECORDINGS = int_recordings
-            except (TypeError, ValueError) as ex:
-                log.error(f"{repr(ex)}")
-            except FileNotFoundError:
-                pass
-            _t_recs = asyncio.create_task(update_recordings(True))
+        _ffmpeg = str(await get_ffmpeg_procs())
+        for t in glob(f"{RECORDINGS}/**/*{TMP_EXT}*", recursive=True):
+            if os.path.basename(t) not in _ffmpeg:
+                try:
+                    os.remove(t)
+                except FileNotFoundError:
+                    pass
 
-        if os.path.exists(timers):
-            _ffmpeg = str(await get_ffmpeg_procs())
-            for t in glob(f"{RECORDINGS}/**/*{TMP_EXT}*", recursive=True):
-                if os.path.basename(t) not in _ffmpeg:
-                    try:
-                        os.remove(t)
-                    except FileNotFoundError:
-                        pass
-            _t_timers_d = asyncio.create_task(timers_check_delayed())
+        if not WIN32:
+            async with aiofiles.open("/proc/uptime") as f:
+                uptime = int(float((await f.read()).split()[1]))
         else:
-            log.info("No timers.conf found, automatic recordings disabled")
+            uptime = int(str(ctypes.windll.kernel32.GetTickCount64())[:-3])
+
+        global _t_timers
+        async with timers_lock:
+            if not _t_timers:
+                delay = max(10, 180 - uptime)
+                if delay > 10:
+                    log.info(f"Waiting {delay}s to check recording timers since the system just booted...")
+                _t_timers = asyncio.create_task(timers_check(delay))
+
+        log.info(f"Manual timers check => {SANIC_URL}/timers_check")
 
     async with aiohttp.ClientSession(headers={"User-Agent": UA_U7D}) as session:
         for i in range(5):
@@ -237,15 +253,9 @@ async def after_server_stop(app, loop):
     await _SESSION.close()
     await _SESSION_CLOUD.close()
     for task in [
-        _t_cloud1,
-        _t_cloud2,
-        _t_epg2,
-        _t_epg1,
+        _t_epg,
         _t_recs,
         _t_timers,
-        _t_timers_d,
-        _t_timers_r,
-        _t_timers_t,
         _t_tp,
         tv_cloud,
         tvgrab,
@@ -274,7 +284,8 @@ def does_recording_exist(filename):
     )
 
 
-async def every(timeout, stuff):
+async def every(timeout, stuff, delay=0):
+    await asyncio.sleep(delay)
     while True:
         await asyncio.gather(asyncio.sleep(timeout), stuff())
 
@@ -512,10 +523,7 @@ async def handle_program_name(request, channel_id, program_id, missing=0):
     except ValueError:
         pass
 
-    if not _NETWORK_SATURATED:
-        global _t_timers_r
-        _t_timers_r = asyncio.create_task(timers_check())
-
+    log.debug(f"Checking for {fname}")
     if does_recording_exist(fname):
         async with recordings_lock:
             if channel_id not in _RECORDINGS:
@@ -659,29 +667,17 @@ async def handle_reload_epg(request):
 
 @app.get("/timers_check")
 async def handle_timers_check(request):
-    global _t_timers_t, _t_timers
+    global _t_timers
 
     if not RECORDINGS:
         return response.json({"status": "RECORDINGS not configured"}, 404)
 
-    if not os.path.exists(timers):
-        if _t_timers:
-            log.info("Disabling automatic recordings")
-            _t_timers.cancel()
-            _t_timers = None
-        raise exceptions.ServiceUnavailable("No timers.conf found")
+    async with timers_lock:
+        if _t_timers and not _t_timers.done():
+            raise exceptions.ServiceUnavailable("Busy processing timers")
 
-    if timers_lock.locked():
-        raise exceptions.ServiceUnavailable("Busy processing timers")
+        _t_timers = asyncio.create_task(timers_check())
 
-    if _NETWORK_SATURATED:
-        raise exceptions.ServiceUnavailable("Network Saturated")
-
-    if not _t_timers:
-        log.info("Enabling automatic recordings")
-        _t_timers = asyncio.create_task(every(900, timers_check))
-    else:
-        _t_timers_t = asyncio.create_task(timers_check())
     return response.json({"status": "Timers check queued"}, 200)
 
 
@@ -740,7 +736,7 @@ async def record_program(channel_id, program_id, offset=0, record_time=0, cloud=
 
 
 async def recording_cleanup(pid, status):
-    global _CHILDREN
+    global _CHILDREN, _t_timers
     async with children_lock:
         if abs(status) == 15:
             client_port, channel_id, program_id = _CHILDREN[pid][1]
@@ -751,9 +747,10 @@ async def recording_cleanup(pid, status):
         subprocess.run(["pkill", "-f", f"ffmpeg .+ -i udp://@{_IPTV}:{client_port}"])  # nosec B603, B607
         await handle_program_name(None, channel_id, program_id, missing=randint(1, 9999))  # nosec B311
 
-    await asyncio.sleep(3)
     if not _NETWORK_SATURATED:
-        await timers_check()
+        async with timers_lock:
+            if _t_timers and _t_timers.done():
+                _t_timers = asyncio.create_task(timers_check(delay=3))
 
     log.debug(f"recording_cleanup: [{pid}]:{status} DONE")
 
@@ -790,22 +787,6 @@ async def reload_epg():
 
     async with epg_lock:
         try:
-            async with aiofiles.open(epg_data, encoding="utf8") as f:
-                epgdata = ujson.loads(await f.read())["data"]
-            int_epgdata = {}
-            for channel in epgdata:
-                int_epgdata[int(channel)] = {}
-                for timestamp in epgdata[channel]:
-                    int_epgdata[int(channel)][int(timestamp)] = epgdata[channel][timestamp]
-            _EPGDATA = int_epgdata
-            log.info(f"Loaded fresh EPG data => {SANIC_URL}/guide.xml.gz")
-        except (FileNotFoundError, TypeError, ValueError) as ex:
-            log.error(f"Failed to load EPG data {repr(ex)}")
-            if os.path.exists(epg_data):
-                os.remove(epg_data)
-            return await reload_epg()
-
-        try:
             async with aiofiles.open(epg_metadata, encoding="utf8") as f:
                 metadata = ujson.loads(await f.read())["data"]
             async with aiofiles.open(config_data, encoding="utf8") as f:
@@ -829,7 +810,23 @@ async def reload_epg():
                 os.remove(epg_metadata)
             return await reload_epg()
 
-        await update_cloud(forced=True)
+        await update_cloud()
+
+        try:
+            async with aiofiles.open(epg_data, encoding="utf8") as f:
+                epgdata = ujson.loads(await f.read())["data"]
+            int_epgdata = {}
+            for channel in epgdata:
+                int_epgdata[int(channel)] = {}
+                for timestamp in epgdata[channel]:
+                    int_epgdata[int(channel)][int(timestamp)] = epgdata[channel][timestamp]
+            _EPGDATA = int_epgdata
+            log.info(f"Loaded EPG data => {SANIC_URL}/guide.xml.gz")
+        except (FileNotFoundError, TypeError, ValueError) as ex:
+            log.error(f"Failed to load EPG data {repr(ex)}")
+            if os.path.exists(epg_data):
+                os.remove(epg_data)
+            return await reload_epg()
 
         log.info(f"Total Channels: {len(_EPGDATA)}")
         nr_epg = 0
@@ -841,11 +838,14 @@ async def reload_epg():
             )
         log.info(f"Total EPG entries: {nr_epg}")
         log.info("EPG Updated")
+
     return response.json({"status": "EPG Updated"}, 200)
 
 
-async def timers_check():
-    if not os.path.exists(timers) or timers_lock.locked() or _NETWORK_SATURATED:
+async def timers_check(delay=0):
+    await asyncio.sleep(delay)
+
+    if not os.path.exists(timers) or _NETWORK_SATURATED:
         return
 
     _ffmpeg = await get_ffmpeg_procs()
@@ -853,129 +853,96 @@ async def timers_check():
     if RECORDING_THREADS and not nr_procs < RECORDING_THREADS:
         return
 
-    async with timers_lock:
-        log.debug("Processing timers")
-        _timers = {}
-        try:
-            async with aiofiles.open(timers, encoding="utf8") as f:
-                try:
-                    _timers = tomli.loads(await f.read())
-                except ValueError:
-                    _timers = ujson.loads(await f.read())
-        except (TypeError, ValueError) as ex:
-            log.error(f"handle_timers: {repr(ex)}")
-            return
+    global _TIMERS_ADDED
+    log.info("Processing timers")
+    try:
+        async with aiofiles.open(timers, encoding="utf8") as f:
+            try:
+                _timers = tomli.loads(await f.read())
+            except ValueError:
+                _timers = ujson.loads(await f.read())
+    except (TypeError, ValueError) as ex:
+        log.error(f"handle_timers: {repr(ex)}")
+        return
 
-        global _TIMERS_ADDED
-        for channel_id in _timers["match"]:
-            channel_id = int(channel_id)
-            if channel_id not in _EPGDATA:
-                log.info(f"Channel [{channel_id}] not found in EPG")
-                continue
-            channel_name = _CHANNELS[channel_id]["name"]
+    deflang = (
+        _timers["language"]["default"] if ("language" in _timers and "default" in _timers["language"]) else ""
+    )
+    for channel_id in _timers["match"]:
+        channel_id = int(channel_id)
+        if channel_id not in _EPGDATA:
+            log.info(f"Channel [{channel_id}] not found in EPG")
+            continue
+        channel_name = _CHANNELS[channel_id]["name"]
 
-            deflang = (
-                _timers["language"]["default"]
-                if ("language" in _timers and "default" in _timers["language"])
-                else ""
-            )
-            time_limit = int(datetime.now().timestamp()) - 7200
+        for timer_match in _timers["match"][str(channel_id)]:
+            fixed_timer = 0
+            if " ## " in timer_match:
+                match_split = timer_match.split(" ## ")
+                timer_match = match_split[0]
+                for rest in match_split[1:3]:
+                    if rest[0].isnumeric():
+                        try:
+                            hour, minute = [int(t) for t in rest.split(":")]
+                            fixed_timer = int(
+                                datetime.now().replace(hour=hour, minute=minute, second=0).timestamp()
+                            )
+                            log.debug(f'[{channel_name}] "{timer_match}" {hour:02}:{minute:02} {fixed_timer}')
+                        except ValueError:
+                            pass
+                    else:
+                        lang = rest
+            else:
+                lang = deflang
+            vo = lang == "VO"
 
-            for timer_match in _timers["match"][str(channel_id)]:
-                fixed_time = False
-                if " ## " in timer_match:
-                    match_split = timer_match.split(" ## ")
-                    timer_match = match_split[0]
-                    for rest in match_split[1:3]:
-                        if rest[0].isnumeric():
-                            try:
-                                hour, minute = [int(t) for t in rest.split(":")]
-                                fixed_today = int(
-                                    datetime.now().replace(hour=hour, minute=minute, second=0).timestamp()
-                                )
-                                fixed_time = True
-                                log.debug(
-                                    f'[{channel_name}] "{timer_match}" {hour:02}:{minute:02} {fixed_today}'
-                                )
-                            except ValueError:
-                                pass
-                        else:
-                            lang = rest
-                else:
-                    lang = deflang
-                vo = lang == "VO"
+            timestamps = [ts for ts in reversed(_EPGDATA[channel_id]) if ts < _last_epg]
+            if fixed_timer:
+                # fixed timers are checked daily, so we want today's and all of last week
+                fixed_timestamps = [fixed_timer] if fixed_timer < _last_epg else []
+                fixed_timestamps += [fixed_timer - i * 24 * 3600 for i in range(1, 8)]
+                log.debug(f'[{channel_name}] "{timer_match}" wants {fixed_timestamps}')
 
-                timestamps = [ts for ts in reversed(_EPGDATA[channel_id]) if ts < time_limit]
-                if fixed_time:
-                    fixed_timestamps = [
-                        fixed_today - i * 24 * 3600
-                        for i in range(9)
-                        if (fixed_today - i * 24 * 3600) < time_limit
-                    ]
-                    log.debug(f'[{channel_name}] "{timer_match}" wants {fixed_timestamps}')
+                found_ts = []
+                for ts in timestamps:
+                    for fixed_ts in fixed_timestamps:
+                        if abs(ts - fixed_ts) <= 900:
+                            found_ts.append(ts)
+                            break
+                timestamps = found_ts
+                log.debug(f"[{channel_name}] has {timestamps}")
 
-                    found_ts = []
-                    for ts in timestamps:
-                        for fixed_ts in fixed_timestamps:
-                            if abs(ts - fixed_ts) <= 900:
-                                found_ts.append(ts)
-                                break
-                    timestamps = found_ts
-                    log.debug(f"[{channel_name}] has {timestamps}")
-
-                for timestamp in timestamps:
-                    _, filename = get_recording_path(channel_id, timestamp)
-                    fname, name = filename[len(RECORDINGS) + 1 :], os.path.basename(filename)
-                    duration, pid, title = [
-                        _EPGDATA[channel_id][timestamp][t] for t in ["duration", "pid", "full_title"]
-                    ]
-                    if channel_id in _RECORDINGS and (name or title) in str(_RECORDINGS[channel_id]):
-                        continue
-                    if (
-                        re.match(timer_match, title)
-                        and fname not in _TIMERS_ADDED
-                        and name not in str(_ffmpeg)
-                    ):
-                        cloud = channel_id in _CLOUD and timestamp in _CLOUD[channel_id]
-                        if await record_program(channel_id, pid, 0, duration, cloud, MP4_OUTPUT, vo):
-                            if _NETWORK_SATURATED:
-                                return
-                            else:
-                                break
-                        log.info(
-                            f'Found MATCH: [{channel_name}] [{channel_id}] [{timestamp}] [{pid}] "{fname}"'
-                            f'{" [VO]" if vo else ""}'
-                        )
-                        _TIMERS_ADDED.append(fname)
-                        nr_procs += 1
-                        await asyncio.sleep(3)
-                        if _NETWORK_SATURATED or (RECORDING_THREADS and not nr_procs < RECORDING_THREADS):
-                            log.info(f"Already recording {nr_procs} streams")
+            for timestamp in timestamps:
+                _, filename = get_recording_path(channel_id, timestamp)
+                fname, name = filename[len(RECORDINGS) + 1 :], os.path.basename(filename)
+                duration, pid, title = [
+                    _EPGDATA[channel_id][timestamp][t] for t in ["duration", "pid", "full_title"]
+                ]
+                if timestamp + duration >= _last_epg:
+                    continue
+                if channel_id in _RECORDINGS and (name or title) in str(_RECORDINGS[channel_id]):
+                    continue
+                if re.match(timer_match, title) and fname not in _TIMERS_ADDED and name not in str(_ffmpeg):
+                    cloud = channel_id in _CLOUD and timestamp in _CLOUD[channel_id]
+                    if await record_program(channel_id, pid, 0, duration, cloud, MP4_OUTPUT, vo):
+                        if _NETWORK_SATURATED:
                             return
+                        else:
+                            break
+                    log.info(
+                        f'Found MATCH: [{channel_name}] [{channel_id}] [{timestamp}] [{pid}] "{fname}"'
+                        f'{" [VO]" if vo else ""}'
+                    )
+                    _TIMERS_ADDED.append(fname)
+                    nr_procs += 1
+                    await asyncio.sleep(3)
+                    if _NETWORK_SATURATED or (RECORDING_THREADS and not nr_procs < RECORDING_THREADS):
+                        log.info(f"Already recording {nr_procs} streams")
+                        return
 
 
-async def timers_check_delayed():
-    global _t_timers
-
-    if not WIN32:
-        async with aiofiles.open("/proc/uptime") as f:
-            proc = await f.read()
-        uptime = int(float(proc.split()[1]))
-        if uptime < 300:
-            log.info("Waiting 300s to check timers after rebooting...")
-            await asyncio.sleep(300)
-
-    if WIN32 or (uptime > 300 and not IPTV_BW):
-        log.info("Waiting 60s to check timers (ensuring no stale rtsp is present)...")
-        await asyncio.sleep(60)
-    elif IPTV_BW and uptime > 300:
-        await asyncio.sleep(10)
-
-    _t_timers = asyncio.create_task(every(900, timers_check))
-
-
-async def update_cloud(forced=False):
-    global cloud_data, tv_cloud, _CLOUD, _EPGDATA
+async def update_cloud():
+    global _CLOUD, _EPGDATA, cloud_data, tv_cloud
 
     try:
         async with aiofiles.open(cloud_data, encoding="utf8") as f:
@@ -1059,6 +1026,7 @@ async def update_cloud(forced=False):
                         new_cloud[channel_id][_start]["episode_title"] = meta_data["episode_title"]
                 except Exception as ex:
                     log.warning(f"{channel_id} {product_id} not located in Cloud {repr(ex)}")
+
     updated = False
     if new_cloud and (not _CLOUD or set(new_cloud) != set(_CLOUD)):
         updated = True
@@ -1068,34 +1036,20 @@ async def update_cloud(forced=False):
                 updated = True
                 break
 
-    if updated or forced:
-
-        def merge():
-            global _CLOUD
-            for channel_id in new_cloud:
-                if channel_id not in _EPGDATA:
-                    _EPGDATA[channel_id] = {}
-                for timestamp in list(set(new_cloud[channel_id]) - set(_EPGDATA[channel_id])):
-                    _EPGDATA[channel_id][timestamp] = new_cloud[channel_id][timestamp]
-            if not forced:
-                for channel_id in _CLOUD:
-                    for timestamp in list(set(_CLOUD[channel_id]) - set(new_cloud[channel_id])):
-                        if timestamp in _EPGDATA[channel_id]:
-                            del _EPGDATA[channel_id][timestamp]
-
-        if forced:
-            merge()
-        else:
-            async with epg_lock:
-                merge()
+    for channel_id in new_cloud:
+        if channel_id not in _EPGDATA:
+            _EPGDATA[channel_id] = {}
+        for timestamp in list(set(new_cloud[channel_id]) - set(_EPGDATA[channel_id])):
+            _EPGDATA[channel_id][timestamp] = new_cloud[channel_id][timestamp]
 
     if updated:
         _CLOUD = new_cloud
         async with aiofiles.open(cloud_data, "w", encoding="utf8") as f:
             await f.write(ujson.dumps({"data": _CLOUD}, ensure_ascii=False, indent=4, sort_keys=True))
-        log.info("Updated Cloud Recordings data")
 
     if updated or not os.path.exists(CHANNELS_CLOUD) or not os.path.exists(GUIDE_CLOUD):
+        if not os.path.exists(CHANNELS_CLOUD) or not os.path.exists(GUIDE_CLOUD):
+            log.warning("Missing Cloud Recordings data! Need to download it. Please be patient...")
         tv_cloud = await asyncio.create_subprocess_exec(
             "tv_grab_es_movistartv",
             "--cloud_m3u",
@@ -1103,19 +1057,17 @@ async def update_cloud(forced=False):
             "--cloud_recordings",
             GUIDE_CLOUD,
         )
-    if forced and not updated:
-        log.info(f"Loaded Cloud Recordings data => {SANIC_URL}/MovistarTVCloud.m3u & {SANIC_URL}/cloud.xml")
+        await tv_cloud.wait()
 
-
-async def update_cloud_delayed():
-    global _t_cloud2
-    await asyncio.sleep(300)
-    _t_cloud2 = asyncio.create_task(every(300, update_cloud))
+    log.info(
+        f"{'Updated' if updated else 'Loaded'} Cloud Recordings data"
+        f"=> {SANIC_URL}/MovistarTVCloud.m3u & {SANIC_URL}/cloud.xml"
+    )
 
 
 async def update_epg():
-    global tvgrab
-    for i in range(5):
+    global _last_epg, _t_timers, tvgrab
+    for i in range(1, 6):
         async with tvgrab_lock:
             tvgrab = await asyncio.create_subprocess_exec(
                 "tv_grab_es_movistartv",
@@ -1125,20 +1077,20 @@ async def update_epg():
                 GUIDE,
             )
             await tvgrab.wait()
+
         if tvgrab.returncode:
-            log.error(f"Waiting 15s before trying to update EPG again [{i+2}/5]")
-            await asyncio.sleep(15)
+            if i < 5:
+                log.error(f"Waiting 15s before trying to update EPG again [{i+1}/5]...")
+                await asyncio.sleep(15)
         else:
             await reload_epg()
+            if RECORDINGS:
+                async with timers_lock:
+                    if _t_timers and not _t_timers.done():
+                        await asyncio.wait(_t_timers)
+                    _last_epg = int(datetime.now().replace(minute=0, second=0).timestamp())
+                    _t_timers = asyncio.create_task(timers_check())
             break
-
-
-async def update_epg_delayed():
-    global _t_epg2
-    delay = 3600 - (time.localtime().tm_min * 60 + time.localtime().tm_sec)
-    log.info(f"Waiting {delay}s to start updating EPG...")
-    await asyncio.sleep(delay)
-    _t_epg2 = asyncio.create_task(every(3600, update_epg))
 
 
 async def update_recordings(archive=None):
@@ -1214,9 +1166,10 @@ async def update_recordings(archive=None):
                 m3u += dump_files(files, channel=True)
                 m3u_file = os.path.join(os.path.join(RECORDINGS, dir), f"{dir}.m3u")
 
-            log.debug(f"Writing m3u [{m3u_file[len(RECORDINGS) + 1 :]}]")
             async with aiofiles.open(m3u_file, "w", encoding="utf8") as f:
                 await f.write(m3u)
+            if RECORDINGS_PER_CHANNEL and len(topdirs):
+                log.info(f"Wrote m3u [{m3u_file[len(RECORDINGS) + 1 :]}]")
 
         log.info(f"Local Recordings Updated => {SANIC_URL}/Recordings.m3u")
 
