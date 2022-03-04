@@ -1236,7 +1236,7 @@ class XMLTV:
         return tag_programme
 
     def write_m3u(self, file_path, cloud=None):
-        m3u = self.__generate_m3u(cloud)
+        m3u = self.__generate_m3u(file_path, cloud)
         self.__write_to_disk(file_path, m3u)
 
     def __get_client_channels(self):
@@ -1246,7 +1246,7 @@ class XMLTV:
                 services.update(self.__packages[package]["services"])
         return services
 
-    def __generate_m3u(self, cloud=None):
+    def __generate_m3u(self, file_path, cloud=None):
         m3u = '#EXTM3U name="'
         m3u += "Cloud " if cloud else ""
         m3u += 'MovistarTV" catchup="flussonic-ts" catchup-days="'
@@ -1264,6 +1264,7 @@ class XMLTV:
         channels = sorted(services, key=lambda key: int(services[key]))
         if not cloud:
             channels = channels[1:] + channels[:1]
+        _fresh = not os.path.exists(file_path)
         for channel_id in channels:
             if channel_id in self.__channels:
                 channel_name = self.__channels[channel_id]["name"]
@@ -1274,7 +1275,8 @@ class XMLTV:
                     channel_number = "999"
                 channel_logo = f"http://{sanic}/Logos/" + self.__channels[channel_id]["logo_uri"]
                 if channel_id not in epg_channels:
-                    log.debug(f'M3U: Saltando canal encriptado "{channel_name}" {channel_id}')
+                    msg = f'M3U: Saltando canal encriptado "{channel_name}" {channel_id}'
+                    log.info(msg) if _fresh else log.debug(msg)
                     continue
                 m3u += f'#EXTINF:-1 ch-number="{channel_number}" '
                 m3u += f'tvg-id="{channel_id}.movistar.tv" '
