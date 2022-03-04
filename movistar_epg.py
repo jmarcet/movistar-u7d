@@ -1188,7 +1188,11 @@ async def update_recordings(archive=None):
                 topdirs = [get_channel_dir(archive)]
             else:
                 topdirs = sorted(
-                    [dir for dir in os.listdir(RECORDINGS) if os.path.isdir(os.path.join(RECORDINGS, dir))]
+                    [
+                        dir
+                        for dir in os.listdir(RECORDINGS)
+                        if re.match(r"^[0-9]+\. ", dir) and os.path.isdir(os.path.join(RECORDINGS, dir))
+                    ]
                 )
         else:
             topdirs = []
