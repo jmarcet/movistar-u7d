@@ -349,9 +349,13 @@ async def handle_channel(request, channel_id=None, channel_name=None):
     try:
         while True:
             await _response.send((await stream.recv())[0][28:])
+    except AttributeError:
+        pass
     finally:
         try:
             await _response.eof()
+        except AttributeError:
+            pass
         finally:
             stream.close()
             asyncio.create_task(
@@ -448,9 +452,13 @@ async def handle_flussonic(request, url, channel_id=None, channel_name=None, clo
         try:
             while True:
                 await _response.send((await stream.recv())[0])
+        except AttributeError:
+            pass
         finally:
             try:
                 await _response.eof()
+            except AttributeError:
+                pass
             finally:
                 _RESPONSES.remove((request.ip, _raw_url, _response))
                 asyncio.create_task(
