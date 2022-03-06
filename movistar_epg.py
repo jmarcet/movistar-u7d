@@ -294,15 +294,17 @@ def get_channel_dir(channel_id):
     return "%03d. %s" % (_CHANNELS[channel_id]["number"], _CHANNELS[channel_id]["name"])
 
 
-def get_epg(channel_id, program_id):
-    if channel_id not in _CHANNELS:
-        log.error(f"{channel_id} not found")
+def get_epg(channel_id, program_id, cloud=False):
+    guide = _CLOUD if cloud else _EPGDATA
+    if channel_id not in guide:
+        log.error(f"channel_id={channel_id} not found")
         return
 
-    for timestamp in sorted(_EPGDATA[channel_id]):
-        _epg = _EPGDATA[channel_id][timestamp]
+    for timestamp in sorted(guide[channel_id]):
+        _epg = guide[channel_id][timestamp]
         if program_id == _epg["pid"]:
             return _epg, timestamp
+    log.error(f"channel_id={channel_id} program_id={program_id} not found")
 
 
 async def get_ffmpeg_procs():
@@ -556,15 +558,11 @@ async def handle_program_name(request, channel_id, program_id, missing=0):
 @app.post("/prom_event/add")
 async def handle_prom_event_add(request):
     try:
+        cloud = request.json["cloud"] if "cloud" in request.json else False
         _event = get_program_id(
-            request.json["channel_id"],
-            request.json["url"] if "url" in request.json else None,
-            request.json["cloud"] if "cloud" in request.json else False,
+            request.json["channel_id"], request.json["url"] if "url" in request.json else None, cloud
         )
-        (
-            _epg,
-            _,
-        ) = get_epg(request.json["channel_id"], _event["program_id"])
+        _epg, _ = get_epg(request.json["channel_id"], _event["program_id"], cloud)
         _offset = "[%d/%d]" % (_event["offset"], _event["duration"])
         request.app.ctx.metrics["RQS_LATENCY"].labels(
             request.json["method"],
@@ -590,15 +588,11 @@ async def handle_prom_event_add(request):
 @app.post("/prom_event/remove")
 async def handle_prom_event_remove(request):
     try:
+        cloud = request.json["cloud"] if "cloud" in request.json else False
         _event = get_program_id(
-            request.json["channel_id"],
-            request.json["url"] if "url" in request.json else None,
-            request.json["cloud"] if "cloud" in request.json else False,
+            request.json["channel_id"], request.json["url"] if "url" in request.json else None, cloud
         )
-        (
-            _epg,
-            _,
-        ) = get_epg(request.json["channel_id"], _event["program_id"])
+        _epg, _ = get_epg(request.json["channel_id"], _event["program_id"], cloud)
         _offset = "[%d/%d]" % (_event["offset"], _event["duration"])
         if request.json["method"] == "live":
             found = False
