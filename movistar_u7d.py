@@ -8,7 +8,6 @@ import json
 import os
 import signal
 import socket
-import subprocess
 import sys
 import timeit
 import ujson
@@ -165,7 +164,7 @@ async def before_server_stop(app, loop):
         try:
             await resp.eof()
             log.info(f"[{req_ip}] " f"{SANIC_URL if VERBOSE_LOGS else ''}" f"{raw_url} -> Stopped 2")
-        except Exception:
+        except AttributeError:
             pass
 
 
@@ -189,98 +188,6 @@ def get_channel_id(channel_name):
         if channel_name.lower().replace("hd", "").replace("tv", "")
         == _CHANNELS[chan]["name"].lower().replace(" ", "").rstrip("hd").rstrip("tv").rstrip("+").rstrip(".")
     ][0]
-
-
-@app.get(r"/<m3u_file:([A-Za-z1-9]+)\.m3u$>")
-async def handle_m3u_files(request, m3u_file):
-    log.info(f"[{request.ip}] {request.method} {request.url}")
-    m3u, m3u_matched = m3u_file.lower(), None
-    msg = f'"{m3u_file}"'
-    if m3u in ("movistartv", "canales", "channels"):
-        m3u_matched = CHANNELS
-    elif m3u in ("movistartvcloud", "cloud", "nube"):
-        m3u_matched = CHANNELS_CLOUD
-    elif m3u in ("grabaciones", "recordings"):
-        m3u_matched = RECORDINGS_M3U
-    elif RECORDINGS_PER_CHANNEL:
-        try:
-            channel_id = get_channel_id(m3u)
-            channel_tag = "%03d. %s" % (_CHANNELS[channel_id]["number"], _CHANNELS[channel_id]["name"])
-            m3u_matched = os.path.join(os.path.join(RECORDINGS, channel_tag), f"{channel_tag}.m3u")
-            msg = f"[{channel_tag}]"
-        except IndexError:
-            pass
-
-    if m3u_matched and os.path.exists(m3u_matched):
-        log.info(f'[{request.ip}] Found {msg} m3u: "{m3u_matched}"')
-        return await response.file(m3u_matched, mime_type=MIME_M3U)
-    else:
-        log.warning(f"[{request.ip}] {msg} m3u: Not Found")
-        raise exceptions.NotFound(f"Requested URL {request.raw_url.decode()} not found")
-
-
-@app.get("/guia.xml")
-@app.get("/guide.xml")
-async def handle_guide(request):
-    log.info(f"[{request.ip}] {request.method} {request.url}")
-    if not os.path.exists(GUIDE):
-        raise exceptions.NotFound(f"Requested URL {request.raw_url.decode()} not found")
-    return await response.file(GUIDE)
-
-
-@app.get("/guia.xml.gz")
-@app.get("/guide.xml.gz")
-async def handle_guide(request):
-    log.info(f"[{request.ip}] {request.method} {request.url}")
-    if not os.path.exists(GUIDE + ".gz"):
-        raise exceptions.NotFound(f"Requested URL {request.raw_url.decode()} not found")
-    return await response.file(GUIDE + ".gz")
-
-
-@app.get("/cloud.xml")
-@app.get("/nube.xml")
-async def handle_guide_cloud(request):
-    log.info(f"[{request.ip}] {request.method} {request.url}")
-    if not os.path.exists(GUIDE_CLOUD):
-        raise exceptions.NotFound(f"Requested URL {request.raw_url.decode()} not found")
-    return await response.file(GUIDE_CLOUD)
-
-
-@app.route("/Covers/<path:int>/<cover>", methods=["GET", "HEAD"])
-@app.route("/Logos/<logo>", methods=["GET", "HEAD"])
-async def handle_logos(request, cover=None, logo=None, path=None):
-    log.debug(f"[{request.ip}] {request.method} {request.url}")
-    if logo and logo.split(".")[0].isdigit():
-        orig_url = f"{IMAGENIO_URL}/channelLogo/{logo}"
-    elif path and cover and cover.split(".")[0].isdigit():
-        orig_url = f"{COVER_URL}/{path}/{cover}"
-    else:
-        raise exceptions.NotFound(f"Requested URL {request.raw_url.decode()} not found")
-
-    if request.method == "HEAD":
-        return response.HTTPResponse(content_type="image/jpeg", status=200)
-
-    global _SESSION_LOGOS
-    if not _SESSION_LOGOS:
-        _SESSION_LOGOS = aiohttp.ClientSession(
-            connector=aiohttp.TCPConnector(
-                keepalive_timeout=YEAR_SECONDS,
-                resolver=AsyncResolver(nameservers=[MOVISTAR_DNS]) if not WIN32 else None,
-            ),
-            headers={"User-Agent": UA},
-            json_serialize=ujson.dumps,
-        )
-
-    async with _SESSION_LOGOS.get(orig_url) as r:
-        if r.status == 200:
-            logo_data = await r.read()
-            headers = {}
-            headers.setdefault("Content-Disposition", f'attachment; filename="{logo}"')
-            return response.HTTPResponse(
-                body=logo_data, content_type="image/jpeg", headers=headers, status=200
-            )
-        else:
-            raise exceptions.NotFound(f"Requested URL {request.raw_url.decode()} not found")
 
 
 @app.route("/<channel_id:int>/live", methods=["GET", "HEAD"])
@@ -488,6 +395,98 @@ async def handle_flussonic_cloud(request, channel_id, url):
     if url == "live" or url == "mpegts":
         return await handle_channel(request, channel_id)
     return await handle_flussonic(request, url, channel_id, cloud=True)
+
+
+@app.get("/guia.xml")
+@app.get("/guide.xml")
+async def handle_guide(request):
+    log.info(f"[{request.ip}] {request.method} {request.url}")
+    if not os.path.exists(GUIDE):
+        raise exceptions.NotFound(f"Requested URL {request.raw_url.decode()} not found")
+    return await response.file(GUIDE)
+
+
+@app.get("/cloud.xml")
+@app.get("/nube.xml")
+async def handle_guide_cloud(request):
+    log.info(f"[{request.ip}] {request.method} {request.url}")
+    if not os.path.exists(GUIDE_CLOUD):
+        raise exceptions.NotFound(f"Requested URL {request.raw_url.decode()} not found")
+    return await response.file(GUIDE_CLOUD)
+
+
+@app.get("/guia.xml.gz")
+@app.get("/guide.xml.gz")
+async def handle_guide_gz(request):
+    log.info(f"[{request.ip}] {request.method} {request.url}")
+    if not os.path.exists(GUIDE + ".gz"):
+        raise exceptions.NotFound(f"Requested URL {request.raw_url.decode()} not found")
+    return await response.file(GUIDE + ".gz")
+
+
+@app.route("/Covers/<path:int>/<cover>", methods=["GET", "HEAD"])
+@app.route("/Logos/<logo>", methods=["GET", "HEAD"])
+async def handle_logos(request, cover=None, logo=None, path=None):
+    log.debug(f"[{request.ip}] {request.method} {request.url}")
+    if logo and logo.split(".")[0].isdigit():
+        orig_url = f"{IMAGENIO_URL}/channelLogo/{logo}"
+    elif path and cover and cover.split(".")[0].isdigit():
+        orig_url = f"{COVER_URL}/{path}/{cover}"
+    else:
+        raise exceptions.NotFound(f"Requested URL {request.raw_url.decode()} not found")
+
+    if request.method == "HEAD":
+        return response.HTTPResponse(content_type="image/jpeg", status=200)
+
+    global _SESSION_LOGOS
+    if not _SESSION_LOGOS:
+        _SESSION_LOGOS = aiohttp.ClientSession(
+            connector=aiohttp.TCPConnector(
+                keepalive_timeout=YEAR_SECONDS,
+                resolver=AsyncResolver(nameservers=[MOVISTAR_DNS]) if not WIN32 else None,
+            ),
+            headers={"User-Agent": UA},
+            json_serialize=ujson.dumps,
+        )
+
+    async with _SESSION_LOGOS.get(orig_url) as r:
+        if r.status == 200:
+            logo_data = await r.read()
+            headers = {}
+            headers.setdefault("Content-Disposition", f'attachment; filename="{logo}"')
+            return response.HTTPResponse(
+                body=logo_data, content_type="image/jpeg", headers=headers, status=200
+            )
+        else:
+            raise exceptions.NotFound(f"Requested URL {request.raw_url.decode()} not found")
+
+
+@app.get(r"/<m3u_file:([A-Za-z1-9]+)\.m3u$>")
+async def handle_m3u_files(request, m3u_file):
+    log.info(f"[{request.ip}] {request.method} {request.url}")
+    m3u, m3u_matched = m3u_file.lower(), None
+    msg = f'"{m3u_file}"'
+    if m3u in ("movistartv", "canales", "channels"):
+        m3u_matched = CHANNELS
+    elif m3u in ("movistartvcloud", "cloud", "nube"):
+        m3u_matched = CHANNELS_CLOUD
+    elif m3u in ("grabaciones", "recordings"):
+        m3u_matched = RECORDINGS_M3U
+    elif RECORDINGS_PER_CHANNEL:
+        try:
+            channel_id = get_channel_id(m3u)
+            channel_tag = "%03d. %s" % (_CHANNELS[channel_id]["number"], _CHANNELS[channel_id]["name"])
+            m3u_matched = os.path.join(os.path.join(RECORDINGS, channel_tag), f"{channel_tag}.m3u")
+            msg = f"[{channel_tag}]"
+        except IndexError:
+            pass
+
+    if m3u_matched and os.path.exists(m3u_matched):
+        log.info(f'[{request.ip}] Found {msg} m3u: "{m3u_matched}"')
+        return await response.file(m3u_matched, mime_type=MIME_M3U)
+    else:
+        log.warning(f"[{request.ip}] {msg} m3u: Not Found")
+        raise exceptions.NotFound(f"Requested URL {request.raw_url.decode()} not found")
 
 
 @app.get("/favicon.ico")

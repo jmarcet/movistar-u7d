@@ -7,6 +7,7 @@ import aiohttp
 import argparse
 import asyncio
 import codecs
+import defusedxml.ElementTree as ElTr
 import glob
 import gzip
 import logging as log
@@ -18,13 +19,12 @@ import struct
 import sys
 import time
 import ujson as json
-import xml.etree.ElementTree as ElTr
 
 from aiohttp.resolver import AsyncResolver
 from datetime import date, datetime, timedelta
-from logging.handlers import RotatingFileHandler
 from queue import Queue
 from threading import Thread
+from xml.etree.ElementTree import Element, ElementTree, SubElement  # nosec B405
 
 from movistar_epg import UA_U7D, get_title_meta
 from version import _version
@@ -382,7 +382,7 @@ class Cache:
         if not data:
             async with aiohttp.ClientSession(headers={"User-Agent": UA_U7D}) as session:
                 for i in range(5):
-                    log.info(f"Intentando obtener Caché de EPG actualizada...")
+                    log.info("Intentando obtener Caché de EPG actualizada...")
                     try:
                         async with session.get("https://openwrt.marcet.info/epg.json") as r:
                             if r.status == 200:
@@ -437,7 +437,7 @@ class MovistarTV:
         try:
             data = cache.load_epg_extended_info(pid)
         except Exception as ex:
-            pass
+            log.debug(f"{repr(ex)}")
         if not data:
             log.debug(f"Descargando info extendida: {pid}")
             if DEBUG:
@@ -473,7 +473,7 @@ class MovistarTV:
 
     def get_random_end_point(self):
         eps = self.__get_end_points()
-        return eps[random.choice(eps.keys())]
+        return eps[random.choice(eps.keys())]  # nosec B311
 
     @staticmethod
     def __update_end_points(data):
@@ -666,8 +666,8 @@ class MulticastIPTV:
                     if not service.tag == "{urn:dvb:ipisdns:2006}PackageName":
                         service_id = service[0].attrib["ServiceName"]
                         package_list[package_name]["services"][service_id] = service[1].text
-            except (KeyError, ElTr.ParseError) as ex:
-                log.debug(f"El paquete {package_name} no tiene la estructura correcta: {repr(ex)}")
+            except (AttributeError, IndexError, KeyError):
+                log.debug(f"El paquete {package_name} no tiene la estructura correcta")
         if _VERBOSE:
             log.info(f"Paquetes: {len(package_list)}")
         return package_list
@@ -711,7 +711,7 @@ class MulticastIPTV:
             if not data:
                 xml = self.__get_xml_files(config["mcast_grp"], config["mcast_port"])["1_0"]
                 result = re.findall(
-                    "DEM_" + str(config["demarcation"]) + '\..*?Address="(.*?)".*?\s*Port="(.*?)".*?',
+                    "DEM_" + str(config["demarcation"]) + r'\..*?Address="(.*?)".*?\s*Port="(.*?)".*?',
                     xml,
                     re.DOTALL,
                 )[0]
@@ -1064,7 +1064,7 @@ class XMLTV:
     async def generate_xml(self, parsed_epg, verbose):
         if _VERBOSE:
             log.info("Generando la guía XMLTV...")
-        root = ElTr.Element(
+        root = Element(
             "tv",
             {
                 "date": datetime.now().strftime("%Y%m%d%H%M%S"),
@@ -1075,15 +1075,15 @@ class XMLTV:
         services = self.__get_client_channels()
         for channel_id in sorted(services, key=lambda key: int(services[key])):
             if channel_id in self.__channels:
-                tag_channel = ElTr.Element("channel", {"id": f"{channel_id}.movistar.tv"})
-                tag_dname = ElTr.SubElement(tag_channel, "display-name")
+                tag_channel = Element("channel", {"id": f"{channel_id}.movistar.tv"})
+                tag_dname = SubElement(tag_channel, "display-name")
                 tag_dname.text = self.__channels[channel_id]["name"]
                 root.append(tag_channel)
             else:
                 log.debug(f"El canal {channel_id} no tiene EPG")
 
         if _VERBOSE:
-            log.info(f"XML: Descargando info extendida")
+            log.info("XML: Descargando info extendida")
         for channel_id in [
             cid
             for cid in sorted(services, key=lambda key: int(services[key]))
@@ -1103,7 +1103,7 @@ class XMLTV:
             ]
             [root.append(program) for program in (await asyncio.gather(*_tasks))]
         log.debug("")
-        return ElTr.ElementTree(root)
+        return ElementTree(root)
 
     @staticmethod
     def __get_genre_and_subgenre(code):
@@ -1150,7 +1150,7 @@ class XMLTV:
         dst_stop = time.localtime(int(program["end"])).tm_isdst
         start = datetime.fromtimestamp(program["start"]).strftime("%Y%m%d%H%M%S")
         stop = datetime.fromtimestamp(program["end"]).strftime("%Y%m%d%H%M%S")
-        tag_programme = ElTr.Element(
+        tag_programme = Element(
             "programme",
             {
                 "channel": f"{channel_id}.movistar.tv",
@@ -1158,9 +1158,9 @@ class XMLTV:
                 "stop": f"{stop} +0{tz_offset + dst_stop}00",
             },
         )
-        tag_title = ElTr.SubElement(tag_programme, "title", lang["es"])
+        tag_title = SubElement(tag_programme, "title", lang["es"])
         tag_title.text = program["full_title"]
-        tag_desc = ElTr.SubElement(tag_programme, "desc", lang["es"])
+        tag_desc = SubElement(tag_programme, "desc", lang["es"])
         tag_desc.text = "Año: " + program["year"] + ". "
         ext_info = await mtv.get_epg_extended_info(program["pid"], channel_id)
         orig_title = ext_info["originalTitle"] if ext_info and "originalTitle" in ext_info else None
@@ -1172,11 +1172,11 @@ class XMLTV:
         if program["is_serie"] or program["serie_id"] > 0:
             tsse = self.__get_series_data(program, ext_info)
             tag_title.text = tsse["title"]
-            tag_stitle = ElTr.SubElement(tag_programme, "sub-title", lang["es"])
+            tag_stitle = SubElement(tag_programme, "sub-title", lang["es"])
             tag_stitle.text = tsse["sub-title"]
-            tag_date = ElTr.SubElement(tag_programme, "date")
+            tag_date = SubElement(tag_programme, "date")
             tag_date.text = program["year"]
-            tag_episode_num = ElTr.SubElement(tag_programme, "episode-num", {"system": "xmltv_ns"})
+            tag_episode_num = SubElement(tag_programme, "episode-num", {"system": "xmltv_ns"})
             tag_episode_num.text = (
                 str(int(tsse["season"]) - 1 if tsse["season"] else "")
                 + "."
@@ -1186,15 +1186,15 @@ class XMLTV:
         elif ext_info:
             if "productionDate" in ext_info:
                 if "Movie" in gens["genre"]:
-                    tag_stitle = ElTr.SubElement(tag_programme, "sub-title", lang["es"])
+                    tag_stitle = SubElement(tag_programme, "sub-title", lang["es"])
                     tag_stitle.text = str(ext_info["productionDate"])
-                tag_date = ElTr.SubElement(tag_programme, "date")
+                tag_date = SubElement(tag_programme, "date")
                 tag_date.text = str(ext_info["productionDate"])
                 tag_desc.text = "Año: " + tag_date.text + ". "
         # Comunes a los tres
         if ext_info:
             if ("mainActors" or "directors") in ext_info:
-                tag_credits = ElTr.SubElement(tag_programme, "credits")
+                tag_credits = SubElement(tag_programme, "credits")
                 if "directors" in ext_info:
                     tag_desc.text += ",".join(ext_info["directors"])
                     tag_desc.text += ". "
@@ -1204,7 +1204,7 @@ class XMLTV:
                         else max_credits
                     )
                     for director in ext_info["directors"][:length]:
-                        tag_director = ElTr.SubElement(tag_credits, "director")
+                        tag_director = SubElement(tag_credits, "director")
                         tag_director.text = director.strip()
                 if "mainActors" in ext_info:
                     tag_desc.text += ",".join(ext_info["mainActors"])
@@ -1215,23 +1215,23 @@ class XMLTV:
                         else max_credits
                     )
                     for actor in ext_info["mainActors"][:length]:
-                        tag_actor = ElTr.SubElement(tag_credits, "actor")
+                        tag_actor = SubElement(tag_credits, "actor")
                         tag_actor.text = actor.strip()
-            ElTr.SubElement(tag_programme, "icon", {"src": f"http://{sanic}/Covers/" + ext_info["cover"]})
+            SubElement(tag_programme, "icon", {"src": f"http://{sanic}/Covers/" + ext_info["cover"]})
             tag_desc.text += "\n\n" + ext_info["description"]
-        tag_rating = ElTr.SubElement(tag_programme, "rating", {"system": "pl"})
-        tag_value = ElTr.SubElement(tag_rating, "value")
+        tag_rating = SubElement(tag_programme, "rating", {"system": "pl"})
+        tag_value = SubElement(tag_rating, "value")
         tag_value.text = age_rating[program["age_rating"]]
-        tag_category = ElTr.SubElement(tag_programme, "category", lang["en"])
+        tag_category = SubElement(tag_programme, "category", lang["en"])
         tag_category.text = gens["genre"]
         if gens["sub-genre"]:
-            tag_subcategory = ElTr.SubElement(tag_programme, "category", {"lang": "en"})
+            tag_subcategory = SubElement(tag_programme, "category", {"lang": "en"})
             tag_subcategory.text = gens["sub-genre"]
         if keys:
-            tag_keyword = ElTr.SubElement(tag_programme, "keyword")
+            tag_keyword = SubElement(tag_programme, "keyword")
             tag_keyword.text = keys["key"]
             if keys["sub-key"]:
-                tag_subkeyword = ElTr.SubElement(tag_programme, "keyword")
+                tag_subkeyword = SubElement(tag_programme, "keyword")
                 tag_subkeyword.text = keys["sub-key"]
         return tag_programme
 

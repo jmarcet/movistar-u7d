@@ -1,6 +1,7 @@
 aiohttp
 asyncio
 asyncio-dgram
+defusedxml
 dict2xml
 python-ffmpeg
 sanic

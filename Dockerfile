@@ -16,11 +16,16 @@ WORKDIR /app
 
 COPY requirements.txt .
 RUN pip install -r requirements.txt
-RUN apk del --purge build-base libffi-dev linux-headers
 
 COPY . .
 
-RUN if [ "$TARGETARCH" = "amd64" -o "$TARGETARCH" = "arm64" ]; then apk add sqlite-libs wrk && pip install black ipython; fi
+RUN \
+    if [ "$TARGETARCH" = "amd64" ]; then \
+        apk add sqlite-libs wrk; \
+        pip install bandit black flake8 ipython pycodestyle; \
+        flake8 *.py tv_grab_es_movistartv && pycodestyle *.py tv_grab_es_movistartv && bandit -r *.py tv_grab_es_movistartv; \
+    fi
+RUN apk del --purge build-base libffi-dev linux-headers
 
 CMD /app/start.sh
 

@@ -2,6 +2,7 @@ aiodns
 aiohttp
 asyncio
 asyncio_dgram
+defusedxml
 dict2xml
 netifaces
 python-ffmpeg

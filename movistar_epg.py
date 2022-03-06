@@ -6,7 +6,7 @@ import asyncio
 import os
 import re
 import socket
-import subprocess
+import subprocess  # nosec B404
 import sys
 import time
 import tomli
@@ -15,13 +15,13 @@ import urllib.parse
 
 from aiohttp.client_exceptions import ClientConnectorError
 from aiohttp.resolver import AsyncResolver
-from datetime import date, datetime, timedelta
+from datetime import datetime
 from glob import glob
 from random import randint
 from sanic import Sanic, exceptions, response
 from sanic_prometheus import monitor
 from sanic.log import logger as log, LOGGING_CONFIG_DEFAULTS
-from xml.sax.saxutils import unescape
+from xml.sax.saxutils import unescape  # nosec B406
 
 from version import _version
 from vod import (
@@ -732,11 +732,11 @@ async def record_program(channel_id, program_id, offset=0, record_time=0, cloud=
     log.debug(f"Launching {cmd}")
     if not WIN32:
         global _CHILDREN
-        p = subprocess.Popen(cmd.split())
+        p = subprocess.Popen(cmd.split())  # nosec B603
         async with children_lock:
             _CHILDREN[p.pid] = (cmd, (client_port, channel_id, program_id), app.add_task(reap_vod_child(p)))
     else:
-        subprocess.Popen(cmd.split())
+        subprocess.Popen(cmd.split())  # nosec B603
 
 
 async def recording_cleanup(pid, status):
@@ -748,8 +748,8 @@ async def recording_cleanup(pid, status):
 
     if abs(status) == 15:
         log.debug(f"recording_cleanup: [{pid}]:{status} {channel_id} {program_id}")
-        subprocess.run(["pkill", "-f", f"ffmpeg .+ -i udp://@{_IPTV}:{client_port}"])
-        await handle_program_name(None, channel_id, program_id, missing=randint(1, 9999))
+        subprocess.run(["pkill", "-f", f"ffmpeg .+ -i udp://@{_IPTV}:{client_port}"])  # nosec B603, B607
+        await handle_program_name(None, channel_id, program_id, missing=randint(1, 9999))  # nosec B311
 
     await asyncio.sleep(3)
     if not _NETWORK_SATURATED:
@@ -995,7 +995,7 @@ async def update_cloud(forced=False):
             f"{MVTV_URL}?action=recordingList&mode=0&state=2&firstItem=0&numItems=999"
         ) as r:
             cloud_recordings = (await r.json())["resultData"]["result"]
-    except (ClientConnectorError, ConnectionRefusedError, KeyError) as ex:
+    except (ClientConnectorError, ConnectionRefusedError, KeyError):
         cloud_recordings = None
     if not cloud_recordings:
         log.info("No cloud recordings found")

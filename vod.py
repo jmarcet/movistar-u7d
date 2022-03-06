@@ -9,10 +9,9 @@ import argparse
 import asyncio
 import logging as log
 import os
-import re
 import signal
 import socket
-import subprocess
+import subprocess  # nosec B404
 import sys
 import timeit
 import ujson
@@ -26,13 +25,7 @@ from dict2xml import dict2xml
 from ffmpeg import FFmpeg
 from glob import glob
 from random import randint
-from time import sleep
 from threading import Thread
-
-try:
-    from asyncio.exceptions import CancelledError
-except ModuleNotFoundError:
-    from asyncio import CancelledError
 
 from version import _version
 
@@ -42,7 +35,7 @@ DEBUG = bool(int(os.getenv("DEBUG", 0)))
 NOSUBS = bool(int(os.getenv("NOSUBS", 0)))
 RECORDINGS = os.getenv("RECORDINGS", "").rstrip("/").rstrip("\\")
 SANIC_EPG_URL = "http://127.0.0.1:8889"
-LOCK_FILE = os.path.join(os.getenv("TMP", "/tmp"), ".u7d-pp.lock")
+LOCK_FILE = os.path.join(os.getenv("TMP", "/tmp"), ".u7d-pp.lock")  # nosec B108
 
 IMAGENIO_URL = "http://html5-static.svc.imagenio.telefonica.net/appclientv/nux/incoming/epg"
 COVER_URL = f"{IMAGENIO_URL}/covers/programmeImages/portrait/290x429"
@@ -252,13 +245,15 @@ async def postprocess(record_time=0):
             command += ["--default-track", "2:1"]
         command += [_filename + TMP_EXT]
 
-        proc = subprocess.run(command, capture_output=True)
+        proc = subprocess.run(command, capture_output=True)  # nosec B603
         cleanup(TMP_EXT)
         if proc.stdout:
             raise ValueError(proc.stdout.decode().replace("\n", " ").strip())
 
         recording_data = ujson.loads(
-            subprocess.run(["mkvmerge", "-J", _filename + TMP_EXT2], capture_output=True).stdout.decode()
+            subprocess.run(  # nosec B603, B607
+                ["mkvmerge", "-J", _filename + TMP_EXT2], capture_output=True
+            ).stdout.decode()
         )
 
         duration = int(int(recording_data["container"]["properties"]["duration"]) / 1000000000)
@@ -275,7 +270,7 @@ async def postprocess(record_time=0):
             command += ["ffmpeg", "-i", _filename + TMP_EXT2]
             command += ["-map", "0", "-c", "copy", "-sn", "-movflags", "+faststart"]
             command += ["-f", "mp4", "-v", "panic", _filename + VID_EXT]
-            if subprocess.run(command).returncode:
+            if subprocess.run(command).returncode:  # nosec B603
                 cleanup(VID_EXT)
                 raise ValueError("Failed to write " + _filename + VID_EXT)
 
@@ -286,7 +281,7 @@ async def postprocess(record_time=0):
                 command += ["ffmpeg", "-i", _filename + TMP_EXT2]
                 command += ["-map", "0:%d" % track["id"], "-c:s", "dvbsub"]
                 command += ["-f", "mpegts", "-v", "panic", filesub]
-                if subprocess.run(command).returncode:
+                if subprocess.run(command).returncode:  # nosec B603
                     cleanup(VID_EXT, meta=True, subs=True)
                     raise ValueError("Failed to write " + filesub)
 
@@ -310,7 +305,7 @@ async def postprocess(record_time=0):
         if not record_time:
             try:
                 async with aiohttp.ClientSession() as session:
-                    await session.put(_epg_url + f"?missing={randint(1, _args.time)}")
+                    await session.put(_epg_url + f"?missing={randint(1, _args.time)}")  # nosec B311
             except (ClientConnectorError, ConnectionRefusedError, ServerDisconnectedError):
                 pass
         cleanup(TMP_EXT2)
@@ -582,7 +577,7 @@ async def VodSetup(args, vod_client, failed=False):
             log.error(f"{log_prefix}Movistar IPTV catchup service DOWN")
             if __name__ == "__main__":
                 if args.write_to_file:
-                    await _SESSION.put(_epg_url + f"?missing={randint(1, args.time)}")
+                    await _SESSION.put(_epg_url + f"?missing={randint(1, args.time)}")  # nosec B311
         elif not failed:
             log.warning(f"{log_prefix}[{args.channel}] [{args.broadcast}]: {repr(ex)}")
             return await VodSetup(args, vod_client, True)
@@ -651,7 +646,7 @@ if __name__ == "__main__":
     )
 
     if _args.write_to_file and not RECORDINGS:
-        log.error(f"RECORDINGS path not set")
+        log.error("RECORDINGS path not set")
         sys.exit(1)
 
     try:
