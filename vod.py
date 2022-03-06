@@ -534,7 +534,9 @@ async def VodLoop(args, vod_data=None):
 async def VodSetup(args, vod_client, failed=False):
     global _epg_url
 
-    _epg_url = f"{SANIC_EPG_URL}/program_name/{args.channel}/{args.broadcast}"
+    _epg_url = f"{SANIC_EPG_URL}/program_name/{args.channel}/{args.broadcast}" + (
+        "?cloud=1" if args.cloud else ""
+    )
     log_prefix = f"{('[' + args.client_ip + '] ') if args.client_ip else ''}"
 
     if __name__ == "__main__":

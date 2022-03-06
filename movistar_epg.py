@@ -370,22 +370,23 @@ def get_program_id(channel_id, url=None, cloud=False):
     }
 
 
-def get_recording_path(channel_id, timestamp):
+def get_recording_path(channel_id, timestamp, cloud=False):
+    guide = _CLOUD if cloud else _EPGDATA
     daily_news_program = (
-        not _EPGDATA[channel_id][timestamp]["is_serie"] and _EPGDATA[channel_id][timestamp]["genre"] == "06"
+        not guide[channel_id][timestamp]["is_serie"] and guide[channel_id][timestamp]["genre"] == "06"
     )
 
     if RECORDINGS_PER_CHANNEL:
         path = os.path.join(RECORDINGS, get_channel_dir(channel_id))
     else:
         path = RECORDINGS
-    if _EPGDATA[channel_id][timestamp]["serie"]:
-        path = os.path.join(path, get_safe_filename(_EPGDATA[channel_id][timestamp]["serie"]))
+    if guide[channel_id][timestamp]["serie"]:
+        path = os.path.join(path, get_safe_filename(guide[channel_id][timestamp]["serie"]))
     elif daily_news_program:
-        path = os.path.join(path, get_safe_filename(_EPGDATA[channel_id][timestamp]["full_title"]))
+        path = os.path.join(path, get_safe_filename(guide[channel_id][timestamp]["full_title"]))
     path = path.rstrip(".").rstrip(",")
 
-    filename = os.path.join(path, get_safe_filename(_EPGDATA[channel_id][timestamp]["full_title"]))
+    filename = os.path.join(path, get_safe_filename(guide[channel_id][timestamp]["full_title"]))
     if daily_news_program:
         filename += f' - {datetime.fromtimestamp(timestamp).strftime("%Y%m%d")}'
 
@@ -468,12 +469,13 @@ async def handle_program_id(request, channel_id, url):
 @app.route("/program_name/<channel_id:int>/<program_id:int>", methods=["GET", "OPTIONS", "PUT"])
 async def handle_program_name(request, channel_id, program_id, missing=0):
     global _RECORDINGS
+    cloud = bool(request.args.get("cloud"))
     try:
-        _epg, timestamp = get_epg(channel_id, program_id)
+        _epg, timestamp = get_epg(channel_id, program_id, cloud)
     except TypeError:
         raise exceptions.NotFound(f"Requested URL {request.raw_url.decode()} not found")
 
-    path, filename = get_recording_path(channel_id, timestamp)
+    path, filename = get_recording_path(channel_id, timestamp, cloud)
 
     if request and request.method == "GET":
         return response.json(
