@@ -37,12 +37,12 @@ Una vez instalado, tendremos las siguientes URLs disponibles, donde 192.168.1.10
 
  2. Guía de programación (EPG): `http://192.168.1.10:8888/guide.xml.gz` `http://192.168.1.10:8888/guia.xml.gz` `http://192.168.1.10:8888/guide.xml` o `http://192.168.1.10:8888/guia.xml`
 
- Con estas dos ya tendremos acceso a los directos y a los últimos 7 días en cualquier cliente IPTV con soporte de catchup flussonic. De hecho, con configurar la primera suele ser suficiente, ya que la guía la saca de la propia lista de canales, que incluye un enlace a la misma.
+Con estas dos ya tendremos acceso a los directos y a los últimos 7 días en cualquier cliente IPTV con soporte de catchup flussonic. De hecho, con configurar la primera suele ser suficiente, ya que la guía la saca de la propia lista de canales, que incluye un enlace a la misma.
 
 ![catchup1](../../raw/data/TiviMate_20211010_201536.png)
 ![catchup2](../../raw/data/TiviMate_20211010_201255.png)
 
- Como novedad, ahora también es posible acceder a las grabaciones que tengamos en la nube de [Movistar](https://www.movistar.es/particulares/internet/). De tener alguna grabación en dicha nube, tendremos disponibles una nueva lista de canales y una nueva guía de programación que, análoga a la general, incluirá solamente información de aquellos programas que tengamos grabados. El resultado es una forma muy cómoda de acceder a estas grabaciones en la nube.
+También es posible acceder a las grabaciones que tengamos en la nube de [Movistar](https://www.movistar.es/particulares/internet/). De tener alguna grabación en dicha nube, tendremos disponibles una nueva lista de canales y una nueva guía de programación que, análoga a la general, incluirá solamente información de aquellos programas que tengamos grabados. El resultado es una forma muy cómoda de acceder a estas grabaciones en la nube.
 
  3. Canales con grabaciones en la nube de [Movistar](https://www.movistar.es/particulares/internet/): `http://192.168.1.10:8888/MovistarTVCloud.m3u`, `http://192.168.1.10:8888/Cloud.m3u` o `http://192.168.1.10:8888/Nube.m3u`
 
@@ -51,7 +51,7 @@ Una vez instalado, tendremos las siguientes URLs disponibles, donde 192.168.1.10
 ![cloud1](../../raw/data/TiviMate_20211010_195920.png)
 ![cloud2](../../raw/data/TiviMate_20211010_195949.png)
 
- También es novedad tanto una funcionalidad de grabaciones locales automáticas, o temporizadores, así como el acceso a las mismas a través de una nueva lista de canales `.m3u` de tipo `VOD`, que por lo menos el `TiviMate` admite y que resulta especialmente útil para almacenar de forma local programas y series, y así crear colecciones. El resultado es increíblemente cómodo de usar.
+Por último, dispone de una funcionalidad de grabaciones locales automáticas, o temporizadores, y acceso a las mismas a través de una nueva lista de canales `.m3u` de tipo `VOD`, que resulta especialmente útil para almacenar de forma local programas y series, y así crear colecciones. El resultado es increíblemente cómodo de usar.
 
  5. Lista VOD de Grabaciones Locales: `http://192.168.1.10:8888/Recordings.m3u` o `http://192.168.1.10:8888/Grabaciones.m3u`
 
@@ -172,7 +172,7 @@ Configuración y Observaciones
 
    3. `EPG_THREADS`: número de descargas paralelas al generar la EPG. Por defecto usa tantos hilos como CPUs detecta en el sistema, con un máximo de 8.
 
-   4. `EXTRA_CHANNELS`: canales adicionales a los que queremos acceder. Ejecutado con `DEBUG=1` podremos ver la lista de canales encriptados que se saltan. Los podemos añadir, separados por espacios, a esta variable. Por ejemplo `4917` o `5066` para `La 1 HD` en Madrid y en Galicia respectivamente, ambos encriptados.
+   4. `EXTRA_CHANNELS`: canales adicionales a los que queremos acceder. Si la lista de canales no existe, bien porque ejecutamos el proxy por primera vez o porque la borramos antes de ejecutarlo, podremos ver la lista de canales encriptados que se saltan. Los podemos añadir, separados por espacios, a esta variable. Por ejemplo `4917` o `5066` para `La 1 HD` en Madrid y en Galicia respectivamente, ambos encriptados.
 
    5. `IPTV_BW`: ancho de banda máximo que le perimitimos usar al proxy. Especialmente útil si se instala en el propio router o en un aparato independiente. El valor óptimo máximo, en kilobits por segundo, Kbps, es 85000, dado que el ancho de banda real disponible en la vlan de IPTV es de 100000 Kbps. En el caso de estar instalado en el router, el proxy podrá además conocer el ancho de banda consumido específicamente en la vlan de IPTV. En el resto de casos sólo podrá contabilizar el ancho de banda de red total consumido en el dispositivo en el que se ejecuta. de ahí que la funcionalidad no esté activa a menos que definamos esta variable. Este control se basa en rechazar clientes una vez llegado al tope de ancho de banda definido con esta variable. Si llegan peticiones de nuevos clientes, recibirán un 503, Servicio no Disponible, aunque en el caso de que haya grabaciones en curso, dado que se pueden repetir, si la nueva petición es de un cliente normal se cancelará una grabación y se le dará prioridad al cliente normal. Esto consigue que no se produzcan cortes por saturación de la vlan de IPTV y se puedan hacer grabaciones en paralelo aprovechando todo el ancho de banda.
 
@@ -246,7 +246,7 @@ Existe una funcionalidad de grabaciones automáticas a partir de unos temporizad
 
 Por desgracia esta funcionalidad no es posible usarla de forma cómoda con el mando a distancia.
 
-Será necesario establecer la variable de entorno `RECORDINGS` con la ruta donde queramos realizar las grabaciones y tendremos que editar un fichero, [timers.conf](timers.conf), que deberá existir en el `$HOME`, con el siguente formato, llamado [TOML](https://toml.io/en/) que resulta fácil para los humanos:
+Será necesario establecer la variable de entorno `RECORDINGS`, en Windows editando el fichero [movistar-u7d.ps1](movistar-u7d.ps1), con la ruta donde queramos realizar las grabaciones y tendremos que editar el fichero [timers.conf](timers.conf) que deberá existir en el `$HOME`, o nuestra carpeta personal en Windows, con el siguente formato, llamado [TOML](https://toml.io/en/), que resulta fácil para los humanos:
 
 ```
 [language]
@@ -298,7 +298,7 @@ Tenemos también la posibilidad de especificar a qué hora queremos grabar un pr
 
 El orden de los dos campos anteriores, pista de audio y horario, no importa. Si repetimos el mismo, como poner dos veces un idioma o dos veces una hora, la última opción ganará. Y si añadimos más opciones, separadas por `" ## "`, serán ignoradas por completo.
 
-Como se mencionó antes, las grabaciones se realizan desde el catchup, empezando unas horas después de ser emitidas. Esto es con la intención de que cualquier cambio en el horario esté reflejado ya en la guía y así tener más posibilidades de grabar entero el evento. Esto también implica que se pueden reintentar en caso de problemas, por lo que las grabaciones se comprueban antes de ser archivadas como correctas. En caso de cualquier error, se reintentan poco después. De esta manera, podemos confiar en que todo lo grabado quede perfecto, sin el más mínimo error.
+Como se mencionó antes, las grabaciones se realizan desde el catchup, empezando después de que hayan finalizado y el EPG se haya actualizado una vez. Esto es con la intención de que cualquier cambio en el horario esté reflejado ya en la guía y así tener más posibilidades de grabar entero el evento. Esto también implica que se pueden reintentar en caso de problemas, por lo que las grabaciones se comprueban antes de ser archivadas como correctas. En caso de cualquier error, se reintentan poco después. De esta manera, podemos confiar en que todo lo grabado quede perfecto, sin el más mínimo error.
 
 El control de qué grabaciones se reintentan, o no, viene determinado por el fichero `recordings.json` que se generará automáticamente y se actualizará con cada grabación hecha. Si queremos que una grabación existente se sobreescriba, bastará con eliminarla de este `recordings.json` y reiniciar [movistar_epg.py](movistar_epg.py). Si el temporizador que la generó sigue existiendo en el fichero [timers.conf](timers.conf), la grabación se repetirá poco después, hasta que sea satisfactoria. En el caso de resultar incompleta tres veces seguidas pero con la misma duración total las tres veces, se archivará como correcta.
 
