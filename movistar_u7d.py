@@ -391,10 +391,11 @@ async def handle_flussonic(request, url, channel_id=None, channel_name=None, clo
 
 
 @app.route("/cloud/<channel_id:int>/<url>", methods=["GET", "HEAD"])
-async def handle_flussonic_cloud(request, channel_id, url):
+@app.route(r"/cloud/<channel_name:([A-Za-z1-9]+)>/<url>", methods=["GET", "HEAD"])
+async def handle_flussonic_cloud(request, url, channel_id=None, channel_name=None):
     if url == "live" or url == "mpegts":
-        return await handle_channel(request, channel_id)
-    return await handle_flussonic(request, url, channel_id, cloud=True)
+        return await handle_channel(request, channel_id, channel_name)
+    return await handle_flussonic(request, url, channel_id, channel_name, cloud=True)
 
 
 @app.get("/guia.xml")
