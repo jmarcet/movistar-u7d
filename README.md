@@ -249,8 +249,9 @@ Por desgracia esta funcionalidad no es posible usarla de forma cómoda con el ma
 Será necesario establecer la variable de entorno `RECORDINGS`, en Windows editando el fichero [movistar-u7d.ps1](movistar-u7d.ps1), con la ruta donde queramos realizar las grabaciones y tendremos que editar el fichero [timers.conf](timers.conf) que deberá existir en el `$HOME`, o nuestra carpeta personal en Windows, con el siguente formato, llamado [TOML](https://toml.io/en/), que resulta fácil para los humanos:
 
 ```
-[language]
-default = "VO"
+default_language = "VO"
+sync_cloud = true
+sync_cloud_language = "VO"
 
 [match]
 657 = [

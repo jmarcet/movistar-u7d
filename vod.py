@@ -381,7 +381,7 @@ async def save_metadata(extra=False):
             async with aiofiles.open(cache_metadata, encoding="utf8") as f:
                 metadata = ujson.loads(await f.read())["data"]
         else:
-            log.info(f"Getting extended info: {_log_suffix}")
+            log.debug(f"Getting extended info: {_log_suffix}")
             async with _SESSION_CLOUD.get(
                 f"{MVTV_URL}?action=epgInfov2&productID={_args.broadcast}&channelID={_args.channel}&extra=1"
             ) as resp:

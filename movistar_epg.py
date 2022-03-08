@@ -841,15 +841,19 @@ async def reload_epg():
 async def timers_check(delay=0):
     await asyncio.sleep(delay)
 
-    if not os.path.exists(timers) or _NETWORK_SATURATED:
+    if not os.path.exists(timers):
         return
 
-    _ffmpeg = await get_ffmpeg_procs()
-    nr_procs = len(_ffmpeg)
-    if RECORDING_THREADS and not nr_procs < RECORDING_THREADS:
+    nr_procs = len(await get_ffmpeg_procs())
+    if _NETWORK_SATURATED or (RECORDING_THREADS and not nr_procs < RECORDING_THREADS):
+        msg = (
+            f"{'Network saturated. ' if _NETWORK_SATURATED else ''}Already recording {nr_procs} streams"
+            if nr_procs
+            else "Network saturated"
+        )
+        log.warning(msg)
         return
 
-    global _TIMERS_ADDED
     log.info("Processing timers")
     try:
         async with aiofiles.open(timers, encoding="utf8") as f:
@@ -858,38 +862,62 @@ async def timers_check(delay=0):
             except ValueError:
                 _timers = ujson.loads(await f.read())
     except (TypeError, ValueError) as ex:
-        log.error(f"handle_timers: {repr(ex)}")
+        log.error(f"Failed to parse timers.conf: {repr(ex)}")
         return
 
-    deflang = (
-        _timers["language"]["default"] if ("language" in _timers and "default" in _timers["language"]) else ""
-    )
-    for channel_id in _timers["match"]:
-        channel_id = int(channel_id)
+    deflang = _timers["default_language"] if "default_language" in _timers else ""
+    sync_cloud = _timers["sync_cloud"] if "sync_cloud" in _timers else False
+
+    async def _record(channel_id, channel_name, timestamp, cloud, vo, timer_match=None):
+        global _TIMERS_ADDED
+        _, filename = get_recording_path(channel_id, timestamp, cloud)
+        fname, name = filename[len(RECORDINGS) + 1 :], os.path.basename(filename)
+        guide = _CLOUD if cloud else _EPGDATA
+        duration, pid, title = [guide[channel_id][timestamp][t] for t in ["duration", "pid", "full_title"]]
+        if not cloud and timestamp + duration >= _last_epg:
+            return 0
+        if channel_id in _RECORDINGS and name in str(_RECORDINGS[channel_id]):
+            return -1
+        if (cloud or re.match(timer_match, title)) and fname not in _TIMERS_ADDED:
+            if await record_program(
+                channel_id, pid, record_time=0 if cloud else duration, cloud=cloud, mp4=MP4_OUTPUT, vo=vo
+            ):
+                return -1
+            log.info(
+                f'Found {"Cloud Recording" if cloud else "MATCH"}: '
+                f'[{channel_name}] [{channel_id}] [{timestamp}] [{pid}] "{fname}"'
+                f'{" [VO]" if vo else ""}'
+            )
+            _TIMERS_ADDED.append(fname)
+            await asyncio.sleep(3)
+            return 1
+        return 0
+
+    for str_channel_id in _timers["match"] if "match" in _timers else {}:
+        channel_id = int(str_channel_id)
         if channel_id not in _EPGDATA:
-            log.info(f"Channel [{channel_id}] not found in EPG")
+            log.warning(f"Channel [{channel_id}] not found in EPG")
             continue
         channel_name = _CHANNELS[channel_id]["name"]
 
-        for timer_match in _timers["match"][str(channel_id)]:
+        for timer_match in _timers["match"][str_channel_id]:
             fixed_timer = 0
+            lang = deflang
             if " ## " in timer_match:
                 match_split = timer_match.split(" ## ")
                 timer_match = match_split[0]
-                for rest in match_split[1:3]:
-                    if rest[0].isnumeric():
+                for res in match_split[1:3]:
+                    if res[0].isnumeric():
                         try:
-                            hour, minute = [int(t) for t in rest.split(":")]
+                            hour, minute = [int(t) for t in res.split(":")]
                             fixed_timer = int(
                                 datetime.now().replace(hour=hour, minute=minute, second=0).timestamp()
                             )
                             log.debug(f'[{channel_name}] "{timer_match}" {hour:02}:{minute:02} {fixed_timer}')
                         except ValueError:
-                            pass
+                            log.warning(f'Failed to parse [{channel_name}] "{timer_match}" [{res}] correctly')
                     else:
-                        lang = rest
-            else:
-                lang = deflang
+                        lang = res
             vo = lang == "VO"
 
             timestamps = [ts for ts in reversed(_EPGDATA[channel_id]) if ts < _last_epg]
@@ -908,33 +936,49 @@ async def timers_check(delay=0):
                 timestamps = found_ts
                 log.debug(f"[{channel_name}] has {timestamps}")
 
-            for timestamp in timestamps:
-                _, filename = get_recording_path(channel_id, timestamp)
-                fname, name = filename[len(RECORDINGS) + 1 :], os.path.basename(filename)
-                duration, pid, title = [
-                    _EPGDATA[channel_id][timestamp][t] for t in ["duration", "pid", "full_title"]
-                ]
-                if timestamp + duration >= _last_epg:
-                    continue
-                if channel_id in _RECORDINGS and (name or title) in str(_RECORDINGS[channel_id]):
-                    continue
-                if re.match(timer_match, title) and fname not in _TIMERS_ADDED and name not in str(_ffmpeg):
-                    cloud = channel_id in _CLOUD and timestamp in _CLOUD[channel_id]
-                    if await record_program(channel_id, pid, 0, duration, cloud, MP4_OUTPUT, vo):
-                        if _NETWORK_SATURATED:
-                            return
-                        else:
-                            break
-                    log.info(
-                        f'Found MATCH: [{channel_name}] [{channel_id}] [{timestamp}] [{pid}] "{fname}"'
-                        f'{" [VO]" if vo else ""}'
-                    )
-                    _TIMERS_ADDED.append(fname)
+            for timestamp in [
+                ts
+                for ts in timestamps
+                if (channel_id not in _RECORDINGS or ts not in _RECORDINGS[channel_id])
+            ]:
+                res = await _record(channel_id, channel_name, timestamp, False, vo, timer_match)
+                if res > 0:
                     nr_procs += 1
-                    await asyncio.sleep(3)
                     if _NETWORK_SATURATED or (RECORDING_THREADS and not nr_procs < RECORDING_THREADS):
-                        log.info(f"Already recording {nr_procs} streams")
+                        log.warning(
+                            f"{'Network saturated. ' if _NETWORK_SATURATED else ''}"
+                            f"Already recording {nr_procs} streams"
+                        )
                         return
+                elif res < 0 and not _NETWORK_SATURATED:
+                    break
+                elif _NETWORK_SATURATED:
+                    log.warning(
+                        "Network saturated." + f" Already recording {nr_procs} streams" if nr_procs else ""
+                    )
+                    return
+
+    if sync_cloud:
+        vo = _timers["sync_cloud_language"] == "VO" if "sync_cloud_language" in _timers else False
+        for channel_id in _CLOUD:
+            for timestamp in [
+                ts
+                for ts in _CLOUD[channel_id]
+                if (channel_id not in _RECORDINGS or ts not in _RECORDINGS[channel_id])
+            ]:
+                if await _record(channel_id, _CHANNELS[channel_id]["name"], timestamp, True, vo) > 0:
+                    nr_procs += 1
+                    if _NETWORK_SATURATED or (RECORDING_THREADS and not nr_procs < RECORDING_THREADS):
+                        log.warning(
+                            f"{'Network saturated. ' if _NETWORK_SATURATED else ''}"
+                            f"Already recording {nr_procs} streams"
+                        )
+                        return
+                elif _NETWORK_SATURATED:
+                    log.warning(
+                        "Network saturated." + f" Already recording {nr_procs} streams" if nr_procs else ""
+                    )
+                    return
 
 
 async def update_cloud():
