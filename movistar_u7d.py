@@ -25,7 +25,6 @@ from sanic.models.server_types import ConnInfo
 from sanic.server import HttpProtocol
 from sanic.touchup.meta import TouchUpMeta
 
-from movistar_epg import get_ffmpeg_procs
 from version import _version
 from vod import (
     COVER_URL,
@@ -39,6 +38,7 @@ from vod import (
     VodSetup,
     check_dns,
     find_free_port,
+    vod_ongoing,
 )
 
 
@@ -204,7 +204,7 @@ async def handle_channel(request, channel_id=None, channel_name=None):
             raise exceptions.NotFound(f"Requested URL {_raw_url} not found")
 
     if _NETWORK_SATURATED:
-        procs = await get_ffmpeg_procs()
+        procs = await vod_ongoing()
         if procs:
             pid = int(procs[-1].split()[0])
             ffmpeg = procs[-1].split(RECORDINGS)[1].split(".tmp")[0]
@@ -296,7 +296,7 @@ async def handle_flussonic(request, url, channel_id=None, channel_name=None, clo
 
     procs = None
     if _NETWORK_SATURATED:
-        procs = await get_ffmpeg_procs()
+        procs = await vod_ongoing()
         if not procs:
             log.warning(f"[{request.ip}] {_raw_url} -> Network Saturated")
             raise exceptions.ServiceUnavailable("Network Saturated")

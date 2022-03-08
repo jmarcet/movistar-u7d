@@ -9,6 +9,7 @@ import argparse
 import asyncio
 import logging as log
 import os
+import re
 import signal
 import socket
 import subprocess  # nosec B404
@@ -308,6 +309,7 @@ async def postprocess(record_time=0):
                     await session.put(_epg_url + f"?missing={randint(1, _args.time)}")  # nosec B311
             except (ClientConnectorError, ConnectionRefusedError, ServerDisconnectedError):
                 pass
+        cleanup(TMP_EXT)
         cleanup(TMP_EXT2)
         cleanup(VID_EXT, meta=True, subs=True)
         if os.path.exists(LOCK_FILE):
@@ -444,18 +446,14 @@ async def save_metadata(extra=False):
     log.debug(f"Metadata saved: {_log_suffix}")
 
 
-async def vod_ongoing(channel_id, program_id):
-    cmd = f"vod.* {channel_id} {program_id}.* -w"
+async def vod_ongoing(channel_id="", program_id=""):
+    cmd = "vod.+" + f" {channel_id}" if channel_id else "" + f" {program_id}" if program_id else "" + " .+ -w"
 
     if WIN32:
         from wmi import WMI
 
         return len(
-            [
-                process.CommandLine
-                for process in WMI().Win32_Process(name="vod.exe")
-                if cmd in process.CommandLine
-            ]
+            [process for process in WMI().Win32_Process(name="vod.exe") if re.match(cmd, process.CommandLine)]
         )
 
     p = await asyncio.create_subprocess_exec("pgrep", "-af", cmd, stdout=asyncio.subprocess.PIPE)

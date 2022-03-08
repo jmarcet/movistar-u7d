@@ -27,7 +27,6 @@ from version import _version
 from vod import (
     MOVISTAR_DNS,
     MVTV_URL,
-    TMP_EXT,
     UA,
     WIN32,
     YEAR_SECONDS,
@@ -43,7 +42,6 @@ if not WIN32:
     setproctitle("movistar_epg")
 else:
     import ctypes
-    from wmi import WMI
 
 if "LAN_IP" in os.environ:
     SANIC_HOST = os.getenv("LAN_IP")
@@ -215,14 +213,6 @@ async def before_server_start(app, loop):
 @app.listener("after_server_start")
 async def after_server_start(app, loop):
     if RECORDINGS:
-        _ffmpeg = str(await get_ffmpeg_procs())
-        for t in glob(f"{RECORDINGS}/**/*{TMP_EXT}*", recursive=True):
-            if os.path.basename(t) not in _ffmpeg:
-                try:
-                    os.remove(t)
-                except FileNotFoundError:
-                    pass
-
         if not WIN32:
             async with aiofiles.open("/proc/uptime") as f:
                 uptime = int(float((await f.read()).split()[1]))
@@ -305,19 +295,6 @@ def get_epg(channel_id, program_id, cloud=False):
         if program_id == _epg["pid"]:
             return _epg, timestamp
     log.error(f"channel_id={channel_id} program_id={program_id} not found")
-
-
-async def get_ffmpeg_procs():
-    if WIN32:
-        return [
-            process.CommandLine
-            for process in WMI().Win32_Process(name="ffmpeg.exe")
-            if "udp://" in process.CommandLine
-        ]
-
-    p = await asyncio.create_subprocess_exec("pgrep", "-af", "ffmpeg.+udp://", stdout=asyncio.subprocess.PIPE)
-    stdout, _ = await p.communicate()
-    return [t.rstrip().decode() for t in stdout.splitlines()]
 
 
 def get_program_id(channel_id, url=None, cloud=False):
@@ -844,7 +821,7 @@ async def timers_check(delay=0):
     if not os.path.exists(timers):
         return
 
-    nr_procs = len(await get_ffmpeg_procs())
+    nr_procs = await vod_ongoing()
     if _NETWORK_SATURATED or (RECORDING_THREADS and not nr_procs < RECORDING_THREADS):
         msg = (
             f"{'Network saturated. ' if _NETWORK_SATURATED else ''}Already recording {nr_procs} streams"
