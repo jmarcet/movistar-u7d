@@ -317,6 +317,11 @@ async def postprocess(record_time=0):
                 os.remove(LOCK_FILE)
             except FileNotFoundError:
                 pass
+        if not os.listdir(_path):
+            os.rmdir(_path)
+            parent = os.path.split(_path)[0]
+            if parent != RECORDINGS and not os.listdir(parent):
+                os.rmdir(parent)
 
     finally:
         log.debug(f"Recording Postprocess ENDED: {_log_suffix}")
