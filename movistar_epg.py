@@ -1167,6 +1167,7 @@ async def update_recordings(archive=None):
             topdirs = []
 
         _files = await find_videos(RECORDINGS)
+        updated_m3u = False
         for dir in [RECORDINGS] + topdirs:
             log.debug(f'Looking for recordings in "{dir}"')
             files = (
@@ -1174,6 +1175,8 @@ async def update_recordings(archive=None):
                 if dir == RECORDINGS
                 else [file for file in _files if file.startswith(os.path.join(RECORDINGS, dir))]
             )
+            if not files:
+                continue
             m3u = f"#EXTM3U name=\"{'Recordings' if dir == RECORDINGS else dir}\" dlna_extras=mpeg_ps_pal\n"
             if dir == RECORDINGS:
                 m3u += dump_files(reversed(files), latest=True)
@@ -1187,8 +1190,10 @@ async def update_recordings(archive=None):
                 await f.write(m3u)
             if RECORDINGS_PER_CHANNEL and len(topdirs):
                 log.info(f"Wrote m3u [{m3u_file[len(RECORDINGS) + 1 :]}]")
+            updated_m3u = True
 
-        log.info(f"Local Recordings Updated => {SANIC_URL}/Recordings.m3u")
+        if updated_m3u:
+            log.info(f"Local Recordings Updated => {SANIC_URL}/Recordings.m3u")
 
 
 if __name__ == "__main__":
