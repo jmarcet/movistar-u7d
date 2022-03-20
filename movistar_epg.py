@@ -56,6 +56,7 @@ else:
     SANIC_HOST = s.getsockname()[0]
     s.close
 
+EXT = ".exe" if getattr(sys, "frozen", False) else ".py"
 HOME = os.getenv("HOME", os.getenv("USERPROFILE"))
 CHANNELS = os.path.join(HOME, "MovistarTV.m3u")
 CHANNELS_CLOUD = os.path.join(HOME, "MovistarTVCloud.m3u")
@@ -74,7 +75,6 @@ SANIC_PORT = int(os.getenv("SANIC_PORT", "8888"))
 SANIC_URL = f"http://{SANIC_HOST}:{SANIC_PORT}"
 UA_U7D = f"movistar-u7d v{_version} [{sys.platform}]"
 VID_EXTS = (".avi", ".mkv", ".mp4", ".mpeg", ".mpg", ".ts")
-VOD_EXEC = "vod.exe" if os.path.exists("vod.exe") else "vod.py"
 
 LOG_SETTINGS = LOGGING_CONFIG_DEFAULTS
 LOG_SETTINGS["formatters"]["generic"]["format"] = "%(asctime)s [EPG] [%(levelname)s] %(message)s"
@@ -675,8 +675,8 @@ async def record_program(channel_id, program_id, offset=0, record_time=0, cloud=
         return "Recording already ongoing"
 
     port = find_free_port(_IPTV)
-    prefix = ["nohup"] if not WIN32 else []
-    cmd = [VOD_EXEC, str(channel_id), str(program_id), "-p", str(port)]
+    prefix = (["nohup"] if not WIN32 else []) + ([sys.executable] if EXT == ".py" else [])
+    cmd = [f"vod{EXT}", str(channel_id), str(program_id), "-p", str(port)]
     if offset:
         cmd += ["-s", str(offset)]
     if record_time:
@@ -733,7 +733,8 @@ async def reload_epg():
         and os.path.exists(GUIDE)
     ):
         log.warning("Missing channel list! Need to download it. Please be patient...")
-        cmd = ["tv_grab_es_movistartv", "--m3u", CHANNELS]
+        cmd = [sys.executable] if EXT == ".py" else []
+        cmd += ["tv_grab_es_movistartv", "--m3u", CHANNELS]
         async with tvgrab_lock:
             _p_tvgrab = await asyncio.create_subprocess_exec(*cmd)
             await _p_tvgrab.wait()
@@ -1056,7 +1057,8 @@ async def update_cloud():
     if updated or not os.path.exists(CHANNELS_CLOUD) or not os.path.exists(GUIDE_CLOUD):
         if not os.path.exists(CHANNELS_CLOUD) or not os.path.exists(GUIDE_CLOUD):
             log.warning("Missing Cloud Recordings data! Need to download it. Please be patient...")
-        cmd = ["tv_grab_es_movistartv", "--cloud_m3u", CHANNELS_CLOUD, "--cloud_recordings", GUIDE_CLOUD]
+        cmd = [sys.executable] if EXT == ".py" else []
+        cmd += ["tv_grab_es_movistartv", "--cloud_m3u", CHANNELS_CLOUD, "--cloud_recordings", GUIDE_CLOUD]
         _p_tv_cloud = await asyncio.create_subprocess_exec(*cmd)
         await _p_tv_cloud.wait()
 
@@ -1068,7 +1070,8 @@ async def update_cloud():
 
 async def update_epg():
     global _last_epg, _t_timers, _p_tvgrab
-    cmd = ["tv_grab_es_movistartv", "--m3u", CHANNELS, "--guide", GUIDE]
+    cmd = [sys.executable] if EXT == ".py" else []
+    cmd += ["tv_grab_es_movistartv", "--m3u", CHANNELS, "--guide", GUIDE]
     for i in range(1, 6):
         async with tvgrab_lock:
             _p_tvgrab = await asyncio.create_subprocess_exec(*cmd)
