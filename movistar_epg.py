@@ -238,6 +238,13 @@ async def after_server_start(app, loop):
 
 @app.listener("before_server_stop")
 async def before_server_stop(app, loop):
+    if WIN32:
+        children = Process(os.getpid()).children(recursive=True)
+        log.debug(f"Children: {children}")
+        for child in [child for child in children if child.name() == "ffmpeg.exe"]:
+            log.debug(f"Killing child {child}")
+            child.terminate()
+
     for proc in [proc for proc in [_p_tv_cloud, _p_tvgrab] if proc]:
         try:
             log.debug(f"Terminating process={proc}")
@@ -250,6 +257,11 @@ async def before_server_stop(app, loop):
             await session.close()
         except CancelledError:
             pass
+
+
+async def check_process(process):
+    if WIN32 and process.returncode > 1:
+        asyncio.get_event_loop().stop()
 
 
 def does_recording_exist(filename):
@@ -693,6 +705,10 @@ async def record_program(channel_id, program_id, offset=0, record_time=0, cloud=
 
 async def recording_cleanup(process, retcode):
     global _CHILDREN, _t_timers
+    if WIN32 and retcode > 15:
+        log.debug("Recording Cleanup: Exiting!!!")
+        asyncio.get_event_loop().stop()
+
     async with children_lock:
         port, channel_id, program_id = _CHILDREN[process][1]
         del _CHILDREN[process]
@@ -732,6 +748,7 @@ async def reload_epg():
         async with tvgrab_lock:
             _p_tvgrab = await asyncio.create_subprocess_exec(*cmd)
             await _p_tvgrab.wait()
+        await check_process(_p_tvgrab)
     elif (
         not os.path.exists(config_data)
         or not os.path.exists(epg_data)
@@ -1055,6 +1072,7 @@ async def update_cloud():
         cmd += ["tv_grab_es_movistartv", "--cloud_m3u", CHANNELS_CLOUD, "--cloud_recordings", GUIDE_CLOUD]
         _p_tv_cloud = await asyncio.create_subprocess_exec(*cmd)
         await _p_tv_cloud.wait()
+        await check_process(_p_tv_cloud)
 
     log.info(
         f"{'Updated' if updated else 'Loaded'} Cloud Recordings data"
@@ -1070,6 +1088,7 @@ async def update_epg():
         async with tvgrab_lock:
             _p_tvgrab = await asyncio.create_subprocess_exec(*cmd)
             await _p_tvgrab.wait()
+        await check_process(_p_tvgrab)
 
         if _p_tvgrab.returncode:
             if i < 5:
