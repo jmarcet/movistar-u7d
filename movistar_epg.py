@@ -16,7 +16,7 @@ from aiohttp.client_exceptions import ClientConnectorError
 from aiohttp.resolver import AsyncResolver
 from datetime import datetime
 from glob import glob
-from psutil import AccessDenied, Process, process_iter
+from psutil import AccessDenied, Process, boot_time, process_iter
 from random import randint
 from sanic import Sanic, exceptions, response
 from sanic_prometheus import monitor
@@ -45,8 +45,7 @@ if not WIN32:
     from setproctitle import setproctitle
 
     setproctitle("movistar_epg")
-else:
-    import ctypes
+
 
 if "LAN_IP" in os.environ:
     SANIC_HOST = os.getenv("LAN_IP")
@@ -217,13 +216,8 @@ async def before_server_start(app, loop):
 @app.listener("after_server_start")
 async def after_server_start(app, loop):
     if RECORDINGS:
-        if not WIN32:
-            async with aiofiles.open("/proc/uptime") as f:
-                uptime = int(float((await f.read()).split()[1]))
-        else:
-            uptime = int(str(ctypes.windll.kernel32.GetTickCount64())[:-3])
-
         global _t_timers
+        uptime = int(datetime.now().timestamp() - boot_time())
         async with timers_lock:
             if not _t_timers:
                 delay = max(10, 180 - uptime)
