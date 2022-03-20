@@ -756,6 +756,7 @@ async def reload_epg():
         or not os.path.exists(epg_data)
         or not os.path.exists(epg_metadata)
         or not os.path.exists(GUIDE)
+        or not os.path.exists(GUIDE + ".gz")
     ):
         log.warning("Missing channels data! Need to download it. Please be patient...")
         return await update_epg()
