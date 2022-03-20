@@ -67,7 +67,7 @@ VodData = namedtuple("VodData", ["client", "get_parameter", "session"])
 
 _IPTV = _LOOP = _SESSION = _SESSION_CLOUD = None
 
-_args = _epg_params = _epg_url = _filename = _full_title = _log_suffix = _path = None
+_args = _epg_params = _epg_url = _filename = _full_title = _log_suffix = _mtime = _path = None
 _ffmpeg_p = _ffmpeg_pp_t = _ffmpeg_r = _ffmpeg_t = _vod_t = None
 
 _nice = ("nice", "-n", "15", "ionice", "-c", "3", "flock", LOCK_FILE) if not WIN32 else ()
@@ -269,8 +269,10 @@ async def postprocess(record_time=0):
         else:
             os.rename(_filename + TMP_EXT2, _filename + VID_EXT)
 
-        resp = await _SESSION.put(_epg_url, params=_epg_params)
+        files = glob(f"{_filename.replace('[', '?').replace(']', '?')}.*")
+        [os.utime(file, (-1, _mtime)) for file in files if os.access(file, os.W_OK)]
 
+        resp = await _SESSION.put(_epg_url, params=_epg_params)
         if resp and resp.status == 200:
             await save_metadata(extra=True)
         else:
@@ -397,6 +399,7 @@ async def save_metadata(extra=False):
                 log.debug(f'Saving covers "{img}" -> "{img_name}": {_log_suffix}')
                 async with aiofiles.open(img_name, "wb") as f:
                     await f.write(await resp.read())
+                os.utime(img_name, (-1, _mtime))
                 covers[img] = os.path.join("metadata", img_rel)
         if covers:
             metadata["covers"] = covers
@@ -408,6 +411,7 @@ async def save_metadata(extra=False):
         metadata.pop(t, None)
     async with aiofiles.open(_filename + NFO_EXT, "w", encoding="utf8") as f:
         await f.write(dict2xml(metadata, wrap="metadata", indent="    "))
+    os.utime(_filename + NFO_EXT, (-1, _mtime))
     log.debug(f"Metadata saved: {_log_suffix}")
 
 
@@ -503,7 +507,7 @@ async def VodLoop(args, vod_data=None):
 
 
 async def VodSetup(args, vod_client, failed=False):
-    global _epg_params, _epg_url
+    global _epg_params, _epg_url, _mtime
 
     _epg_url = f"{SANIC_EPG_URL}/program_name/{args.channel}/{args.broadcast}"
     _epg_params = {"cloud": 1} if args.cloud else {}
@@ -538,6 +542,7 @@ async def VodSetup(args, vod_client, failed=False):
                     if _args.time > 1800
                     else _args.time + 60,
                 )
+            _mtime = vod_info["beginTime"] / 1000 + _args.start
             _log_suffix = "[%ds] - [%s] [%s] [%s] [%d]" % (
                 _args.time,
                 vod_info["channelName"],
