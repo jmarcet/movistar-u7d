@@ -1,6 +1,3 @@
-$env:Path = "."
-$env:PYTHONUNBUFFERED = "1"
-
 # $env:DEBUG = "1"                                          # mostrar logs de depuración
 # $env:EXTRA_CHANNELS = "4917 5066"                         # canales adicionales a los que queremos acceder
 # $env:HOME = "C:\\Users\\usuario"                          # ruta donde queremos que se generen las listas m3u, la guía y el directorio oculto .xmltv
@@ -14,6 +11,4 @@ $env:PYTHONUNBUFFERED = "1"
 # $env:SANIC_PORT = "8888"                                  # puerto en el que el proxy será accesible
 # $env:VERBOSE_LOGS = "0"                                   # no mostrar la url a la que se accede en los logs
 
-start .\movistar_epg.exe -NoNewWindow
-start .\movistar_u7d.exe -NoNewWindow -Wait
-
+.\m-u7d.exe

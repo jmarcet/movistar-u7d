@@ -12,6 +12,7 @@ build_exe_options = {
 }
 
 executables = [
+    Executable("m-u7d.py"),
     Executable("movistar_epg.py"),
     Executable("movistar_u7d.py"),
     Executable("tv_grab_es_movistartv"),
