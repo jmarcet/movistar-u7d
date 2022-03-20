@@ -444,9 +444,9 @@ async def handle_program_id(request, channel_id, url):
 
 
 @app.route("/program_name/<channel_id:int>/<program_id:int>", methods=["GET", "OPTIONS", "PUT"])
-async def handle_program_name(request, channel_id, program_id, missing=0):
+async def handle_program_name(request, channel_id, program_id, cloud=False, missing=0):
     global _RECORDINGS
-    cloud = request.args.get("cloud") == "1"
+    cloud = request.args.get("cloud") == "1" if request else cloud
     try:
         _epg, timestamp = get_epg(channel_id, program_id, cloud)
     except TypeError:
@@ -700,7 +700,7 @@ async def record_program(channel_id, program_id, offset=0, record_time=0, cloud=
 
     global _CHILDREN
     async with children_lock:
-        _CHILDREN[p] = [tuple(cmd), (port, channel_id, program_id), app.add_task(reap_vod_child(p))]
+        _CHILDREN[p] = [tuple(cmd), (port, channel_id, program_id, cloud), app.add_task(reap_vod_child(p))]
 
 
 async def recording_cleanup(process, retcode):
@@ -710,7 +710,7 @@ async def recording_cleanup(process, retcode):
         asyncio.get_event_loop().stop()
 
     async with children_lock:
-        port, channel_id, program_id = _CHILDREN[process][1]
+        port, channel_id, program_id, cloud = _CHILDREN[process][1]
         del _CHILDREN[process]
 
     if retcode in (-9, 15):  # vod dying hard on UNIX or on Windows, so the epg cleanup must be done here
@@ -722,7 +722,7 @@ async def recording_cleanup(process, retcode):
                     proc.terminate()
             except AccessDenied:
                 pass
-        await handle_program_name(None, channel_id, program_id, missing=randint(1, 9999))  # nosec B311
+        await handle_program_name(None, channel_id, program_id, cloud, missing=randint(1, 9999))  # nosec B311
 
     if not _NETWORK_SATURATED:
         async with timers_lock:
