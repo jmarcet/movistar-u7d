@@ -42,6 +42,7 @@ from vod import (
 
 
 if not WIN32:
+    import signal
     from setproctitle import setproctitle
 
     setproctitle("movistar_epg")
@@ -169,7 +170,13 @@ async def before_server_start(app, loop):
         json_serialize=ujson.dumps,
     )
 
+    if not WIN32:
+        [signal.signal(sig, cleanup_handler) for sig in (signal.SIGHUP, signal.SIGINT, signal.SIGTERM)]
+
     await reload_epg()
+
+    if not WIN32:
+        [signal.signal(sig, signal.SIG_DFL) for sig in (signal.SIGHUP, signal.SIGINT, signal.SIGTERM)]
 
     if RECORDINGS:
         global _RECORDINGS, _last_epg
@@ -253,12 +260,7 @@ async def before_server_stop(app, loop):
             log.debug(f"Killing child {child}")
             child.terminate()
 
-    for proc in [proc for proc in [_p_tv_cloud, _p_tvgrab] if proc]:
-        try:
-            log.debug(f"Terminating process={proc}")
-            proc.terminate()
-        except ProcessLookupError:
-            pass
+    cleanup_handler()
 
     for session in (_SESSION, _SESSION_CLOUD):
         try:
@@ -270,6 +272,15 @@ async def before_server_stop(app, loop):
 async def check_process(process):
     if WIN32 and process.returncode > 1:
         asyncio.get_event_loop().stop()
+
+
+def cleanup_handler(signum=None, frame=None):
+    for proc in [proc for proc in [_p_tv_cloud, _p_tvgrab] if proc]:
+        try:
+            log.debug(f"Terminating process={proc}")
+            proc.terminate()
+        except ProcessLookupError:
+            pass
 
 
 def does_recording_exist(filename):
