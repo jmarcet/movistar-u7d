@@ -6,9 +6,7 @@ import asyncio
 import asyncio_dgram
 import json
 import os
-import signal
 import socket
-import sys
 import timeit
 import ujson
 import urllib.parse
@@ -24,6 +22,11 @@ from sanic.log import error_logger, logger as log, LOGGING_CONFIG_DEFAULTS
 from sanic.models.server_types import ConnInfo
 from sanic.server import HttpProtocol
 from sanic.touchup.meta import TouchUpMeta
+
+try:
+    from asyncio.exceptions import CancelledError, TimeoutError
+except ModuleNotFoundError:
+    from asyncio import CancelledError, TimeoutError
 
 from version import _version
 from vod import (
@@ -86,7 +89,7 @@ _CHANNELS = {}
 _CHILDREN = {}
 _RESPONSES = []
 
-_IPTV = _LOOP = _SESSION = _SESSION_LOGOS = None
+_IPTV = _SESSION = _SESSION_LOGOS = None
 _NETWORK_SATURATED = False
 
 VodArgs = namedtuple("Vod", ["channel", "broadcast", "iptv_ip", "client_ip", "client_port", "start", "cloud"])
@@ -100,16 +103,23 @@ app.config.update(
         "RESPONSE_TIMEOUT": 1,
     }
 )
-app.ctx.vod_client = _t_tp = None
+app.ctx.vod_client = None
 
 
 @app.listener("before_server_start")
 async def before_server_start(app, loop):
-    global _CHANNELS, _IPTV, _LOOP, _SESSION, _t_tp
+    global _CHANNELS, _IPTV, _SESSION, _SESSION_LOGOS
 
-    _LOOP = asyncio.get_event_loop()
     _SESSION = aiohttp.ClientSession(
         connector=aiohttp.TCPConnector(keepalive_timeout=YEAR_SECONDS, limit_per_host=1),
+        json_serialize=ujson.dumps,
+    )
+    _SESSION_LOGOS = aiohttp.ClientSession(
+        connector=aiohttp.TCPConnector(
+            keepalive_timeout=YEAR_SECONDS,
+            resolver=AsyncResolver(nameservers=[MOVISTAR_DNS]) if not WIN32 else None,
+        ),
+        headers={"User-Agent": UA},
         json_serialize=ujson.dumps,
     )
 
@@ -131,7 +141,7 @@ async def before_server_start(app, loop):
 
     if not WIN32 and IPTV_BW and IPTV_IFACE:
         log.info(f"BW: {IPTV_BW} kbps / {IPTV_IFACE}")
-        _t_tp = app.add_task(network_saturated())
+        app.add_task(network_saturated())
 
     if not app.ctx.vod_client:
         app.ctx.vod_client = aiohttp.ClientSession(
@@ -167,18 +177,11 @@ async def before_server_stop(app, loop):
         except AttributeError:
             pass
 
-
-@app.listener("after_server_stop")
-async def after_server_stop(app, loop):
-    await app.ctx.vod_client.close()
-    await _SESSION.close()
-    if _SESSION_LOGOS:
-        await _SESSION_LOGOS.close()
-    try:
-        _t_tp.cancel()
-        await asyncio.wait({_t_tp})
-    except (AttributeError, ProcessLookupError):
-        pass
+    for session in (_SESSION, _SESSION_LOGOS, app.ctx.vod_client):
+        try:
+            await session.close()
+        except CancelledError:
+            pass
 
 
 def get_channel_id(channel_name):
@@ -205,12 +208,12 @@ async def handle_channel(request, channel_id=None, channel_name=None):
 
     if _NETWORK_SATURATED:
         procs = await vod_ongoing()
-        if procs:
-            pid = int(procs[-1].split()[0])
-            ffmpeg = procs[-1].split(RECORDINGS)[1].split(".tmp")[0]
-            log.warning(f'[{request.ip}] -> KILLING ffmpeg [{pid}] "{ffmpeg}"')
-            os.kill(pid, signal.SIGINT)
-        else:
+        try:
+            proc = procs[-1].children()[0]
+            ffmpeg = " ".join(proc.cmdline()).split(RECORDINGS)[1][1:-4]
+            log.warning(f'[{request.ip}] -> KILLING ffmpeg [{proc.pid}] "{ffmpeg}"')
+            proc.terminate()
+        except IndexError:
             log.warning(f"[{request.ip}] {_raw_url} -> Network Saturated")
             raise exceptions.ServiceUnavailable("Network Saturated")
 
@@ -234,12 +237,12 @@ async def handle_channel(request, channel_id=None, channel_name=None):
     try:
         _response = await request.respond(content_type=MIME_TS)
         await _response.send((await stream.recv())[0][28:])
-    except asyncio.exceptions.TimeoutError:
+    except TimeoutError:
         log.error(f"{_raw_url} not found")
         raise exceptions.NotFound(f"Requested URL {_raw_url} not found")
 
     _lat = timeit.default_timer() - _start
-    asyncio.create_task(
+    app.add_task(
         _SESSION.post(
             f"{SANIC_EPG_URL}/prom_event/add",
             json={
@@ -265,7 +268,7 @@ async def handle_channel(request, channel_id=None, channel_name=None):
             pass
         finally:
             stream.close()
-            asyncio.create_task(
+            app.add_task(
                 _SESSION.post(
                     f"{SANIC_EPG_URL}/prom_event/remove",
                     json={
@@ -316,10 +319,14 @@ async def handle_flussonic(request, url, channel_id=None, channel_name=None, clo
     client_port = find_free_port(_IPTV)
 
     if procs:
-        pid = int(procs[-1].split()[0])
-        ffmpeg = procs[-1].split(RECORDINGS)[1].split(".tmp")[0]
-        log.warning(f'[{request.ip}] -> KILLING ffmpeg [{pid}] "{ffmpeg}"')
-        os.kill(pid, signal.SIGINT)
+        try:
+            proc = procs[-1].children()[0]
+            ffmpeg = " ".join(proc.cmdline()).split(RECORDINGS)[1][1:-4]
+            log.warning(f'[{request.ip}] -> KILLING ffmpeg [{proc.pid}] "{ffmpeg}"')
+            proc.terminate()
+        except IndexError:
+            log.warning(f"[{request.ip}] {_raw_url} -> Network Saturated")
+            raise exceptions.ServiceUnavailable("Network Saturated")
 
     _args = VodArgs(channel_id, program_id, _IPTV, request.ip, client_port, offset, cloud)
     vod_data = await VodSetup(_args, app.ctx.vod_client)
@@ -328,19 +335,19 @@ async def handle_flussonic(request, url, channel_id=None, channel_name=None, clo
             raise exceptions.ServiceUnavailable("Movistar IPTV catchup service DOWN")
         else:
             raise exceptions.NotFound(f"Requested URL {_raw_url} not found")
-    vod = asyncio.create_task(VodLoop(_args, vod_data))
+    vod = app.add_task(VodLoop(_args, vod_data))
     _endpoint = _CHANNELS[channel_id]["name"] + f" _ {request.ip} _ "
     with closing(await asyncio_dgram.bind((_IPTV, client_port))) as stream:
         try:
             _response = await request.respond(content_type=MIME_TS)
             await _response.send((await stream.recv())[0])
-        except asyncio.exceptions.TimeoutError:
+        except TimeoutError:
             log.error(f"NOT_AVAILABLE: [{channel}] [{channel_id}] [{start}]")
             raise exceptions.NotFound(f"Requested URL {_raw_url} not found")
 
         _lat = timeit.default_timer() - _start
         _RESPONSES.append((request.ip, _raw_url, _response))
-        asyncio.create_task(
+        app.add_task(
             _SESSION.post(
                 f"{SANIC_EPG_URL}/prom_event/add",
                 json={
@@ -368,7 +375,7 @@ async def handle_flussonic(request, url, channel_id=None, channel_name=None, clo
                 pass
             finally:
                 _RESPONSES.remove((request.ip, _raw_url, _response))
-                asyncio.create_task(
+                app.add_task(
                     _SESSION.post(
                         f"{SANIC_EPG_URL}/prom_event/remove",
                         json={
@@ -438,17 +445,6 @@ async def handle_logos(request, cover=None, logo=None, path=None):
 
     if request.method == "HEAD":
         return response.HTTPResponse(content_type="image/jpeg", status=200)
-
-    global _SESSION_LOGOS
-    if not _SESSION_LOGOS:
-        _SESSION_LOGOS = aiohttp.ClientSession(
-            connector=aiohttp.TCPConnector(
-                keepalive_timeout=YEAR_SECONDS,
-                resolver=AsyncResolver(nameservers=[MOVISTAR_DNS]) if not WIN32 else None,
-            ),
-            headers={"User-Agent": UA},
-            json_serialize=ujson.dumps,
-        )
 
     async with _SESSION_LOGOS.get(orig_url) as r:
         if r.status == 200:
@@ -583,18 +579,12 @@ class VodHttpProtocol(HttpProtocol, metaclass=TouchUpMeta):
 
 
 if __name__ == "__main__":
-    try:
-        app.run(
-            host=SANIC_HOST,
-            port=SANIC_PORT,
-            protocol=VodHttpProtocol,
-            access_log=False,
-            auto_reload=False,
-            debug=DEBUG,
-            workers=SANIC_THREADS,
-        )
-    except (KeyboardInterrupt, TimeoutError):
-        sys.exit(1)
-    except Exception as ex:
-        log.critical(f"{repr(ex)}")
-        sys.exit(1)
+    app.run(
+        host=SANIC_HOST,
+        port=SANIC_PORT,
+        protocol=VodHttpProtocol,
+        access_log=False,
+        auto_reload=False,
+        debug=DEBUG,
+        workers=SANIC_THREADS,
+    )

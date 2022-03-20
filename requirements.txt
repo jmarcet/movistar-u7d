@@ -5,7 +5,6 @@ asyncio_dgram
 defusedxml
 dict2xml
 netifaces
-python-ffmpeg
 sanic
 git+https://github.com/jmarcet/sanic-prometheus
 setproctitle

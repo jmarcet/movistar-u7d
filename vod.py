@@ -10,9 +10,7 @@ import asyncio
 import logging as log
 import os
 import re
-import signal
 import socket
-import subprocess  # nosec B404
 import sys
 import timeit
 import ujson
@@ -20,15 +18,29 @@ import urllib.parse
 
 from aiohttp.client_exceptions import ClientConnectorError, ServerDisconnectedError
 from aiohttp.resolver import AsyncResolver
+from asyncio.subprocess import PIPE, STDOUT
 from collections import namedtuple
 from contextlib import closing
 from dict2xml import dict2xml
-from ffmpeg import FFmpeg
 from glob import glob
+from psutil import Process, process_iter
 from random import randint
-from threading import Thread
+
+try:
+    from asyncio.exceptions import CancelledError
+except ModuleNotFoundError:
+    from asyncio import CancelledError
 
 from version import _version
+
+
+WIN32 = sys.platform == "win32"
+
+if not WIN32:
+    import signal
+    from setproctitle import setproctitle
+
+    setproctitle("vod %s" % " ".join(sys.argv[1:]))
 
 
 CACHE_DIR = os.path.join(os.getenv("HOME", os.getenv("USERPROFILE")), ".xmltv/cache/programs")
@@ -48,24 +60,17 @@ TMP_EXT = ".tmp"
 TMP_EXT2 = ".tmp2"
 UA = "libcurl-agent/1.0 [IAL] WidgetManager Safari/538.1 CAP:803fd12a 1"
 
-WIN32 = sys.platform == "win32"
-
 YEAR_SECONDS = 365 * 24 * 60 * 60
 
 Response = namedtuple("Response", ["version", "status", "url", "headers", "body"])
 VodData = namedtuple("VodData", ["client", "get_parameter", "session"])
-ffmpeg = FFmpeg().option("y").option("xerror")
 
-_IPTV = _LOOP = _PP_DONE = _SESSION = _SESSION_CLOUD = None
+_IPTV = _LOOP = _SESSION = _SESSION_CLOUD = None
 
-_args = _epg_url = _ffmpeg = _filename = _full_title = _log_suffix = _path = _start = None
+_args = _epg_params = _epg_url = _filename = _full_title = _log_suffix = _path = None
+_ffmpeg_p = _ffmpeg_pp_t = _ffmpeg_r = _ffmpeg_t = _vod_t = None
+
 _nice = ("nice", "-n", "15", "ionice", "-c", "3", "flock", LOCK_FILE) if not WIN32 else ()
-
-
-if not WIN32:
-    from setproctitle import setproctitle
-
-    setproctitle("vod %s" % " ".join(sys.argv[1:]))
 
 
 class RtspClient(object):
@@ -143,43 +148,13 @@ class RtspClient(object):
             asyncio.create_task(self.print(req, resp))
 
         if resp.status != "200 OK" and method not in ["SETUP", "TEARDOWN"]:
-            raise ValueError(f"{method} {resp}")
+            log.debug(f"{method} {resp}")
+            _vod_t.cancel()
 
         return resp
 
     def serialize_headers(self, headers):
         return "\r\n".join(map(lambda x: "{0}: {1}".format(*x), headers.items()))
-
-
-@ffmpeg.on("completed")
-def ffmpeg_completed():
-    global _log_suffix
-    record_time = int(timeit.default_timer() - _start)
-    _log_suffix = f"[~{record_time}s] / {_log_suffix}"
-    log.info(f"Recording ENDED: {_log_suffix}")
-    asyncio.run_coroutine_threadsafe(postprocess(), _LOOP).result()
-
-
-@ffmpeg.on("error")
-def ffmpeg_error(code):
-    global _log_suffix
-    record_time = int(timeit.default_timer() - _start)
-    _log_suffix = f"[~{record_time}s] / {_log_suffix}"
-    bad = record_time < (_args.time - 30)
-    asyncio.run_coroutine_threadsafe(postprocess(record_time if bad else 0), _LOOP).result()
-
-
-@ffmpeg.on("stderr")
-def ffmpeg_stderr(line):
-    if line.startswith("frame="):
-        return
-    log.info(f"[ffmpeg] {line}")
-
-
-@ffmpeg.on("terminated")
-def ffmpeg_terminated():
-    log.error(f"[ffmpeg] TERMINATED: {_log_suffix}")
-    ffmpeg_error()
 
 
 def check_dns():
@@ -216,73 +191,74 @@ async def get_vod_info(channel_id, program_id, cloud, vod_client):
 
 
 def handle_cleanup(signum, frame):
-    raise TimeoutError()
+    log.debug(f"handle_cleanup: {_log_suffix}")
+    if __name__ == "__main__" and _args.write_to_file:
+        try:
+            _ffmpeg_p.terminate()
+        except ProcessLookupError:
+            pass
+    else:
+        _vod_t.cancel()
 
 
 async def postprocess(record_time=0):
-    global _PP_DONE, _log_suffix
+    global _epg_params, _log_suffix
     log.debug(f"Recording Postprocess: {_log_suffix}")
-
-    if not WIN32:
-        signal.signal(signal.SIGCHLD, signal.SIG_DFL)
 
     try:
         if record_time:
-            missing = _args.time - record_time
-            resp = await _SESSION.options(_epg_url + f"?missing={missing}")
+            _epg_params["missing"] = _args.time - record_time
+            resp = await _SESSION.options(_epg_url, params=_epg_params)
 
             if resp and resp.status == 200:
                 return await postprocess()
             else:
-                raise ValueError(f"Too short, missing: {missing}s")
+                raise ValueError("Too short, missing: %ss" % _epg_params["missing"])
 
+        cmd = list(_nice)
+        cmd += ["mkvmerge", "--abort-on-warnings", "-q", "-o", _filename + TMP_EXT2]
         img_mime, img_name = await save_metadata()
-
-        command = list(_nice)
-        command += ["mkvmerge", "--abort-on-warnings", "-q", "-o", _filename + TMP_EXT2]
-        command += ["--attachment-mime-type", img_mime, "--attach-file", img_name]
+        cmd += ["--attachment-mime-type", img_mime, "--attach-file", img_name]
         if _args.vo:
-            command += ["--track-order", "0:2,0:1,0:4,0:3,0:6,0:5"]
-            command += ["--default-track", "2:1"]
-        command += [_filename + TMP_EXT]
+            cmd += ["--track-order", "0:2,0:1,0:4,0:3,0:6,0:5"]
+            cmd += ["--default-track", "2:1"]
+        cmd += [_filename + TMP_EXT]
 
-        proc = subprocess.run(command, capture_output=True)  # nosec B603
+        out, _ = await (await asyncio.create_subprocess_exec(*cmd, stdout=PIPE, stderr=STDOUT)).communicate()
         cleanup(TMP_EXT)
-        if proc.stdout:
-            raise ValueError(proc.stdout.decode().replace("\n", " ").strip())
+        if out:
+            raise ValueError(out.decode().replace("\n", " ").strip())
 
-        recording_data = ujson.loads(
-            subprocess.run(  # nosec B603, B607
-                ["mkvmerge", "-J", _filename + TMP_EXT2], capture_output=True
-            ).stdout.decode()
-        )
-
+        cmd = ["mkvmerge", "-J", _filename + TMP_EXT2]
+        res = (await (await asyncio.create_subprocess_exec(*cmd, stdout=PIPE)).communicate())[0].decode()
+        recording_data = ujson.loads(res)
         duration = int(int(recording_data["container"]["properties"]["duration"]) / 1000000000)
         bad = duration < (_args.time - 30)
+        _epg_params["missing"] = _args.time - duration if bad else 0
         _log_suffix = f"[{duration}s] / {_log_suffix}"
+
         msg = f"Recording {'INCOMPLETE:' if bad else 'COMPLETE:'} {_log_suffix}"
         log.warning(msg) if bad else log.info(msg)
-        missing_time = (_args.time - duration) if bad else 0
-        _log_suffix = _log_suffix[_log_suffix.find(" - ") + 3 :]
 
+        _log_suffix = _log_suffix[_log_suffix.find(" - ") + 3 :]
         cleanup(VID_EXT, subs=_args.mp4)
         if _args.mp4:
-            command = list(_nice)
-            command += ["ffmpeg", "-i", _filename + TMP_EXT2]
-            command += ["-map", "0", "-c", "copy", "-sn", "-movflags", "+faststart"]
-            command += ["-f", "mp4", "-v", "panic", _filename + VID_EXT]
-            if subprocess.run(command).returncode:  # nosec B603
+            cmd = list(_nice)
+            cmd += ["ffmpeg", "-i", _filename + TMP_EXT2]
+            cmd += ["-map", "0", "-c", "copy", "-sn", "-movflags", "+faststart"]
+            cmd += ["-f", "mp4", "-v", "panic", _filename + VID_EXT]
+            if await (await asyncio.create_subprocess_exec(*cmd)).wait():
                 cleanup(VID_EXT)
                 raise ValueError("Failed to write " + _filename + VID_EXT)
 
             subs = [t for t in recording_data["tracks"] if t["type"] == "subtitles"]
             for track in subs:
                 filesub = "%s.%s.sub" % (_filename, track["properties"]["language"])
-                command = list(_nice)
-                command += ["ffmpeg", "-i", _filename + TMP_EXT2]
-                command += ["-map", "0:%d" % track["id"], "-c:s", "dvbsub"]
-                command += ["-f", "mpegts", "-v", "panic", filesub]
-                if subprocess.run(command).returncode:  # nosec B603
+                cmd = list(_nice)
+                cmd += ["ffmpeg", "-i", _filename + TMP_EXT2]
+                cmd += ["-map", "0:%d" % track["id"], "-c:s", "dvbsub"]
+                cmd += ["-f", "mpegts", "-v", "panic", filesub]
+                if await (await asyncio.create_subprocess_exec(*cmd)).wait():
                     cleanup(VID_EXT, meta=True, subs=True)
                     raise ValueError("Failed to write " + filesub)
 
@@ -290,11 +266,7 @@ async def postprocess(record_time=0):
         else:
             os.rename(_filename + TMP_EXT2, _filename + VID_EXT)
 
-        resp = None
-        if not missing_time:
-            resp = await _SESSION.put(_epg_url)
-        else:
-            resp = await _SESSION.put(_epg_url + f"?missing={missing_time}")
+        resp = await _SESSION.put(_epg_url, params=_epg_params)
 
         if resp and resp.status == 200:
             await save_metadata(extra=True)
@@ -304,9 +276,10 @@ async def postprocess(record_time=0):
     except Exception as ex:
         log.error(f"Recording FAILED: {_log_suffix} => {repr(ex)}")
         if not record_time:
+            _epg_params["missing"] = randint(1, _args.time)  # nosec B311
             try:
                 async with aiohttp.ClientSession() as session:
-                    await session.put(_epg_url + f"?missing={randint(1, _args.time)}")  # nosec B311
+                    await session.put(_epg_url, params=_epg_params)
             except (ClientConnectorError, ConnectionRefusedError, ServerDisconnectedError):
                 pass
         cleanup(TMP_EXT)
@@ -322,62 +295,45 @@ async def postprocess(record_time=0):
             parent = os.path.split(_path)[0]
             if parent != RECORDINGS and not os.listdir(parent):
                 os.rmdir(parent)
-
     finally:
         log.debug(f"Recording Postprocess ENDED: {_log_suffix}")
-        _PP_DONE = True
 
 
-async def record_stream():
-    global _ffmpeg, _filename, _full_title, _log_suffix, _path, _start
-    options = {
-        "map": "0",
-        "c": "copy",
-        "c:a:0": "aac",
-        "c:a:1": "aac",
-        "bsf:v": "h264_mp4toannexb",
-        "metadata:s:a:0": "language=spa",
-        "metadata:s:a:1": "language=eng",
-        "metadata:s:a:2": "language=spa",
-        "metadata:s:a:3": "language=eng",
-        "metadata:s:s:0": "language=spa",
-        "metadata:s:s:1": "language=eng",
-    }
+async def reap_ffmpeg():
+    global _ffmpeg_pp_t, _ffmpeg_r, _log_suffix
+    start = timeit.default_timer()
 
-    async with _SESSION.get(_epg_url) as resp:
-        if resp.status == 200:
-            _, _path, _filename = (await resp.json()).values()
-            options["metadata:s:v"] = f"title={os.path.basename(_filename)}"
+    _ffmpeg_r = await _ffmpeg_p.wait()
+    record_time = int(timeit.default_timer() - start)
+    log.debug(f"ffmpeg retcode={_ffmpeg_r}: {_log_suffix}")
 
-            if not os.path.exists(_path):
-                log.debug(f"Creating recording subdir {_path}")
-                os.makedirs(_path)
-        else:
-            _filename = os.path.join(RECORDINGS, f"{_args.channel}-{_args.broadcast}")
+    _log_suffix = f"[~{record_time}s] / {_log_suffix}"
+    log.info(f"Recording ENDED: {_log_suffix}")
 
-    _log_suffix += f' "{_filename[len(RECORDINGS) + 1:]}"'
+    _ffmpeg_pp_t = asyncio.create_task(postprocess(record_time if (record_time < (_args.time - 30)) else 0))
+
+
+async def record_stream(opts):
+    global _ffmpeg_p, _ffmpeg_t
+    ffmpeg = ["ffmpeg", "-y", "-xerror", "-fifo_size", "5572", "-pkt_size", "1316", "-timeout", "500000"]
+    ffmpeg.extend(["-i", f"udp://@{_IPTV}:{_args.client_port}"])
+    ffmpeg.extend(["-map", "0", "-c", "copy", "-c:a:0", "aac", "-c:a:1", "aac", "-bsf:v", "h264_mp4toannexb"])
+    ffmpeg.extend(["-metadata:s:a:0", "language=spa", "-metadata:s:a:1", "language=eng", "-metadata:s:a:2"])
+    ffmpeg.extend(["language=spa", "-metadata:s:a:3", "language=eng", "-metadata:s:s:0", "language=spa"])
+    ffmpeg.extend(["-metadata:s:s:1", "language=eng", *opts])
 
     if _args.channel in ("578", "884", "3603") or NOSUBS:
         # matroska is not compatible with dvb_teletext subs
         # Boing, DKISS & Energy use them, so we drop them
-        global ffmpeg
         log.warning(f"Recording dropping dvb_teletext subs: {_log_suffix}")
-        ffmpeg = ffmpeg.option("-sn")
+        ffmpeg.append("-sn")
 
-    ffmpeg.input(f"udp://@{_IPTV}:{_args.client_port}", fifo_size=5572, pkt_size=1316, timeout=500000).output(
-        _filename + TMP_EXT,
-        options,
-        t=str(_args.time),
-        v="panic",
-        vsync="0",
-        f="matroska",
-    )
+    ffmpeg.extend(["-t", str(_args.time), "-v", "panic", "-vsync", "0", "-f", "matroska"])
+    ffmpeg.append(_filename + TMP_EXT)
 
-    _ffmpeg = Thread(target=asyncio.run, args=(ffmpeg.execute(),))
-    _ffmpeg.start()
-
+    _ffmpeg_p = await asyncio.create_subprocess_exec(*ffmpeg)
+    _ffmpeg_t = asyncio.create_task(reap_ffmpeg())
     log.info(f"Recording STARTED: {_log_suffix}")
-    _start = timeit.default_timer()
 
 
 async def save_metadata(extra=False):
@@ -414,7 +370,7 @@ async def save_metadata(extra=False):
                     await f.write(await resp.read())
                 metadata["cover"] = os.path.basename(img_name)
             else:
-                log.debug(f'Failed to get cover "{cover}": {_log_suffix}')
+                log.debug(f'Failed to get cover "{cover}": {resp} {_log_suffix}')
         img_mime = "image/jpeg" if img_ext in (".jpeg", ".jpg") else "image/png"
         return img_mime, img_name
 
@@ -452,18 +408,27 @@ async def save_metadata(extra=False):
 
 
 async def vod_ongoing(channel_id="", program_id=""):
-    cmd = "vod.+" + f" {channel_id}" if channel_id else "" + f" {program_id}" if program_id else "" + " .+ -w"
+    EXT = "" if not WIN32 else (".exe" if getattr(sys, "frozen", False) else ".py")
+    cmd = f"vod{EXT}"
+    cmd += f" {channel_id}" if channel_id else ""
+    cmd += f" {program_id}" if program_id else "" + " .+ -w"
+    if not WIN32:
+        return [proc for proc in process_iter() if re.match(cmd, " ".join(proc.cmdline()))]
+    else:
+        cmd = f"{sys.executable} {cmd}" if (WIN32 and EXT == ".py") else cmd
+        family = Process(Process(os.getpid()).ppid()).children(recursive=True)
+        return [proc for proc in family if re.match(cmd, " ".join(proc.cmdline()))]
 
-    if WIN32:
-        from wmi import WMI
 
-        return len(
-            [process for process in WMI().Win32_Process(name="vod.exe") if re.match(cmd, process.CommandLine)]
-        )
-
-    p = await asyncio.create_subprocess_exec("pgrep", "-af", cmd, stdout=asyncio.subprocess.PIPE)
-    stdout, _ = await p.communicate()
-    return len(stdout.splitlines())
+async def vod_task(args, vod_data):
+    while True:
+        if __name__ == "__main__" and args.write_to_file:
+            done, pending = await asyncio.wait({_ffmpeg_t}, timeout=30)
+            if _ffmpeg_t in done:
+                break
+        else:
+            await asyncio.sleep(30)
+        await vod_data.client.send_request("GET_PARAMETER", vod_data.get_parameter)
 
 
 async def VodLoop(args, vod_data=None):
@@ -485,7 +450,7 @@ async def VodLoop(args, vod_data=None):
             return
 
         if args.write_to_file:
-            global _LOOP, _SESSION
+            global _LOOP, _SESSION, _filename, _full_title, _log_suffix, _path
 
             _LOOP = asyncio.get_event_loop()
             _SESSION = aiohttp.ClientSession(
@@ -493,58 +458,57 @@ async def VodLoop(args, vod_data=None):
                 json_serialize=ujson.dumps,
             )
 
-            await record_stream()
+            async with _SESSION.get(_epg_url, params=_epg_params) as resp:
+                if resp.status == 200:
+                    _, _path, _filename = (await resp.json()).values()
+                    opts = ["-metadata:s:v", f"title={os.path.basename(_filename)}"]
+
+                    if not os.path.exists(_path):
+                        log.debug(f"Creating recording subdir {_path}")
+                        os.makedirs(_path)
+                else:
+                    _filename = os.path.join(RECORDINGS, f"{args.channel}-{args.broadcast}")
+                    opts = []
+
+            _full_title = _filename[len(RECORDINGS) + 1 :]
+            _log_suffix += f' "{_full_title}"'
+
+            await record_stream(opts)
 
     elif not vod_data:
         return
 
+    global _vod_t
     try:
-        while True:
-            await asyncio.sleep(30)
-            if __name__ == "__main__":
-                if args.write_to_file and _ffmpeg and not _ffmpeg.is_alive():
-                    break
-            await vod_data.client.send_request("GET_PARAMETER", vod_data.get_parameter)
-
-    except Exception as ex:
-        log.debug(f"1 {repr(ex)}")
-
+        _vod_t = asyncio.create_task(vod_task(args, vod_data))
+        await _vod_t
+    except CancelledError:
+        pass
     finally:
-        try:
-            await vod_data.client.send_request("TEARDOWN", vod_data.session)
-            if __name__ == "__main__" and not WIN32:
-                signal.signal(signal.SIGCHLD, signal.SIG_DFL)
-        except Exception as ex:
-            log.debug(f"2 {repr(ex)}")
-
-        try:
-            vod_data.client.close_connection()
-        except Exception as ex:
-            log.debug(f"3 {repr(ex)}")
+        await vod_data.client.send_request("TEARDOWN", vod_data.session)
+        vod_data.client.close_connection()
 
         if __name__ == "__main__":
             if args.write_to_file:
-                while True:
-                    if _PP_DONE:
-                        break
-                    await asyncio.sleep(1)
-                _ffmpeg.join(timeout=1)
-                await asyncio.sleep(1)
+                log.debug(f"Waiting for _ffmpeg_pp_t={_ffmpeg_pp_t}: {_log_suffix}")
+                await _ffmpeg_pp_t
+                log.debug(f"Waited for _ffmpeg_pp_t={_ffmpeg_pp_t}: {_log_suffix}")
                 await _SESSION.close()
             await _SESSION_CLOUD.close()
+            log.debug(f"Loop ended: {_log_suffix}")
 
 
 async def VodSetup(args, vod_client, failed=False):
-    global _epg_url
+    global _epg_params, _epg_url
 
-    _epg_url = f"{SANIC_EPG_URL}/program_name/{args.channel}/{args.broadcast}" + (
-        "?cloud=1" if args.cloud else ""
-    )
+    _epg_url = f"{SANIC_EPG_URL}/program_name/{args.channel}/{args.broadcast}"
+    _epg_params = {"cloud": 1} if args.cloud else {}
     log_prefix = f"{('[' + args.client_ip + '] ') if args.client_ip else ''}"
+    log_suffix = f"[{args.channel}] [{args.broadcast}]"
 
-    if __name__ == "__main__":
-        if args.write_to_file and (await vod_ongoing(args.channel, args.broadcast)) > 1:
-            log.error(f"{log_prefix}Recording already ongoing: [{args.channel}] [{args.broadcast}]")
+    if __name__ == "__main__" and args.write_to_file:
+        if len(await vod_ongoing(args.channel, args.broadcast)) > 1:
+            log.error(f"{log_prefix}Recording already ongoing: {log_suffix}")
             return
 
     client = None
@@ -556,6 +520,7 @@ async def VodSetup(args, vod_client, failed=False):
 
     try:
         vod_info = await get_vod_info(args.channel, args.broadcast, args.cloud, vod_client)
+        log.debug(f"{log_prefix}{log_suffix}: vod_info={vod_info}")
         if __name__ == "__main__" and args.write_to_file:
             global _args, _log_suffix
             if not _args.time:
@@ -569,35 +534,29 @@ async def VodSetup(args, vod_client, failed=False):
                     if _args.time > 1800
                     else _args.time + 60,
                 )
-            _log_suffix = "[%ds] - [%s] [%s] [%d] [%s]" % (
+            _log_suffix = "[%ds] - [%s] [%s] [%s] [%d]" % (
                 _args.time,
                 vod_info["channelName"],
                 args.channel,
-                vod_info["beginTime"] / 1000,
                 args.broadcast,
+                vod_info["beginTime"] / 1000,
             )
         uri = urllib.parse.urlparse(vod_info["url"])
     except Exception as ex:
         if isinstance(ex, (ClientConnectorError, ConnectionRefusedError)):
-            log.error(f"{log_prefix}Movistar IPTV catchup service DOWN")
-            if __name__ == "__main__":
-                if args.write_to_file:
-                    await _SESSION.put(_epg_url + f"?missing={randint(1, args.time)}")  # nosec B311
+            log.error(f"{log_prefix}Movistar IPTV catchup service DOWN: {log_suffix}")
+            if __name__ == "__main__" and args.write_to_file:
+                _epg_params["missing"] = str(randint(1, _args.time))  # nosec B311
+                await _SESSION.put(_epg_url, params=_epg_params)
         elif not failed:
-            log.warning(f"{log_prefix}[{args.channel}] [{args.broadcast}]: {repr(ex)}")
+            log.warning(f"{log_prefix}{log_suffix} => {repr(ex)}")
             return await VodSetup(args, vod_client, True)
         else:
-            log.error(f"{log_prefix}Could not get uri for: [{args.channel}] [{args.broadcast}]: {repr(ex)}")
+            log.error(f"{log_prefix}Could not get uri for: {log_suffix} => {repr(ex)}")
         return
 
-    if __name__ == "__main__":
-        if not WIN32:
-            signal.signal(signal.SIGCHLD, handle_cleanup)
-            signal.signal(signal.SIGHUP, handle_cleanup)
-        else:
-            signal.signal(signal.SIGBREAK, handle_cleanup)
-        signal.signal(signal.SIGINT, handle_cleanup)
-        signal.signal(signal.SIGTERM, handle_cleanup)
+    if __name__ == "__main__" and not WIN32:
+        [signal.signal(sig, handle_cleanup) for sig in (signal.SIGHUP, signal.SIGINT, signal.SIGTERM)]
 
     reader, writer = await asyncio.open_connection(uri.hostname, uri.port)
     client = RtspClient(reader, writer, vod_info["url"])
@@ -668,11 +627,11 @@ if __name__ == "__main__":
     else:
         VID_EXT = ".mkv"
 
-    try:
-        asyncio.run(VodLoop(_args))
-        sys.exit(0)
-    except (AttributeError, KeyboardInterrupt, FileNotFoundError, TimeoutError, ValueError):
+    asyncio.run(VodLoop(_args))
+    if _ffmpeg_r:
+        log.debug(f"Exiting {_ffmpeg_r}")
+        sys.exit(_ffmpeg_r)
+    elif not _vod_t or _vod_t.cancelled():
+        log.debug("Exiting 1")
         sys.exit(1)
-    except Exception as ex:
-        log.error(f"{repr(ex)}")
-        sys.exit(1)
+    log.debug("Exiting 0")

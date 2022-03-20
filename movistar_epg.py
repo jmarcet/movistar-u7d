@@ -6,7 +6,6 @@ import asyncio
 import os
 import re
 import socket
-import subprocess  # nosec B404
 import sys
 import time
 import tomli
@@ -17,11 +16,17 @@ from aiohttp.client_exceptions import ClientConnectorError
 from aiohttp.resolver import AsyncResolver
 from datetime import datetime
 from glob import glob
+from psutil import AccessDenied, Process, process_iter
 from random import randint
 from sanic import Sanic, exceptions, response
 from sanic_prometheus import monitor
 from sanic.log import logger as log, LOGGING_CONFIG_DEFAULTS
 from xml.sax.saxutils import unescape  # nosec B406
+
+try:
+    from asyncio.exceptions import CancelledError
+except ModuleNotFoundError:
+    from asyncio import CancelledError
 
 from version import _version
 from vod import (
@@ -110,12 +115,12 @@ recordings_lock = asyncio.Lock()
 timers_lock = asyncio.Lock()
 tvgrab_lock = asyncio.Lock()
 
-_last_epg = _t_epg = _t_recs = _t_timers = _t_tp = tv_cloud = tvgrab = None
+_last_epg = _p_tv_cloud = _p_tvgrab = _t_timers = None
 
 
 @app.listener("before_server_start")
 async def before_server_start(app, loop):
-    global RECORDING_THREADS, _IPTV, _SESSION, _SESSION_CLOUD, _t_epg, _t_tp
+    global RECORDING_THREADS, _IPTV, _SESSION, _SESSION_CLOUD
 
     banner = f"Movistar U7D - EPG v{_version}"
     log.info("-" * len(banner))
@@ -149,7 +154,7 @@ async def before_server_start(app, loop):
 
     if not WIN32 and IPTV_BW and IPTV_IFACE:
         log.info(f"Ignoring RECORDING_THREADS: BW {IPTV_BW} kbps / {IPTV_IFACE}")
-        _t_tp = app.add_task(network_saturated())
+        app.add_task(network_saturated(), name="_t_tp")
         RECORDING_THREADS = 0
 
     if not WIN32:
@@ -159,7 +164,6 @@ async def before_server_start(app, loop):
         connector=aiohttp.TCPConnector(keepalive_timeout=YEAR_SECONDS, limit_per_host=1),
         json_serialize=ujson.dumps,
     )
-
     _SESSION_CLOUD = aiohttp.ClientSession(
         connector=aiohttp.TCPConnector(
             keepalive_timeout=YEAR_SECONDS,
@@ -225,7 +229,7 @@ async def after_server_start(app, loop):
                 delay = max(10, 180 - uptime)
                 if delay > 10:
                     log.info(f"Waiting {delay}s to check recording timers since the system just booted...")
-                _t_timers = asyncio.create_task(timers_check(delay))
+                _t_timers = app.add_task(timers_check(delay))
 
         log.info(f"Manual timers check => {SANIC_URL}/timers_check")
 
@@ -238,30 +242,20 @@ async def after_server_start(app, loop):
                 await asyncio.sleep(5)
 
 
-@app.listener("after_server_stop")
-async def after_server_stop(app, loop):
-    await _SESSION.close()
-    await _SESSION_CLOUD.close()
-    for task in [
-        _t_epg,
-        _t_recs,
-        _t_timers,
-        _t_tp,
-        tv_cloud,
-        tvgrab,
-    ]:
+@app.listener("before_server_stop")
+async def before_server_stop(app, loop):
+    for proc in [proc for proc in [_p_tv_cloud, _p_tvgrab] if proc]:
         try:
-            task.cancel()
-            await asyncio.wait({task})
-        except (AttributeError, ProcessLookupError):
+            log.debug(f"Terminating process={proc}")
+            proc.terminate()
+        except ProcessLookupError:
             pass
-    async with children_lock:
-        for pid in _CHILDREN:
-            try:
-                _CHILDREN[pid][2].cancel()
-                await asyncio.wait({_CHILDREN[pid][2]})
-            except (AttributeError, KeyError, ProcessLookupError):
-                pass
+
+    for session in (_SESSION, _SESSION_CLOUD):
+        try:
+            await session.close()
+        except CancelledError:
+            pass
 
 
 def does_recording_exist(filename):
@@ -511,8 +505,7 @@ async def handle_program_name(request, channel_id, program_id, missing=0):
                 _RECORDINGS[channel_id] = {}
             _RECORDINGS[channel_id][timestamp] = {"filename": fname}
 
-        global _t_recs
-        _t_recs = asyncio.create_task(update_recordings(channel_id))
+        app.add_task(update_recordings(channel_id), name="_t_recs")
 
         log.info(f"Recording ARCHIVED: {log_suffix}")
         return response.json(
@@ -635,7 +628,8 @@ async def handle_record_program(request, channel_id, url):
 
 @app.get("/reload_epg")
 async def handle_reload_epg(request):
-    return await reload_epg()
+    app.add_task(reload_epg())
+    return response.json({"status": "EPG Reload Queued"}, 200)
 
 
 @app.get("/timers_check")
@@ -649,7 +643,7 @@ async def handle_timers_check(request):
         if _t_timers and not _t_timers.done():
             raise exceptions.ServiceUnavailable("Busy processing timers")
 
-        _t_timers = asyncio.create_task(timers_check())
+        _t_timers = app.add_task(timers_check(), name="_t_timers")
 
     return response.json({"status": "Timers check queued"}, 200)
 
@@ -668,14 +662,10 @@ async def network_saturated():
         await asyncio.sleep(3)
 
 
-async def reap_vod_child(p):
-    while True:
-        try:
-            retcode = p.wait(timeout=0.001)
-            log.debug(f"reap_vod_child: [{p.pid}]:{retcode}")
-            return await recording_cleanup(p.pid, retcode)
-        except subprocess.TimeoutExpired:
-            await asyncio.sleep(1)
+async def reap_vod_child(process):
+    log.debug(f"Awaiting VOD [{_CHILDREN[process][1][1]}] [{_CHILDREN[process][1][2]}]: {process}")
+    retcode = await process.wait()
+    await recording_cleanup(process, retcode)
 
 
 async def record_program(channel_id, program_id, offset=0, record_time=0, cloud=False, mp4=False, vo=False):
@@ -684,52 +674,56 @@ async def record_program(channel_id, program_id, offset=0, record_time=0, cloud=
     if await vod_ongoing(channel_id, program_id):
         return "Recording already ongoing"
 
-    client_port = find_free_port(_IPTV)
-    cmd = f"{VOD_EXEC} {channel_id} {program_id} -p {client_port}"
+    port = find_free_port(_IPTV)
+    prefix = ["nohup"] if not WIN32 else []
+    cmd = [VOD_EXEC, str(channel_id), str(program_id), "-p", str(port)]
     if offset:
-        cmd += f" -s {offset}"
+        cmd += ["-s", str(offset)]
     if record_time:
-        cmd += f" -t {record_time}"
+        cmd += ["-t", str(record_time)]
     if cloud:
-        cmd += " --cloud"
+        cmd += ["--cloud"]
     if mp4:
-        cmd += " --mp4"
+        cmd += ["--mp4"]
     if vo:
-        cmd += " --vo"
-    cmd += " -w"
+        cmd += ["--vo"]
+    cmd += ["-w"]
 
-    log.debug(f"Launching {cmd}")
-    if not WIN32:
-        global _CHILDREN
-        p = subprocess.Popen(cmd.split())  # nosec B603
-        async with children_lock:
-            _CHILDREN[p.pid] = (cmd, (client_port, channel_id, program_id), app.add_task(reap_vod_child(p)))
-    else:
-        subprocess.Popen(cmd.split())  # nosec B603
+    log.debug('Launching: "%s"' % " ".join(cmd))
+    p = await asyncio.create_subprocess_exec(*(prefix + cmd))
+
+    global _CHILDREN
+    async with children_lock:
+        _CHILDREN[p] = [tuple(cmd), (port, channel_id, program_id), app.add_task(reap_vod_child(p))]
 
 
-async def recording_cleanup(pid, status):
+async def recording_cleanup(process, retcode):
     global _CHILDREN, _t_timers
     async with children_lock:
-        if abs(status) == 15:
-            client_port, channel_id, program_id = _CHILDREN[pid][1]
-        del _CHILDREN[pid]
+        port, channel_id, program_id = _CHILDREN[process][1]
+        del _CHILDREN[process]
 
-    if abs(status) == 15:
-        log.debug(f"recording_cleanup: [{pid}]:{status} {channel_id} {program_id}")
-        subprocess.run(["pkill", "-f", f"ffmpeg .+ -i udp://@{_IPTV}:{client_port}"])  # nosec B603, B607
+    if retcode in (-9, 15):  # vod dying hard on UNIX or on Windows, so the epg cleanup must be done here
+        for proc in process_iter():
+            try:
+                name = " ".join(proc.cmdline())
+                if re.match(f"ffmpeg .+ -i udp://@{_IPTV}:{port}", name):
+                    log.debug(f'Recording Cleanup: [{channel_id}] [{program_id}] -> Killing child: "{name}"')
+                    proc.terminate()
+            except AccessDenied:
+                pass
         await handle_program_name(None, channel_id, program_id, missing=randint(1, 9999))  # nosec B311
 
     if not _NETWORK_SATURATED:
         async with timers_lock:
             if _t_timers and _t_timers.done():
-                _t_timers = asyncio.create_task(timers_check(delay=3))
+                _t_timers = app.add_task(timers_check(delay=3), name="_t_timers")
 
-    log.debug(f"recording_cleanup: [{pid}]:{status} DONE")
+    log.debug(f"Recording Cleanup: [{channel_id}] [{program_id}] -> {process}:{retcode} DONE")
 
 
 async def reload_epg():
-    global _CHANNELS, _CLOUD, _EPGDATA, tvgrab
+    global _CHANNELS, _CLOUD, _EPGDATA, _p_tvgrab
 
     if (
         not os.path.exists(CHANNELS)
@@ -739,13 +733,10 @@ async def reload_epg():
         and os.path.exists(GUIDE)
     ):
         log.warning("Missing channel list! Need to download it. Please be patient...")
+        cmd = ["tv_grab_es_movistartv", "--m3u", CHANNELS]
         async with tvgrab_lock:
-            tvgrab = await asyncio.create_subprocess_exec(
-                "tv_grab_es_movistartv",
-                "--m3u",
-                CHANNELS,
-            )
-            await tvgrab.wait()
+            _p_tvgrab = await asyncio.create_subprocess_exec(*cmd)
+            await _p_tvgrab.wait()
     elif (
         not os.path.exists(config_data)
         or not os.path.exists(epg_data)
@@ -812,8 +803,6 @@ async def reload_epg():
         log.info(f"Total EPG entries: {nr_epg}")
         log.info("EPG Updated")
 
-    return response.json({"status": "EPG Updated"}, 200)
-
 
 async def timers_check(delay=0):
     await asyncio.sleep(delay)
@@ -821,7 +810,7 @@ async def timers_check(delay=0):
     if not os.path.exists(timers):
         return
 
-    nr_procs = await vod_ongoing()
+    nr_procs = len(await vod_ongoing())
     if _NETWORK_SATURATED or (RECORDING_THREADS and not nr_procs < RECORDING_THREADS):
         msg = (
             f"{'Network saturated. ' if _NETWORK_SATURATED else ''}Already recording {nr_procs} streams"
@@ -847,7 +836,7 @@ async def timers_check(delay=0):
 
     async def _record(channel_id, channel_name, timestamp, cloud, vo, timer_match=None):
         global _TIMERS_ADDED
-        _, filename = get_recording_path(channel_id, timestamp, cloud)
+        filename = get_recording_path(channel_id, timestamp, cloud)[1]
         fname, name = filename[len(RECORDINGS) + 1 :], os.path.basename(filename)
         guide = _CLOUD if cloud else _EPGDATA
         duration, pid, title = [guide[channel_id][timestamp][t] for t in ["duration", "pid", "full_title"]]
@@ -862,7 +851,7 @@ async def timers_check(delay=0):
                 return -1
             log.info(
                 f'Found {"Cloud Recording" if cloud else "MATCH"}: '
-                f'[{channel_name}] [{channel_id}] [{timestamp}] [{pid}] "{fname}"'
+                f'[{channel_name}] [{channel_id}] [{pid}] [{timestamp}] "{fname}"'
                 f'{" [VO]" if vo else ""}'
             )
             _TIMERS_ADDED.append(fname)
@@ -959,7 +948,7 @@ async def timers_check(delay=0):
 
 
 async def update_cloud():
-    global _CLOUD, _EPGDATA, cloud_data, tv_cloud
+    global _CLOUD, _EPGDATA, _p_tv_cloud, cloud_data
 
     try:
         async with aiofiles.open(cloud_data, encoding="utf8") as f:
@@ -1067,14 +1056,9 @@ async def update_cloud():
     if updated or not os.path.exists(CHANNELS_CLOUD) or not os.path.exists(GUIDE_CLOUD):
         if not os.path.exists(CHANNELS_CLOUD) or not os.path.exists(GUIDE_CLOUD):
             log.warning("Missing Cloud Recordings data! Need to download it. Please be patient...")
-        tv_cloud = await asyncio.create_subprocess_exec(
-            "tv_grab_es_movistartv",
-            "--cloud_m3u",
-            CHANNELS_CLOUD,
-            "--cloud_recordings",
-            GUIDE_CLOUD,
-        )
-        await tv_cloud.wait()
+        cmd = ["tv_grab_es_movistartv", "--cloud_m3u", CHANNELS_CLOUD, "--cloud_recordings", GUIDE_CLOUD]
+        _p_tv_cloud = await asyncio.create_subprocess_exec(*cmd)
+        await _p_tv_cloud.wait()
 
     log.info(
         f"{'Updated' if updated else 'Loaded'} Cloud Recordings data"
@@ -1083,19 +1067,14 @@ async def update_cloud():
 
 
 async def update_epg():
-    global _last_epg, _t_timers, tvgrab
+    global _last_epg, _t_timers, _p_tvgrab
+    cmd = ["tv_grab_es_movistartv", "--m3u", CHANNELS, "--guide", GUIDE]
     for i in range(1, 6):
         async with tvgrab_lock:
-            tvgrab = await asyncio.create_subprocess_exec(
-                "tv_grab_es_movistartv",
-                "--m3u",
-                CHANNELS,
-                "--guide",
-                GUIDE,
-            )
-            await tvgrab.wait()
+            _p_tvgrab = await asyncio.create_subprocess_exec(*cmd)
+            await _p_tvgrab.wait()
 
-        if tvgrab.returncode:
+        if _p_tvgrab.returncode:
             if i < 5:
                 log.error(f"Waiting 15s before trying to update EPG again [{i+1}/5]...")
                 await asyncio.sleep(15)
@@ -1104,9 +1083,9 @@ async def update_epg():
             if RECORDINGS:
                 async with timers_lock:
                     if _t_timers and not _t_timers.done():
-                        await asyncio.wait(_t_timers)
+                        await _t_timers
                     _last_epg = int(datetime.now().replace(minute=0, second=0).timestamp())
-                    _t_timers = asyncio.create_task(timers_check())
+                    _t_timers = app.add_task(timers_check(), name="_t_timers")
             break
 
 
@@ -1197,17 +1176,11 @@ async def update_recordings(archive=None):
 
 
 if __name__ == "__main__":
-    try:
-        monitor(
-            app,
-            is_middleware=False,
-            latency_buckets=[1.0],
-            mmc_period_sec=None,
-            multiprocess_mode="livesum",
-        ).expose_endpoint()
-        app.run(host="127.0.0.1", port=8889, access_log=False, auto_reload=False, debug=DEBUG, workers=1)
-    except (KeyboardInterrupt, TimeoutError):
-        sys.exit(1)
-    except Exception as ex:
-        log.critical(f"{repr(ex)}")
-        sys.exit(1)
+    monitor(
+        app,
+        is_middleware=False,
+        latency_buckets=[1.0],
+        mmc_period_sec=None,
+        multiprocess_mode="livesum",
+    ).expose_endpoint()
+    app.run(host="127.0.0.1", port=8889, access_log=False, auto_reload=False, debug=DEBUG, workers=1)
