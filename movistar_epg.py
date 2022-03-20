@@ -226,12 +226,13 @@ async def after_server_start(app, loop):
         global _t_timers
         uptime = int(datetime.now().timestamp() - boot_time())
         async with timers_lock:
-            if not _t_timers:
+            if not _t_timers and int(datetime.now().replace(minute=0, second=0).timestamp()) < _last_epg:
                 delay = max(10, 180 - uptime)
                 if delay > 10:
                     log.info(f"Waiting {delay}s to check recording timers since the system just booted...")
-                _t_timers = app.add_task(timers_check(delay))
-
+                _t_timers = app.add_task(timers_check(delay), name="_t_timers")
+            elif not _t_timers:
+                log.warning("Delaying timers_check until the EPG is updated...")
         log.info(f"Manual timers check => {SANIC_URL}/timers_check")
 
     async with aiohttp.ClientSession(headers={"User-Agent": UA_U7D}) as session:
