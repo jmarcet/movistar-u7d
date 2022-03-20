@@ -473,8 +473,8 @@ async def handle_program_name(request, channel_id, program_id, cloud=False, miss
     log_suffix = '[%s] [%s] [%s] [%s] "%s"' % (
         _CHANNELS[channel_id]["name"],
         channel_id,
-        timestamp,
         program_id,
+        timestamp,
         fname,
     )
 
@@ -550,12 +550,13 @@ async def handle_prom_event_add(request):
             request.json["id"],
         ).observe(float(request.json["lat"]))
         log.info(
-            '%s [%s] [%s] [%s] "%s" _ %s'
+            '%s [%s] [%s] [%s] [%s] "%s" _ %s'
             % (
                 request.json["msg"],
                 _event["channel"],
-                _event["start"],
+                request.json["channel_id"],
                 _event["program_id"],
+                _event["start"],
                 _epg["full_title"],
                 _offset,
             )
@@ -590,12 +591,13 @@ async def handle_prom_event_remove(request):
             )
             _offset = "[%d/%d]" % (_event["offset"] + request.json["offset"], _event["duration"])
         log.info(
-            '%s [%s] [%s] [%s] "%s" _ %s'
+            '%s [%s] [%s] [%s] [%s] "%s" _ %s'
             % (
                 request.json["msg"],
                 _event["channel"],
-                _event["start"],
+                request.json["channel_id"],
                 _event["program_id"],
+                _event["start"],
                 _epg["full_title"],
                 _offset,
             )
