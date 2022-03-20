@@ -18,12 +18,14 @@ import socket
 import struct
 import sys
 import time
+import timeit
 import ujson as json
 
 from aiohttp.resolver import AsyncResolver
 from datetime import date, datetime, timedelta
 from queue import Queue
 from threading import Thread
+from xml.dom import minidom  # nosec B408
 from xml.etree.ElementTree import Element, ElementTree, SubElement  # nosec B405
 
 from movistar_epg import UA_U7D, get_title_meta
@@ -1321,8 +1323,6 @@ def export_channels(m3u_file, cloud=None):
 async def main():
     global _VERBOSE, cache, config, deadline, epg, iptv, mtv, session, xmltv
 
-    # Guarda el timestamp de inicio
-    time_start = int(time.time())
     deadline = int(datetime.combine(date.today() - timedelta(days=7), datetime.min.time()).timestamp())
 
     # Obtiene los argumentos de entrada
@@ -1400,41 +1400,29 @@ async def main():
 
         # Genera el árbol XMLTV de los paquetes contratados
         epg_x = await xmltv.generate_xml(epg, verbose=not cached)
-        xml = epg_x.getroot()
-        try:
-            ElTr.indent(xml)
-        except AttributeError:
-            pass
-        guide = ElTr.tostring(xml, encoding="UTF-8", xml_declaration=True)
+        dom = minidom.parseString(ElTr.tostring(epg_x.getroot()))  # nosec B318
 
         if args.guide:
-            with open(args.guide, "wb") as f:
-                f.write(guide)
-            with gzip.open(args.guide + ".gz", "wb") as f:
-                f.write(guide)
-            log.info(f"Guía XMLTV guardada: {args.guide}")
-
-            total = (int(time.time()) - time_start) / 60
-            log.info(
-                "EPG de %i canales y %i días %s"
-                % (
-                    len(epg),
-                    len(xdata["segments"]),
-                    "descargada en %i minutos" % total
-                    if total != 0
-                    else "generada en %i segundos" % (int(time.time()) - time_start),
-                )
-            )
+            with open(args.guide, "w", encoding="utf8") as f:
+                dom.writexml(f, indent="    ", addindent="    ", newl="\n", encoding="UTF-8")
+            with gzip.open(args.guide + ".gz", "wt", encoding="utf8") as f:
+                dom.writexml(f, indent="    ", addindent="    ", newl="\n", encoding="UTF-8")
+            msg = "EPG de %i canales y %i días descargada" % (len(epg), len(xdata["segments"]))
         elif args.cloud_recordings:
-            with open(args.cloud_recordings, "wb") as f:
-                f.write(guide)
-            log.info(f"Guía XMLTV de Grabaciones en la Nube guardada: {args.cloud_recordings}")
+            with open(args.cloud_recordings, "w", encoding="utf8") as f:
+                dom.writexml(f, indent="    ", addindent="    ", newl="\n", encoding="UTF-8")
+            msg = "EPG de Grabaciones en la Nube descargada"
+
+        total_time = str(timedelta(seconds=round(timeit.default_timer() - time_start)))
+        log.info(f"{msg} en {total_time}s")
 
     finally:
         await session.close()
 
 
 if __name__ == "__main__":
+    time_start = timeit.default_timer()
+
     log.basicConfig(
         datefmt="[%Y-%m-%d %H:%M:%S]",
         format="%(asctime)s [TVG] [%(levelname)s] %(message)s",
