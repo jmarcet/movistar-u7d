@@ -1143,7 +1143,7 @@ async def update_recordings(archive=None):
                 await asyncio.sleep(1)
 
     async with recordings_lock:
-        if archive:
+        if archive and _RECORDINGS:
             async with aiofiles.open(recordings, "w", encoding="utf8") as f:
                 await f.write(ujson.dumps(_RECORDINGS, ensure_ascii=False, indent=4, sort_keys=True))
 
