@@ -217,8 +217,11 @@ async def postprocess(record_time=0):
 
         cmd = list(_nice)
         cmd += ["mkvmerge", "--abort-on-warnings", "-q", "-o", _filename + TMP_EXT2]
-        img_mime, img_name = await save_metadata()
-        cmd += ["--attachment-mime-type", img_mime, "--attach-file", img_name]
+        try:
+            img_mime, img_name = await save_metadata()
+            cmd += ["--attachment-mime-type", img_mime, "--attach-file", img_name]
+        except TypeError:
+            pass
         if _args.vo:
             cmd += ["--track-order", "0:2,0:1,0:4,0:3,0:6,0:5"]
             cmd += ["--default-track", "2:1"]
@@ -371,6 +374,7 @@ async def save_metadata(extra=False):
                 metadata["cover"] = os.path.basename(img_name)
             else:
                 log.debug(f'Failed to get cover "{cover}": {resp} {_log_suffix}')
+                return
         img_mime = "image/jpeg" if img_ext in (".jpeg", ".jpg") else "image/png"
         return img_mime, img_name
 
