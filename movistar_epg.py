@@ -14,7 +14,7 @@ import urllib.parse
 
 from aiohttp.client_exceptions import ClientConnectorError
 from aiohttp.resolver import AsyncResolver
-from datetime import datetime
+from datetime import datetime, timedelta
 from glob import glob
 from psutil import AccessDenied, Process, boot_time, process_iter
 from random import randint
@@ -156,9 +156,6 @@ async def before_server_start(app, loop):
         app.add_task(network_saturated(), name="_t_tp")
         RECORDING_THREADS = 0
 
-    if not WIN32:
-        await asyncio.create_subprocess_exec("pkill", "tv_grab_es_movistartv")
-
     _SESSION = aiohttp.ClientSession(
         connector=aiohttp.TCPConnector(keepalive_timeout=YEAR_SECONDS, limit_per_host=1),
         json_serialize=ujson.dumps,
@@ -174,14 +171,11 @@ async def before_server_start(app, loop):
 
     await reload_epg()
 
-    delay = 3600 - (time.localtime().tm_min * 60 + time.localtime().tm_sec)
-    _t_epg = asyncio.create_task(every(3600, update_epg, delay))
-
     if RECORDINGS:
         global _RECORDINGS, _last_epg
 
         if not _last_epg:
-            _last_epg = int(datetime.now().replace(minute=0, second=0).timestamp())
+            _last_epg = int(os.path.getmtime(GUIDE))
 
         if not os.path.exists(RECORDINGS):
             os.makedirs(RECORDINGS)
@@ -222,6 +216,8 @@ async def before_server_start(app, loop):
             pass
 
         await update_recordings(True)
+
+    app.add_task(update_epg_cron(), name="_t_epg")
 
 
 @app.listener("after_server_start")
@@ -283,12 +279,6 @@ def does_recording_exist(filename):
             if os.path.splitext(file)[1] in VID_EXTS
         ]
     )
-
-
-async def every(timeout, stuff, delay=0):
-    await asyncio.sleep(delay)
-    while True:
-        await asyncio.gather(asyncio.sleep(timeout), stuff())
 
 
 def get_channel_dir(channel_id):
@@ -768,9 +758,6 @@ async def reload_epg():
     ):
         log.warning("Missing channels data! Need to download it. Please be patient...")
         return await update_epg()
-    elif int(os.path.getmtime(GUIDE)) < int(datetime.now().replace(minute=0, second=0).timestamp()):
-        log.warning("Guide too old. Need to update it. Please be patient...")
-        return await update_epg()
 
     async with epg_lock:
         try:
@@ -1114,6 +1101,16 @@ async def update_epg():
                     _last_epg = int(datetime.now().replace(minute=0, second=0).timestamp())
                     _t_timers = app.add_task(timers_check(), name="_t_timers")
             break
+
+
+async def update_epg_cron():
+    last_datetime = datetime.now().replace(minute=0, second=0, microsecond=0)
+    if os.path.getmtime(GUIDE) < last_datetime.timestamp():
+        log.warning("EPG too old. Updating it...")
+        await update_epg()
+    await asyncio.sleep((last_datetime + timedelta(hours=1) - datetime.now()).total_seconds())
+    while True:
+        await asyncio.gather(asyncio.sleep(3600), update_epg())
 
 
 async def update_recordings(archive=None):
