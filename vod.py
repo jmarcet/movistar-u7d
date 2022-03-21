@@ -23,7 +23,7 @@ from collections import namedtuple
 from contextlib import closing
 from dict2xml import dict2xml
 from glob import glob
-from psutil import Process, process_iter
+from psutil import Process, NoSuchProcess, process_iter
 from random import randint
 
 try:
@@ -68,7 +68,7 @@ VodData = namedtuple("VodData", ["client", "get_parameter", "session"])
 _IPTV = _LOOP = _SESSION = _SESSION_CLOUD = None
 
 _args = _epg_params = _epg_url = _filename = _full_title = _log_suffix = _mtime = _path = None
-_ffmpeg_p = _ffmpeg_pp_t = _ffmpeg_r = _ffmpeg_t = _vod_t = None
+_ffmpeg_p = _ffmpeg_pp_p = _ffmpeg_pp_t = _ffmpeg_r = _ffmpeg_t = _vod_t = None
 
 _nice = ("nice", "-n", "15", "ionice", "-c", "3", "flock", LOCK_FILE) if not WIN32 else ()
 
@@ -166,6 +166,13 @@ def check_dns():
         s.close()
 
 
+async def check_process(process, msg):
+    await process.wait()
+    log.debug(f"{process}")
+    if process.returncode not in (0, 1):
+        raise ValueError(process.stdout.decode().replace("\n", " ").strip() if process.stdout else msg)
+
+
 def cleanup(ext, meta=False, subs=False):
     if os.path.exists(_filename + ext):
         os.remove(_filename + ext)
@@ -193,16 +200,24 @@ async def get_vod_info(channel_id, program_id, cloud, vod_client):
 def handle_cleanup(signum, frame):
     log.debug(f"handle_cleanup: {_log_suffix}")
     if __name__ == "__main__" and _args.write_to_file:
-        try:
+        if _ffmpeg_p and _ffmpeg_p.returncode is None:
+            _ffmpeg_t.cancel()
             _ffmpeg_p.terminate()
-        except ProcessLookupError:
-            pass
+        elif _ffmpeg_pp_t and not _ffmpeg_pp_t.done() and _ffmpeg_pp_p and _ffmpeg_pp_p.returncode is None:
+            try:
+                proc = Process(_ffmpeg_pp_p.pid)
+                if not WIN32:
+                    proc = proc.children()[0]  # flock is the parent
+                log.debug(f"Killing {proc.name()}: {_log_suffix}")
+                proc.kill()
+            except (IndexError, NoSuchProcess) as ex:
+                log.debug(f"Could not kill {repr(ex)}: {_log_suffix}")
     else:
         _vod_t.cancel()
 
 
 async def postprocess(record_time=0):
-    global _epg_params, _log_suffix
+    global _epg_params, _ffmpeg_pp_p, _log_suffix
     log.debug(f"Recording Postprocess: {_log_suffix}")
 
     try:
@@ -227,10 +242,9 @@ async def postprocess(record_time=0):
             cmd += ["--default-track", "2:1"]
         cmd += [_filename + TMP_EXT]
 
-        out, _ = await (await asyncio.create_subprocess_exec(*cmd, stdout=PIPE, stderr=STDOUT)).communicate()
+        _ffmpeg_pp_p = await asyncio.create_subprocess_exec(*cmd, stdout=PIPE, stderr=STDOUT)
+        await check_process(_ffmpeg_pp_p, "Failed to verify recording")
         cleanup(TMP_EXT)
-        if out:
-            raise ValueError(out.decode().replace("\n", " ").strip())
 
         cmd = ["mkvmerge", "-J", _filename + TMP_EXT2]
         res = (await (await asyncio.create_subprocess_exec(*cmd, stdout=PIPE)).communicate())[0].decode()
@@ -250,9 +264,8 @@ async def postprocess(record_time=0):
             cmd += ["ffmpeg", "-i", _filename + TMP_EXT2]
             cmd += ["-map", "0", "-c", "copy", "-sn", "-movflags", "+faststart"]
             cmd += ["-f", "mp4", "-v", "panic", _filename + VID_EXT]
-            if await (await asyncio.create_subprocess_exec(*cmd)).wait():
-                cleanup(VID_EXT)
-                raise ValueError("Failed to write " + _filename + VID_EXT)
+            _ffmpeg_pp_p = await asyncio.create_subprocess_exec(*cmd, stdout=PIPE, stderr=STDOUT)
+            await check_process(_ffmpeg_pp_p, "Failed to remux video to mp4 container")
 
             subs = [t for t in recording_data["tracks"] if t["type"] == "subtitles"]
             for track in subs:
@@ -261,10 +274,8 @@ async def postprocess(record_time=0):
                 cmd += ["ffmpeg", "-i", _filename + TMP_EXT2]
                 cmd += ["-map", "0:%d" % track["id"], "-c:s", "dvbsub"]
                 cmd += ["-f", "mpegts", "-v", "panic", filesub]
-                if await (await asyncio.create_subprocess_exec(*cmd)).wait():
-                    cleanup(VID_EXT, meta=True, subs=True)
-                    raise ValueError("Failed to write " + filesub)
-
+                _ffmpeg_pp_p = await asyncio.create_subprocess_exec(*cmd, stdout=PIPE, stderr=STDOUT)
+                await check_process(_ffmpeg_pp_p, "Failed to extract subs")
             cleanup(TMP_EXT2)
         else:
             os.rename(_filename + TMP_EXT2, _filename + VID_EXT)
@@ -498,9 +509,10 @@ async def VodLoop(args, vod_data=None):
 
         if __name__ == "__main__":
             if args.write_to_file:
-                log.debug(f"Waiting for _ffmpeg_pp_t={_ffmpeg_pp_t}: {_log_suffix}")
-                await _ffmpeg_pp_t
-                log.debug(f"Waited for _ffmpeg_pp_t={_ffmpeg_pp_t}: {_log_suffix}")
+                if _ffmpeg_pp_t:
+                    log.debug(f"Waiting for _ffmpeg_pp_t={_ffmpeg_pp_t}: {_log_suffix}")
+                    await _ffmpeg_pp_t
+                    log.debug(f"Waited for _ffmpeg_pp_t={_ffmpeg_pp_t}: {_log_suffix}")
                 await _SESSION.close()
             await _SESSION_CLOUD.close()
             log.debug(f"Loop ended: {_log_suffix}")
@@ -637,9 +649,9 @@ if __name__ == "__main__":
         VID_EXT = ".mkv"
 
     asyncio.run(VodLoop(_args))
-    if _ffmpeg_r:
-        log.debug(f"Exiting {_ffmpeg_r}")
-        sys.exit(_ffmpeg_r)
+    if _ffmpeg_r or (_ffmpeg_pp_p and _ffmpeg_pp_p.returncode not in (0, 1)):
+        log.debug(f"Exiting {_ffmpeg_r if _ffmpeg_r else _ffmpeg_pp_p.returncode}")
+        sys.exit(_ffmpeg_r if _ffmpeg_r else _ffmpeg_pp_p.returncode)
     elif not _vod_t or _vod_t.cancelled():
         log.debug("Exiting 1")
         sys.exit(1)
