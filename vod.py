@@ -552,7 +552,9 @@ async def VodSetup(args, vod_client, failed=False):
                     if _args.time > 7200
                     else _args.time + 300
                     if _args.time > 1800
-                    else _args.time + 60,
+                    else _args.time + 60
+                    if _args.time > 900
+                    else _args.time,
                 )
             _mtime = vod_info["beginTime"] / 1000 + _args.start
             _log_suffix = "[%ds] - [%s] [%s] [%s] [%d]" % (
