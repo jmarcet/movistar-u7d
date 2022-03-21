@@ -446,7 +446,7 @@ async def handle_program_id(request, channel_id, url):
 @app.route("/program_name/<channel_id:int>/<program_id:int>", methods=["GET", "OPTIONS", "PUT"])
 async def handle_program_name(request, channel_id, program_id, missing=0):
     global _RECORDINGS
-    cloud = bool(request.args.get("cloud"))
+    cloud = request.args.get("cloud") == "1"
     try:
         _epg, timestamp = get_epg(channel_id, program_id, cloud)
     except TypeError:
@@ -477,7 +477,7 @@ async def handle_program_name(request, channel_id, program_id, missing=0):
     )
 
     global _TIMERS_ADDED
-    missing = request.args.get("missing", 0) if request else missing
+    missing = int(request.args.get("missing", 0)) if request else missing
     if missing:
         if channel_id not in _RECORDINGS_INC:
             _RECORDINGS_INC[channel_id] = {}
@@ -606,9 +606,9 @@ async def handle_prom_event_remove(request):
 
 @app.get("/record/<channel_id:int>/<url>")
 async def handle_record_program(request, channel_id, url):
-    cloud = bool(request.args.get("cloud"))
-    mp4 = bool(request.args.get("mp4"))
-    vo = bool(request.args.get("vo"))
+    cloud = request.args.get("cloud") == "1"
+    mp4 = request.args.get("mp4") == "1"
+    vo = request.args.get("vo") == "1"
     channel, program_id, start, duration, offset = get_program_id(channel_id, url, cloud).values()
     if request.args.get("time"):
         record_time = int(request.args.get("time"))
