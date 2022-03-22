@@ -298,9 +298,9 @@ async def postprocess(record_time=0):
                     await session.put(_epg_url, params=_epg_params)
             except (ClientConnectorError, ConnectionRefusedError, ServerDisconnectedError):
                 pass
-        cleanup(TMP_EXT)
-        cleanup(TMP_EXT2)
+        cleanup(NFO_EXT)
         cleanup(VID_EXT, meta=True, subs=True)
+        [os.remove(file) for file in glob(f"{_filename.replace('[', '?').replace(']', '?')}.*")]
         if os.path.exists(LOCK_FILE):
             try:
                 os.remove(LOCK_FILE)
