@@ -244,7 +244,7 @@ async def postprocess(record_time=0):
 
         _ffmpeg_pp_p = await asyncio.create_subprocess_exec(*cmd, stdout=PIPE, stderr=STDOUT)
         await check_process(_ffmpeg_pp_p, "Failed to verify recording")
-        cleanup(TMP_EXT)
+        [cleanup(ext) for ext in (TMP_EXT, ".nfo")]
 
         cmd = ["mkvmerge", "-J", _filename + TMP_EXT2]
         res = (await (await asyncio.create_subprocess_exec(*cmd, stdout=PIPE)).communicate())[0].decode()
@@ -288,6 +288,7 @@ async def postprocess(record_time=0):
             await save_metadata(extra=True)
         else:
             cleanup(VID_EXT, meta=True, subs=_args.mp4)
+            [os.remove(file) for file in glob(f"{_filename.replace('[', '?').replace(']', '?')}.*")]
 
     except Exception as ex:
         log.error(f"Recording FAILED: {_log_suffix} => {repr(ex)}")
