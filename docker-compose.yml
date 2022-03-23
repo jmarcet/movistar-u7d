@@ -18,6 +18,7 @@ services:
     # - ${HOME}:/home
     # - ${RECORDINGS}:${RECORDINGS}
     #environment:
+    # - COMSKIP=${COMSKIP}
     # - DEBUG=${DEBUG}
     # - EPG_THREADS=${EPG_THREADS}
     # - IPTV_BW=${IPTV_BW}

@@ -90,6 +90,8 @@ Por defecto la(s) lista(s) de canales y la(s) guía(s) las generará en vuestra 
 
 Si queremos hacer grabaciones tendremos que copiar [timers.conf](timers.conf), ajustado a nuestro gusto, a nuestra carpeta de usuario. Por defecto las grabaciones se harán en nuestra carpeta personal de Videos, dentro del subdirectorio `movistar-u7d`. Si queremos cambiarlo, modificar el número de grabaciones simultáneas o configurar otras opciones de funcionamiento, podemos editar el script de arranque [movistar-u7d.ps1](movistar-u7d.ps1) con `notepad` o el editor que más nos guste.
 
+Si queremos tener marcas automáticas de anuncios, como capítulos de las grabaciones, necesitaremos obtener el `comskip.exe`, copiarlo a la carpeta del proxy y activar la variable `COMSKIP` en el script de arranque [movistar-u7d.ps1](movistar-u7d.ps1).
+
 
 Instalación en Linux/UNIX/OS X
 ------------------------------
@@ -130,7 +132,7 @@ pip3 install -r requirements.txt
 cp movistar_u7d.py movistar_epg.py tv_grab_es_movistartv version.py vod.py /usr/local/bin/
 ```
 
- - Para hacer uso de la funcionalidad de grabaciones también necesitamos tener instalados tanto `ffmpeg` como `mkvtoolnix`.
+ - Para hacer grabaciones también necesitamos tener instalados tanto `ffmpeg` como `mkvtoolnix` y para poder tener marcas automáticas de anuncios, como capítulos de las mismas, el `comskip`.
 
  3. Para Systemd:
 

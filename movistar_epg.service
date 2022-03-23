@@ -9,6 +9,7 @@ StandardError=syslog
 SyslogIdentifier=movistar-u7d
 
 Environment=PYTHONUNBUFFERED=1
+# Environment=COMSKIP=4
 # Environment=DEBUG=1
 # Environment=EPG_THREADS=4
 # Environment=EXTRA_CHANNELS="4917 5066"

@@ -1,3 +1,4 @@
+# $env:COMSKIP = "4"                                        # número de cpus para realizar detección de anuncios, desactivado por defecto; necesitamos obtener el comskip.exe y copiarlo en la carpeta de movistar-u7d
 # $env:DEBUG = "1"                                          # mostrar logs de depuración
 # $env:EXTRA_CHANNELS = "4917 5066"                         # canales adicionales a los que queremos acceder
 # $env:HOME = "C:\\Users\\usuario"                          # ruta donde queremos que se generen las listas m3u, la guía y el directorio oculto .xmltv

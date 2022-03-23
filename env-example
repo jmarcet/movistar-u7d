@@ -1,3 +1,4 @@
+# COMSKIP=4                          # número de cpus para realizar detección de anuncios, desactivado por defecto
 # DEBUG=1                            # mostrar logs de depuración
 # EPG_THREADS=4                      # número de hilos para descargar la epg
 # EXTRA_CHANNELS="4917 5066"         # canales extras a los que queremos acceder

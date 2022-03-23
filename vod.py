@@ -21,6 +21,7 @@ from aiohttp.resolver import AsyncResolver
 from asyncio.subprocess import PIPE, STDOUT
 from collections import namedtuple
 from contextlib import closing
+from datetime import timedelta
 from dict2xml import dict2xml
 from glob import glob
 from psutil import Process, NoSuchProcess, process_iter
@@ -34,6 +35,7 @@ except ModuleNotFoundError:
 from version import _version
 
 
+COMSKIP = min(int(os.getenv("COMSKIP", 0)), os.cpu_count())
 WIN32 = sys.platform == "win32"
 
 if not WIN32:
@@ -42,8 +44,12 @@ if not WIN32:
 
     setproctitle("vod %s" % " ".join(sys.argv[1:]))
 
+elif COMSKIP and not os.path.exists("comskip.exe"):
+    COMSKIP = 0
+
 
 CACHE_DIR = os.path.join(os.getenv("HOME", os.getenv("USERPROFILE")), ".xmltv/cache/programs")
+COMSKIP_LOG = os.path.join(os.getenv("HOME", os.getenv("USERPROFILE")), "comskip.log")
 DEBUG = bool(int(os.getenv("DEBUG", 0)))
 NOSUBS = bool(int(os.getenv("NOSUBS", 0)))
 RECORDINGS = os.getenv("RECORDINGS", "").rstrip("/").rstrip("\\")
@@ -55,6 +61,7 @@ COVER_URL = f"{IMAGENIO_URL}/covers/programmeImages/portrait/290x429"
 MOVISTAR_DNS = "172.26.23.3"
 MVTV_URL = "http://www-60.svc.imagenio.telefonica.net:2001/appserver/mvtv.do"
 
+CHP_EXT = ".mkvtoolnix.chapters"
 NFO_EXT = "-movistar.nfo"
 TMP_EXT = ".tmp"
 TMP_EXT2 = ".tmp2"
@@ -279,6 +286,36 @@ async def postprocess(record_time=0, timers_t=None):
             cleanup(TMP_EXT2)
         else:
             os.rename(_filename + TMP_EXT2, _filename + VID_EXT)
+
+        if COMSKIP:
+            cleanup(".edl")
+            cleanup(".vdr")
+            cmd = list(_nice)
+            cmd += ["comskip", f"--threads={COMSKIP}", "-d", "70", _filename + VID_EXT]
+            log.info(f"Recording COMSKIP Checking for commercials: {_log_suffix}")
+            async with aiofiles.open(COMSKIP_LOG, "ab") as f:
+                start = timeit.default_timer()
+                _ffmpeg_pp_p = await asyncio.create_subprocess_exec(*cmd, stdout=f, stderr=f)
+                await check_process(_ffmpeg_pp_p, "Failed to do comskip analysis")
+                end = timeit.default_timer()
+            msg = (
+                f"Recording COMSKIP {str(timedelta(seconds=round(end - start)))}s"
+                f" [Commercials {'not found' if _ffmpeg_pp_p.returncode else 'found'}]: {_log_suffix}"
+            )
+            if _ffmpeg_pp_p.returncode:
+                log.warning(msg)
+            else:
+                log.info(msg)
+
+            if not _args.mp4:
+                if _ffmpeg_pp_p.returncode == 0:
+                    cmd = list(_nice)
+                    cmd += ["mkvmerge", "-q", "-o", _filename + TMP_EXT2]
+                    cmd += ["--chapters", _filename + CHP_EXT, _filename + VID_EXT]
+                    _ffmpeg_pp_p = await asyncio.create_subprocess_exec(*cmd, stdout=PIPE, stderr=STDOUT)
+                    await check_process(_ffmpeg_pp_p, "Failed to merge comskip chapters")
+                    os.rename(_filename + TMP_EXT2, _filename + VID_EXT)
+                cleanup(CHP_EXT)
 
         files = glob(f"{_filename.replace('[', '?').replace(']', '?')}.*")
         [os.utime(file, (-1, _mtime)) for file in files if os.access(file, os.W_OK)]
