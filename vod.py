@@ -65,7 +65,7 @@ YEAR_SECONDS = 365 * 24 * 60 * 60
 Response = namedtuple("Response", ["version", "status", "url", "headers", "body"])
 VodData = namedtuple("VodData", ["client", "get_parameter", "session"])
 
-_IPTV = _LOOP = _SESSION = _SESSION_CLOUD = None
+_IPTV = _SESSION = _SESSION_CLOUD = None
 
 _args = _epg_params = _epg_url = _filename = _full_title = _log_suffix = _mtime = _path = None
 _ffmpeg_p = _ffmpeg_pp_p = _ffmpeg_pp_t = _ffmpeg_r = _ffmpeg_t = _vod_t = None
@@ -470,25 +470,29 @@ async def VodLoop(args, vod_data=None):
             return
 
         if args.write_to_file:
-            global _LOOP, _SESSION, _filename, _full_title, _log_suffix, _path
+            global _SESSION, _filename, _full_title, _log_suffix, _path
 
-            _LOOP = asyncio.get_event_loop()
             _SESSION = aiohttp.ClientSession(
                 connector=aiohttp.TCPConnector(keepalive_timeout=YEAR_SECONDS),
                 json_serialize=ujson.dumps,
             )
 
-            async with _SESSION.get(_epg_url, params=_epg_params) as resp:
-                if resp.status == 200:
-                    _, _path, _filename = (await resp.json()).values()
-                    opts = ["-metadata:s:v", f"title={os.path.basename(_filename)}"]
+            try:
+                async with _SESSION.get(_epg_url, params=_epg_params) as resp:
+                    if resp.status == 200:
+                        _, _path, _filename = (await resp.json()).values()
+                        opts = ["-metadata:s:v", f"title={os.path.basename(_filename)}"]
 
-                    if not os.path.exists(_path):
-                        log.debug(f"Creating recording subdir {_path}")
-                        os.makedirs(_path)
-                else:
-                    _filename = os.path.join(RECORDINGS, f"{args.channel}-{args.broadcast}")
-                    opts = []
+                        if not os.path.exists(_path):
+                            log.debug(f"Creating recording subdir {_path}")
+                            os.makedirs(_path)
+                    else:
+                        _filename = os.path.join(RECORDINGS, f"{args.channel}-{args.broadcast}")
+                        opts = []
+            except (ClientConnectorError, ConnectionRefusedError, ServerDisconnectedError):
+                await _SESSION_CLOUD.close()
+                await _SESSION.close()
+                return
 
             _full_title = _filename[len(RECORDINGS) + 1 :]
             _log_suffix += f' "{_full_title}"'
