@@ -739,11 +739,6 @@ async def recording_cleanup(process, retcode):
                 pass
         await handle_program_name(None, channel_id, program_id, cloud, missing=randint(1, 9999))  # nosec B311
 
-    if not _NETWORK_SATURATED:
-        async with timers_lock:
-            if _t_timers and _t_timers.done():
-                _t_timers = app.add_task(timers_check(delay=3), name="_t_timers")
-
     log.debug(f"Recording Cleanup: [{channel_id}] [{program_id}] -> {process}:{retcode} DONE")
 
 

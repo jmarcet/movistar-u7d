@@ -216,7 +216,7 @@ def handle_cleanup(signum, frame):
         _vod_t.cancel()
 
 
-async def postprocess(record_time=0):
+async def postprocess(record_time=0, timers_t=None):
     global _epg_params, _ffmpeg_pp_p, _log_suffix
     log.debug(f"Recording Postprocess: {_log_suffix}")
 
@@ -313,6 +313,8 @@ async def postprocess(record_time=0):
             if parent != RECORDINGS and not os.listdir(parent):
                 os.rmdir(parent)
     finally:
+        if timers_t and not timers_t.done():
+            await timers_t
         log.debug(f"Recording Postprocess ENDED: {_log_suffix}")
 
 
@@ -327,7 +329,8 @@ async def reap_ffmpeg():
     _log_suffix = f"[~{record_time}s] / {_log_suffix}"
     log.info(f"Recording ENDED: {_log_suffix}")
 
-    _ffmpeg_pp_t = asyncio.create_task(postprocess(record_time if (record_time < (_args.time - 30)) else 0))
+    record_time = record_time if record_time < _args.time - 30 else 0
+    _ffmpeg_pp_t = asyncio.create_task(postprocess(record_time, asyncio.create_task(timers_check())))
 
 
 async def record_stream(opts):
@@ -425,6 +428,14 @@ async def save_metadata(extra=False):
         await f.write(dict2xml(metadata, wrap="metadata", indent="    "))
     os.utime(_filename + NFO_EXT, (-1, _mtime))
     log.debug(f"Metadata saved: {_log_suffix}")
+
+
+async def timers_check():
+    await asyncio.sleep(3.5)
+    try:
+        await _SESSION.get(f"{SANIC_EPG_URL}/timers_check")
+    except (ClientConnectorError, ConnectionRefusedError, ServerDisconnectedError):
+        pass
 
 
 async def vod_ongoing(channel_id="", program_id=""):
