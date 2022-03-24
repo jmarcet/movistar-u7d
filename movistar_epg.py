@@ -122,6 +122,9 @@ _last_epg = _p_tv_cloud = _p_tvgrab = _t_timers = None
 async def before_server_start(app, loop):
     global RECORDING_THREADS, _IPTV, _SESSION, _SESSION_CLOUD
 
+    if not WIN32:
+        [signal.signal(sig, cleanup_handler) for sig in (signal.SIGHUP, signal.SIGINT, signal.SIGTERM)]
+
     banner = f"Movistar U7D - EPG v{_version}"
     log.info("-" * len(banner))
     log.info(banner)
@@ -170,13 +173,7 @@ async def before_server_start(app, loop):
         json_serialize=ujson.dumps,
     )
 
-    if not WIN32:
-        [signal.signal(sig, cleanup_handler) for sig in (signal.SIGHUP, signal.SIGINT, signal.SIGTERM)]
-
     await reload_epg()
-
-    if not WIN32:
-        [signal.signal(sig, signal.SIG_DFL) for sig in (signal.SIGHUP, signal.SIGINT, signal.SIGTERM)]
 
     if RECORDINGS:
         global _RECORDINGS, _last_epg
@@ -225,6 +222,9 @@ async def before_server_start(app, loop):
         await update_recordings(True)
 
     app.add_task(update_epg_cron(), name="_t_epg")
+
+    if not WIN32:
+        [signal.signal(sig, signal.SIG_DFL) for sig in (signal.SIGHUP, signal.SIGINT, signal.SIGTERM)]
 
 
 @app.listener("after_server_start")
@@ -281,6 +281,8 @@ def cleanup_handler(signum=None, frame=None):
             proc.terminate()
         except ProcessLookupError:
             pass
+    if signum and frame:
+        asyncio.get_event_loop().stop()
 
 
 def does_recording_exist(filename):

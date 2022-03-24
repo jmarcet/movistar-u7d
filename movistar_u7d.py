@@ -46,6 +46,7 @@ from vod import (
 
 
 if not WIN32:
+    import signal
     from setproctitle import setproctitle
 
     setproctitle("movistar_u7d")
@@ -110,6 +111,9 @@ app.ctx.vod_client = None
 async def before_server_start(app, loop):
     global _CHANNELS, _IPTV, _SESSION, _SESSION_LOGOS
 
+    if not WIN32:
+        [signal.signal(sig, cleanup_handler) for sig in (signal.SIGHUP, signal.SIGINT, signal.SIGTERM)]
+
     _SESSION = aiohttp.ClientSession(
         connector=aiohttp.TCPConnector(keepalive_timeout=YEAR_SECONDS, limit_per_host=1),
         json_serialize=ujson.dumps,
@@ -155,6 +159,9 @@ async def before_server_start(app, loop):
 
     _IPTV = check_dns()
 
+    if not WIN32:
+        [signal.signal(sig, signal.SIG_DFL) for sig in (signal.SIGHUP, signal.SIGINT, signal.SIGTERM)]
+
 
 @app.listener("after_server_start")
 async def after_server_start(app, loop):
@@ -182,6 +189,10 @@ async def before_server_stop(app, loop):
             await session.close()
         except CancelledError:
             pass
+
+
+def cleanup_handler(signum, frame):
+    asyncio.get_event_loop().stop()
 
 
 def get_channel_id(channel_name):
