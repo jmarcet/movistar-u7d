@@ -76,9 +76,7 @@ En todos los casos, las URL de las listas `m3u` son insensibles a mayúsculas o 
 Instalación en Windows
 ----------------------
 
-Nos descargamos la última versión de [aquí](../../releases), la descomprimimos donde nos resulte más cómodo y del interior de la carpeta `movistar-u7d`, ejecutamos [movistar-u7d.ps1](movistar-u7d.ps1) haciendo click derecho sobre él y seleccionando `Ejecutar con PowerShell`.
-
-![movistar-u7d-ps1.png](../../raw/data/movistar-u7d-ps1.png)
+Nos descargamos la última versión de [aquí](../../releases), la descomprimimos donde nos resulte más cómodo y del interior de la carpeta `movistar-u7d`, ejecutamos `mu7d.exe`.
 
 Enseguida se abrirá una ventana de un terminal, donde aparecerán mensajes de información sobre todo lo que está haciendo.
 
@@ -88,9 +86,7 @@ Por defecto la(s) lista(s) de canales y la(s) guía(s) las generará en vuestra 
 
 ![movistar-u8d-escritorio](../../raw/data/movistar-u7d-escritorio.png)
 
-Si queremos hacer grabaciones tendremos que copiar [timers.conf](timers.conf), ajustado a nuestro gusto, a nuestra carpeta de usuario. Por defecto las grabaciones se harán en nuestra carpeta personal de Videos, dentro del subdirectorio `movistar-u7d`. Si queremos cambiarlo, modificar el número de grabaciones simultáneas o configurar otras opciones de funcionamiento, podemos editar el script de arranque [movistar-u7d.ps1](movistar-u7d.ps1) con `notepad` o el editor que más nos guste.
-
-Si queremos tener marcas automáticas de anuncios, como capítulos de las grabaciones, necesitaremos obtener el `comskip.exe`, copiarlo a la carpeta del proxy y activar la variable `COMSKIP` en el script de arranque [movistar-u7d.ps1](movistar-u7d.ps1).
+Existen varias [opciones de configuración](#configuración).
 
 
 Instalación en Linux/UNIX/OS X
@@ -100,103 +96,75 @@ Podemos usar cualquier tipo de dispositivo, desde un ordenador tradicional a alg
 
  1. Tenemos la opción de utilizar docker y docker-compose.
 
-Nos descargamos todo este repositorio a nuestro ordenador, ya sea clonando [el repo](https://github.com/jmarcet/movistar-u7d.git) con git o descargando un [zip](../../archive/refs/heads/master.zip) que en su caso descomprimimos, a continuación abrimos el `docker-compose.yml` con un editor, y habilitamos las variables de entorno que podamos necesitar, de manera que si queremos ajustar la variable `LAN_IP` que puede ser útil si obtenemos algún error del tipo `Name does not resolve`, debería quedar así:
-
-```
-[...]
-     environment:
-      - LAN_IP=192.168.1.35
-[...]
-```
-
-Una vez tenemos el compose ajustado, en un shell, nos movemos a la carpeta donde tengamos todo clonado/descomprimido y ejecutamos:
-
 ```
 docker-compose up -d && docker-compose logs -f
 ```
 
 Dentro del `docker` queda todo lo necesario y se ejecutará muy rápidamente, sólo tiene que descargar la última versión disponible [aquí](https://gitlab.marcet.info/javier/movistar-u7d/container_registry/2), no necesita generar nada. Un vez arranque sí, tardará unos minutos en generar la EPG y las listas de canales.
 
-
  2. Si por el contrario preferimos instalarlo y usarlo directamente:
 
- - Necesitamos los paquetes `git`, `libffi-dev` y `python3-pip` instalados con el gestor de paquetes de nuestra distro. Debería funcionar desde `Python 3.7` A continuación instalamos las dependencias:
+ - Necesitamos los paquetes `git`, `libffi-dev` y `python3-pip` instalados con el gestor de paquetes de nuestra distro. Necesitamos por lo menos `Python 3.8` A continuación instalamos las dependencias:
 
 ```
 pip3 install -r requirements.txt
 ```
 
- - Copiamos [movistar_u7d.py](movistar_u7d.py), [movistar_epg.py](movistar_epg.py), [tv_grab_es_movistartv](tv_grab_es_movistartv) y [vod.py](vod.py) a alguna ruta que tengamos en el PATH:
+ - Nos aseguramos de que los permisos de ejecución sean correctos. Copiamos [mu7d.py](mu7d.py), [movistar_u7d.py](movistar_u7d.py), [movistar_epg.py](movistar_epg.py), [movistar_vod.py](movistar_vod.py) y [movistar_tvg.py](movistar_tvg.py) a donde nos parezca adecuado. De no estar en el `PATH` tendremos que ajustar la ruta en el [mu7d.service](mu7d.service)
 
 ```
-cp movistar_u7d.py movistar_epg.py tv_grab_es_movistartv version.py vod.py /usr/local/bin/
+chmod +x mu7d.py movistar_u7d.py movistar_epg.py movistar_vod.py movistar_tvg.py
+cp mu7d.py movistar_u7d.py movistar_epg.py movistar_vod.py movistar_tvg.py /usr/local/bin/
 ```
 
- - Para hacer grabaciones también necesitamos tener instalados tanto `ffmpeg` como `mkvtoolnix` y para poder tener marcas automáticas de anuncios, como capítulos de las mismas, el `comskip`.
+ - Para hacer grabaciones también necesitamos tener instalados tanto `ffmpeg` como `mkvtoolnix`.
 
  3. Para Systemd:
 
- - [movistar_u7d.service](movistar_u7d.service): servicio systemd para el microservicio principal
-
- - [movistar_epg.service](movistar_epg.service): servicio systemd para el microservicio que mantiene la EPG para el ctachup, procesa los temporizadores, las métricas de uso, etc
-
-
- - Copiamos los `.service` a `/etc/systemd/system`, ajustando las variables de entorno que queramos. Habilitamos los servicios y los iniciamos:
+ - Copiamos [mu7d.service](mu7d.service) a `/etc/systemd/system`, lo habilitamos y lo iniciamos:
 
 ```
-cp *.service /etc/systemd/system/
+cp mu7d.service /etc/systemd/system/
 systemctl daemon-reload
-systemctl enable movistar_epg
-systemctl enable movistar_u7d
-systemctl start movistar_epg
-systemctl start movistar_u7d
+systemctl enable mu7d
+systemctl start mu7d
 ```
 
-Sin systemd, tendremos que lanzar directamente los dos [movistar_u7d.py](movistar_u7d.py) y [movistar_epg.py](movistar_epg.py).
+Sin systemd, podemos ejecutar directamente [mu7d.py](mu7d.py)
 
 
-Instalación en el propio router
--------------------------------
-
-Es una forma ideal de usarlo. [Aquí](https://openwrt.marcet.info/latest/targets/x86/64/) podéís encontrar builds de OpenWRT para x86_64 con todo lo necesario para desplegarlo todo. Los actualizo cada pocos días.
-
-
-Configuración y Observaciones
------------------------------
+Configuración
+-------------
 
  - La primera vez tendremos que esperar a que se genere la lista de canales y a que se descargue la guía. Sin playlist no hay canales y sin EPG no hay catchup. Tardará un buen rato.
 
- - Podemos controlar varios aspectos con variables de entorno:
+ - Podemos controlar varios aspectos ajustando el fichero de configuración [mu7d.conf](mu7d.conf) que deberemos copiar al directorio `/etc` o al `$HOME`, en UNIX, o a nuestra carpetal personal en Windows.
 
    1. La más importante es `LAN_IP`, que corresponde a la ip que tendrán los canales de tv. Por defecto usa la ip local principal.
 
    2. `DEBUG`: para ejecutar el proxy con mucha información extra. Útil para depurar problemas, ver los canales encriptados que recibimos pero no son indexados, etc.
 
-   3. `EPG_THREADS`: número de descargas paralelas al generar la EPG. Por defecto usa tantos hilos como CPUs detecta en el sistema, con un máximo de 8.
+   3. `EXTRA_CHANNELS`: canales adicionales a los que queremos acceder. Si la lista de canales no existe, bien porque ejecutamos el proxy por primera vez o porque la borramos antes de ejecutarlo, podremos ver la lista de canales encriptados que se saltan. Los podemos añadir, separados por espacios, a esta variable. Por ejemplo `4917` o `5066` para `La 1 HD` en Madrid y en Galicia respectivamente, ambos encriptados.
 
-   4. `EXTRA_CHANNELS`: canales adicionales a los que queremos acceder. Si la lista de canales no existe, bien porque ejecutamos el proxy por primera vez o porque la borramos antes de ejecutarlo, podremos ver la lista de canales encriptados que se saltan. Los podemos añadir, separados por espacios, a esta variable. Por ejemplo `4917` o `5066` para `La 1 HD` en Madrid y en Galicia respectivamente, ambos encriptados.
+   4. `IPTV_BW_SOFT` & `IPTV_BW_HARD`: límites de ancho de banda máximo que le perimitimos usar al proxy. Útil si se instala en el propio router, donde puede conocer el ancho de banda usado por la vlan de IPTV, o en un aparato independiente. Los valores máximos son de 90000/100000 Kbps. Esto consigue que no se produzcan cortes por saturación de la vlan de IPTV y se puedan hacer grabaciones en paralelo aprovechando todo el ancho de banda.
 
-   5. `IPTV_BW`: ancho de banda máximo que le perimitimos usar al proxy. Especialmente útil si se instala en el propio router o en un aparato independiente. El valor óptimo máximo, en kilobits por segundo, Kbps, es 85000, dado que el ancho de banda real disponible en la vlan de IPTV es de 100000 Kbps. En el caso de estar instalado en el router, el proxy podrá además conocer el ancho de banda consumido específicamente en la vlan de IPTV. En el resto de casos sólo podrá contabilizar el ancho de banda de red total consumido en el dispositivo en el que se ejecuta. de ahí que la funcionalidad no esté activa a menos que definamos esta variable. Este control se basa en rechazar clientes una vez llegado al tope de ancho de banda definido con esta variable. Si llegan peticiones de nuevos clientes, recibirán un 503, Servicio no Disponible, aunque en el caso de que haya grabaciones en curso, dado que se pueden repetir, si la nueva petición es de un cliente normal se cancelará una grabación y se le dará prioridad al cliente normal. Esto consigue que no se produzcan cortes por saturación de la vlan de IPTV y se puedan hacer grabaciones en paralelo aprovechando todo el ancho de banda.
+   5. `MP4_OUTPUT`: por defecto las grabaciones se harán en `.mkv`, conservando todas las pistas originales, con el audio `mp2` transcodeado a `aac` para que se puedan reproducir directamente con un navegador. Los subtítulos pueden dar incompatibilidad con algunos clientes, por lo que con esta variables definida obtendremos en su lugar un archivo `.mp4` sin subtítulos y un `.sub` adicional con los mismos si existen.
 
-   6. `MP4_OUTPUT`: por defecto las grabaciones se harán en `.mkv`, conservando todas las pistas originales, con el audio `mp2` transcodeado a `aac` para que se puedan reproducir directamente con un navegador. Los subtítulos pueden dar incompatibilidad con algunos clientes, por lo que con esta variables definida obtendremos en su lugar un archivo `.mp4` sin subtítulos y un `.sub` adicional con los mismos si existen.
+   6. `NO_SUBS`: si no queremos grabar subtítulos, tanto si es de forma general como para subsanar un problema puntual con un canal/programa que no se deja grabar. Hay 3 canales que emiten siempre con subtítulos de teletexto y estos resultan problemáticos a la hora de grabarse por lo que son descartados pero desconozco si hay más emisiones puntuales que los usan, para eso esta opción.
 
-   7. `NOSUBS`: si no queremos grabar subtítulos, tanto si es de forma general como para subsanar un problema puntual con un canal/programa que no se deja grabar. Hay 3 canales que emiten siempre con subtítulos de teletexto y estos resultan problemáticos a la hora de grabarse por lo que son descartados pero desconozco si hay más emisiones puntuales que los usan, para eso esta opción.
+   7. `RECORDINGS`: define la ruta para las grabaciones. Si se define, permite usar la funcionalidad de temporizadores y hace que se exporte la lista de grabaciones locales. Las grabaciones se realizarán aquí y la lista de canales `VOD` se generará con todo el contenido desde aquí indexado. Esto quiere decir que puede ser útil para exponer una carpeta aunque no utilicemos los temporizadores.
 
-   8. `RECORDING_THREADS`: número máximo de grabaciones locales simultáneas, por defecto 4. Si se establece `IPTV_BW` las grabaciones máximas también serán ajustadas dinámicamente. Si probáis un temporizador con algo que se repita mucho toda la semana, algo como `Los Simpson`, con la variable `IPTV_BW` definida con valor 85000, veréis como se lanzan en paralelo un montón de procesos `vod.py` y `ffmpeg`, un par por cada grabación. Podrás comprobar luego como todas las grabaciones están perfectas.
+   8. `RECORDINGS_PER_CHANNEL`: realizar las grabaciones organizadas en subdirectorios por canal. También activará la generación de un `m3u` en cada directorio de canal, con las grabaciones ordenadas de más antiguas a más nuevas.
 
-   9. `RECORDINGS`: define la ruta para las grabaciones. Si se define, permite usar la funcionalidad de temporizadores y hace que se exporte la lista de grabaciones locales. Las grabaciones se realizarán aquí y la lista de canales `VOD` se generará con todo el contenido desde aquí indexado. Esto quiere decir que puede ser útil para exponer una carpeta aunque no utilicemos los temporizadores.
+   9. `RECORDINGS_THREADS`: número máximo de grabaciones locales simultáneas, por defecto 4. Si se establece `IPTV_BW` las grabaciones máximas también serán ajustadas dinámicamente. Si probáis un temporizador con algo que se repita mucho toda la semana, algo como `Los Simpson`, con la variable `IPTV_BW` definida con valor 85000, veréis como se lanzan en paralelo un montón de procesos `vod.py` y `ffmpeg`, un par por cada grabación. Podrás comprobar luego como todas las grabaciones están perfectas.
 
-   10. `RECORDINGS_PER_CHANNEL`: realizar las grabaciones organizadas en subdirectorios por canal. También activará la generación de un `m3u` en cada directorio de canal, con las grabaciones ordenadas de más antiguas a más nuevas.
+   10. `TVG_THREADS`: número de descargas paralelas al generar la EPG. Por defecto usa tantos hilos como CPUs detecta en el sistema, con un máximo de 8.
 
-   11. `SANIC_THREADS`: número de procesos simultáneos para el microservicio principal, por defecto 4.
+   11. `U7D_THREADS`: número de procesos simultáneos para el microservicio principal, por defecto 4.
 
-   12. Para el resto, que es inusual necesitar cambiarlas, mirad el fichero [env-example](env-example).
+   12. Para el resto, que es inusual necesitar cambiarlas, mirad directamente el fichero [mu7d.conf](mu7d.conf).
 
-- Si usamos docker y docker-compose, tenemos [env-example](env-example) con explicación de todas las variables de entorno que podemos ajustar. Editamos el `docker-compose.yml` y borramos los `#` de delante y definimos las variables necesarias, para después ejecutar `docker-compose up -d`
-
- - La funcionalidad que más trabajo me dio conseguir y que más agradezco a la hora de usarlo es la reproducción continua. ¿Que qué es eso? Pues dado que [Movistar](https://www.movistar.es/particulares/internet/) da acceso a la programación de los últimos 7 días a partir de un identificador de canal y un identificador de programa, ambos incluidos en la EPG, a la hora de reproducir cualquier momento de la semana, se establece una negociación con Movistar que te da acceso a reproducir **ese** programa, no el siguiente. De esta manera, tanto en la app oficial como en el addon cerrado, reproduces un programa y al acabar (normalmente sobre 1 o 2 minutos después del final) se detiene.
-
- - Con este proxy, junto con algún cliente compatible, en lugar de cortarse se produce una mínima pausa durante la que se detiene el sonido y la imagen puede quedar congelada. Es durante un mínimo instante de tiempo, en torno a 1 segundo, por lo que aunque te das cuenta de que ha habido un cambio de programa, no molesta lo más mínimo. Así puedes ver toda la programación de un canal en diferido, el tiempo que quieras, sin más que iniciar la reproducción en el instante deseado dentro de la última semana.
+ - Si queremos hacer grabaciones, además de activar la opción `RECORDINGS` en el fichero anterior, también tendremos que copiar [timers.conf](timers.conf), ajustado a nuestro gusto, a nuestra carpeta de usuario.
 
 
 Configuración de clientes
@@ -350,15 +318,15 @@ Componentes
 
 Este software consta de cuatro partes. Las dos primeras son dos microservicios escritos en python asíncrono, con [Sanic](https://github.com/sanic-org/sanic), el tercero es también asíncrono pero sin [Sanic](https://github.com/sanic-org/sanic), al menos cuando se ejecuta como script independiente, y el último se encarga de descargar la EPG y generar las listas de canales y guías de programación. El extra es un fichero de ejemplo para montarnos gráficas estadísticas con [Grafana](https://grafana.com/grafana/):
 
- - [movistar_u7d.py](movistar_u7d.py): el microservicio principal y fachada del proxy con el que se comunica el cliente final, como el TiviMate. Se ejecuta en varios procesos simultáneos, número determinado por la variable de entorno `SANIC_THREADS` que por defecto es 4.
+ - [movistar_u7d](movistar_u7d.py): el microservicio principal y fachada del proxy con el que se comunica el cliente final, como el TiviMate. Se ejecuta en varios procesos simultáneos, número determinado por la variable de entorno `U7D_THREADS` que por defecto es 4.
 
- - [movistar_epg.py](movistar_epg.py): el segundo microservicio escrito con [Sanic](https://github.com/sanic-org/sanic). Mantiene el estado necesario para que el anterior sea funcional puro y pueda ejecutarse en múltiples procesos sin problemas. Está encargado de generar y actualizar las listas de canales y de grabaciones y las guías de programación, así como de gestionar los temporizadores de las grabaciones locales. También se encarga de lás métricas [Prometheus](https://prometheus.io/docs/introduction/overview/), aunque sean luego servidas por el anterior.
+ - [movistar_epg](movistar_epg.py): el segundo microservicio escrito con [Sanic](https://github.com/sanic-org/sanic). Mantiene el estado necesario para que el anterior sea funcional puro y pueda ejecutarse en múltiples procesos sin problemas. Está encargado de generar y actualizar las listas de canales y de grabaciones y las guías de programación, así como de gestionar los temporizadores de las grabaciones locales. También se encarga de lás métricas [Prometheus](https://prometheus.io/docs/introduction/overview/), aunque sean luego servidas por el anterior.
 
- - [vod.py](vod.py): contiene el código responsable de negociar con [Movistar](https://www.movistar.es/particulares/internet/) el acceso a los programas de catchup. Así mismo, se ejecuta como script independiente para realizar las grabaciones con [ffmpeg](https://ffmpeg.org/).
+ - [movistar_vod](movistar_vod.py): contiene el código responsable de negociar con [Movistar](https://www.movistar.es/particulares/internet/) el acceso a los programas de catchup. Así mismo, se ejecuta como script independiente para realizar las grabaciones con [ffmpeg](https://ffmpeg.org/).
 
- - [tv_grab_es_movistartv](tv_grab_es_movistartv): encargado de generar las listas de canales y las guías programación, así como de guardar una caché de los últimos 7 días de la EPG, de manera que se ejecuta de forma recurrente (cada hora en punto para la guía general, cuando es necesario para el resto de los casos).
+ - [movistar_tvg](movistar_tvg.py): encargado de generar las listas de canales y las guías programación, así como de guardar una caché de los últimos 7 días de la EPG, de manera que se ejecuta de forma recurrente (cada hora en punto para la guía general, cuando es necesario para el resto de los casos).
 
-Esta caché que genera el `tv_grab_es_movistartv` es imprescindible para que todo el proceso funcione bien. Los clientes con catchup flussonic, como el TiviMate, sólo se preocupan por el canal y un timestamp, que define un momento preciso en el tiempo. El proxy es el encargado de encontrar qué programa de la EPG corresponde a ese canal en ese momento y negociar con [Movistar](https://www.movistar.es/particulares/internet/) la reproducción, por lo que esta caché, que sirve de índice, resulta esencial para que todo pueda funcionar.
+Esta caché que genera el `movistar_tvg` es imprescindible para que todo el proceso funcione bien. Los clientes con catchup flussonic, como el TiviMate, sólo se preocupan por el canal y un timestamp, que define un momento preciso en el tiempo. El proxy es el encargado de encontrar qué programa de la EPG corresponde a ese canal en ese momento y negociar con [Movistar](https://www.movistar.es/particulares/internet/) la reproducción, por lo que esta caché, que sirve de índice, resulta esencial para que todo pueda funcionar.
 
  - [grafana-dashboard.json](grafana-dashboard.json): dashboard para [Grafana](https://grafana.com/grafana/) con dos paneles de catchups y directos. Para usar conectado con las métricas [Prometheus](https://prometheus.io/docs/introduction/overview/). Lo podéis ver en el último pantallazo un poco más arriba.
 

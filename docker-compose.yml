@@ -17,19 +17,6 @@ services:
     # - ./:/app
     # - ${HOME}:/home
     # - ${RECORDINGS}:${RECORDINGS}
-    #environment:
-    # - COMSKIP=${COMSKIP}
-    # - DEBUG=${DEBUG}
-    # - EPG_THREADS=${EPG_THREADS}
-    # - IPTV_BW=${IPTV_BW}
-    # - IPTV_IFACE=${IPTV_IFACE}
-    # - LAN_IP=${LAN_IP}
-    # - MP4_OUTPUT=${MP4_OUTPUT}
-    # - RECORDING_THREADS=${RECORDING_THREADS}
-    # - RECORDINGS=${RECORDINGS}
-    # - SANIC_PORT=${SANIC_PORT}
-    # - U7D_UID=${U7D_UID}
-    # - VERBOSE_LOGS=${VERBOSE_LOGS}
     # devices:
     #   - /dev/dri:/dev/dri
     # cpu_shares: 8192

@@ -3,6 +3,7 @@ asyncio
 asyncio-dgram
 defusedxml
 dict2xml
+filelock
 sanic
 git+https://github.com/jmarcet/sanic-prometheus
 tomli

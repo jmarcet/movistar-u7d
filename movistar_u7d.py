@@ -7,14 +7,17 @@ import asyncio_dgram
 import json
 import os
 import socket
-import timeit
+import sys
+import time
 import ujson
 import urllib.parse
 
-from aiohttp.client_exceptions import ClientConnectorError
+from aiohttp.client_exceptions import ClientConnectorError, ServerDisconnectedError
 from aiohttp.resolver import AsyncResolver
+from asyncio.exceptions import CancelledError
 from collections import namedtuple
 from contextlib import closing
+from filelock import FileLock, Timeout
 from sanic import Sanic, exceptions, response
 from sanic.compat import stat_async
 from sanic.handlers import ContentRangeHandler
@@ -23,79 +26,17 @@ from sanic.models.server_types import ConnInfo
 from sanic.server import HttpProtocol
 from sanic.touchup.meta import TouchUpMeta
 
-try:
-    from asyncio.exceptions import CancelledError, TimeoutError
-except ModuleNotFoundError:
-    from asyncio import CancelledError, TimeoutError
+from mu7d import MIME_M3U, MIME_TS, MIME_WEBM, EPG_URL, IPTV_DNS, UA, URL_COVER, URL_LOGO, WIN32, YEAR_SECONDS
+from mu7d import find_free_port, get_iptv_ip, mu7d_config, ongoing_vods, _version
+from movistar_vod import VodData, VodLoop, VodSetup
 
-from version import _version
-from vod import (
-    COVER_URL,
-    IMAGENIO_URL,
-    MOVISTAR_DNS,
-    UA,
-    WIN32,
-    YEAR_SECONDS,
-    VodData,
-    VodLoop,
-    VodSetup,
-    check_dns,
-    find_free_port,
-    vod_ongoing,
-)
-
-
-if not WIN32:
-    import signal
-    from setproctitle import setproctitle
-
-    setproctitle("movistar_u7d")
-
-if "LAN_IP" in os.environ:
-    SANIC_HOST = os.getenv("LAN_IP")
-else:
-    s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
-    s.connect(("8.8.8.8", 53))
-    SANIC_HOST = s.getsockname()[0]
-    s.close
-
-HOME = os.getenv("HOME", os.getenv("USERPROFILE"))
-CHANNELS = os.path.join(HOME, "MovistarTV.m3u")
-CHANNELS_CLOUD = os.path.join(HOME, "MovistarTVCloud.m3u")
-DEBUG = bool(int(os.getenv("DEBUG", 0)))
-GUIDE = os.path.join(HOME, "guide.xml")
-GUIDE_CLOUD = os.path.join(HOME, "cloud.xml")
-IPTV_BW = int(os.getenv("IPTV_BW", "0"))
-IPTV_BW = 85000 if IPTV_BW > 90000 else IPTV_BW
-IPTV_IFACE = os.getenv("IPTV_IFACE", None)
-MIME_M3U = "audio/x-mpegurl"
-MIME_TS = "video/MP2T;audio/mp3"
-MIME_WEBM = "video/webm"
-RECORDINGS = os.getenv("RECORDINGS", "").rstrip("/").rstrip("\\")
-RECORDINGS_M3U = os.path.join(RECORDINGS, "Recordings.m3u")
-RECORDINGS_PER_CHANNEL = bool(int(os.getenv("RECORDINGS_PER_CHANNEL", 0)))
-SANIC_EPG_URL = "http://127.0.0.1:8889"
-SANIC_PORT = int(os.getenv("SANIC_PORT", "8888"))
-SANIC_URL = f"http://{SANIC_HOST}:{SANIC_PORT}"
-SANIC_THREADS = int(os.getenv("SANIC_THREADS", "4")) if not WIN32 else 1
-VERBOSE_LOGS = bool(int(os.getenv("VERBOSE_LOGS", 1)))
 
 LOG_SETTINGS = LOGGING_CONFIG_DEFAULTS
 LOG_SETTINGS["formatters"]["generic"]["format"] = "%(asctime)s [U7D] [%(levelname)s] %(message)s"
-LOG_SETTINGS["formatters"]["generic"]["datefmt"] = LOG_SETTINGS["formatters"]["access"][
-    "datefmt"
-] = "[%Y-%m-%d %H:%M:%S]"
+LOG_SETTINGS["formatters"]["generic"]["datefmt"] = "[%Y-%m-%d %H:%M:%S]"
+LOG_SETTINGS["formatters"]["access"]["datefmt"] = "[%Y-%m-%d %H:%M:%S]"
 
-_CHANNELS = {}
-_CHILDREN = {}
-_RESPONSES = []
-
-_IPTV = _SESSION = _SESSION_LOGOS = None
-_NETWORK_SATURATED = False
-
-VodArgs = namedtuple("Vod", ["channel", "broadcast", "iptv_ip", "client_ip", "client_port", "start", "cloud"])
-
-app = Sanic("movistar_u7d", log_config=LOG_SETTINGS)
+app = Sanic("movistar_u7d")
 app.config.update(
     {
         "FALLBACK_ERROR_FORMAT": "json",
@@ -112,6 +53,11 @@ async def before_server_start(app, loop):
     global _CHANNELS, _IPTV, _SESSION, _SESSION_LOGOS
 
     if not WIN32:
+        import signal
+
+        def cleanup_handler(signum, frame):
+            asyncio.get_event_loop().stop()
+
         [signal.signal(sig, cleanup_handler) for sig in (signal.SIGHUP, signal.SIGINT, signal.SIGTERM)]
 
     _SESSION = aiohttp.ClientSession(
@@ -121,7 +67,7 @@ async def before_server_start(app, loop):
     _SESSION_LOGOS = aiohttp.ClientSession(
         connector=aiohttp.TCPConnector(
             keepalive_timeout=YEAR_SECONDS,
-            resolver=AsyncResolver(nameservers=[MOVISTAR_DNS]) if not WIN32 else None,
+            resolver=AsyncResolver(nameservers=[IPTV_DNS]) if not WIN32 else None,
         ),
         headers={"User-Agent": UA},
         json_serialize=ujson.dumps,
@@ -129,7 +75,7 @@ async def before_server_start(app, loop):
 
     while True:
         try:
-            async with _SESSION.get(f"{SANIC_EPG_URL}/channels/") as r:
+            async with _SESSION.get(f"{EPG_URL}/channels/") as r:
                 if r.status == 200:
                     _CHANNELS = json.loads(
                         await r.text(),
@@ -139,25 +85,25 @@ async def before_server_start(app, loop):
                 else:
                     log.error("Failed to get channel list from EPG service")
                     await asyncio.sleep(5)
-        except (ClientConnectorError, ConnectionRefusedError):
+        except (ClientConnectorError, ConnectionRefusedError, ServerDisconnectedError):
             log.debug("Waiting for EPG service...")
-            await asyncio.sleep(0.1)
+            await asyncio.sleep(1)
 
-    if not WIN32 and IPTV_BW and IPTV_IFACE:
-        log.info(f"BW: {IPTV_BW} kbps / {IPTV_IFACE}")
+    if IPTV_BW_SOFT:
         app.add_task(network_saturated())
+        log.info(f"BW: {IPTV_BW_SOFT}/{IPTV_BW_HARD} kbps / {IPTV_IFACE}")
 
     if not app.ctx.vod_client:
         app.ctx.vod_client = aiohttp.ClientSession(
             connector=aiohttp.TCPConnector(
                 keepalive_timeout=YEAR_SECONDS,
-                resolver=AsyncResolver(nameservers=[MOVISTAR_DNS]) if not WIN32 else None,
+                resolver=AsyncResolver(nameservers=[IPTV_DNS]) if not WIN32 else None,
             ),
             headers={"User-Agent": UA},
             json_serialize=ujson.dumps,
         )
 
-    _IPTV = check_dns()
+    _IPTV = get_iptv_ip()
 
     if not WIN32:
         [signal.signal(sig, signal.SIG_DFL) for sig in (signal.SIGHUP, signal.SIGINT, signal.SIGTERM)]
@@ -165,8 +111,8 @@ async def before_server_start(app, loop):
 
 @app.listener("after_server_start")
 async def after_server_start(app, loop):
-    banner = f"Movistar U7D v{_version}"
-    if SANIC_THREADS > 1:
+    banner = f"Movistar U7D - U7D v{_version}"
+    if U7D_THREADS > 1:
         log.info(f"*** {banner} ***")
     else:
         log.info("-" * len(banner))
@@ -180,7 +126,7 @@ async def before_server_stop(app, loop):
     for req_ip, raw_url, resp in _RESPONSES:
         try:
             await resp.eof()
-            log.info(f"[{req_ip}] " f"{SANIC_URL if VERBOSE_LOGS else ''}" f"{raw_url} -> Stopped 2")
+            log.info(f"[{req_ip}] " f"{U7D_URL if not NO_VERBOSE_LOGS else ''}" f"{raw_url} -> Stopped 2")
         except AttributeError:
             pass
 
@@ -189,10 +135,6 @@ async def before_server_stop(app, loop):
             await session.close()
         except CancelledError:
             pass
-
-
-def cleanup_handler(signum, frame):
-    asyncio.get_event_loop().stop()
 
 
 def get_channel_id(channel_name):
@@ -208,25 +150,14 @@ def get_channel_id(channel_name):
 @app.route("/<channel_id:int>/mpegts", methods=["GET", "HEAD"])
 @app.route(r"/<channel_name:([A-Za-z1-9]+)\.ts$>", methods=["GET", "HEAD"])
 async def handle_channel(request, channel_id=None, channel_name=None):
-    _start = timeit.default_timer()
+    _start = time.time()
     _raw_url = request.raw_url.decode()
-    _sanic_url = (SANIC_URL + _raw_url + " ") if VERBOSE_LOGS else ""
+    _u7d_url = (U7D_URL + _raw_url + " ") if not NO_VERBOSE_LOGS else ""
     if channel_name:
         try:
             channel_id = get_channel_id(channel_name)
         except IndexError:
             raise exceptions.NotFound(f"Requested URL {_raw_url} not found")
-
-    if _NETWORK_SATURATED:
-        procs = await vod_ongoing()
-        try:
-            proc = procs[-1].children()[0]
-            ffmpeg = " ".join(proc.cmdline()).split(RECORDINGS)[1][1:-4]
-            log.warning(f'[{request.ip}] -> KILLING ffmpeg [{proc.pid}] "{ffmpeg}"')
-            proc.terminate()
-        except IndexError:
-            log.warning(f"[{request.ip}] {_raw_url} -> Network Saturated")
-            raise exceptions.ServiceUnavailable("Network Saturated")
 
     try:
         name, mc_grp, mc_port = [_CHANNELS[channel_id][t] for t in ["name", "address", "port"]]
@@ -236,6 +167,10 @@ async def handle_channel(request, channel_id=None, channel_name=None):
 
     if request.method == "HEAD":
         return response.HTTPResponse(content_type=MIME_TS, status=200)
+
+    if _NETWORK_SATURATED and not await ongoing_vods(_fast=True):
+        log.warning(f"[{request.ip}] {_raw_url} -> Network Saturated")
+        raise exceptions.ServiceUnavailable("Network Saturated")
 
     sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM, socket.IPPROTO_UDP)
     sock.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
@@ -252,15 +187,15 @@ async def handle_channel(request, channel_id=None, channel_name=None):
         log.error(f"{_raw_url} not found")
         raise exceptions.NotFound(f"Requested URL {_raw_url} not found")
 
-    _lat = timeit.default_timer() - _start
+    _lat = time.time() - _start
     app.add_task(
         _SESSION.post(
-            f"{SANIC_EPG_URL}/prom_event/add",
+            f"{EPG_URL}/prom_event/add",
             json={
                 "method": "live",
                 "endpoint": f"{name} _ {request.ip} _ ",
                 "channel_id": channel_id,
-                "msg": f"[{request.ip}] -> Playing {_sanic_url}[{_lat:.4f}s]",
+                "msg": f"[{request.ip}] -> Playing {_u7d_url}[{_lat:.4f}s]",
                 "id": _start,
                 "lat": _lat,
             },
@@ -281,12 +216,12 @@ async def handle_channel(request, channel_id=None, channel_name=None):
             stream.close()
             app.add_task(
                 _SESSION.post(
-                    f"{SANIC_EPG_URL}/prom_event/remove",
+                    f"{EPG_URL}/prom_event/remove",
                     json={
                         "method": "live",
                         "endpoint": f"{name} _ {request.ip} _ ",
                         "channel_id": channel_id,
-                        "msg": f"[{request.ip}] -> Stopped {_sanic_url}[{_lat:.4f}s]",
+                        "msg": f"[{request.ip}] -> Stopped {_u7d_url}[{_lat:.4f}s]",
                         "id": _start,
                     },
                 )
@@ -296,9 +231,9 @@ async def handle_channel(request, channel_id=None, channel_name=None):
 @app.route("/<channel_id:int>/<url>", methods=["GET", "HEAD"])
 @app.route(r"/<channel_name:([A-Za-z1-9]+)>/<url>", methods=["GET", "HEAD"])
 async def handle_flussonic(request, url, channel_id=None, channel_name=None, cloud=False):
-    _start = timeit.default_timer()
+    _start = time.time()
     _raw_url = request.raw_url.decode()
-    _sanic_url = (SANIC_URL + _raw_url + " ") if VERBOSE_LOGS else ""
+    _u7d_url = (U7D_URL + _raw_url + " ") if not NO_VERBOSE_LOGS else ""
     if channel_name:
         try:
             channel_id = get_channel_id(channel_name)
@@ -308,16 +243,9 @@ async def handle_flussonic(request, url, channel_id=None, channel_name=None, clo
     if not url:
         return response.empty(404)
 
-    procs = None
-    if _NETWORK_SATURATED:
-        procs = await vod_ongoing()
-        if not procs:
-            log.warning(f"[{request.ip}] {_raw_url} -> Network Saturated")
-            raise exceptions.ServiceUnavailable("Network Saturated")
-
     try:
         async with _SESSION.get(
-            f"{SANIC_EPG_URL}/program_id/{channel_id}/{url}" + ("?cloud=1" if cloud else "")
+            f"{EPG_URL}/program_id/{channel_id}/{url}" + ("?cloud=1" if cloud else "")
         ) as r:
             channel, program_id, start, duration, offset = (await r.json()).values()
     except (AttributeError, KeyError, ValueError):
@@ -329,15 +257,9 @@ async def handle_flussonic(request, url, channel_id=None, channel_name=None, clo
 
     client_port = find_free_port(_IPTV)
 
-    if procs:
-        try:
-            proc = procs[-1].children()[0]
-            ffmpeg = " ".join(proc.cmdline()).split(RECORDINGS)[1][1:-4]
-            log.warning(f'[{request.ip}] -> KILLING ffmpeg [{proc.pid}] "{ffmpeg}"')
-            proc.terminate()
-        except IndexError:
-            log.warning(f"[{request.ip}] {_raw_url} -> Network Saturated")
-            raise exceptions.ServiceUnavailable("Network Saturated")
+    if _NETWORK_SATURATED and not await ongoing_vods(_fast=True):
+        log.warning(f"[{request.ip}] {_raw_url} -> Network Saturated")
+        raise exceptions.ServiceUnavailable("Network Saturated")
 
     _args = VodArgs(channel_id, program_id, _IPTV, request.ip, client_port, offset, cloud)
     vod_data = await VodSetup(_args, app.ctx.vod_client)
@@ -356,17 +278,17 @@ async def handle_flussonic(request, url, channel_id=None, channel_name=None, clo
             log.error(f"NOT_AVAILABLE: [{channel}] [{channel_id}] [{start}]")
             raise exceptions.NotFound(f"Requested URL {_raw_url} not found")
 
-        _lat = timeit.default_timer() - _start
+        _lat = time.time() - _start
         _RESPONSES.append((request.ip, _raw_url, _response))
         app.add_task(
             _SESSION.post(
-                f"{SANIC_EPG_URL}/prom_event/add",
+                f"{EPG_URL}/prom_event/add",
                 json={
                     "method": "catchup",
                     "endpoint": _endpoint,
                     "channel_id": channel_id,
                     "url": url,
-                    "msg": f"[{request.ip}] -> Playing {_sanic_url}[{_lat:.4f}s]",
+                    "msg": f"[{request.ip}] -> Playing {_u7d_url}[{_lat:.4f}s]",
                     "id": _start,
                     "cloud": cloud,
                     "lat": _lat,
@@ -388,16 +310,16 @@ async def handle_flussonic(request, url, channel_id=None, channel_name=None, clo
                 _RESPONSES.remove((request.ip, _raw_url, _response))
                 app.add_task(
                     _SESSION.post(
-                        f"{SANIC_EPG_URL}/prom_event/remove",
+                        f"{EPG_URL}/prom_event/remove",
                         json={
                             "method": "catchup",
                             "endpoint": _endpoint,
                             "channel_id": channel_id,
                             "url": url,
-                            "msg": f"[{request.ip}] -> Stopped {_sanic_url}[{_lat:.4f}s]",
+                            "msg": f"[{request.ip}] -> Stopped {_u7d_url}[{_lat:.4f}s]",
                             "id": _start,
                             "cloud": cloud,
-                            "offset": timeit.default_timer() - _start,
+                            "offset": time.time() - _start,
                         },
                     )
                 )
@@ -448,9 +370,9 @@ async def handle_guide_gz(request):
 async def handle_logos(request, cover=None, logo=None, path=None):
     log.debug(f"[{request.ip}] {request.method} {request.url}")
     if logo and logo.split(".")[0].isdigit():
-        orig_url = f"{IMAGENIO_URL}/channelLogo/{logo}"
+        orig_url = f"{URL_LOGO}/{logo}"
     elif path and cover and cover.split(".")[0].isdigit():
-        orig_url = f"{COVER_URL}/{path}/{cover}"
+        orig_url = f"{URL_COVER}/{path}/{cover}"
     else:
         raise exceptions.NotFound(f"Requested URL {request.raw_url.decode()} not found")
 
@@ -505,9 +427,9 @@ async def handle_notfound(request):
 @app.get("/metrics")
 async def handle_prometheus(request):
     try:
-        async with _SESSION.get(f"{SANIC_EPG_URL}/metrics") as r:
+        async with _SESSION.get(f"{EPG_URL}/metrics") as r:
             return response.text((await r.read()).decode())
-    except (ClientConnectorError, ConnectionRefusedError):
+    except (ClientConnectorError, ConnectionRefusedError, ServerDisconnectedError):
         raise exceptions.ServiceUnavailable("Not available")
 
 
@@ -518,9 +440,9 @@ async def handle_record_program(request, channel_id, url):
         return response.empty(404)
 
     try:
-        async with _SESSION.get(f"{SANIC_EPG_URL}{request.raw_url.decode()}") as r:
+        async with _SESSION.get(f"{EPG_URL}{request.raw_url.decode()}") as r:
             return response.json(await r.json())
-    except (ClientConnectorError, ConnectionRefusedError):
+    except (ClientConnectorError, ConnectionRefusedError, ServerDisconnectedError):
         raise exceptions.ServiceUnavailable("Not available")
 
 
@@ -553,24 +475,28 @@ async def handle_recording(request):
 @app.get("/timers_check")
 async def handle_timers_check(request):
     try:
-        async with _SESSION.get(f"{SANIC_EPG_URL}/timers_check") as r:
+        async with _SESSION.get(f"{EPG_URL}/timers_check") as r:
             return response.json(await r.json())
-    except (ClientConnectorError, ConnectionRefusedError):
+    except (ClientConnectorError, ConnectionRefusedError, ServerDisconnectedError):
         raise exceptions.ServiceUnavailable("Not available")
 
 
 async def network_saturated():
     global _NETWORK_SATURATED
-    cur = last = 0
     iface_rx = f"/sys/class/net/{IPTV_IFACE}/statistics/rx_bytes"
+    before = last = 0
+    cutpoint = IPTV_BW_SOFT + (IPTV_BW_HARD - IPTV_BW_SOFT) / 2
+
     while True:
         async with aiofiles.open(iface_rx) as f:
-            cur = int((await f.read())[:-1])
+            now, cur = time.time(), int((await f.read())[:-1])
+
         if last:
-            tp = int((cur - last) * 8 / 1000 / 3)
-            _NETWORK_SATURATED = tp > IPTV_BW
-        last = cur
-        await asyncio.sleep(3)
+            tp = (cur - last) * 0.008 / (now - before)
+            _NETWORK_SATURATED = tp > cutpoint
+
+        before, last = now, cur
+        await asyncio.sleep(1)
 
 
 class VodHttpProtocol(HttpProtocol, metaclass=TouchUpMeta):
@@ -590,12 +516,49 @@ class VodHttpProtocol(HttpProtocol, metaclass=TouchUpMeta):
 
 
 if __name__ == "__main__":
-    app.run(
-        host=SANIC_HOST,
-        port=SANIC_PORT,
-        protocol=VodHttpProtocol,
-        access_log=False,
-        auto_reload=False,
-        debug=DEBUG,
-        workers=SANIC_THREADS,
-    )
+    if not WIN32:
+        from setproctitle import setproctitle
+
+        setproctitle("movistar_u7d")
+
+    _IPTV = _NETWORK_SATURATED = _SESSION = _SESSION_LOGOS = None
+
+    _CHANNELS = {}
+    _CHILDREN = {}
+    _RESPONSES = []
+
+    _conf = mu7d_config()
+
+    CHANNELS = _conf["CHANNELS"]
+    CHANNELS_CLOUD = _conf["CHANNELS_CLOUD"]
+    GUIDE = _conf["GUIDE"]
+    GUIDE_CLOUD = _conf["GUIDE_CLOUD"]
+    IPTV_BW_HARD = _conf["IPTV_BW_HARD"]
+    IPTV_BW_SOFT = _conf["IPTV_BW_SOFT"]
+    IPTV_IFACE = _conf["IPTV_IFACE"]
+    NO_VERBOSE_LOGS = _conf["NO_VERBOSE_LOGS"]
+    RECORDINGS = _conf["RECORDINGS"]
+    RECORDINGS_M3U = _conf["RECORDINGS_M3U"]
+    RECORDINGS_PER_CHANNEL = _conf["RECORDINGS_PER_CHANNEL"]
+    U7D_THREADS = _conf["U7D_THREADS"]
+    U7D_URL = _conf["U7D_URL"]
+
+    VodArgs = namedtuple("Vod", ["channel", "program", "client_ip", "client_port", "start", "cloud"])
+
+    lockfile = os.path.join(os.getenv("TMP", os.getenv("TMPDIR", "/tmp")), ".movistar_u7d.lock")  # nosec B108
+    try:
+        with FileLock(lockfile, timeout=0):
+            app.run(
+                host=_conf["LAN_IP"],
+                port=_conf["U7D_PORT"],
+                protocol=VodHttpProtocol,
+                access_log=False,
+                auto_reload=False,
+                debug=_conf["DEBUG"],
+                workers=U7D_THREADS if not WIN32 else 1,
+            )
+    except (CancelledError, KeyboardInterrupt):
+        sys.exit(1)
+    except Timeout:
+        log.critical("Cannot be run more than once!")
+        sys.exit(1)

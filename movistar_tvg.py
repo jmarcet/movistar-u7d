@@ -18,30 +18,18 @@ import socket
 import struct
 import sys
 import time
-import timeit
 import ujson as json
 
 from aiohttp.resolver import AsyncResolver
 from datetime import date, datetime, timedelta
+from filelock import FileLock, Timeout
 from queue import Queue
 from threading import Thread
 from xml.dom import minidom  # nosec B408
 from xml.etree.ElementTree import Element, ElementTree, SubElement  # nosec B405
 
-from movistar_epg import UA_U7D, get_title_meta
-from version import _version
-from vod import MOVISTAR_DNS, UA, WIN32, YEAR_SECONDS, check_dns
-
-
-DEBUG = bool(int(os.getenv("DEBUG", 0)))
-
-_VERBOSE = cache = config = deadline = epg = iptv = mtv = session = xmltv = None
-
-
-if not WIN32:
-    from setproctitle import setproctitle
-
-    setproctitle("tv_grab_es_movistartv  %s" % " ".join(sys.argv[1:]))
+from mu7d import IPTV_DNS, UA, UA_U7D, WIN32, YEAR_SECONDS
+from mu7d import get_iptv_ip, get_title_meta, mu7d_config, _version
 
 
 epg_channels = [
@@ -76,8 +64,6 @@ epg_channels = [
     "3103",
     "4990",
 ]
-if os.getenv("EXTRA_CHANNELS"):
-    epg_channels += os.getenv("EXTRA_CHANNELS").split(" ")
 
 default_service_provider = {"mcast_grp": "239.0.2.150", "mcast_port": "3937"}
 
@@ -485,7 +471,7 @@ class MovistarTV:
     async def get_service_config(self):
         cfg = cache.load_config()
         if cfg:
-            if _VERBOSE:
+            if VERBOSE:
                 log.info("tvPackages: %s" % cfg["tvPackages"])
                 log.info("Demarcation: %s" % cfg["demarcation"])
             return cfg
@@ -493,7 +479,7 @@ class MovistarTV:
         platform = await self.__get_platform_profile()
         params = await self.__get_config_params()
         dvb_entry_point = platform["dvbConfig"]["dvbipiEntryPoint"].split(":")
-        if _VERBOSE:
+        if VERBOSE:
             log.info("tvPackages: %s" % client["tvPackages"])
             log.info("Demarcation: %s" % client["demarcation"])
         conf = {
@@ -609,12 +595,12 @@ class MulticastIPTV:
                 # Discard last 4bytes binary footer?
                 xmldata += body[:-4]
                 _files[str(chunk["filetype"]) + "_" + str(chunk["fileid"])] = xmldata
-                log.debug("XML: %s_%s" % (chunk["filetype"], chunk["fileid"]))
+                # log.debug("XML: %s_%s" % (chunk["filetype"], chunk["fileid"]))
                 if DEBUG:
                     print(".", end="", flush=True)
                 max_files -= 1
                 if str(chunk["filetype"]) + "_" + str(chunk["fileid"]) == first_file or max_files == 0:
-                    if _VERBOSE:
+                    if VERBOSE:
                         log.info(f"{mc_grp}:{mc_port} -> XML descargado")
                     loop = False
             except Exception as ex:
@@ -646,7 +632,7 @@ class MulticastIPTV:
                     channel_list[channel_id]["replacement"] = i[2][4][0].attrib["ServiceName"]
             except (KeyError, IndexError) as ex:
                 log.debug(f"El canal {channel_id} no tiene la estructura correcta: {repr(ex)}")
-        if _VERBOSE:
+        if VERBOSE:
             log.info("Canales: %i" % len(channel_list))
         return channel_list
 
@@ -670,7 +656,7 @@ class MulticastIPTV:
                         package_list[package_name]["services"][service_id] = service[1].text
             except (AttributeError, IndexError, KeyError):
                 log.debug(f"El paquete {package_name} no tiene la estructura correcta")
-        if _VERBOSE:
+        if VERBOSE:
             log.info(f"Paquetes: {len(package_list)}")
         return package_list
 
@@ -694,7 +680,7 @@ class MulticastIPTV:
                     segment_list[source]["Segments"][segment_id] = segment.attrib["Version"]
             except KeyError:
                 log.debug(f"El segmento {source} no tiene la estructura correcta")
-        if _VERBOSE:
+        if VERBOSE:
             log.info("Días de EPG: %i" % len(segment_list))
         return segment_list
 
@@ -707,7 +693,7 @@ class MulticastIPTV:
 
     def __get_service_provider_ip(self):
         try:
-            if _VERBOSE:
+            if VERBOSE:
                 log.info("Buscando el Proveedor de Servicios de %s" % self.__get_demarcation_name())
             data = cache.load_service_provider_data()
             if not data:
@@ -719,7 +705,7 @@ class MulticastIPTV:
                 )[0]
                 data = {"mcast_grp": result[0], "mcast_port": result[1]}
                 cache.save_service_provider_data(data)
-            if _VERBOSE:
+            if VERBOSE:
                 log.info(
                     "Proveedor de Servicios de %s: %s" % (self.__get_demarcation_name(), data["mcast_grp"])
                 )
@@ -745,7 +731,7 @@ class MulticastIPTV:
 
     def __get_bin_epg_threaded(self):
         queue = Queue()
-        threads = epg_threads
+        threads = tvg_threads
         self.__epg = [{} for r in range(len(self.__xml_data["segments"]))]
         log.info(f"Multithread: {threads} descargas simultáneas")
         for n in range(threads):
@@ -953,18 +939,18 @@ class MulticastIPTV:
             if "2_0" in xml and "5_0" in xml and "6_0" in xml:
                 if DEBUG:
                     print("", flush=True)
-                if _VERBOSE:
+                if VERBOSE:
                     log.info(f"Ficheros XML descargados: {_msg}")
                 break
             else:
                 log.warning(f"Ficheros XML incompletos: {_msg}")
                 time.sleep(10)
-        if _VERBOSE:
+        if VERBOSE:
             log.info("Descargando canales y paquetes")
         try:
             self.__xml_data["channels"] = self.__get_channels(xml["2_0"])
             self.__xml_data["packages"] = self.__get_packages(xml["5_0"])
-            if _VERBOSE:
+            if VERBOSE:
                 log.info("Descargando índices")
             self.__xml_data["segments"] = self.__get_segments(xml["6_0"])
         except Exception as ex:
@@ -1064,7 +1050,7 @@ class XMLTV:
         self.__packages = data["packages"]
 
     async def generate_xml(self, parsed_epg, verbose):
-        if _VERBOSE:
+        if VERBOSE:
             log.info("Generando la guía XMLTV...")
         root = Element(
             "tv",
@@ -1084,7 +1070,7 @@ class XMLTV:
             else:
                 log.debug(f"El canal {channel_id} no tiene EPG")
 
-        if _VERBOSE:
+        if VERBOSE:
             log.info("XML: Descargando info extendida")
         for channel_id in [
             cid
@@ -1096,7 +1082,7 @@ class XMLTV:
                 log.debug(f'XML: Saltando canal encriptado "{channel_name}" {channel_id}')
                 continue
 
-            if verbose and _VERBOSE:
+            if verbose and VERBOSE:
                 log.info(f'XML: "{channel_name}"')
 
             _tasks = [
@@ -1219,7 +1205,7 @@ class XMLTV:
                     for actor in ext_info["mainActors"][:length]:
                         tag_actor = SubElement(tag_credits, "actor")
                         tag_actor.text = actor.strip()
-            SubElement(tag_programme, "icon", {"src": f"http://{sanic}/Covers/" + ext_info["cover"]})
+            SubElement(tag_programme, "icon", {"src": f"{u7d_url}/Covers/" + ext_info["cover"]})
             tag_desc.text += "\n\n" + ext_info["description"]
         tag_rating = SubElement(tag_programme, "rating", {"system": "pl"})
         tag_value = SubElement(tag_rating, "value")
@@ -1253,7 +1239,7 @@ class XMLTV:
         m3u += "Cloud " if cloud else ""
         m3u += 'MovistarTV" catchup="flussonic-ts" catchup-days="'
         m3u += '9999" ' if cloud else '8" '
-        m3u += f'dlna_extras=mpeg_ps_pal max-conn="12" refresh="1200" url-tvg="http://{sanic}/'
+        m3u += f'dlna_extras=mpeg_ps_pal max-conn="12" refresh="1200" url-tvg="{u7d_url}/'
         m3u += "cloud.xml" if cloud else "guide.xml.gz"
         m3u += '"\n'
         services = self.__get_client_channels()
@@ -1275,7 +1261,7 @@ class XMLTV:
                 channel_number = services[channel_id]
                 if channel_number == "0":
                     channel_number = "999"
-                channel_logo = f"http://{sanic}/Logos/" + self.__channels[channel_id]["logo_uri"]
+                channel_logo = f"{u7d_url}/Logos/" + self.__channels[channel_id]["logo_uri"]
                 if channel_id not in epg_channels:
                     msg = f'M3U: Saltando canal encriptado "{channel_name}" {channel_id}'
                     log.info(msg) if _fresh else log.debug(msg)
@@ -1285,7 +1271,7 @@ class XMLTV:
                 m3u += f'group-title="{channel_tag}" '
                 m3u += f'tvg-logo="{channel_logo}"'
                 m3u += f",{channel_name}\n"
-                m3u += f"http://{sanic}"
+                m3u += f"{u7d_url}"
                 m3u += "/cloud" if cloud else ""
                 m3u += f"/{channel_id}/mpegts\n"
         return m3u
@@ -1320,8 +1306,8 @@ def export_channels(m3u_file, cloud=None):
     log.info(f"Lista de canales " f'{"de Grabaciones en la Nube " if cloud else ""}' f"exportada: {m3u_file}")
 
 
-async def main():
-    global _VERBOSE, cache, config, deadline, epg, iptv, mtv, session, xmltv
+async def tvg_main():
+    global VERBOSE, cache, config, deadline, epg, iptv, mtv, session, xmltv
 
     deadline = int(datetime.combine(date.today() - timedelta(days=7), datetime.min.time()).timestamp())
 
@@ -1329,30 +1315,18 @@ async def main():
     args = create_args_parser().parse_args()
 
     if args.cloud_m3u or args.cloud_recordings:
-        _VERBOSE = False
+        VERBOSE = False
         if args.cloud_m3u:
             log.info("Generando Lista de canales de Grabaciones en la Nube...")
         if args.cloud_recordings:
             log.info("Generando Guía XMLTV de Grabaciones en la Nube...")
     else:
-        _VERBOSE = True
+        VERBOSE = True
         banner = f"Movistar U7D - TVG v{_version}"
         log.info("-" * len(banner))
         log.info(banner)
         log.info("-" * len(banner))
         log.debug(" ".join(sys.argv[1:]))
-
-    if not WIN32:
-        if not args.m3u and not args.cloud_m3u:
-            import fcntl
-
-            # Sólo una instancia ejecutándose
-            fh = open(os.path.realpath(__file__))
-            try:
-                fcntl.flock(fh, fcntl.LOCK_EX | fcntl.LOCK_NB)
-            except BlockingIOError:
-                sys.stderr.write(f"{__file__} ya se está ejecutando\n")
-                sys.exit(1)
 
     # Crea la caché
     cache = Cache()
@@ -1360,7 +1334,7 @@ async def main():
     session = aiohttp.ClientSession(
         connector=aiohttp.TCPConnector(
             keepalive_timeout=YEAR_SECONDS,
-            resolver=AsyncResolver(nameservers=[MOVISTAR_DNS]) if not WIN32 else None,
+            resolver=AsyncResolver(nameservers=[IPTV_DNS]) if not WIN32 else None,
         ),
         headers={"User-Agent": UA},
         json_serialize=json.dumps,
@@ -1413,7 +1387,7 @@ async def main():
                 dom.writexml(f, indent="    ", addindent="    ", newl="\n", encoding="UTF-8")
             msg = "EPG de Grabaciones en la Nube descargada"
 
-        total_time = str(timedelta(seconds=round(timeit.default_timer() - time_start)))
+        total_time = str(timedelta(seconds=round(time.time() - time_start)))
         log.info(f"{msg} en {total_time}s")
 
     finally:
@@ -1421,43 +1395,52 @@ async def main():
 
 
 if __name__ == "__main__":
-    time_start = timeit.default_timer()
+    if not WIN32:
+        from setproctitle import setproctitle
 
-    log.basicConfig(
-        datefmt="[%Y-%m-%d %H:%M:%S]",
-        format="%(asctime)s [TVG] [%(levelname)s] %(message)s",
-        level=log.DEBUG if DEBUG else log.INFO,
-    )
+        setproctitle("movistar_tvg %s" % " ".join(sys.argv[1:]))
 
-    if "LAN_IP" in os.environ:
-        lan_ip = os.getenv("LAN_IP")
-    else:
-        s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
-        s.connect(("8.8.8.8", 53))
-        lan_ip = s.getsockname()[0]
-        s.close
+    time_start = time.time()
 
-    app_dir = os.path.join(os.getenv("HOME", os.getenv("USERPROFILE")), ".xmltv")
-    epg_threads = min(8, int(os.getenv("EPG_THREADS", os.cpu_count())))
-    sanic = "%s:%s" % (lan_ip, os.getenv("SANIC_PORT", "8888"))
-    sep = "\\" if WIN32 else "/"
-    use_multithread = True
+    _conf = mu7d_config()
+
+    DEBUG = _conf["DEBUG"]
+    VERBOSE = cache = config = deadline = epg = iptv = mtv = session = xmltv = None
+
+    app_dir = os.path.join(_conf["HOME"], ".xmltv")
+    epg_channels += _conf["EXTRA_CHANNELS"]
+    lan_ip = _conf["LAN_IP"]
+    tvg_threads = _conf["TVG_THREADS"]
+    u7d_url = _conf["U7D_URL"]
 
     age_rating = ["0", "0", "0", "7", "12", "16", "17", "18"]
     lang = {"es": {"lang": "es"}, "en": {"lang": "en"}}
     max_credits = 4
+    sep = "\\" if WIN32 else "/"
+    use_multithread = True
 
-    cookie_file = "tv_grab_es_movistartv.cookie"
-    end_points_file = "tv_grab_es_movistartv.endpoints"
+    cookie_file = "movistar_tvg.cookie"
+    end_points_file = "movistar_tvg.endpoints"
+
+    log.basicConfig(
+        datefmt="[%Y-%m-%d %H:%M:%S]",
+        format="%(asctime)s [TVG] [%(levelname)s] %(message)s",
+        level=log.DEBUG if _conf["DEBUG"] else log.INFO,
+    )
 
     # Determina la dirección IP para el IPTV y la conectividad con las DNS de Movistar
     try:
-        _iptv = check_dns()
+        _iptv = get_iptv_ip()
     except Exception:
-        log.error("Unable to connect to Movistar DNS")
+        log.critical("Unable to connect to Movistar DNS")
         sys.exit(1)
 
+    lockfile = os.path.join(os.getenv("TMP", os.getenv("TMPDIR", "/tmp")), ".movistar_tvg.lock")  # nosec B108
     try:
-        asyncio.run(main())
+        with FileLock(lockfile, timeout=0):
+            asyncio.run(tvg_main())
     except KeyboardInterrupt:
+        sys.exit(1)
+    except Timeout:
+        log.critical("Cannot be run more than once!")
         sys.exit(1)

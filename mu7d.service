@@ -1,0 +1,13 @@
+[Unit]
+Description=Movistar U7D
+After=network.target
+
+[Service]
+Type=simple
+StandardOutput=syslog
+StandardError=syslog
+SyslogIdentifier=movistar-u7d
+ExecStart=mu7d.py
+
+[Install]
+WantedBy=multi-user.target
