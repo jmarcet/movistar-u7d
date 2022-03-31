@@ -28,7 +28,7 @@ from sanic.touchup.meta import TouchUpMeta
 
 from mu7d import MIME_M3U, MIME_TS, MIME_WEBM, EPG_URL, IPTV_DNS, UA, URL_COVER, URL_LOGO, WIN32, YEAR_SECONDS
 from mu7d import find_free_port, get_iptv_ip, mu7d_config, ongoing_vods, _version
-from movistar_vod import VodData, VodLoop, VodSetup
+from movistar_vod import VodLoop, VodSetup
 
 
 LOG_SETTINGS = LOGGING_CONFIG_DEFAULTS
@@ -172,50 +172,33 @@ async def handle_channel(request, channel_id=None, channel_name=None):
         socket.IPPROTO_IP, socket.IP_ADD_MEMBERSHIP, socket.inet_aton(mc_grp) + socket.inet_aton(_IPTV)
     )
 
-    stream = await asyncio_dgram.from_socket(sock)
-    try:
+    with closing(await asyncio_dgram.from_socket(sock)) as stream:
         _response = await request.respond(content_type=MIME_TS)
         await _response.send((await stream.recv())[0][28:])
-    except TimeoutError:
-        log.error(f"{_raw_url} not found")
-        raise exceptions.NotFound(f"Requested URL {_raw_url} not found")
 
-    _lat = time.time() - _start
-    app.add_task(
-        _SESSION.post(
-            f"{EPG_URL}/prom_event/add",
-            json={
-                "method": "live",
-                "endpoint": f"{name} _ {request.ip} _ ",
-                "channel_id": channel_id,
-                "msg": f"[{request.ip}] -> Playing {_u7d_url}[{_lat:.4f}s]",
-                "id": _start,
-                "lat": _lat,
-            },
-        )
-    )
+        latency = time.time() - _start
+        prometheus = {
+            "method": "live",
+            "endpoint": f"{name} _ {request.ip} _ ",
+            "channel_id": channel_id,
+            "msg": f"[{request.ip}] -> Playing {_u7d_url}[{latency:.4f}s]",
+            "id": _start,
+            "lat": latency,
+        }
+        app.add_task(_SESSION.post(f"{EPG_URL}/prom_event/add", json={**prometheus}))
 
-    try:
-        while True:
-            await _response.send((await stream.recv())[0][28:])
-
-    finally:
-        stream.close()
         try:
-            await _SESSION.post(
-                f"{EPG_URL}/prom_event/remove",
-                json={
-                    "method": "live",
-                    "endpoint": f"{name} _ {request.ip} _ ",
-                    "channel_id": channel_id,
-                    "msg": f"[{request.ip}] -> Stopped {_u7d_url}[{_lat:.4f}s]",
-                    "id": _start,
-                },
-            )
-        except ClientOSError:
-            pass
+            while True:
+                await _response.send((await stream.recv())[0][28:])
+
         finally:
-            await _response.eof()
+            prometheus["msg"] = prometheus["msg"].replace("Playing", "Stopping")
+            try:
+                await _SESSION.post(f"{EPG_URL}/prom_event/remove", json={**prometheus})
+            except ClientOSError:
+                pass
+            finally:
+                await _response.eof()
 
 
 @app.route("/<channel_id:int>/<url>", methods=["GET", "HEAD"])
@@ -224,14 +207,15 @@ async def handle_flussonic(request, url, channel_id=None, channel_name=None, clo
     _start = time.time()
     _raw_url = request.raw_url.decode()
     _u7d_url = (U7D_URL + _raw_url + " ") if not NO_VERBOSE_LOGS else ""
+
+    if not url:
+        return response.empty(404)
+
     if channel_name:
         try:
             channel_id = get_channel_id(channel_name)
         except IndexError:
             raise exceptions.NotFound(f"Requested URL {_raw_url} not found")
-
-    if not url:
-        return response.empty(404)
 
     try:
         async with _SESSION.get(
@@ -239,51 +223,41 @@ async def handle_flussonic(request, url, channel_id=None, channel_name=None, clo
         ) as r:
             channel, program_id, start, duration, offset = (await r.json()).values()
     except (AttributeError, KeyError, ValueError):
-        log.error(f"{_raw_url} not found")
+        log.error(f"{_raw_url} not found channel_id={channel_id} url={url} cloud={cloud}")
         raise exceptions.NotFound(f"Requested URL {_raw_url} not found")
 
     if request.method == "HEAD":
         return response.HTTPResponse(content_type=MIME_TS, status=200)
 
-    client_port = find_free_port(_IPTV)
-
     if _NETWORK_SATURATED and not await ongoing_vods(_fast=True):
         log.warning(f"[{request.ip}] {_raw_url} -> Network Saturated")
         raise exceptions.ServiceUnavailable("Network Saturated")
 
-    _args = VodArgs(channel_id, program_id, _IPTV, request.ip, client_port, offset, cloud)
-    vod_data = await VodSetup(_args, app.ctx.vod_client)
-    if not isinstance(vod_data, VodData):
-        if vod_data:
-            raise exceptions.ServiceUnavailable("Movistar IPTV catchup service DOWN")
-        else:
-            raise exceptions.NotFound(f"Requested URL {_raw_url} not found")
-    vod = app.add_task(VodLoop(_args, vod_data))
-    _endpoint = _CHANNELS[channel_id]["name"] + f" _ {request.ip} _ "
-    with closing(await asyncio_dgram.bind((_IPTV, client_port))) as stream:
-        try:
-            _response = await request.respond(content_type=MIME_TS)
-            await _response.send((await stream.recv())[0])
-        except TimeoutError:
-            log.error(f"NOT_AVAILABLE: [{channel}] [{channel_id}] [{start}]")
-            raise exceptions.NotFound(f"Requested URL {_raw_url} not found")
+    client_port = find_free_port(_IPTV)
+    args = VodArgs(channel_id, program_id, _IPTV, request.ip, client_port, offset, cloud)
 
-        _lat = time.time() - _start
-        app.add_task(
-            _SESSION.post(
-                f"{EPG_URL}/prom_event/add",
-                json={
-                    "method": "catchup",
-                    "endpoint": _endpoint,
-                    "channel_id": channel_id,
-                    "url": url,
-                    "msg": f"[{request.ip}] -> Playing {_u7d_url}[{_lat:.4f}s]",
-                    "id": _start,
-                    "cloud": cloud,
-                    "lat": _lat,
-                },
-            )
-        )
+    vod_data = await VodSetup(args, app.ctx.vod_client)
+    if not vod_data:
+        log.error(f"NOT_AVAILABLE: [{channel}] [{channel_id}] [{start}]")
+        raise exceptions.NotFound(f"Requested URL {_raw_url} not found")
+
+    vod = app.add_task(VodLoop(args, vod_data))
+    with closing(await asyncio_dgram.bind((_IPTV, client_port))) as stream:
+        _response = await request.respond(content_type=MIME_TS)
+        await _response.send((await stream.recv())[0])
+
+        latency = time.time() - _start
+        prometheus = {
+            "method": "catchup",
+            "endpoint": _CHANNELS[channel_id]["name"] + f" _ {request.ip} _ ",
+            "channel_id": channel_id,
+            "url": url,
+            "id": _start,
+            "msg": f"[{request.ip}] -> Playing {_u7d_url}[{latency:.4f}s]",
+            "cloud": cloud,
+            "lat": latency,
+        }
+        app.add_task(_SESSION.post(f"{EPG_URL}/prom_event/add", json={**prometheus}))
 
         try:
             while True:
@@ -291,19 +265,10 @@ async def handle_flussonic(request, url, channel_id=None, channel_name=None, clo
 
         finally:
             vod.cancel()
+            prometheus["msg"] = prometheus["msg"].replace("Playing", "Stopping")
             try:
                 await _SESSION.post(
-                    f"{EPG_URL}/prom_event/remove",
-                    json={
-                        "method": "catchup",
-                        "endpoint": _endpoint,
-                        "channel_id": channel_id,
-                        "url": url,
-                        "msg": f"[{request.ip}] -> Stopped {_u7d_url}[{_lat:.4f}s]",
-                        "id": _start,
-                        "cloud": cloud,
-                        "offset": time.time() - _start,
-                    },
+                    f"{EPG_URL}/prom_event/remove", json={**prometheus, "offset": time.time() - _start}
                 )
             except ClientOSError:
                 pass
