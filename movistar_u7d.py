@@ -122,17 +122,10 @@ async def after_server_start(app, loop):
 
 @app.listener("before_server_stop")
 async def before_server_stop(app, loop):
-    global _RESPONSES
-    for req_ip, raw_url, resp in _RESPONSES:
+    for task in asyncio.all_tasks():
         try:
-            await resp.eof()
-            log.info(f"[{req_ip}] " f"{U7D_URL if not NO_VERBOSE_LOGS else ''}" f"{raw_url} -> Stopped 2")
-        except AttributeError:
-            pass
-
-    for session in (_SESSION, _SESSION_LOGOS, app.ctx.vod_client):
-        try:
-            await session.close()
+            task.cancel()
+            await task
         except CancelledError:
             pass
 
@@ -205,27 +198,24 @@ async def handle_channel(request, channel_id=None, channel_name=None):
     try:
         while True:
             await _response.send((await stream.recv())[0][28:])
-    except AttributeError:
-        pass
+
     finally:
+        stream.close()
         try:
-            await _response.eof()
-        except AttributeError:
+            await _SESSION.post(
+                f"{EPG_URL}/prom_event/remove",
+                json={
+                    "method": "live",
+                    "endpoint": f"{name} _ {request.ip} _ ",
+                    "channel_id": channel_id,
+                    "msg": f"[{request.ip}] -> Stopped {_u7d_url}[{_lat:.4f}s]",
+                    "id": _start,
+                },
+            )
+        except (ClientConnectorError, ConnectionResetError, ServerDisconnectedError):
             pass
         finally:
-            stream.close()
-            app.add_task(
-                _SESSION.post(
-                    f"{EPG_URL}/prom_event/remove",
-                    json={
-                        "method": "live",
-                        "endpoint": f"{name} _ {request.ip} _ ",
-                        "channel_id": channel_id,
-                        "msg": f"[{request.ip}] -> Stopped {_u7d_url}[{_lat:.4f}s]",
-                        "id": _start,
-                    },
-                )
-            )
+            await _response.eof()
 
 
 @app.route("/<channel_id:int>/<url>", methods=["GET", "HEAD"])
@@ -279,7 +269,6 @@ async def handle_flussonic(request, url, channel_id=None, channel_name=None, clo
             raise exceptions.NotFound(f"Requested URL {_raw_url} not found")
 
         _lat = time.time() - _start
-        _RESPONSES.append((request.ip, _raw_url, _response))
         app.add_task(
             _SESSION.post(
                 f"{EPG_URL}/prom_event/add",
@@ -299,35 +288,27 @@ async def handle_flussonic(request, url, channel_id=None, channel_name=None, clo
         try:
             while True:
                 await _response.send((await stream.recv())[0])
-        except AttributeError:
-            pass
+
         finally:
+            vod.cancel()
             try:
-                await _response.eof()
-            except AttributeError:
+                await _SESSION.post(
+                    f"{EPG_URL}/prom_event/remove",
+                    json={
+                        "method": "catchup",
+                        "endpoint": _endpoint,
+                        "channel_id": channel_id,
+                        "url": url,
+                        "msg": f"[{request.ip}] -> Stopped {_u7d_url}[{_lat:.4f}s]",
+                        "id": _start,
+                        "cloud": cloud,
+                        "offset": time.time() - _start,
+                    },
+                )
+            except (ClientConnectorError, ConnectionResetError, ServerDisconnectedError):
                 pass
             finally:
-                _RESPONSES.remove((request.ip, _raw_url, _response))
-                app.add_task(
-                    _SESSION.post(
-                        f"{EPG_URL}/prom_event/remove",
-                        json={
-                            "method": "catchup",
-                            "endpoint": _endpoint,
-                            "channel_id": channel_id,
-                            "url": url,
-                            "msg": f"[{request.ip}] -> Stopped {_u7d_url}[{_lat:.4f}s]",
-                            "id": _start,
-                            "cloud": cloud,
-                            "offset": time.time() - _start,
-                        },
-                    )
-                )
-                try:
-                    vod.cancel()
-                    await asyncio.wait({vod})
-                except (ProcessLookupError, TypeError):
-                    pass
+                await _response.eof()
 
 
 @app.route("/cloud/<channel_id:int>/<url>", methods=["GET", "HEAD"])
@@ -525,7 +506,6 @@ if __name__ == "__main__":
 
     _CHANNELS = {}
     _CHILDREN = {}
-    _RESPONSES = []
 
     _conf = mu7d_config()
 
