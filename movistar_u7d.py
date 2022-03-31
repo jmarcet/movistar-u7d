@@ -12,7 +12,7 @@ import time
 import ujson
 import urllib.parse
 
-from aiohttp.client_exceptions import ClientConnectorError, ServerDisconnectedError
+from aiohttp.client_exceptions import ClientOSError
 from aiohttp.resolver import AsyncResolver
 from asyncio.exceptions import CancelledError
 from collections import namedtuple
@@ -85,7 +85,7 @@ async def before_server_start(app, loop):
                 else:
                     log.error("Failed to get channel list from EPG service")
                     await asyncio.sleep(5)
-        except (ClientConnectorError, ConnectionRefusedError, ServerDisconnectedError):
+        except ClientOSError:
             log.debug("Waiting for EPG service...")
             await asyncio.sleep(1)
 
@@ -212,7 +212,7 @@ async def handle_channel(request, channel_id=None, channel_name=None):
                     "id": _start,
                 },
             )
-        except (ClientConnectorError, ConnectionResetError, ServerDisconnectedError):
+        except ClientOSError:
             pass
         finally:
             await _response.eof()
@@ -305,7 +305,7 @@ async def handle_flussonic(request, url, channel_id=None, channel_name=None, clo
                         "offset": time.time() - _start,
                     },
                 )
-            except (ClientConnectorError, ConnectionResetError, ServerDisconnectedError):
+            except ClientOSError:
                 pass
             finally:
                 await _response.eof()
@@ -410,7 +410,7 @@ async def handle_prometheus(request):
     try:
         async with _SESSION.get(f"{EPG_URL}/metrics") as r:
             return response.text((await r.read()).decode())
-    except (ClientConnectorError, ConnectionRefusedError, ServerDisconnectedError):
+    except ClientOSError:
         raise exceptions.ServiceUnavailable("Not available")
 
 
@@ -423,7 +423,7 @@ async def handle_record_program(request, channel_id, url):
     try:
         async with _SESSION.get(f"{EPG_URL}{request.raw_url.decode()}") as r:
             return response.json(await r.json())
-    except (ClientConnectorError, ConnectionRefusedError, ServerDisconnectedError):
+    except ClientOSError:
         raise exceptions.ServiceUnavailable("Not available")
 
 
@@ -467,7 +467,7 @@ async def handle_timers_check(request):
     try:
         async with _SESSION.get(f"{EPG_URL}/timers_check") as r:
             return response.json(await r.json())
-    except (ClientConnectorError, ConnectionRefusedError, ServerDisconnectedError):
+    except ClientOSError:
         raise exceptions.ServiceUnavailable("Not available")
 
 
