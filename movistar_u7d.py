@@ -177,28 +177,26 @@ async def handle_channel(request, channel_id=None, channel_name=None):
         await _response.send((await stream.recv())[0][28:])
 
         latency = time.time() - _start
-        prometheus = {
-            "method": "live",
-            "endpoint": f"{name} _ {request.ip} _ ",
-            "channel_id": channel_id,
-            "msg": f"[{request.ip}] -> Playing {_u7d_url}[{latency:.4f}s]",
-            "id": _start,
-            "lat": latency,
-        }
-        app.add_task(_SESSION.post(f"{EPG_URL}/prom_event/add", json={**prometheus}))
+        prom = app.add_task(
+            send_prom_event(
+                {
+                    "method": "live",
+                    "endpoint": f"{name} _ {request.ip} _ ",
+                    "channel_id": channel_id,
+                    "msg": f"[{request.ip}] -> Playing {_u7d_url}[{latency:.4f}s]",
+                    "id": _start,
+                    "lat": latency,
+                }
+            )
+        )
 
         try:
             while True:
                 await _response.send((await stream.recv())[0][28:])
 
         finally:
-            prometheus["msg"] = prometheus["msg"].replace("Playing", "Stopping")
-            try:
-                await _SESSION.post(f"{EPG_URL}/prom_event/remove", json={**prometheus})
-            except ClientOSError:
-                pass
-            finally:
-                await _response.eof()
+            prom.cancel()
+            await _response.eof()
 
 
 @app.route("/<channel_id:int>/<url>", methods=["GET", "HEAD"])
@@ -247,17 +245,20 @@ async def handle_flussonic(request, url, channel_id=None, channel_name=None, clo
         await _response.send((await stream.recv())[0])
 
         latency = time.time() - _start
-        prometheus = {
-            "method": "catchup",
-            "endpoint": _CHANNELS[channel_id]["name"] + f" _ {request.ip} _ ",
-            "channel_id": channel_id,
-            "url": url,
-            "id": _start,
-            "msg": f"[{request.ip}] -> Playing {_u7d_url}[{latency:.4f}s]",
-            "cloud": cloud,
-            "lat": latency,
-        }
-        app.add_task(_SESSION.post(f"{EPG_URL}/prom_event/add", json={**prometheus}))
+        prom = app.add_task(
+            send_prom_event(
+                {
+                    "method": "catchup",
+                    "endpoint": _CHANNELS[channel_id]["name"] + f" _ {request.ip} _ ",
+                    "channel_id": channel_id,
+                    "url": url,
+                    "id": _start,
+                    "msg": f"[{request.ip}] -> Playing {_u7d_url}[{latency:.4f}s]",
+                    "cloud": cloud,
+                    "lat": latency,
+                }
+            )
+        )
 
         try:
             while True:
@@ -265,15 +266,8 @@ async def handle_flussonic(request, url, channel_id=None, channel_name=None, clo
 
         finally:
             vod.cancel()
-            prometheus["msg"] = prometheus["msg"].replace("Playing", "Stopping")
-            try:
-                await _SESSION.post(
-                    f"{EPG_URL}/prom_event/remove", json={**prometheus, "offset": time.time() - _start}
-                )
-            except ClientOSError:
-                pass
-            finally:
-                await _response.eof()
+            prom.cancel()
+            await _response.eof()
 
 
 @app.route("/cloud/<channel_id:int>/<url>", methods=["GET", "HEAD"])
@@ -452,6 +446,21 @@ async def network_saturated():
 
         before, last = now, cur
         await asyncio.sleep(1)
+
+
+async def send_prom_event(event):
+    try:
+        try:
+            await _SESSION.post(f"{EPG_URL}/prom_event/add", json={**event})
+            while True:
+                await asyncio.sleep(YEAR_SECONDS)
+        except CancelledError:
+            event["msg"] = event["msg"].replace("Playing", "Stopping")
+            await _SESSION.post(
+                f"{EPG_URL}/prom_event/remove", json={**event, "offset": time.time() - event["id"]}
+            )
+    except ClientOSError:
+        pass
 
 
 class VodHttpProtocol(HttpProtocol, metaclass=TouchUpMeta):
