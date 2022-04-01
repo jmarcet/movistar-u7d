@@ -29,7 +29,6 @@ from mu7d import IPTV_DNS, EPG_URL, UA, URL_COVER, URL_MVTV, WIN32, YEAR_SECONDS
 from mu7d import find_free_port, get_iptv_ip, mu7d_config, ongoing_vods, _version
 
 
-Response = namedtuple("Response", ["version", "status", "url", "headers", "body"])
 VodData = namedtuple("VodData", ["client", "get_parameter", "session"])
 
 
@@ -39,78 +38,56 @@ class RtspClient:
         self.writer = writer
         self.url = url
         self.cseq = 1
-        self.ip = None
-        self.needs_position = False
+        # self.needs_position = False
+        # self.rtsp = None
 
     def close_connection(self):
         self.writer.close()
 
-    def does_need_position(self):
-        return self.needs_position
+    # def does_need_position(self):
+    #     return self.needs_position
 
-    def needs_position(self):
-        self.needs_position = True
+    # def needs_position(self):
+    #     self.needs_position = True
 
-    async def print(self, req, resp):
-        WIDTH = 134
-        headers = self.serialize_headers(resp.headers)
-        log.debug("-" * WIDTH)
-        log.debug("Request: " + req.split("\n")[0])
-        log.debug(f"Response: {resp.version} {resp.status}\n{headers}")
-        if resp.body:
-            log.debug(f"\n{resp.body.rstrip()}")
-        log.debug("-" * WIDTH)
-
-    async def read_message(self):
-        resp = (await self.reader.read(4096)).decode()
-        if " 200 OK" not in resp:
-            version, status = resp.rstrip().split("\n")[0].split(" ", 1)
-            return Response(version, status, self.url, {}, "")
-
-        head, body = resp.split("\r\n\r\n")
-        version, status = head.split("\r\n")[0].rstrip().split(" ", 1)
-
-        headers = dict()
-        for line in head.split("\r\n")[1:]:
-            key, value = line.split(": ", 1)
-            headers[key] = value
-
-        if "Content-Length" in headers:
-            if "a=control:rtsp:" in body:
-                self.ip = body.split("\n")[-1].split(":", 1)[1].strip()
-        else:
-            body = ""
-
-        return Response(version, status, self.url, headers, body)
-
-    async def send_request(self, method, headers={}):
-        if method == "OPTIONS":
-            url = "*"
-        elif method == "SETUP2":
-            method = "SETUP"
-            self.url, self.ip = self.ip, self.url
-            url = self.url
-        else:
-            url = self.url
+    async def send_request(self, method, headers):
+        # if method == "OPTIONS":
+        #     url = "*"
+        # elif method == "SETUP2":
+        #     method = "SETUP"
+        #     url = self.rtsp
+        # else:
+        #     url = self.url
 
         headers["CSeq"] = self.cseq
         ser_headers = self.serialize_headers(headers)
-        self.cseq += 1
 
-        if method == "GET_PARAMETER" and self.needs_position:
-            req = f"{method} {url} RTSP/1.0\r\n{ser_headers}\r\n\r\nposition\r\n\r\n"
-        else:
-            req = f"{method} {url} RTSP/1.0\r\n{ser_headers}\r\n\r\n"
+        # if method == "GET_PARAMETER" and self.needs_position:
+        #     req = f"{method} {self.url} RTSP/1.0\r\n{ser_headers}\r\n\r\nposition\r\n\r\n"
+        # else:
+        req = f"{method} {self.url} RTSP/1.0\r\n{ser_headers}\r\n\r\n"
 
         self.writer.write(req.encode())
-        resp = await self.read_message()
-        # asyncio.create_task(self.print(req, resp))
+        resp = (await self.reader.read(4096)).decode().splitlines()
 
-        if resp.status != "200 OK" and method not in ["SETUP", "TEARDOWN"]:
-            log.debug(f"{method} {resp}")
-            _vod_t.cancel()
+        log.debug(f"[{self.cseq}]: Req = [{'|'.join(req.splitlines())}]")
+        log.debug(f"[{self.cseq}]: Resp = [{'|'.join(resp)}]")
 
-        return resp
+        self.cseq += 1
+
+        if not (resp and resp[0].endswith("200 OK")):
+            return
+
+        if method == "SETUP":
+            return resp[1].split(": ")[1].split(";")[0]
+
+        return True
+
+        # if method.startswith("SETUP"):
+        # elif method == "DESCRIBE":
+        #     if resp[2].startswith("Content-Length") and resp[-1].startswith("a=control:"):
+        #         self.rtsp = resp[-1].split("a=control:")[1]
+        #         log.debug(f"[{self.cseq}]: RTSP = [{self.rtsp}]")
 
     def serialize_headers(self, headers):
         return "\r\n".join(map(lambda x: "{0}: {1}".format(*x), headers.items()))
@@ -467,7 +444,8 @@ async def vod_task(args, vod_data):
                 break
         else:
             await asyncio.sleep(30)
-        await vod_data.client.send_request("GET_PARAMETER", vod_data.get_parameter)
+        if not (await vod_data.client.send_request("GET_PARAMETER", vod_data.get_parameter)):
+            break
 
 
 async def VodLoop(args, vod_data=None):
@@ -532,16 +510,13 @@ async def VodLoop(args, vod_data=None):
         _vod_t = asyncio.create_task(vod_task(args, vod_data))
         await _vod_t
 
-    except (CancelledError, ValueError):
+    except CancelledError:
         pass
 
     finally:
         try:
             # This is a crucial step or vod will be consuming bandwith for up to another 60s
             await asyncio.shield(vod_data.client.send_request("TEARDOWN", vod_data.session))
-
-        except ValueError:
-            pass
 
         finally:
             vod_data.client.close_connection()
@@ -587,9 +562,12 @@ async def VodSetup(args, vod_client, failed=False):
     client = None
     headers = {"CSeq": "", "User-Agent": "MICA-IP-STB"}
 
-    setup = session = play = describe = headers.copy()
-    describe["Accept"] = "application/sdp"
+    setup = session = play = get_parameter = headers.copy()  # describe
+    # describe["Accept"] = "application/sdp"
     setup["Transport"] = f"MP2T/H2221/UDP;unicast;client_port={args.client_port}"
+
+    play["Range"] = f"npt={args.start:.3f}-end"
+    play.update({"Scale": "1.000", "x-playNow": "", "x-noFlush": ""})
 
     try:
         vod_info = await vod_get_info(args.channel, args.broadcast, args.cloud, vod_client)
@@ -638,26 +616,23 @@ async def VodSetup(args, vod_client, failed=False):
 
     reader, writer = await asyncio.open_connection(uri.hostname, uri.port)
     client = RtspClient(reader, writer, vod_info["url"])
-    await client.send_request("OPTIONS", headers)
-    await client.send_request("DESCRIBE", describe)
+    # await client.send_request("OPTIONS", headers)  # No needed for normal operation
+    # await client.send_request("DESCRIBE", describe)  # Does not seem to be needed anymore
+    # if client.does_need_position():
+    #     get_parameter.update({"Content-type": "text/parameters", "Content-length": 10})
 
-    r = await client.send_request("SETUP", setup)
-    if r.status != "200 OK":
-        client.needs_position()
-        r = await client.send_request("SETUP2", setup)
-        if r.status != "200 OK":
-            log.error(f"{r}")
-            return
+    _session = await client.send_request("SETUP", setup)
+    if not _session:
+        return
+        # client.needs_position()
+        # _session = await client.send_request("SETUP2", setup)
+        # if not _session:
+        #     return
 
-    play["Range"] = f"npt={args.start:.3f}-end"
-    play.update({"Scale": "1.000", "x-playNow": "", "x-noFlush": ""})
-    play["Session"] = session["Session"] = r.headers["Session"].split(";")[0]
+    session["Session"] = play["Session"] = get_parameter["Session"] = _session
 
-    get_parameter = session.copy()
-    if client.does_need_position():
-        get_parameter.update({"Content-type": "text/parameters", "Content-length": 10})
-
-    await client.send_request("PLAY", play)
+    if not await client.send_request("PLAY", play):
+        return
 
     if __name__ == "__main__" and not args.write_to_file:
         log.info(f'The VOD stream can be accesed at: "{_vod}"')
