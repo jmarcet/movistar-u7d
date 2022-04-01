@@ -38,40 +38,20 @@ class RtspClient:
         self.writer = writer
         self.url = url
         self.cseq = 1
-        # self.needs_position = False
-        # self.rtsp = None
 
     def close_connection(self):
         self.writer.close()
 
-    # def does_need_position(self):
-    #     return self.needs_position
-
-    # def needs_position(self):
-    #     self.needs_position = True
-
     async def send_request(self, method, headers):
-        # if method == "OPTIONS":
-        #     url = "*"
-        # elif method == "SETUP2":
-        #     method = "SETUP"
-        #     url = self.rtsp
-        # else:
-        #     url = self.url
-
         headers["CSeq"] = self.cseq
         ser_headers = self.serialize_headers(headers)
 
-        # if method == "GET_PARAMETER" and self.needs_position:
-        #     req = f"{method} {self.url} RTSP/1.0\r\n{ser_headers}\r\n\r\nposition\r\n\r\n"
-        # else:
         req = f"{method} {self.url} RTSP/1.0\r\n{ser_headers}\r\n\r\n"
-
         self.writer.write(req.encode())
         resp = (await self.reader.read(4096)).decode().splitlines()
 
-        log.debug(f"[{self.cseq}]: Req = [{'|'.join(req.splitlines())}]")
-        log.debug(f"[{self.cseq}]: Resp = [{'|'.join(resp)}]")
+        # log.debug(f"[{self.cseq}]: Req = [{'|'.join(req.splitlines())}]")
+        # log.debug(f"[{self.cseq}]: Resp = [{'|'.join(resp)}]")
 
         self.cseq += 1
 
@@ -82,12 +62,6 @@ class RtspClient:
             return resp[1].split(": ")[1].split(";")[0]
 
         return True
-
-        # if method.startswith("SETUP"):
-        # elif method == "DESCRIBE":
-        #     if resp[2].startswith("Content-Length") and resp[-1].startswith("a=control:"):
-        #         self.rtsp = resp[-1].split("a=control:")[1]
-        #         log.debug(f"[{self.cseq}]: RTSP = [{self.rtsp}]")
 
     def serialize_headers(self, headers):
         return "\r\n".join(map(lambda x: "{0}: {1}".format(*x), headers.items()))
@@ -563,7 +537,6 @@ async def VodSetup(args, vod_client, failed=False):
     headers = {"CSeq": "", "User-Agent": "MICA-IP-STB"}
 
     setup = session = play = get_parameter = headers.copy()  # describe
-    # describe["Accept"] = "application/sdp"
     setup["Transport"] = f"MP2T/H2221/UDP;unicast;client_port={args.client_port}"
 
     play["Range"] = f"npt={args.start:.3f}-end"
@@ -616,18 +589,10 @@ async def VodSetup(args, vod_client, failed=False):
 
     reader, writer = await asyncio.open_connection(uri.hostname, uri.port)
     client = RtspClient(reader, writer, vod_info["url"])
-    # await client.send_request("OPTIONS", headers)  # No needed for normal operation
-    # await client.send_request("DESCRIBE", describe)  # Does not seem to be needed anymore
-    # if client.does_need_position():
-    #     get_parameter.update({"Content-type": "text/parameters", "Content-length": 10})
 
     _session = await client.send_request("SETUP", setup)
     if not _session:
         return
-        # client.needs_position()
-        # _session = await client.send_request("SETUP2", setup)
-        # if not _session:
-        #     return
 
     session["Session"] = play["Session"] = get_parameter["Session"] = _session
 
