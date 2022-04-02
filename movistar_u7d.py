@@ -453,6 +453,15 @@ async def handle_recording(request):
     raise exceptions.NotFound(f"Requested URL {request.raw_url.decode()} not found")
 
 
+@app.get("/terminate")
+async def handle_terminate(request):
+    if WIN32:
+        log.debug("Terminating...")
+        asyncio.get_event_loop().stop()
+
+    return response.empty(404)
+
+
 @app.get("/timers_check")
 async def handle_timers_check(request):
     try:

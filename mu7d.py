@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
 
+import aiohttp
 import asyncio
 import logging as log
 import os
@@ -9,6 +10,7 @@ import socket
 import sys
 import tomli
 
+from aiohttp.client_exceptions import ClientOSError
 from asyncio.exceptions import CancelledError
 from contextlib import closing
 from filelock import FileLock, Timeout
@@ -264,6 +266,16 @@ async def u7d_main():
             break
 
         if WIN32:
+            if u7d_p.pid:
+                async with aiohttp.ClientSession() as session:
+                    try:
+                        await session.get(f"http://{conf['LAN_IP']}:{conf['U7D_PORT']}/terminate")
+                    except ClientOSError:
+                        pass
+                try:
+                    psutil.Process(u7d_p.pid).wait(timeout=10)
+                except (psutil.NoSuchProcess, psutil.TimeoutExpired):
+                    pass
             [child.terminate() for child in psutil.Process().children()]
             break
 
