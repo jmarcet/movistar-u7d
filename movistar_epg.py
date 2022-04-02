@@ -487,7 +487,12 @@ async def handle_record_program(request, channel_id, url):
     cloud = request.args.get("cloud") == "1"
     mp4 = request.args.get("mp4") == "1"
     vo = request.args.get("vo") == "1"
-    channel, program_id, start, duration, offset = get_program_id(channel_id, url, cloud).values()
+
+    try:
+        channel, program_id, start, duration, offset = get_program_id(channel_id, url, cloud).values()
+    except AttributeError:
+        raise exceptions.NotFound(f"Requested URL {request.raw_url.decode()} not found")
+
     if request.args.get("time"):
         record_time = int(request.args.get("time"))
     else:
