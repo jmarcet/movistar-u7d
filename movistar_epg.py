@@ -311,7 +311,7 @@ async def handle_channels(request):
 @app.get("/program_id/<channel_id:int>/<url>")
 async def handle_program_id(request, channel_id, url):
     try:
-        return response.json(get_program_id(channel_id, url, bool(request.args.get("cloud"))))
+        return response.json(get_program_id(channel_id, url, request.args.get("cloud") == "1"))
     except (AttributeError, KeyError):
         raise exceptions.NotFound(f"Requested URL {request.raw_url.decode()} not found")
 
