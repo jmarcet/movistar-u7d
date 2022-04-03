@@ -98,9 +98,9 @@ async def postprocess(record_time=0):
 
     async def _duration_ok():
         try:
-            resp = await _SESSION.options(_epg_url, params=_epg_params)  # signal recording ended
+            resp = await _SESSION.options(_archive_url, params=_archive_params)  # signal recording ended
             if resp.status not in (200, 201):
-                raise ValueError("Too short, missing: %ss" % _epg_params["missing"])
+                raise ValueError("Too short, missing: %ss" % _archive_params["missing"])
             return resp.status
         except ClientOSError:
             raise ValueError("Cancelled")
@@ -125,7 +125,7 @@ async def postprocess(record_time=0):
             os.remove(img_name)
 
     async def step_2(status):
-        global _epg_params, _log_suffix
+        global _archive_params, _log_suffix
 
         cmd = ["mkvmerge", "-J", _filename + TMP_EXT2]
         res = (await (await asyncio.create_subprocess_exec(*cmd, stdout=PIPE)).communicate())[0].decode()
@@ -134,7 +134,7 @@ async def postprocess(record_time=0):
         duration = int(int(recording_data["container"]["properties"]["duration"]) / 1000000000)
         bad = duration < _args.time - 30
 
-        _epg_params["missing"] = _args.time - duration if bad else 0
+        _archive_params["missing"] = _args.time - duration if bad else 0
         _log_suffix = f"[{duration}s] / {_log_suffix}"
 
         msg = f"POSTPROCESS #2: Recording is {'INCOMPLETE' if bad else 'COMPLETE'}: {_log_suffix}"
@@ -217,12 +217,12 @@ async def postprocess(record_time=0):
                 os.rename(_filename + TMP_EXT2, _filename + VID_EXT)
             _cleanup(CHP_EXT)
 
-    global _epg_params, _pp_lock
+    global _archive_params, _pp_lock
 
     lockfile = os.path.join(os.getenv("TMP", os.getenv("TMPDIR", "/tmp")), ".movistar_vod.lock")  # nosec B108
 
     # We verify with the backend if the raw recording time is OK, rounding the desired time by 30s
-    _epg_params["missing"] = (_args.time - record_time) if (record_time < _args.time - 30) else 0
+    _archive_params["missing"] = (_args.time - record_time) if (record_time < _args.time - 30) else 0
     status = await _duration_ok()
 
     _pp_lock = FileLock(lockfile)
@@ -282,7 +282,7 @@ async def recording_archive():
     files = glob(f"{_filename.replace('[', '?').replace(']', '?')}.*")
     [os.utime(file, (-1, _mtime)) for file in files if os.access(file, os.W_OK)]
 
-    resp = await _SESSION.put(_epg_url, params=_epg_params)
+    resp = await _SESSION.put(_archive_url, params=_archive_params)
     if resp.status == 200:
         await save_metadata(extra=True)
     else:
@@ -393,7 +393,7 @@ async def save_metadata(extra=False):
     for t in ("isuserfavorite", "lockdata", "logos", "name", "playcount", "resume", "watched"):
         metadata.pop(t, None)
 
-    metadata["title"] = _full_title
+    metadata["title"] = _filename[len(RECORDINGS) + 1 :]
 
     async with aiofiles.open(_filename + NFO_EXT, "w", encoding="utf8") as f:
         await f.write(dict2xml(metadata, wrap="metadata", indent="    "))
@@ -402,17 +402,87 @@ async def save_metadata(extra=False):
     log.debug(f"Metadata saved: {_log_suffix}")
 
 
-async def vod_get_info(channel_id, program_id, cloud, vod_client):
-    params = "action=getRecordingData" if cloud else "action=getCatchUpUrl"
-    params += f"&extInfoID={program_id}&channelID={channel_id}&mode=1"
+async def vod_get_info():
+    params = "action=getRecordingData" if _args.cloud else "action=getCatchUpUrl"
+    params += f"&extInfoID={_args.broadcast}&channelID={_args.channel}&mode=1"
 
-    async with vod_client.get(f"{URL_MVTV}?{params}") as r:
+    async with _SESSION_CLOUD.get(f"{URL_MVTV}?{params}") as r:
         return (await r.json())["resultData"]
 
 
-async def vod_task(args, vod_data):
+async def vod_recording_setup(vod_info):
+    global _archive_params, _archive_url, _filename, _log_suffix, _mtime, _path
+
+    if not _args.filename:
+        from mu7d import get_safe_filename
+
+        _args.filename = f"{vod_info['channelName']} - {get_safe_filename(vod_info['name'])}"
+
+    if not _args.time:
+        _args.time = vod_info["duration"]
+    else:
+        _args.time = min(
+            vod_info["duration"],
+            _args.time + 600
+            if _args.time > 7200
+            else _args.time + 300
+            if _args.time > 1800
+            else _args.time + 60
+            if _args.time > 900
+            else _args.time
+            if _args.time > 60
+            else 60,
+        )
+    _mtime = vod_info["beginTime"] / 1000 + _args.start
+    _log_suffix = "[%ds] - [%s] [%s] [%s] [%d]" % (
+        _args.time,
+        vod_info["channelName"],
+        _args.channel,
+        _args.broadcast,
+        vod_info["beginTime"] / 1000,
+    )
+
+    _archive_params = {"cloud": 1} if _args.cloud else {}
+    _archive_url = f"{EPG_URL}/archive/{_args.channel}/{_args.broadcast}"
+
+    _filename = os.path.join(RECORDINGS, _args.filename)
+    _path = os.path.join(RECORDINGS, os.path.dirname(_args.filename))
+
+    if not os.path.exists(_path):
+        log.debug(f"Creating recording subdir {_path}")
+        os.makedirs(_path)
+
+    _log_suffix += ' "%s"' % _filename[len(RECORDINGS) + 1 :]
+
+    return ["-metadata:s:v", f"title={os.path.basename(_args.filename)}"]
+
+
+async def vod_setup(url):
+    client = None
+    headers = {"CSeq": "", "User-Agent": "MICA-IP-STB"}
+
+    setup = session = play = get_parameter = headers.copy()  # describe
+    setup["Transport"] = f"MP2T/H2221/UDP;unicast;client_port={_args.client_port}"
+
+    play["Range"] = f"npt={_args.start:.3f}-end"
+    play.update({"Scale": "1.000", "x-playNow": "", "x-noFlush": ""})
+
+    uri = urllib.parse.urlparse(url)
+    reader, writer = await asyncio.open_connection(uri.hostname, uri.port)
+    client = RtspClient(reader, writer, url)
+
+    _session = await client.send_request("SETUP", setup)
+    session["Session"] = play["Session"] = get_parameter["Session"] = _session
+
+    if not await client.send_request("PLAY", play):
+        return
+
+    return VodData(client, get_parameter, session)
+
+
+async def vod_task(vod_data):
     while True:
-        if __name__ == "__main__" and args.write_to_file:
+        if __name__ == "__main__" and _args.write_to_file:
             done, pending = await asyncio.wait({_ffmpeg_t}, timeout=30)
             if _ffmpeg_t in done:
                 break
@@ -422,11 +492,21 @@ async def vod_task(args, vod_data):
             break
 
 
-async def VodLoop(args, vod_data=None):
-    global _vod_t
+async def VodLoop(args=None, vod_client=None, failed=False):
+    global _SESSION, _SESSION_CLOUD, _args, _vod_t
+
+    log_id = f"[{_args.channel}] [{_args.broadcast}]"
 
     if __name__ == "__main__":
-        global _SESSION_CLOUD
+        if _args.write_to_file:
+            if U7D_PARENT and await ongoing_vods(_args.channel, _args.broadcast):
+                log.error(f"Recording already ongoing: {log_id}")
+                return
+
+            _SESSION = aiohttp.ClientSession(
+                connector=aiohttp.TCPConnector(keepalive_timeout=YEAR_SECONDS),
+                json_serialize=ujson.dumps,
+            )
 
         _SESSION_CLOUD = aiohttp.ClientSession(
             connector=aiohttp.TCPConnector(
@@ -437,56 +517,43 @@ async def VodLoop(args, vod_data=None):
             json_serialize=ujson.dumps,
         )
 
-        vod_data = await VodSetup(args, _SESSION_CLOUD)
-        if not isinstance(vod_data, VodData):
+        async def _close_sessions():
+            if _args.write_to_file:
+                await _SESSION.close()
             await _SESSION_CLOUD.close()
+
+    else:
+        if not args or not vod_client:
             return
 
-        if args.write_to_file:
-            global _SESSION, _filename, _full_title, _log_suffix, _path
-
-            _SESSION = aiohttp.ClientSession(
-                connector=aiohttp.TCPConnector(keepalive_timeout=YEAR_SECONDS),
-                json_serialize=ujson.dumps,
-            )
-
-            if U7D_PARENT:
-                try:
-                    async with _SESSION.get(_epg_url, params=_epg_params) as resp:
-                        if resp.status != 200:
-                            raise ValueError()
-
-                        _, _path, _filename = (await resp.json()).values()
-                        opts = ["-metadata:s:v", f"title={os.path.basename(_filename)}"]
-
-                        if not os.path.exists(_path):
-                            log.debug(f"Creating recording subdir {_path}")
-                            os.makedirs(_path)
-
-                except (ClientOSError, ValueError):
-                    log.error(f"Program not found: [{_args.channel}] [{_args.broadcast}]")
-                    await _SESSION_CLOUD.close()
-                    await _SESSION.close()
-                    return
-
-            else:
-                opts = []
-
-            _full_title = _filename[len(RECORDINGS) + 1 :]
-            _log_suffix += f' "{_full_title}"'
-
-            await record_stream(opts)
-
-    elif not vod_data:
-        return
+        _args = args
+        _SESSION_CLOUD = vod_client
 
     try:
-        _vod_t = asyncio.create_task(vod_task(args, vod_data))
-        await _vod_t
+        vod_info = await vod_get_info()  # Get info about the request program from Movistar
+        log.debug(f"{log_id}: vod_info={vod_info}")
+    except Exception as ex:
+        if not failed:
+            log.warning(f"Could not get uri for {log_id} => {repr(ex)}")
+            return await VodLoop(args, vod_client, failed=True)
+        log.error(f"Could not get uri for {log_id} => {repr(ex)}")
+        return await _close_sessions() if __name__ == "__main__" else None
 
+    vod_data = await vod_setup(vod_info["url"])  # Start playing the stream
+    if not vod_data:
+        return await _close_sessions() if __name__ == "__main__" else None
+
+    if __name__ == "__main__":
+        if _args.write_to_file:
+            await record_stream(await vod_recording_setup(vod_info))
+        else:
+            log.info(f'The VOD stream can be accesed at: "{_vod}"')
+
+    try:
+        _vod_t = asyncio.create_task(vod_task(vod_data))
+        await _vod_t
     except CancelledError:
         pass
-
     finally:
         try:
             # This is a crucial step or vod will be consuming bandwith for up to another 60s
@@ -496,8 +563,7 @@ async def VodLoop(args, vod_data=None):
             vod_data.client.close_connection()
 
             if __name__ == "__main__":
-                if args.write_to_file:
-
+                if _args.write_to_file:
                     if _ffmpeg_pp_t:
                         try:
                             await _ffmpeg_pp_t
@@ -514,95 +580,8 @@ async def VodLoop(args, vod_data=None):
                         await _ffmpeg_p.wait()
                         await asyncio.shield(postprocess_cleanup())
 
-                    await _SESSION.close()
-                await _SESSION_CLOUD.close()
+                await _close_sessions()
                 log.debug(f"Loop ended: {_log_suffix}")
-
-
-async def VodSetup(args, vod_client, failed=False):
-    log_prefix = f"{('[' + args.client_ip + '] ') if args.client_ip else ''}"
-    log_suffix = f"[{args.channel}] [{args.broadcast}]"
-
-    if __name__ == "__main__" and args.write_to_file:
-        global _epg_params, _epg_url
-
-        _epg_params = {"cloud": 1} if args.cloud else {}
-        _epg_url = f"{EPG_URL}/program_name/{args.channel}/{args.broadcast}"
-
-        if U7D_PARENT and await ongoing_vods(args.channel, args.broadcast):
-            log.error(f"{log_prefix}Recording already ongoing: {log_suffix}")
-            return
-
-    client = None
-    headers = {"CSeq": "", "User-Agent": "MICA-IP-STB"}
-
-    setup = session = play = get_parameter = headers.copy()  # describe
-    setup["Transport"] = f"MP2T/H2221/UDP;unicast;client_port={args.client_port}"
-
-    play["Range"] = f"npt={args.start:.3f}-end"
-    play.update({"Scale": "1.000", "x-playNow": "", "x-noFlush": ""})
-
-    try:
-        vod_info = await vod_get_info(args.channel, args.broadcast, args.cloud, vod_client)
-        log.debug(f"{log_prefix}{log_suffix}: vod_info={vod_info}")
-        if __name__ == "__main__" and args.write_to_file:
-            global _args, _filename, _log_suffix, _mtime
-
-            if not U7D_PARENT:
-                from mu7d import get_safe_filename
-
-                _filename = os.path.join(
-                    RECORDINGS, f"{vod_info['channelName']} - {get_safe_filename(vod_info['name'])}"
-                )
-
-            if not _args.time:
-                _args.time = vod_info["duration"]
-            else:
-                _args.time = min(
-                    vod_info["duration"],
-                    _args.time + 600
-                    if _args.time > 7200
-                    else _args.time + 300
-                    if _args.time > 1800
-                    else _args.time + 60
-                    if _args.time > 900
-                    else _args.time
-                    if _args.time > 60
-                    else 60,
-                )
-            _mtime = vod_info["beginTime"] / 1000 + _args.start
-            _log_suffix = "[%ds] - [%s] [%s] [%s] [%d]" % (
-                _args.time,
-                vod_info["channelName"],
-                args.channel,
-                args.broadcast,
-                vod_info["beginTime"] / 1000,
-            )
-        uri = urllib.parse.urlparse(vod_info["url"])
-    except Exception as ex:
-        if not failed:
-            log.warning(f"{log_prefix}Could not get uri for {log_suffix} => {repr(ex)}")
-            return await VodSetup(args, vod_client, failed=True)
-        else:
-            log.error(f"{log_prefix}Could not get uri for {log_suffix} => {repr(ex)}")
-            return
-
-    reader, writer = await asyncio.open_connection(uri.hostname, uri.port)
-    client = RtspClient(reader, writer, vod_info["url"])
-
-    _session = await client.send_request("SETUP", setup)
-    if not _session:
-        return
-
-    session["Session"] = play["Session"] = get_parameter["Session"] = _session
-
-    if not await client.send_request("PLAY", play):
-        return
-
-    if __name__ == "__main__" and not args.write_to_file:
-        log.info(f'The VOD stream can be accesed at: "{_vod}"')
-
-    return VodData(client, get_parameter, session)
 
 
 if __name__ == "__main__":
@@ -627,12 +606,13 @@ if __name__ == "__main__":
                     else:
                         _ffmpeg_pp_t.cancel()
             elif _vod_t:
+                log.info("Cancelling _vod_t")
                 _vod_t.cancel()
 
         [signal.signal(sig, cleanup_handler) for sig in (signal.SIGHUP, signal.SIGINT, signal.SIGTERM)]
 
     _SESSION = _SESSION_CLOUD = None
-    _args = _epg_params = _epg_url = _filename = _full_title = _log_suffix = _mtime = _path = _vod = None
+    _archive_params = _archive_url = _args = _filename = _log_suffix = _mtime = _path = _vod = None
     _ffmpeg_p = _ffmpeg_pp_p = _ffmpeg_pp_t = _ffmpeg_r = _ffmpeg_t = _pp_lock = _vod_t = None
 
     _conf = mu7d_config()
@@ -640,10 +620,14 @@ if __name__ == "__main__":
     parser = argparse.ArgumentParser(f"Movistar U7D - VOD v{_version}")
     parser.add_argument("channel", help="channel id")
     parser.add_argument("broadcast", help="broadcast id")
+
     parser.add_argument("--client_ip", "-c", help="client ip address")
+    parser.add_argument("--filename", "-x", help="output bare filename, relative to RECORDINGS path")
+
     parser.add_argument("--client_port", "-p", help="client udp port", type=int)
     parser.add_argument("--start", "-s", help="stream start offset", type=int, default=0)
     parser.add_argument("--time", "-t", help="recording time in seconds", type=int)
+
     parser.add_argument("--cloud", help="the event is from a cloud recording", action="store_true")
     parser.add_argument("--debug", help="enable debug logs", action="store_true")
     parser.add_argument("--mp4", help="output split mp4 and vobsub files", action="store_true")
@@ -694,7 +678,7 @@ if __name__ == "__main__":
     U7D_PARENT = os.getenv("U7D_PARENT")
 
     try:
-        asyncio.run(VodLoop(_args))
+        asyncio.run(VodLoop())
     except KeyboardInterrupt:
         sys.exit(1)
 

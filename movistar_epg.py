@@ -280,7 +280,7 @@ def get_program_id(channel_id, url=None, cloud=False):
     }
 
 
-def get_recording_path(channel_id, timestamp, cloud=False):
+def get_recording_name(channel_id, timestamp, cloud=False):
     guide = _CLOUD if cloud else _EPGDATA
     daily_news_program = (
         not guide[channel_id][timestamp]["is_serie"] and guide[channel_id][timestamp]["genre"] == "06"
@@ -300,24 +300,11 @@ def get_recording_path(channel_id, timestamp, cloud=False):
     if daily_news_program:
         filename += f' - {datetime.fromtimestamp(timestamp).strftime("%Y%m%d")}'
 
-    return (path, filename)
+    return filename[len(RECORDINGS) + 1 :]
 
 
-@app.get("/channels/")
-async def handle_channels(request):
-    return response.json(_CHANNELS)
-
-
-@app.get("/program_id/<channel_id:int>/<url>")
-async def handle_program_id(request, channel_id, url):
-    try:
-        return response.json(get_program_id(channel_id, url, request.args.get("cloud") == "1"))
-    except (AttributeError, KeyError):
-        raise exceptions.NotFound(f"Requested URL {request.raw_url.decode()} not found")
-
-
-@app.route("/program_name/<channel_id:int>/<program_id:int>", methods=["GET", "OPTIONS", "PUT"])
-async def handle_program_name(request, channel_id, program_id, cloud=False, missing=0):
+@app.route("/archive/<channel_id:int>/<program_id:int>", methods=["OPTIONS", "PUT"])
+async def handle_archive(request, channel_id, program_id, cloud=False, missing=0):
     global _RECORDINGS, _t_timers
 
     cloud = request.args.get("cloud") == "1" if request else cloud
@@ -327,28 +314,17 @@ async def handle_program_name(request, channel_id, program_id, cloud=False, miss
     except TypeError:
         raise exceptions.NotFound(f"Requested URL {request.raw_url.decode()} not found")
 
-    path, filename = get_recording_path(channel_id, timestamp, cloud)
-
-    if request and request.method == "GET":
-        return response.json(
-            {
-                "status": "OK",
-                "path": path,
-                "filename": filename,
-            },
-            ensure_ascii=False,
-        )
+    filename = get_recording_name(channel_id, timestamp, cloud)
 
     if not RECORDINGS:
         return response.json({"status": "RECORDINGS not configured"}, 404)
 
-    fname = filename[len(RECORDINGS) + 1 :]
     log_suffix = '[%s] [%s] [%s] [%s] "%s"' % (
         _CHANNELS[channel_id]["name"],
         channel_id,
         program_id,
         timestamp,
-        fname,
+        filename,
     )
 
     if not _t_timers or _t_timers.done():
@@ -381,33 +357,35 @@ async def handle_program_name(request, channel_id, program_id, cloud=False, miss
         log.debug(f"Recording OK: {log_suffix}")
         return response.json({"status": "Recording OK"}, status=200)
 
-    log.debug(f"Checking for {fname}")
-    if does_recording_exist(fname):
+    log.debug(f"Checking for {filename}")
+    if does_recording_exist(filename):
         async with recordings_lock:
             if channel_id not in _RECORDINGS:
                 _RECORDINGS[channel_id] = {}
-            _RECORDINGS[channel_id][timestamp] = {"filename": fname}
+            _RECORDINGS[channel_id][timestamp] = {"filename": filename}
 
         app.add_task(update_recordings(channel_id), name="_t_recs")
 
-        log.info(f"Recording ARCHIVED: {log_suffix}")
-        return response.json(
-            {
-                "status": "Recorded OK",
-                "full_title": _epg["full_title"],
-            },
-            ensure_ascii=False,
-        )
+        msg = f"Recording ARCHIVED: {log_suffix}"
+        log.info(msg)
+        return response.json({"status": msg}, ensure_ascii=False)
     else:
-        log.error(f"Recording NOT ARCHIVED: {log_suffix}")
-        return response.json(
-            {
-                "status": "Recording Failed",
-                "full_title": _epg["full_title"],
-            },
-            ensure_ascii=False,
-            status=203,
-        )
+        msg = f"Recording NOT ARCHIVED: {log_suffix}"
+        log.error(msg)
+        return response.json({"status": msg}, ensure_ascii=False, status=203)
+
+
+@app.get("/channels/")
+async def handle_channels(request):
+    return response.json(_CHANNELS)
+
+
+@app.get("/program_id/<channel_id:int>/<url>")
+async def handle_program_id(request, channel_id, url):
+    try:
+        return response.json(get_program_id(channel_id, url, request.args.get("cloud") == "1"))
+    except (AttributeError, KeyError):
+        raise exceptions.NotFound(f"Requested URL {request.raw_url.decode()} not found")
 
 
 @app.post("/prom_event/add")
@@ -611,7 +589,9 @@ async def reap_vod_child(process):
 
 
 async def record_program(channel_id, program_id, offset=0, record_time=0, cloud=False, mp4=False, vo=False):
-    if await ongoing_vods(channel_id, program_id, _rec=False):
+    timestamp = get_epg(channel_id, program_id, cloud)[1]
+    filename = get_recording_name(channel_id, timestamp, cloud)
+    if await ongoing_vods(channel_id, program_id, filename, _rec=False):
         msg = f"[{channel_id}] [{program_id}]: Recording already ongoing"
         log.warning(msg)
         return msg
@@ -621,16 +601,12 @@ async def record_program(channel_id, program_id, offset=0, record_time=0, cloud=
     port = find_free_port(_IPTV)
     cmd = [sys.executable] if EXT == ".py" else []
     cmd += [f"movistar_vod{EXT}", str(channel_id), str(program_id), "-p", str(port), "-w"]
-    if offset:
-        cmd += ["-s", str(offset)]
-    if record_time:
-        cmd += ["-t", str(record_time)]
-    if cloud:
-        cmd += ["--cloud"]
-    if mp4:
-        cmd += ["--mp4"]
-    if vo:
-        cmd += ["--vo"]
+    cmd += ["-x", filename]
+    cmd += ["-s", str(offset)] if offset else []
+    cmd += ["-t", str(record_time)] if record_time else []
+    cmd += ["--cloud"] if cloud else []
+    cmd += ["--mp4"] if mp4 else []
+    cmd += ["--vo"] if vo else []
 
     log.debug('Launching: "%s"' % " ".join(cmd))
     p = await asyncio.create_subprocess_exec(*cmd)
@@ -656,7 +632,7 @@ async def recording_cleanup(process, retcode):
             if re.match(f"ffmpeg .+ -i udp://@{_IPTV}:{port}", name):
                 log.debug(f'Recording Cleanup: [{channel_id}] [{program_id}] -> Killing child: "{name}"')
                 proc.terminate()
-        await handle_program_name(None, channel_id, program_id, cloud, missing=randint(1, 9999))  # nosec B311
+        await handle_archive(None, channel_id, program_id, cloud, missing=randint(1, 9999))  # nosec B311
 
     log.debug(f"Recording Cleanup: [{channel_id}] [{program_id}] -> {process}:{retcode} DONE")
 
@@ -770,15 +746,13 @@ async def timers_check(delay=0):
     deflang = _timers["default_language"] if "default_language" in _timers else ""
     sync_cloud = _timers["sync_cloud"] if "sync_cloud" in _timers else False
 
-    async def _record(channel_id, channel_name, timestamp, cloud, vo, timer_match=None):
-        filename = get_recording_path(channel_id, timestamp, cloud)[1]
-        fname, name = filename[len(RECORDINGS) + 1 :], os.path.basename(filename)
+    async def _record(channel_id, channel_name, filename, timestamp, cloud, vo, timer_match=None):
         guide = _CLOUD if cloud else _EPGDATA
         duration, pid, title = [guide[channel_id][timestamp][t] for t in ["duration", "pid", "full_title"]]
         if not cloud and timestamp + duration >= _last_epg:
             return True
         async with recordings_lock:
-            if channel_id in _RECORDINGS and name in str(_RECORDINGS[channel_id]):
+            if channel_id in _RECORDINGS and filename in str(_RECORDINGS[channel_id]):
                 return True
         if cloud or re.match(timer_match, title):
             if await record_program(
@@ -788,7 +762,7 @@ async def timers_check(delay=0):
 
             log.info(
                 f"Found {'Cloud Recording' if cloud else 'MATCH'}: "
-                f'[{channel_name}] [{channel_id}] [{pid}] [{timestamp}] "{fname}"'
+                f'[{channel_name}] [{channel_id}] [{pid}] [{timestamp}] "{filename}"'
                 f"{' [VO]' if vo else ''}"
             )
             return False  # recording was launched
@@ -796,7 +770,7 @@ async def timers_check(delay=0):
 
     async with recordings_lock:
         recs = _RECORDINGS.copy()
-    ongoing = str(await ongoing_vods(_rec=False))  # we want to check against all ongoing vods, also in pp
+    ongoing = await ongoing_vods(_rec=False)  # we want to check against all ongoing vods, also in pp
 
     for str_channel_id in _timers["match"] if "match" in _timers else {}:
         channel_id = int(str_channel_id)
@@ -844,7 +818,10 @@ async def timers_check(delay=0):
             ]:
                 if f" {channel_id} {_EPGDATA[channel_id][timestamp]['pid']} " in ongoing:
                     continue
-                if await _record(channel_id, channel_name, timestamp, False, vo, timer_match):
+                filename = get_recording_name(channel_id, timestamp)
+                if filename in ongoing:
+                    continue
+                if await _record(channel_id, channel_name, filename, timestamp, False, vo, timer_match):
                     continue
                 else:
                     await asyncio.sleep(2)
@@ -861,7 +838,10 @@ async def timers_check(delay=0):
             ]:
                 if f" {channel_id} {_CLOUD[channel_id][timestamp]['pid']} " in ongoing:
                     continue
-                if await _record(channel_id, _CHANNELS[channel_id]["name"], timestamp, True, vo):
+                filename = get_recording_name(channel_id, timestamp, cloud=True)
+                if filename in ongoing:
+                    continue
+                if await _record(channel_id, _CHANNELS[channel_id]["name"], filename, timestamp, True, vo):
                     continue
                 else:
                     await asyncio.sleep(2)

@@ -28,7 +28,7 @@ from sanic.touchup.meta import TouchUpMeta
 
 from mu7d import MIME_M3U, MIME_TS, MIME_WEBM, EPG_URL, IPTV_DNS, UA, URL_COVER, URL_LOGO, WIN32, YEAR_SECONDS
 from mu7d import find_free_port, get_iptv_ip, mu7d_config, ongoing_vods, _version
-from movistar_vod import VodLoop, VodSetup
+from movistar_vod import VodLoop
 
 
 LOG_SETTINGS = LOGGING_CONFIG_DEFAULTS
@@ -232,14 +232,9 @@ async def handle_flussonic(request, url, channel_id=None, channel_name=None, clo
         raise exceptions.ServiceUnavailable("Network Saturated")
 
     client_port = find_free_port(_IPTV)
-    args = VodArgs(channel_id, program_id, _IPTV, request.ip, client_port, offset, cloud)
+    args = VodArgs(channel_id, program_id, request.ip, client_port, offset, cloud)
+    vod = app.add_task(VodLoop(args, app.ctx.vod_client))
 
-    vod_data = await VodSetup(args, app.ctx.vod_client)
-    if not vod_data:
-        log.error(f"NOT_AVAILABLE: [{channel}] [{channel_id}] [{start}]")
-        raise exceptions.NotFound(f"Requested URL {_raw_url} not found")
-
-    vod = app.add_task(VodLoop(args, vod_data))
     with closing(await asyncio_dgram.bind((_IPTV, client_port))) as stream:
         _response = await request.respond(content_type=MIME_TS)
         await _response.send((await stream.recv())[0])
