@@ -212,29 +212,30 @@ def mu7d_config():
     return conf
 
 
-async def ongoing_vods(channel_id="", program_id="", _fast=False, _rec=True):
+async def ongoing_vods(channel_id="", program_id="", filename="", _fast=False, _rec=True):
     parent = os.getenv("U7D_PARENT")
     family = psutil.Process(int(parent)).children(recursive=True) if parent else psutil.process_iter()
 
     if _fast:  # For U7D we just want to know if there are recordings in place
         return "ffmpeg" in str(family)
 
-    EXT = "" if not WIN32 else (".exe" if getattr(sys, "frozen", False) else ".py")
-    cmd = f"{sys.executable} " if (WIN32 and EXT == ".py") else ""
-    cmd += f"movistar_vod{EXT}"
-    cmd += f" {channel_id}" if channel_id else ""
-    cmd += f" {program_id}" if program_id else ""
+    regex = f"{'.*' if WIN32 else ''}movistar_vod"
+    regex += "" if not WIN32 else ".exe" if getattr(sys, "frozen", False) else ".py"
+    regex += "(" if program_id or filename else ""
+    regex += f" {channel_id} {program_id}" if program_id else ""
+    regex += f"|.+{os.path.basename(filename)}" if filename else ""
+    regex += ")" if program_id or filename else ""
 
-    vods = list(filter(None, [proc_grep(proc, cmd) for proc in family]))
+    vods = list(filter(None, [proc_grep(proc, regex) for proc in family]))
     if _rec:
         return [proc for proc in vods if "ffmpeg" in str(proc.children())]
     else:
-        return vods if (not WIN32 or program_id) else [" ".join(proc.cmdline()) for proc in vods]
+        return "|".join([" ".join(proc.cmdline()).strip() for proc in vods])
 
 
-def proc_grep(proc, string):
+def proc_grep(proc, regex):
     try:
-        return proc if string in " ".join(proc.cmdline()) else None
+        return proc if re.match(regex, " ".join(proc.cmdline())) else None
     except (psutil.AccessDenied, psutil.NoSuchProcess, psutil.PermissionError):
         pass
 
