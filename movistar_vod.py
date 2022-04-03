@@ -323,9 +323,8 @@ async def save_metadata(extra=False):
         else:
             log.debug(f"Getting extended info: {_log_suffix}")
 
-            async with _SESSION_CLOUD.get(
-                f"{URL_MVTV}?action=epgInfov2&productID={_args.broadcast}&channelID={_args.channel}&extra=1"
-            ) as resp:
+            params = {"action": "epgInfov2", "productID": _args.broadcast, "channelID": _args.channel}
+            async with _SESSION_CLOUD.get(URL_MVTV, params=params) as resp:
                 metadata = (await resp.json())["resultData"]
 
             async with aiofiles.open(cache_metadata, "w", encoding="utf8") as f:
@@ -403,10 +402,10 @@ async def save_metadata(extra=False):
 
 
 async def vod_get_info():
-    params = "action=getRecordingData" if _args.cloud else "action=getCatchUpUrl"
-    params += f"&extInfoID={_args.broadcast}&channelID={_args.channel}&mode=1"
+    params = {"action": "getRecordingData" if _args.cloud else "getCatchUpUrl"}
+    params.update({"extInfoID": _args.broadcast, "channelID": _args.channel, "mode": 1})
 
-    async with _SESSION_CLOUD.get(f"{URL_MVTV}?{params}") as r:
+    async with _SESSION_CLOUD.get(URL_MVTV, params=params) as r:
         return (await r.json())["resultData"]
 
 

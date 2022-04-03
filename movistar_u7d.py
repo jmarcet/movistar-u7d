@@ -217,7 +217,7 @@ async def handle_flussonic(request, url, channel_id=None, channel_name=None, clo
 
     try:
         async with _SESSION.get(
-            f"{EPG_URL}/program_id/{channel_id}/{url}" + ("?cloud=1" if cloud else "")
+            f"{EPG_URL}/program_id/{channel_id}/{url}", params={"cloud": 1} if cloud else {}
         ) as r:
             channel, program_id, start, duration, offset = (await r.json()).values()
     except (AttributeError, KeyError, ValueError):

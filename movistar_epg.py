@@ -868,9 +868,8 @@ async def update_cloud():
             os.remove(cloud_data)
 
     try:
-        async with _SESSION_CLOUD.get(
-            f"{URL_MVTV}?action=recordingList&mode=0&state=2&firstItem=0&numItems=999"
-        ) as r:
+        params = {"action": "recordingList", "mode": 0, "state": 2, "firstItem": 0, "numItems": 999}
+        async with _SESSION_CLOUD.get(URL_MVTV, params=params) as r:
             cloud_recordings = (await r.json())["resultData"]["result"]
     except (ClientOSError, KeyError):
         cloud_recordings = None
@@ -918,14 +917,12 @@ async def update_cloud():
             else:
                 pid = _event["productID"]
 
-                async with _SESSION_CLOUD.get(
-                    f"{URL_MVTV}?action=epgInfov2&" f"productID={pid}&channelID={channel_id}"
-                ) as r:
+                params = {"action": "epgInfov2", "productID": pid, "channelID": channel_id}
+                async with _SESSION_CLOUD.get(URL_MVTV, params=params) as r:
                     _data = (await r.json())["resultData"]
                     year = _data["productionDate"] if "productionDate" in _data else None
-                async with _SESSION_CLOUD.get(
-                    f"{URL_MVTV}?action=getRecordingData&" f"extInfoID={pid}&channelID={channel_id}&mode=1"
-                ) as r:
+                params = {"action": "getRecordingData", "extInfoID": pid, "channelID": channel_id, "mode": 1}
+                async with _SESSION_CLOUD.get(URL_MVTV, params=params) as r:
                     data = (await r.json())["resultData"]
 
                 if not data:  # There can be events with no data sometimes
