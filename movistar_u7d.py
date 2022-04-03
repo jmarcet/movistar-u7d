@@ -374,13 +374,20 @@ async def handle_prometheus(request):
 
 
 @app.get("/record/<channel_id:int>/<url>")
-async def handle_record_program(request, channel_id, url):
+@app.get(r"/record/<channel_name:([A-Za-z1-9]+)>/<url>")
+async def handle_record_program(request, url, channel_id=None, channel_name=None):
     if not url:
         log.warning("Cannot record live channels! Use wget for that.")
         return response.empty(404)
 
+    if channel_name:
+        try:
+            channel_id = get_channel_id(channel_name)
+        except IndexError:
+            raise exceptions.NotFound(f"Requested URL {request.raw_url.decode()} not found")
+
     try:
-        async with _SESSION.get(f"{EPG_URL}{request.raw_url.decode()}") as r:
+        async with _SESSION.get(f"{EPG_URL}/record/{channel_id}/{url}", params=request.args) as r:
             return response.json(await r.json())
     except ClientOSError:
         raise exceptions.ServiceUnavailable("Not available")
