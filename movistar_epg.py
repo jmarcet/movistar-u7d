@@ -670,6 +670,7 @@ async def reload_epg():
         and os.path.exists(epg_data)
         and os.path.exists(epg_metadata)
         and os.path.exists(GUIDE)
+        and os.path.exists(GUIDE + ".gz")
     ):
         log.warning("Missing channel list! Need to download it. Please be patient...")
         cmd = [sys.executable] if EXT == ".py" else []
