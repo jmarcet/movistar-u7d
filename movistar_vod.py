@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 #
-# Based on MovistarU7D by XXLuigiMario:
+# Started from MovistarU7D by XXLuigiMario:
 # Source: https://github.com/XXLuigiMario/MovistarU7D
 
 import aiofiles
@@ -29,14 +29,12 @@ from mu7d import IPTV_DNS, EPG_URL, UA, URL_COVER, URL_MVTV, WIN32, YEAR_SECONDS
 from mu7d import find_free_port, get_iptv_ip, mu7d_config, ongoing_vods, _version
 
 
-VodData = namedtuple("VodData", ["client", "get_parameter", "session"])
+VodData = namedtuple("VodData", ["client", "session"])
 
 
 class RtspClient:
     def __init__(self, reader, writer, url):
-        self.reader = reader
-        self.writer = writer
-        self.url = url
+        self.reader, self.writer, self.url = reader, writer, url
         self.cseq = 1
 
     def close_connection(self):
@@ -44,9 +42,8 @@ class RtspClient:
 
     async def send_request(self, method, headers):
         headers["CSeq"] = self.cseq
-        ser_headers = self.serialize_headers(headers)
+        req = f"{method} {self.url} RTSP/1.0\r\n{self.serialize_headers(headers)}\r\n\r\n"
 
-        req = f"{method} {self.url} RTSP/1.0\r\n{ser_headers}\r\n\r\n"
         self.writer.write(req.encode())
         resp = (await self.reader.read(4096)).decode().splitlines()
 
@@ -55,7 +52,7 @@ class RtspClient:
 
         self.cseq += 1
 
-        if not (resp and resp[0].endswith("200 OK")):
+        if not resp or not resp[0].endswith("200 OK"):
             return
 
         if method == "SETUP":
@@ -452,26 +449,22 @@ async def vod_recording_setup(vod_info):
 
 
 async def vod_setup(url):
-    client = None
-    headers = {"CSeq": "", "User-Agent": "MICA-IP-STB"}
-
-    setup = session = play = get_parameter = headers.copy()  # describe
-    setup["Transport"] = f"MP2T/H2221/UDP;unicast;client_port={_args.client_port}"
-
-    play["Range"] = f"npt={_args.start:.3f}-end"
-    play.update({"Scale": "1.000", "x-playNow": "", "x-noFlush": ""})
-
     uri = urllib.parse.urlparse(url)
     reader, writer = await asyncio.open_connection(uri.hostname, uri.port)
     client = RtspClient(reader, writer, url)
 
-    _session = await client.send_request("SETUP", setup)
-    session["Session"] = play["Session"] = get_parameter["Session"] = _session
+    header = {"User-Agent": "MICA-IP-STB"}
+    setup = {**header, "CSeq": "", "Transport": f"MP2T/H2221/UDP;unicast;client_port={_args.client_port}"}
+
+    session = {**header, "Session": await client.send_request("SETUP", setup), "CSeq": ""}
+
+    play = session.copy()
+    play.update({"Range": f"npt={_args.start:.3f}-end", "Scale": "1.000", "x-playNow": "", "x-noFlush": ""})
 
     if not await client.send_request("PLAY", play):
         return
 
-    return VodData(client, get_parameter, session)
+    return VodData(client, session)
 
 
 async def vod_task(vod_data):
@@ -482,7 +475,7 @@ async def vod_task(vod_data):
                 break
         else:
             await asyncio.sleep(30)
-        if not (await vod_data.client.send_request("GET_PARAMETER", vod_data.get_parameter)):
+        if not (await vod_data.client.send_request("GET_PARAMETER", vod_data.session)):
             break
 
 
