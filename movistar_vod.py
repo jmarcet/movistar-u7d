@@ -412,11 +412,6 @@ async def vod_get_info():
 async def vod_recording_setup(vod_info):
     global _archive_params, _archive_url, _filename, _log_suffix, _mtime, _path
 
-    if not _args.filename:
-        from mu7d import get_safe_filename
-
-        _args.filename = f"{vod_info['channelName']} - {get_safe_filename(vod_info['name'])}"
-
     if not _args.time:
         _args.time = vod_info["duration"]
     else:
@@ -491,17 +486,11 @@ async def vod_task(vod_data):
             break
 
 
-async def VodLoop(args=None, vod_client=None, failed=False):
+async def VodLoop(args=None, vod_client=None):
     global _SESSION, _SESSION_CLOUD, _args, _vod_t
-
-    log_id = f"[{_args.channel}] [{_args.broadcast}]"
 
     if __name__ == "__main__":
         if _args.write_to_file:
-            if U7D_PARENT and await ongoing_vods(_args.channel, _args.broadcast):
-                log.error(f"Recording already ongoing: {log_id}")
-                return
-
             _SESSION = aiohttp.ClientSession(
                 connector=aiohttp.TCPConnector(keepalive_timeout=YEAR_SECONDS),
                 json_serialize=ujson.dumps,
@@ -528,34 +517,62 @@ async def VodLoop(args=None, vod_client=None, failed=False):
         _args = args
         _SESSION_CLOUD = vod_client
 
-    try:
-        vod_info = await vod_get_info()  # Get info about the request program from Movistar
-        log.debug(f"{log_id}: vod_info={vod_info}")
-    except Exception as ex:
-        if not failed:
-            log.warning(f"Could not get uri for {log_id} => {repr(ex)}")
-            return await VodLoop(args, vod_client, failed=True)
-        log.error(f"Could not get uri for {log_id} => {repr(ex)}")
-        return await _close_sessions() if __name__ == "__main__" else None
+    log_id = f"[{_args.channel}] [{_args.broadcast}]"
 
-    vod_data = await vod_setup(vod_info["url"])  # Start playing the stream
+    # Get info about the requested program from Movistar. Attempt it twice.
+    try:
+        vod_info = await vod_get_info()
+        log.debug(f"{log_id}: vod_info={vod_info}")
+        if not vod_info:
+            raise ValueError("Not found")
+    except Exception as ex:
+        log.warning(f"Could not get uri for {log_id} => {repr(ex)}")
+        try:
+            vod_info = await vod_get_info()
+            if not vod_info:
+                raise ValueError("Not found")
+        except Exception as ex:
+            log.error(f"Could not get uri for {log_id} => {repr(ex)}")
+            return await _close_sessions() if __name__ == "__main__" else None
+
+    if __name__ == "__main__" and _args.write_to_file:
+        if not _args.filename:
+            from mu7d import get_safe_filename
+
+            _args.filename = f"{vod_info['channelName']} - {get_safe_filename(vod_info['name'])}"
+
+        # Make sure there is no other recording writing to the same file
+        ongoing = await ongoing_vods(filename=_args.filename)
+        if ongoing and not U7D_PARENT or len(ongoing) > 1:
+            log.error(f"Recording already ongoing: {ongoing} {log_id}")
+            return await _close_sessions()
+
+    # Start playing the VOD stream
+    vod_data = await vod_setup(vod_info["url"])
     if not vod_data:
         return await _close_sessions() if __name__ == "__main__" else None
 
-    if __name__ == "__main__":
-        if _args.write_to_file:
-            await record_stream(await vod_recording_setup(vod_info))
-        else:
-            log.info(f'The VOD stream can be accesed at: "{_vod}"')
-
+    # Start the RTSP keep alive loop and the recording if requested
     try:
+        if __name__ == "__main__":
+            if not WIN32:
+                import signal
+
+                [signal.signal(s, cleanup_handler) for s in (signal.SIGHUP, signal.SIGINT, signal.SIGTERM)]
+
+            if _args.write_to_file:
+                await record_stream(await vod_recording_setup(vod_info))
+            else:
+                log.info(f'The VOD stream can be accesed at: "{_vod}"')
+
         _vod_t = asyncio.create_task(vod_task(vod_data))
         await _vod_t
     except CancelledError:
         pass
+
+    # Close the RTSP session, reducing bandwith, and do the cleanups
     finally:
         try:
-            # This is a crucial step or vod will be consuming bandwith for up to another 60s
             await asyncio.shield(vod_data.client.send_request("TEARDOWN", vod_data.session))
 
         finally:
@@ -585,7 +602,6 @@ async def VodLoop(args=None, vod_client=None, failed=False):
 
 if __name__ == "__main__":
     if not WIN32:
-        import signal
         from setproctitle import setproctitle
 
         setproctitle("movistar_vod %s" % " ".join(sys.argv[1:]))
@@ -607,8 +623,6 @@ if __name__ == "__main__":
             elif _vod_t:
                 log.info("Cancelling _vod_t")
                 _vod_t.cancel()
-
-        [signal.signal(sig, cleanup_handler) for sig in (signal.SIGHUP, signal.SIGINT, signal.SIGTERM)]
 
     _SESSION = _SESSION_CLOUD = None
     _archive_params = _archive_url = _args = _filename = _log_suffix = _mtime = _path = _vod = None

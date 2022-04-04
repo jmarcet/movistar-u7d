@@ -212,23 +212,28 @@ def mu7d_config():
     return conf
 
 
-async def ongoing_vods(channel_id="", program_id="", filename="", _fast=False, _rec=True):
+async def ongoing_vods(channel_id="", program_id="", filename="", _all=False, _fast=False):
     parent = os.getenv("U7D_PARENT")
     family = psutil.Process(int(parent)).children(recursive=True) if parent else psutil.process_iter()
 
     if _fast:  # For U7D we just want to know if there are recordings in place
         return "ffmpeg" in str(family)
 
-    regex = f"{'.*' if WIN32 else ''}movistar_vod"
-    regex += "" if not WIN32 else ".exe" if getattr(sys, "frozen", False) else ".py"
-    regex += "(" if program_id or filename else ""
+    EXT = "" if not WIN32 else ".exe" if getattr(sys, "frozen", False) else ".py"
+    regex = "%s" % sys.executable.replace("\\", "\\\\") if (WIN32 and EXT == ".py") else ""
+    regex += f"(ffmpeg|movistar_vod){EXT}" if filename and not program_id else f"movistar_vod{EXT}"
+    regex += "(" if program_id and filename else ""
     regex += f" {channel_id} {program_id}" if program_id else ""
-    regex += f"|.+{os.path.basename(filename)}" if filename else ""
-    regex += ")" if program_id or filename else ""
+    regex += "|" if program_id and filename else ""
+    regex += " .+%s" % filename.replace("\\", "\\\\") if filename else ""
+    regex += ")" if program_id and filename else ""
 
     vods = list(filter(None, [proc_grep(proc, regex) for proc in family]))
-    if _rec:
-        return [proc for proc in vods if "ffmpeg" in str(proc.children())]
+    if not _all:
+        if filename and not program_id:
+            return vods
+        else:
+            return [proc for proc in vods if "ffmpeg" in str(proc.children())]
     else:
         return "|".join([" ".join(proc.cmdline()).strip() for proc in vods])
 

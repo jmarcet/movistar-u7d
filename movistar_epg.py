@@ -591,8 +591,8 @@ async def reap_vod_child(process):
 async def record_program(channel_id, program_id, offset=0, record_time=0, cloud=False, mp4=False, vo=False):
     timestamp = get_epg(channel_id, program_id, cloud)[1]
     filename = get_recording_name(channel_id, timestamp, cloud)
-    if await ongoing_vods(channel_id, program_id, filename, _rec=False):
-        msg = f"[{channel_id}] [{program_id}]: Recording already ongoing"
+    if await ongoing_vods(channel_id, program_id, filename):
+        msg = f'Recording already ongoing: [{channel_id}] [{program_id}] "{filename}"'
         log.warning(msg)
         return msg
     elif _NETWORK_SATURATION:
@@ -770,7 +770,8 @@ async def timers_check(delay=0):
 
     async with recordings_lock:
         recs = _RECORDINGS.copy()
-    ongoing = await ongoing_vods(_rec=False)  # we want to check against all ongoing vods, also in pp
+    ongoing = await ongoing_vods(_all=True)  # we want to check against all ongoing vods, also in pp
+    log.debug(f"Ongoing VODs: [{ongoing}]")
 
     for str_channel_id in _timers["match"] if "match" in _timers else {}:
         channel_id = int(str_channel_id)
