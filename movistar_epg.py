@@ -825,7 +825,7 @@ async def timers_check(delay=0):
                 if await _record(channel_id, channel_name, filename, timestamp, False, vo, timer_match):
                     continue
                 else:
-                    await asyncio.sleep(2)
+                    await asyncio.sleep(2.5 if not WIN32 else 4)
                 nr_procs += 1
                 if nr_procs >= RECORDINGS_THREADS:
                     await log_network_saturated(nr_procs)
@@ -845,7 +845,7 @@ async def timers_check(delay=0):
                 if await _record(channel_id, _CHANNELS[channel_id]["name"], filename, timestamp, True, vo):
                     continue
                 else:
-                    await asyncio.sleep(2)
+                    await asyncio.sleep(2.5 if not WIN32 else 4)
                 nr_procs += 1
                 if nr_procs >= RECORDINGS_THREADS:
                     await log_network_saturated(nr_procs)
