@@ -103,7 +103,7 @@ async def postprocess(record_time=0):
             raise ValueError("Cancelled")
 
     async def step_1():
-        global _ffmpeg_pp_p
+        global _pp_p
 
         cmd = ["mkvmerge", "--abort-on-warnings", "-q", "-o", _filename + TMP_EXT2]
         img_mime, img_name = await save_metadata()
@@ -115,8 +115,8 @@ async def postprocess(record_time=0):
         cmd += [_filename + TMP_EXT]
 
         log.info(f"POSTPROCESS #1: Verifying recording: {_log_suffix}")
-        _ffmpeg_pp_p = await asyncio.create_subprocess_exec(*cmd, stdout=PIPE, stderr=STDOUT)
-        await _check_process(_ffmpeg_pp_p, "#1: Failed verifying recording")
+        _pp_p = await asyncio.create_subprocess_exec(*cmd, stdout=PIPE, stderr=STDOUT)
+        await _check_process(_pp_p, "#1: Failed verifying recording")
 
         if img_name:
             os.remove(img_name)
@@ -150,7 +150,7 @@ async def postprocess(record_time=0):
         return recording_data
 
     async def step_3(recording_data):
-        global _ffmpeg_pp_p, _log_suffix
+        global _log_suffix, _pp_p
 
         _cleanup(".nfo")  # These are created by Jellyfin so we want them recreated
         _cleanup(TMP_EXT)
@@ -163,8 +163,8 @@ async def postprocess(record_time=0):
             cmd += ["-f", "mp4", "-v", "panic", _filename + VID_EXT]
 
             log.info(f"POSTPROCESS #3: Coverting remuxed recording to mp4: {_log_suffix}")
-            _ffmpeg_pp_p = await asyncio.create_subprocess_exec(*cmd, stdout=PIPE, stderr=STDOUT)
-            await _check_process(_ffmpeg_pp_p, "#3: Failed converting remuxed recording to mp4")
+            _pp_p = await asyncio.create_subprocess_exec(*cmd, stdout=PIPE, stderr=STDOUT)
+            await _check_process(_pp_p, "#3: Failed converting remuxed recording to mp4")
 
             subs = [t for t in recording_data["tracks"] if t["type"] == "subtitles"]
             if subs:
@@ -175,8 +175,8 @@ async def postprocess(record_time=0):
                 cmd += ["-map", "0:%d" % track["id"], "-c:s", "dvbsub"]
                 cmd += ["-f", "mpegts", "-v", "panic", filesub]
 
-                _ffmpeg_pp_p = await asyncio.create_subprocess_exec(*cmd, stdout=PIPE, stderr=STDOUT)
-                await _check_process(_ffmpeg_pp_p, "#3B: Failed extracting subs from recording")
+                _pp_p = await asyncio.create_subprocess_exec(*cmd, stdout=PIPE, stderr=STDOUT)
+                await _check_process(_pp_p, "#3B: Failed extracting subs from recording")
 
             _cleanup(TMP_EXT2)
 
@@ -187,32 +187,32 @@ async def postprocess(record_time=0):
             log.info(f"POSTPROCESS #3: Recording renamed to mkv: {_log_suffix}")
 
     async def step_4():
-        global _ffmpeg_pp_p
+        global _pp_p
 
         cmd = ["comskip", f"--threads={COMSKIP}", "-d", "70", _filename + VID_EXT]
 
         log.info(f"POSTPROCESS #4: COMSKIP: Checking recording for commercials: {_log_suffix}")
         async with aiofiles.open(COMSKIP_LOG, "ab") as f:
             start = time.time()
-            _ffmpeg_pp_p = await asyncio.create_subprocess_exec(*cmd, stdout=f, stderr=f)
-            await _check_process(_ffmpeg_pp_p, "#4: COMSKIP: Failed checking recording for commercials")
+            _pp_p = await asyncio.create_subprocess_exec(*cmd, stdout=f, stderr=f)
+            await _check_process(_pp_p, "#4: COMSKIP: Failed checking recording for commercials")
             end = time.time()
 
         msg = (
             f"POSTPROCESS #4A: COMSKIP: Took {str(timedelta(seconds=round(end - start)))}s"
-            f" => [Commercials {'not found' if _ffmpeg_pp_p.returncode else 'found'}]: {_log_suffix}"
+            f" => [Commercials {'not found' if _pp_p.returncode else 'found'}]: {_log_suffix}"
         )
-        log.warning(msg) if _ffmpeg_pp_p.returncode else log.info(msg)
+        log.warning(msg) if _pp_p.returncode else log.info(msg)
 
-        if not _args.mp4 and _ffmpeg_pp_p.returncode == 0 and os.path.exists(_filename + CHP_EXT):
+        if not _args.mp4 and _pp_p.returncode == 0 and os.path.exists(_filename + CHP_EXT):
             cmd = ["mkvmerge", "-q", "-o", _filename + TMP_EXT2]
             cmd += ["--chapters", _filename + CHP_EXT, _filename + VID_EXT]
 
             log.info(f"POSTPROCESS #4B: COMSKIP: Merging mkv chapters: {_log_suffix}")
-            _ffmpeg_pp_p = await asyncio.create_subprocess_exec(*cmd, stdout=PIPE, stderr=STDOUT)
+            _pp_p = await asyncio.create_subprocess_exec(*cmd, stdout=PIPE, stderr=STDOUT)
 
             try:
-                await _check_process(_ffmpeg_pp_p, "#4B: COMSKIP: Failed merging mkv chapters")
+                await _check_process(_pp_p, "#4B: COMSKIP: Failed merging mkv chapters")
 
                 if WIN32 and os.path.exists(_filename + VID_EXT):
                     os.remove(_filename + VID_EXT)
@@ -265,7 +265,7 @@ async def postprocess_cleanup():
 
 
 async def reap_ffmpeg():
-    global _ffmpeg_pp_t, _ffmpeg_r, _log_suffix
+    global _ffmpeg_r, _log_suffix, _pp_t
     start = time.time()
 
     _ffmpeg_r = await _ffmpeg_p.wait()
@@ -275,7 +275,7 @@ async def reap_ffmpeg():
     log.info(f"Recording ENDED [ffmpeg={_ffmpeg_r}]: {_log_suffix}")
 
     if U7D_PARENT:
-        _ffmpeg_pp_t = asyncio.create_task(postprocess(record_time))
+        _pp_t = asyncio.create_task(postprocess(record_time))
 
     elif os.path.exists(_filename + TMP_EXT):
         if WIN32 and os.path.exists(_filename + VID_EXT):
@@ -581,9 +581,9 @@ async def VodLoop(args=None, vod_client=None):
 
             if __name__ == "__main__":
                 if _args.write_to_file:
-                    if _ffmpeg_pp_t:
+                    if _pp_t:
                         try:
-                            await _ffmpeg_pp_t
+                            await _pp_t
                             await asyncio.shield(recording_archive())
                         except (CancelledError, ValueError) as ex:
                             log.error(f"Recording FAILED: {_log_suffix} => {repr(ex)}")
@@ -609,25 +609,25 @@ if __name__ == "__main__":
 
         def cleanup_handler(signum, frame):
             if _args.write_to_file:
-                if _ffmpeg_p and _ffmpeg_p.returncode is None:
-                    if not U7D_PARENT:
-                        log.error(f"Recording CANCELLED: {_log_suffix}")
-                    _ffmpeg_p.terminate()
-                elif _ffmpeg_pp_t and not _ffmpeg_pp_t.done():
-                    if _ffmpeg_pp_p and _ffmpeg_pp_p.returncode is None:
+                if _pp_t and not _pp_t.done():
+                    if _pp_p and _pp_p.returncode is None:
                         try:
-                            psutil.Process(_ffmpeg_pp_p.pid).kill()
+                            psutil.Process(_pp_p.pid).kill()
                         except psutil.NoSuchProcess as ex:
                             log.debug(f"Could not kill {repr(ex)}: {_log_suffix}")
                     else:
-                        _ffmpeg_pp_t.cancel()
+                        _pp_t.cancel()
+                elif _ffmpeg_p and _ffmpeg_p.returncode is None:
+                    if not U7D_PARENT:
+                        log.error(f"Recording CANCELLED: {_log_suffix}")
+                    _ffmpeg_p.terminate()
             elif _vod_t:
                 log.info("Cancelling _vod_t")
                 _vod_t.cancel()
 
     _SESSION = _SESSION_CLOUD = None
     _archive_params = _archive_url = _args = _filename = _log_suffix = _mtime = _path = _vod = None
-    _ffmpeg_p = _ffmpeg_pp_p = _ffmpeg_pp_t = _ffmpeg_r = _ffmpeg_t = _pp_lock = _vod_t = None
+    _ffmpeg_p = _ffmpeg_r = _ffmpeg_t = _pp_lock = _pp_p = _pp_t = _vod_t = None
 
     _conf = mu7d_config()
 
@@ -696,9 +696,9 @@ if __name__ == "__main__":
     except KeyboardInterrupt:
         sys.exit(1)
 
-    if _ffmpeg_r or (_ffmpeg_pp_p and _ffmpeg_pp_p.returncode not in (0, 1)):
-        log.debug(f"Exiting {_ffmpeg_r if _ffmpeg_r else _ffmpeg_pp_p.returncode}")
-        sys.exit(_ffmpeg_r if _ffmpeg_r else _ffmpeg_pp_p.returncode)
+    if _ffmpeg_r or (_pp_p and _pp_p.returncode not in (0, 1)):
+        log.debug(f"Exiting {_ffmpeg_r if _ffmpeg_r else _pp_p.returncode}")
+        sys.exit(_ffmpeg_r if _ffmpeg_r else _pp_p.returncode)
     elif not _vod_t or _vod_t.cancelled():
         log.debug("Exiting 1")
         sys.exit(1)
