@@ -311,7 +311,7 @@ async def record_stream(opts):
 
 async def save_metadata(extra=False):
     log.debug(f"Saving metadata: {_log_suffix}")
-    cache_metadata = os.path.join(CACHE_DIR, f"{_args.broadcast}.json")
+    cache_metadata = os.path.join(CACHE_DIR, f"{_args.program}.json")
     try:
         if os.path.exists(cache_metadata):
             async with aiofiles.open(cache_metadata, encoding="utf8") as f:
@@ -320,7 +320,7 @@ async def save_metadata(extra=False):
         else:
             log.debug(f"Getting extended info: {_log_suffix}")
 
-            params = {"action": "epgInfov2", "productID": _args.broadcast, "channelID": _args.channel}
+            params = {"action": "epgInfov2", "productID": _args.program, "channelID": _args.channel}
             async with _SESSION_CLOUD.get(URL_MVTV, params=params) as resp:
                 metadata = (await resp.json())["resultData"]
 
@@ -400,7 +400,7 @@ async def save_metadata(extra=False):
 
 async def vod_get_info():
     params = {"action": "getRecordingData" if _args.cloud else "getCatchUpUrl"}
-    params.update({"extInfoID": _args.broadcast, "channelID": _args.channel, "mode": 1})
+    params.update({"extInfoID": _args.program, "channelID": _args.channel, "mode": 1})
 
     async with _SESSION_CLOUD.get(URL_MVTV, params=params) as r:
         return (await r.json())["resultData"]
@@ -429,12 +429,12 @@ async def vod_recording_setup(vod_info):
         _args.time,
         vod_info["channelName"],
         _args.channel,
-        _args.broadcast,
+        _args.program,
         vod_info["beginTime"] / 1000,
     )
 
     _archive_params = {"cloud": 1} if _args.cloud else {}
-    _archive_url = f"{EPG_URL}/archive/{_args.channel}/{_args.broadcast}"
+    _archive_url = f"{EPG_URL}/archive/{_args.channel}/{_args.program}"
 
     _filename = os.path.join(RECORDINGS, _args.filename)
     _path = os.path.join(RECORDINGS, os.path.dirname(_args.filename))
@@ -510,7 +510,7 @@ async def VodLoop(args=None, vod_client=None):
         _args = args
         _SESSION_CLOUD = vod_client
 
-    log_id = f"[{_args.channel}] [{_args.broadcast}]"
+    log_id = f"[{_args.channel}] [{_args.program}]"
 
     # Get info about the requested program from Movistar. Attempt it twice.
     try:
@@ -625,7 +625,7 @@ if __name__ == "__main__":
 
     parser = argparse.ArgumentParser(f"Movistar U7D - VOD v{_version}")
     parser.add_argument("channel", help="channel id")
-    parser.add_argument("broadcast", help="broadcast id")
+    parser.add_argument("program", help="program id")
 
     parser.add_argument("--client_ip", "-c", help="client ip address")
     parser.add_argument("--filename", "-x", help="output bare filename, relative to RECORDINGS path")
