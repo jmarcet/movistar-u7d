@@ -204,18 +204,23 @@ async def postprocess(record_time=0):
         )
         log.warning(msg) if _ffmpeg_pp_p.returncode else log.info(msg)
 
-        if not _args.mp4:
-            if _ffmpeg_pp_p.returncode == 0:
-                cmd = ["mkvmerge", "-q", "-o", _filename + TMP_EXT2]
-                cmd += ["--chapters", _filename + CHP_EXT, _filename + VID_EXT]
+        if not _args.mp4 and _ffmpeg_pp_p.returncode == 0 and os.path.exists(_filename + CHP_EXT):
+            cmd = ["mkvmerge", "-q", "-o", _filename + TMP_EXT2]
+            cmd += ["--chapters", _filename + CHP_EXT, _filename + VID_EXT]
 
-                log.info(f"POSTPROCESS #4B: COMSKIP: Merging mkv chapters: {_log_suffix}")
-                _ffmpeg_pp_p = await asyncio.create_subprocess_exec(*cmd, stdout=PIPE, stderr=STDOUT)
+            log.info(f"POSTPROCESS #4B: COMSKIP: Merging mkv chapters: {_log_suffix}")
+            _ffmpeg_pp_p = await asyncio.create_subprocess_exec(*cmd, stdout=PIPE, stderr=STDOUT)
+
+            try:
                 await _check_process(_ffmpeg_pp_p, "#4B: COMSKIP: Failed merging mkv chapters")
+
                 if WIN32 and os.path.exists(_filename + VID_EXT):
                     os.remove(_filename + VID_EXT)
                 os.rename(_filename + TMP_EXT2, _filename + VID_EXT)
-            _cleanup(CHP_EXT)
+            except ValueError:
+                _cleanup(TMP_EXT2)
+
+        [_cleanup(ext) for ext in (CHP_EXT, ".log", ".logo.txt", ".txt")]
 
     global _archive_params, _pp_lock
 
