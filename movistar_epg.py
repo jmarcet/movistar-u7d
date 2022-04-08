@@ -338,6 +338,10 @@ async def handle_archive(request, channel_id, program_id, cloud=False, missing=0
 
     missing = int(request.args.get("missing", 0)) if request else missing
     if missing:
+        if request.method == "OPTIONS" and _epg["duration"] - missing < 90:
+            log.error(f"Recording WRONG: {log_suffix}")
+            return response.json({"status": "Recording WRONG"}, status=202)
+
         async with recordings_inc_lock:
             if channel_id not in _RECORDINGS_INC:
                 _RECORDINGS_INC[channel_id] = {}
