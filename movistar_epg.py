@@ -759,10 +759,10 @@ async def timers_check(delay=0):
     sync_cloud = _timers["sync_cloud"] if "sync_cloud" in _timers else False
 
     async def _record(cloud=False):
-        nonlocal channel_id, channel_name, ongoing, nr_procs, recs, timer_match, timestamp, vo
+        nonlocal channel_id, channel_name, ongoing, queued, nr_procs, recs, timer_match, timestamp, vo
 
         filename = get_recording_name(channel_id, timestamp, cloud)
-        if filename in ongoing:
+        if filename in ongoing or (channel_id, timestamp) in queued:
             return
 
         guide = _CLOUD if cloud else _EPGDATA
@@ -784,6 +784,7 @@ async def timers_check(delay=0):
                 f"{' [VO]' if vo else ''}"
             )
 
+            queued.append((channel_id, timestamp))
             await asyncio.sleep(2.5 if not WIN32 else 4)
 
             nr_procs += 1
@@ -793,8 +794,10 @@ async def timers_check(delay=0):
 
     async with recordings_lock:
         recs = _RECORDINGS.copy()
+
     ongoing = await ongoing_vods(_all=True)  # we want to check against all ongoing vods, also in pp
     log.debug(f"Ongoing VODs: [{ongoing}]")
+    queued = []
 
     for str_channel_id in _timers["match"] if "match" in _timers else {}:
         channel_id = int(str_channel_id)
