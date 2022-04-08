@@ -189,7 +189,7 @@ async def before_server_stop(app, loop):
 
 async def check_process(process):
     if WIN32 and process.returncode > 1:
-        asyncio.get_event_loop().stop()
+        app.stop()
 
 
 def cleanup_handler(signum=None, frame=None):
@@ -620,7 +620,7 @@ async def recording_cleanup(process, retcode):
     global _CHILDREN, _t_timers
     if WIN32 and retcode > 15:
         log.debug("Recording Cleanup: Exiting!!!")
-        asyncio.get_event_loop().stop()
+        app.stop()
 
     async with children_lock:
         port, channel_id, program_id, cloud = _CHILDREN[process][1]
