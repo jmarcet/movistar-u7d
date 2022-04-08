@@ -128,7 +128,10 @@ async def postprocess(record_time=0):
         res = (await (await asyncio.create_subprocess_exec(*cmd, stdout=PIPE)).communicate())[0].decode()
         recording_data = ujson.loads(res)
 
-        duration = int(int(recording_data["container"]["properties"]["duration"]) / 1000000000)
+        if "duration" in recording_data["container"]["properties"]:
+            duration = int(int(recording_data["container"]["properties"]["duration"]) / 1000000000)
+        else:
+            duration = 0
         bad = duration < _args.time - 30
 
         _archive_params["missing"] = _args.time - duration if bad else 0
