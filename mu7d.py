@@ -10,7 +10,7 @@ import socket
 import sys
 import tomli
 
-from aiohttp.client_exceptions import ClientOSError
+from aiohttp.client_exceptions import ClientOSError, ServerDisconnectedError
 from asyncio.exceptions import CancelledError
 from contextlib import closing
 from filelock import FileLock, Timeout
@@ -276,7 +276,7 @@ async def u7d_main():
                 async with aiohttp.ClientSession() as session:
                     try:
                         await session.get(f"http://{conf['LAN_IP']}:{conf['U7D_PORT']}/terminate")
-                    except ClientOSError:
+                    except (ClientOSError, ServerDisconnectedError):
                         pass
                 try:
                     psutil.Process(u7d_p.pid).wait(timeout=10)

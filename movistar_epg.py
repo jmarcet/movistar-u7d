@@ -11,7 +11,7 @@ import tomli
 import ujson
 import urllib.parse
 
-from aiohttp.client_exceptions import ClientOSError
+from aiohttp.client_exceptions import ClientOSError, ServerDisconnectedError
 from aiohttp.resolver import AsyncResolver
 from asyncio.exceptions import CancelledError
 from datetime import datetime, timedelta
@@ -872,7 +872,7 @@ async def update_cloud():
         params = {"action": "recordingList", "mode": 0, "state": 2, "firstItem": 0, "numItems": 999}
         async with _SESSION_CLOUD.get(URL_MVTV, params=params) as r:
             cloud_recordings = (await r.json())["resultData"]["result"]
-    except (ClientOSError, KeyError):
+    except (ClientOSError, KeyError, ServerDisconnectedError):
         cloud_recordings = None
 
     if not cloud_recordings:

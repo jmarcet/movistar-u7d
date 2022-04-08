@@ -15,7 +15,7 @@ import time
 import ujson
 import urllib.parse
 
-from aiohttp.client_exceptions import ClientOSError
+from aiohttp.client_exceptions import ClientOSError, ServerDisconnectedError
 from aiohttp.resolver import AsyncResolver
 from asyncio.exceptions import CancelledError
 from asyncio.subprocess import PIPE, STDOUT
@@ -99,7 +99,7 @@ async def postprocess(record_time=0):
             if resp.status not in (200, 201):
                 raise ValueError("Too short, missing: %ss" % _archive_params["missing"])
             return resp.status
-        except ClientOSError:
+        except (ClientOSError, ServerDisconnectedError):
             raise ValueError("Cancelled")
 
     async def step_1():
