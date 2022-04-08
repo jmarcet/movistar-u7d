@@ -601,7 +601,7 @@ async def record_program(channel_id, program_id, offset=0, record_time=0, cloud=
     port = find_free_port(_IPTV)
     cmd = [sys.executable] if EXT == ".py" else []
     cmd += [f"movistar_vod{EXT}", str(channel_id), str(program_id), "-p", str(port), "-w"]
-    cmd += ["-x", filename]
+    cmd += ["-o", filename]
     cmd += ["-s", str(offset)] if offset else []
     cmd += ["-t", str(record_time)] if record_time else []
     cmd += ["--cloud"] if cloud else []

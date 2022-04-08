@@ -627,8 +627,8 @@ if __name__ == "__main__":
     parser.add_argument("channel", help="channel id")
     parser.add_argument("program", help="program id")
 
-    parser.add_argument("--client_ip", "-c", help="client ip address")
-    parser.add_argument("--filename", "-x", help="output bare filename, relative to RECORDINGS path")
+    parser.add_argument("--client_ip", "-i", help="client ip address")
+    parser.add_argument("--filename", "-o", help="output bare filename, relative to RECORDINGS path")
 
     parser.add_argument("--client_port", "-p", help="client udp port", type=int)
     parser.add_argument("--start", "-s", help="stream start offset", type=int, default=0)
