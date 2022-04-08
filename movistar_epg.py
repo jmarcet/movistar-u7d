@@ -18,7 +18,6 @@ from datetime import datetime, timedelta
 from filelock import FileLock, Timeout
 from glob import glob
 from psutil import NoSuchProcess, Process, boot_time
-from random import randint
 from sanic import Sanic, exceptions, response
 from sanic_prometheus import monitor
 from sanic.log import logger as log, LOGGING_CONFIG_DEFAULTS
@@ -347,11 +346,11 @@ async def handle_archive(request, channel_id, program_id, cloud=False, missing=0
             _RECORDINGS_INC[channel_id][program_id].append(missing)
             _t = _RECORDINGS_INC[channel_id][program_id]
 
-        if request and request.method == "OPTIONS" and len(_t) > 2 and _t[-3] == _t[-2] and _t[-2] == _t[-1]:
+        if request.method == "OPTIONS" and len(_t) > 2 and _t[-3] == _t[-2] and _t[-2] == _t[-1]:
             log.warning(f"Recording Incomplete KEEP: {log_suffix}: {_t}")
             return response.json({"status": "Recording Incomplete KEEP"}, status=201)
 
-        elif request and request.method == "PUT" and len(_t) > 3 and _t[-4] == _t[-3] and _t[-3] == _t[-2]:
+        elif request.method == "PUT" and len(_t) > 3 and _t[-4] == _t[-3] and _t[-3] == _t[-2]:
             log.warning(f"Recording Incomplete KEPT: {log_suffix}: {_t}")
             async with recordings_inc_lock:
                 del _RECORDINGS_INC[channel_id][program_id]
@@ -360,7 +359,7 @@ async def handle_archive(request, channel_id, program_id, cloud=False, missing=0
             log.error(f"Recording Incomplete RETRY: {log_suffix}: {_t}")
             return response.json({"status": "Recording Incomplete RETRY"}, status=202)
 
-    elif request and request.method == "OPTIONS":
+    elif request.method == "OPTIONS":
         log.debug(f"Recording OK: {log_suffix}")
         return response.json({"status": "Recording OK"}, status=200)
 
@@ -590,7 +589,7 @@ async def network_saturation():
 
 
 async def reap_vod_child(process):
-    log.debug(f"Awaiting VOD [{_CHILDREN[process][1][1]}] [{_CHILDREN[process][1][2]}]: {process}")
+    log.debug(f"Awaiting VOD [{_CHILDREN[process][0][1]}] [{_CHILDREN[process][0][2]}]: {process}")
     retcode = await process.wait()
     await recording_cleanup(process, retcode)
 
@@ -620,26 +619,28 @@ async def record_program(channel_id, program_id, offset=0, record_time=0, cloud=
 
     global _CHILDREN
     async with children_lock:
-        _CHILDREN[p] = [tuple(cmd), (port, channel_id, program_id, cloud), app.add_task(reap_vod_child(p))]
+        _CHILDREN[p] = [(port, channel_id, program_id, cloud, filename), app.add_task(reap_vod_child(p))]
 
 
 async def recording_cleanup(process, retcode):
     global _CHILDREN, _t_timers
+
     if WIN32 and retcode > 15:
         log.debug("Recording Cleanup: Exiting!!!")
         app.stop()
 
     async with children_lock:
-        port, channel_id, program_id, cloud = _CHILDREN[process][1]
+        port, channel_id, program_id, cloud, filename = _CHILDREN[process][0]
         del _CHILDREN[process]
 
-    if retcode in (-9, 15):  # vod dying hard on UNIX or on Windows, so the epg cleanup must be done here
-        for proc in Process(U7D_PARENT).children(recursive=True):
-            name = " ".join(proc.cmdline())
-            if re.match(f"ffmpeg .+ -i udp://@{_IPTV}:{port}", name):
-                log.debug(f'Recording Cleanup: [{channel_id}] [{program_id}] -> Killing child: "{name}"')
-                proc.terminate()
-        await handle_archive(None, channel_id, program_id, cloud, missing=randint(1, 9999))  # nosec B311
+    if retcode in (-9, 15):  # vod dying hard on UNIX or on Windows respectively
+        ongoing = await ongoing_vods(filename=filename)
+        if ongoing:
+            log.debug(f'Recording Cleanup: [{channel_id}] [{program_id}] -> Killing child: "{filename}"')
+            ongoing[0].terminate()
+
+        if not _t_timers or _t_timers.done():
+            _t_timers = app.add_task(timers_check(delay=5), name="_t_timers")
 
     log.debug(f"Recording Cleanup: [{channel_id}] [{program_id}] -> {process}:{retcode} DONE")
 
