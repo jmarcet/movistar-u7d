@@ -25,7 +25,7 @@ from dict2xml import dict2xml
 from filelock import FileLock
 from glob import glob
 
-from mu7d import IPTV_DNS, EPG_URL, UA, URL_COVER, URL_MVTV, WIN32, YEAR_SECONDS
+from mu7d import IPTV_DNS, EPG_URL, TERMINATE, UA, URL_COVER, URL_MVTV, WIN32, YEAR_SECONDS
 from mu7d import find_free_port, get_iptv_ip, mu7d_config, ongoing_vods, _version
 
 
@@ -233,6 +233,9 @@ async def postprocess(record_time=0):
     _pp_lock = FileLock(lockfile)
     _pp_lock.acquire(poll_interval=5)
     log.debug(f"Recording POSTPROCESS STARTS: {_log_suffix}")
+
+    if WIN32 and os.path.exists(TERMINATE):
+        raise ValueError("Terminated")
 
     await step_1()  # First remux and verification
 

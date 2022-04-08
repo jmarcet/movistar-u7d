@@ -27,6 +27,7 @@ IPTV_DNS = "172.26.23.3"
 MIME_M3U = "audio/x-mpegurl"
 MIME_TS = "video/MP2T;audio/mp3"
 MIME_WEBM = "video/webm"
+TERMINATE = os.path.join(os.getenv("TMP"), ".mu7d.terminate") if WIN32 else None
 UA = "libcurl-agent/1.0 [IAL] WidgetManager Safari/538.1 CAP:803fd12a 1"
 UA_U7D = f"movistar-u7d v{_version} [{sys.platform}] [{EXT}]"
 URL_BASE = "http://html5-static.svc.imagenio.telefonica.net/appclientv/nux/incoming/epg"
@@ -282,7 +283,6 @@ async def u7d_main():
                     psutil.Process(u7d_p.pid).wait(timeout=10)
                 except (psutil.NoSuchProcess, psutil.TimeoutExpired):
                     pass
-            [child.terminate() for child in psutil.Process().children()]
             break
 
         if epg_t in done:
