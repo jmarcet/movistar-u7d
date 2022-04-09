@@ -758,27 +758,38 @@ async def timers_check(delay=0):
     deflang = _timers["default_language"] if "default_language" in _timers else ""
     sync_cloud = _timers["sync_cloud"] if "sync_cloud" in _timers else False
 
-    async def _record(channel_id, channel_name, filename, timestamp, cloud, vo, timer_match=None):
+    async def _record(cloud=False):
+        nonlocal channel_id, channel_name, ongoing, nr_procs, recs, timer_match, timestamp, vo
+
+        filename = get_recording_name(channel_id, timestamp, cloud)
+        if filename in ongoing:
+            return
+
         guide = _CLOUD if cloud else _EPGDATA
         duration, pid, title = [guide[channel_id][timestamp][t] for t in ["duration", "pid", "full_title"]]
+
         if not cloud and timestamp + duration >= _last_epg:
-            return True
-        async with recordings_lock:
-            if channel_id in _RECORDINGS and filename in str(_RECORDINGS[channel_id]):
-                return True
+            return
+
+        if channel_id in recs and filename in str(recs[channel_id]):
+            return
+
         if cloud or re.match(timer_match, title):
-            if await record_program(
-                channel_id, pid, record_time=0 if cloud else duration, cloud=cloud, mp4=MP4_OUTPUT, vo=vo
-            ):
-                return True
+            if await record_program(channel_id, pid, 0, 0 if cloud else duration, cloud, MP4_OUTPUT, vo):
+                return
 
             log.info(
                 f"Found {'Cloud Recording' if cloud else 'MATCH'}: "
                 f'[{channel_name}] [{channel_id}] [{pid}] [{timestamp}] "{filename}"'
                 f"{' [VO]' if vo else ''}"
             )
-            return False  # recording was launched
-        return True
+
+            await asyncio.sleep(2.5 if not WIN32 else 4)
+
+            nr_procs += 1
+            if nr_procs >= RECORDINGS_THREADS:
+                await log_network_saturated(nr_procs)
+                return -1
 
     async with recordings_lock:
         recs = _RECORDINGS.copy()
@@ -829,18 +840,7 @@ async def timers_check(delay=0):
             for timestamp in [
                 ts for ts in timestamps if (channel_id not in recs or ts not in recs[channel_id])
             ]:
-                if f" {channel_id} {_EPGDATA[channel_id][timestamp]['pid']} " in ongoing:
-                    continue
-                filename = get_recording_name(channel_id, timestamp)
-                if filename in ongoing:
-                    continue
-                if await _record(channel_id, channel_name, filename, timestamp, False, vo, timer_match):
-                    continue
-                else:
-                    await asyncio.sleep(2.5 if not WIN32 else 4)
-                nr_procs += 1
-                if nr_procs >= RECORDINGS_THREADS:
-                    await log_network_saturated(nr_procs)
+                if await _record():
                     return
 
     if sync_cloud:
@@ -849,18 +849,7 @@ async def timers_check(delay=0):
             for timestamp in [
                 ts for ts in _CLOUD[channel_id] if (channel_id not in recs or ts not in recs[channel_id])
             ]:
-                if f" {channel_id} {_CLOUD[channel_id][timestamp]['pid']} " in ongoing:
-                    continue
-                filename = get_recording_name(channel_id, timestamp, cloud=True)
-                if filename in ongoing:
-                    continue
-                if await _record(channel_id, _CHANNELS[channel_id]["name"], filename, timestamp, True, vo):
-                    continue
-                else:
-                    await asyncio.sleep(2.5 if not WIN32 else 4)
-                nr_procs += 1
-                if nr_procs >= RECORDINGS_THREADS:
-                    await log_network_saturated(nr_procs)
+                if await _record(cloud=True):
                     return
 
 
@@ -891,7 +880,9 @@ async def update_cloud():
         log.info("No cloud recordings found")
         return
 
-    def fill_cloud_event(data, meta, pid, timestamp, year):
+    def fill_cloud_event():
+        nonlocal data, meta, pid, timestamp, year
+
         episode = meta["episode"] if meta["episode"] else data["episode"] if "episode" in data else None
         season = meta["season"] if meta["season"] else data["season"] if "season" in data else None
         serie = meta["serie"] if meta["serie"] else data["seriesName"] if "seriesName" in data else None
@@ -934,6 +925,7 @@ async def update_cloud():
                 async with _SESSION_CLOUD.get(URL_MVTV, params=params) as r:
                     _data = (await r.json())["resultData"]
                     year = _data["productionDate"] if "productionDate" in _data else None
+
                 params = {"action": "getRecordingData", "extInfoID": pid, "channelID": channel_id, "mode": 1}
                 async with _SESSION_CLOUD.get(URL_MVTV, params=params) as r:
                     data = (await r.json())["resultData"]
@@ -941,10 +933,10 @@ async def update_cloud():
                 if not data:  # There can be events with no data sometimes
                     continue
 
-                meta_data = get_title_meta(data["name"], data["seriesID"] if "seriesID" in data else None)
-                new_cloud[channel_id][timestamp] = fill_cloud_event(data, meta_data, pid, timestamp, year)
-                if meta_data["episode_title"]:
-                    new_cloud[channel_id][timestamp]["episode_title"] = meta_data["episode_title"]
+                meta = get_title_meta(data["name"], data["seriesID"] if "seriesID" in data else None)
+                new_cloud[channel_id][timestamp] = fill_cloud_event()
+                if meta["episode_title"]:
+                    new_cloud[channel_id][timestamp]["episode_title"] = meta["episode_title"]
 
     updated = False
     if new_cloud and (not _CLOUD or set(new_cloud) != set(_CLOUD)):
