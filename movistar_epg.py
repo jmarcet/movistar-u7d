@@ -9,6 +9,7 @@ import sys
 import time
 import tomli
 import ujson
+import unicodedata
 import urllib.parse
 
 from aiohttp.client_exceptions import ClientOSError, ServerDisconnectedError
@@ -758,6 +759,9 @@ async def timers_check(delay=0):
     deflang = _timers["default_language"] if "default_language" in _timers else ""
     sync_cloud = _timers["sync_cloud"] if "sync_cloud" in _timers else False
 
+    def _clean(string):
+        return unicodedata.normalize("NFKD", string).encode("ASCII", "ignore").decode("utf8")
+
     async def _record(cloud=False):
         nonlocal channel_id, channel_name, ongoing, queued, nr_procs, recs, timer_match, timestamp, vo
 
@@ -774,7 +778,7 @@ async def timers_check(delay=0):
         if channel_id in recs and filename in str(recs[channel_id]):
             return
 
-        if cloud or re.match(timer_match, title):
+        if cloud or re.search(_clean(timer_match), _clean(title), re.IGNORECASE):
             if await record_program(channel_id, pid, 0, 0 if cloud else duration, cloud, MP4_OUTPUT, vo):
                 return
 
@@ -840,6 +844,7 @@ async def timers_check(delay=0):
                             break
                 timestamps = found_ts
 
+            log.debug(f"Checking timer: [{channel_name}] [{channel_id}] [{_clean(timer_match)}]")
             for timestamp in [
                 ts for ts in timestamps if (channel_id not in recs or ts not in recs[channel_id])
             ]:

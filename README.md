@@ -212,7 +212,7 @@ Espero que se solucione pronto.
 Grabaciones automáticas: Temporizadores
 ---------------------------------------
 
-Existe una funcionalidad de grabaciones automáticas a partir de unos temporizadores que podremos definir con una cadena de texto, clasificados por canales.
+Existe una funcionalidad de grabaciones automáticas a partir de unos temporizadores que podremos definir con frases insensibles a mayúsculas, acentos y eñes y clasificadas por canales.
 
 Por desgracia esta funcionalidad no es posible usarla de forma cómoda con el mando a distancia.
 
@@ -225,33 +225,37 @@ sync_cloud_language = "VO"
 
 [match]
 657 = [
-    ".*Alienígenas.*",
-    ".*Área 51.*",
-    ".*Extraterrestres.*",
-    ".*Nasa.*",
-    ".*Ovnis.*",
-    "Desmontando el cosmos",
-    "El universo según Stephen Hawking",
+    "Alienigenas",
+    "Area 51",
+    "Extraterrestres",
+    "Nasa",
+    "Ovnis",
+    "^Desmontando el cosmos$",
+    "^El universo segun Stephen Hawking$",
 ]
 1825 = [
-    "Cuarto Milenio ## Esp",
-    "Horizonte ## Esp",
+    "^Cuarto Milenio$ ## Esp",
+    "^Horizonte$ ## Esp",
 ]
 4455 = [
-    ".*Einstein.*",
-    ".*Hawking.*",
-    ".*La Luna.*",
-    ".*Tesla.*",
-    ".*universo.*",
-    ".*Marte.*",
-    ".*Plut.n.*",
-    ".*Saturno.*",
-    ".*Venus.*",
+    "Einstein",
+    "Hawking",
+    "La Luna",
+    "Tesla",
+    "Universo",
+    "Basura espacial ## Esp",
+    "Los planetas",
+    "Documentos TV",
+    "Sobrehumanos",
+    "Marte",
+    "Pluton",
+    "Saturno",
+    "Venus",
 ]
 4714 = [
-    "American Dad ## 13:45",
-    "American Dad ## Esp ## 15:15",
-    "Los Simpson S(24|25|26|27|28|29|30|31|32|33)E\\d\\d[ $] ## Esp",
+    "^American Dad$ ## 12:15",
+    "^American Dad$ ## Esp ## 15:00",
+    "^Los Simpson S(24|25|26|27|28|29|30|31|32|33)E\\d\\d[ $] ## Esp",
 ]
 ```
 
@@ -261,7 +265,7 @@ La primera clave, `language` es opcional. La podemos incluir para indicar que po
 
 Lás búsquedas se hacen de forma recurrente y las grabaciones se hacen no de los directos, sino del catchup. Esto permite hacerse con todos los episodios de cualquier serie o programa que queramos, de toda la última semana, con sólo añadir su nombre en el canal correspondiente en un fichero como el de arriba.
 
-Cada cadena de texto es en realidad una [expresión regular](https://es.wikipedia.org/wiki/Expresi%C3%B3n_regular), como podéis ver en alguno de los ejemplos con símbolos extraños.
+Cada cadena de texto es en realidad una [expresión regular](https://es.wikipedia.org/wiki/Expresi%C3%B3n_regular), como podéis ver en alguno de los ejemplos con símbolos extraños, aunque insensibles a acentos, eñes y mayúsculas. Lo más importante es poder poner "^" para indicar que debe ser el principio del título, y "$" para indicar el final.
 
 Podemos definir por temporizador qué pista de audio queremos como principal. Si el temporizador finaliza con `" ## Esp"` o `" ## VO"`, estaremos indicando la pista que queremos, si la primera o la segunda. En el ejemplo de arriba se define la `VO` como comportamiento por defecto, es decir se especifica que las grabaciones deben tener como pista de audio principal la que llega como secundaria y, por separado, se definen varios temporizadores en los que se especifica que las grabaciones se hagan con la pista de audio normal como principal `" ## Esp"`.
 
@@ -276,6 +280,8 @@ El control de qué grabaciones se reintentan, o no, viene determinado por el fic
 Por último, las grabaciones se realizan en carpetas con el nombre de la serie si lo son. En caso de programas periódicos de noticias, no clasificados como series, serán grabados en una carpeta con el nombre del programa y cada grabación llevará añadida la fecha, de manera que se puedan grabar noticias diarias. En todos los casos, las grabaciones serán expuestas en la `.m3u` de grabaciones locales: `recordings.m3u` o `grabaciones.m3u`.
 
 Si se activa la opción `RECORDINGS_PER_CHANNEL` irán además dentro de una carpeta por cada canal.
+
+Ante cualquier duda sobre qué temporizador está iniciando una grabación, activando la opción de `DEBUG` se podrá ver con detalle.
 
 
 Cómo funciona
