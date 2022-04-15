@@ -300,7 +300,6 @@ class Cache:
                     _data = json.load(f)["data"]
                 _exp_date = int(_data["endTime"] / 1000)
                 if _exp_date < deadline:
-                    log.debug(f"Caché: {file} caducado [{time.ctime(_exp_date)}]")
                     os.remove(file)
             except (IOError, KeyError, ValueError):
                 pass
@@ -321,13 +320,11 @@ class Cache:
             except AttributeError:
                 json.dump({"data": data}, f, ensure_ascii=False, sort_keys=True)
 
-        log.debug(f"Cache: {cfile} guardado")
-
     def load_cookie(self):
         return self.__load(cookie_file)
 
     def save_cookie(self, data):
-        log.debug(f"Set-Cookie: {data}")
+        # log.debug(f"Set-Cookie: {data}")
         self.__save(cookie_file, data)
 
     def load_end_points(self):
@@ -427,9 +424,6 @@ class MovistarTV:
         except Exception as ex:
             log.debug(f"{repr(ex)}")
         if not data:
-            log.debug(f"Descargando info extendida: {pid}")
-            if DEBUG:
-                print(".", end="", flush=True)
             try:
                 data = await self.__get_service_data(
                     f"epgInfov2&productID={pid}&channelID={channel_id}&extra=1"
@@ -596,8 +590,6 @@ class MulticastIPTV:
                 xmldata += body[:-4]
                 _files[str(chunk["filetype"]) + "_" + str(chunk["fileid"])] = xmldata
                 # log.debug("XML: %s_%s" % (chunk["filetype"], chunk["fileid"]))
-                if DEBUG:
-                    print(".", end="", flush=True)
                 max_files -= 1
                 if str(chunk["filetype"]) + "_" + str(chunk["fileid"]) == first_file or max_files == 0:
                     if VERBOSE:
@@ -805,10 +797,10 @@ class MulticastIPTV:
                     if cached_epg:
                         if _next in new_epg[channel] and _start not in new_epg[channel]:
                             stales.add(_start)
-                            log.debug(f"[{channel}] _start={_start} _end={_end} _next={_next} stale 1")
+                            # log.debug(f"[{channel}] _start={_start} _end={_end} _next={_next} stale 1")
                         elif _start in new_epg[channel] and _next not in new_epg[channel]:
                             stales.add(_next)
-                            log.debug(f"[{channel}] _start={_start} _end={_end} _next={_next} stale 2")
+                            # log.debug(f"[{channel}] _start={_start} _end={_end} _next={_next} stale 2")
                         else:
                             log.debug(
                                 f"[{epg_name}] [{channel}] COLLAPSE {_start}->{_end} & {_next} in EPG!!!"
@@ -937,8 +929,6 @@ class MulticastIPTV:
             xml = self.__get_xml_files(mcast_grp, mcast_port)
             _msg = "[" + " ".join(sorted(xml)) + "] / [2_0 5_0 6_0]"
             if "2_0" in xml and "5_0" in xml and "6_0" in xml:
-                if DEBUG:
-                    print("", flush=True)
                 if VERBOSE:
                     log.info(f"Ficheros XML descargados: {_msg}")
                 break
@@ -1090,7 +1080,6 @@ class XMLTV:
                 for program in sorted(parsed_epg[channel_id])
             ]
             [root.append(program) for program in (await asyncio.gather(*_tasks))]
-        log.debug("")
         return ElementTree(root)
 
     @staticmethod
