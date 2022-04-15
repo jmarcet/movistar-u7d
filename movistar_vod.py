@@ -93,6 +93,17 @@ async def postprocess(record_time=0):
             stdout = await process.stdout.read() if process.stdout else None
             raise ValueError(stdout.decode().replace("\n", " ").strip() if stdout else msg)
 
+    def _check_terminate(fn):
+        from functools import wraps
+
+        @wraps(fn)
+        async def wrapper(*args, **kwargs):
+            if WIN32 and os.path.exists(TERMINATE):
+                raise ValueError("Terminated")
+            return await fn(*args, **kwargs)
+
+        return wrapper
+
     async def _duration_ok():
         try:
             resp = await _SESSION.options(_archive_url, params=_archive_params)  # signal recording ended
@@ -102,6 +113,7 @@ async def postprocess(record_time=0):
         except (ClientOSError, ServerDisconnectedError):
             raise ValueError("Cancelled")
 
+    @_check_terminate
     async def step_1():
         global _pp_p
 
@@ -121,6 +133,7 @@ async def postprocess(record_time=0):
         if img_name:
             os.remove(img_name)
 
+    @_check_terminate
     async def step_2(status):
         global _archive_params, _log_suffix
 
@@ -149,6 +162,7 @@ async def postprocess(record_time=0):
 
         return recording_data
 
+    @_check_terminate
     async def step_3(recording_data):
         global _log_suffix, _pp_p
 
@@ -186,6 +200,7 @@ async def postprocess(record_time=0):
             os.rename(_filename + TMP_EXT2, _filename + VID_EXT)
             log.info(f"POSTPROCESS #3: Recording renamed to mkv: {_log_suffix}")
 
+    @_check_terminate
     async def step_4():
         global _pp_p
 
@@ -233,9 +248,6 @@ async def postprocess(record_time=0):
     _pp_lock = FileLock(lockfile)
     _pp_lock.acquire(poll_interval=5)
     log.debug(f"Recording POSTPROCESS STARTS: {_log_suffix}")
-
-    if WIN32 and os.path.exists(TERMINATE):
-        raise ValueError("Terminated")
 
     await step_1()  # First remux and verification
 
