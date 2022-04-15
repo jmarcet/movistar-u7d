@@ -522,7 +522,7 @@ if __name__ == "__main__":
                 debug=_conf["DEBUG"],
                 workers=U7D_THREADS if not WIN32 else 1,
             )
-    except (CancelledError, KeyboardInterrupt):
+    except (AttributeError, CancelledError, KeyboardInterrupt):
         sys.exit(1)
     except Timeout:
         log.critical("Cannot be run more than once!")
