@@ -18,7 +18,7 @@ import urllib.parse
 from aiohttp.client_exceptions import ClientOSError, ServerDisconnectedError
 from aiohttp.resolver import AsyncResolver
 from asyncio.exceptions import CancelledError
-from asyncio.subprocess import PIPE, STDOUT
+from asyncio.subprocess import DEVNULL, PIPE, STDOUT
 from collections import namedtuple
 from datetime import timedelta
 from dict2xml import dict2xml
@@ -115,7 +115,7 @@ async def postprocess(record_time=0):
         cmd += [_filename + TMP_EXT]
 
         log.info(f"POSTPROCESS #1: Verifying recording: {_log_suffix}")
-        _pp_p = await asyncio.create_subprocess_exec(*cmd, stdout=PIPE, stderr=STDOUT)
+        _pp_p = await asyncio.create_subprocess_exec(*cmd, stdin=DEVNULL, stdout=PIPE, stderr=STDOUT)
         await _check_process(_pp_p, "#1: Failed verifying recording")
 
         if img_name:
@@ -125,8 +125,8 @@ async def postprocess(record_time=0):
         global _archive_params, _log_suffix
 
         cmd = ["mkvmerge", "-J", _filename + TMP_EXT2]
-        res = (await (await asyncio.create_subprocess_exec(*cmd, stdout=PIPE)).communicate())[0].decode()
-        recording_data = ujson.loads(res)
+        proc = await asyncio.create_subprocess_exec(*cmd, stdin=DEVNULL, stdout=PIPE, stderr=DEVNULL)
+        recording_data = ujson.loads((await proc.communicate())[0].decode())
 
         if "duration" in recording_data["container"]["properties"]:
             duration = int(int(recording_data["container"]["properties"]["duration"]) / 1000000000)
@@ -163,7 +163,7 @@ async def postprocess(record_time=0):
             cmd += ["-f", "mp4", "-v", "panic", _filename + VID_EXT]
 
             log.info(f"POSTPROCESS #3: Coverting remuxed recording to mp4: {_log_suffix}")
-            _pp_p = await asyncio.create_subprocess_exec(*cmd, stdout=PIPE, stderr=STDOUT)
+            _pp_p = await asyncio.create_subprocess_exec(*cmd, stdin=DEVNULL, stdout=PIPE, stderr=STDOUT)
             await _check_process(_pp_p, "#3: Failed converting remuxed recording to mp4")
 
             subs = [t for t in recording_data["tracks"] if t["type"] == "subtitles"]
@@ -175,7 +175,7 @@ async def postprocess(record_time=0):
                 cmd += ["-map", "0:%d" % track["id"], "-c:s", "dvbsub"]
                 cmd += ["-f", "mpegts", "-v", "panic", filesub]
 
-                _pp_p = await asyncio.create_subprocess_exec(*cmd, stdout=PIPE, stderr=STDOUT)
+                _pp_p = await asyncio.create_subprocess_exec(*cmd, stdin=DEVNULL, stdout=PIPE, stderr=STDOUT)
                 await _check_process(_pp_p, "#3B: Failed extracting subs from recording")
 
             _cleanup(TMP_EXT2)
@@ -194,7 +194,7 @@ async def postprocess(record_time=0):
         log.info(f"POSTPROCESS #4: COMSKIP: Checking recording for commercials: {_log_suffix}")
         async with aiofiles.open(COMSKIP_LOG, "ab") as f:
             start = time.time()
-            _pp_p = await asyncio.create_subprocess_exec(*cmd, stdout=f, stderr=f)
+            _pp_p = await asyncio.create_subprocess_exec(*cmd, stdin=DEVNULL, stdout=f, stderr=f)
             await _check_process(_pp_p, "#4: COMSKIP: Failed checking recording for commercials")
             end = time.time()
 
@@ -209,7 +209,7 @@ async def postprocess(record_time=0):
             cmd += ["--chapters", _filename + CHP_EXT, _filename + VID_EXT]
 
             log.info(f"POSTPROCESS #4B: COMSKIP: Merging mkv chapters: {_log_suffix}")
-            _pp_p = await asyncio.create_subprocess_exec(*cmd, stdout=PIPE, stderr=STDOUT)
+            _pp_p = await asyncio.create_subprocess_exec(*cmd, stdin=DEVNULL, stdout=PIPE, stderr=STDOUT)
 
             try:
                 await _check_process(_pp_p, "#4B: COMSKIP: Failed merging mkv chapters")
@@ -315,7 +315,7 @@ async def record_stream(opts):
     ffmpeg.extend(["-t", str(_args.time), "-v", "panic", "-vsync", "0", "-f", "matroska"])
     ffmpeg.append(_filename + TMP_EXT)
 
-    _ffmpeg_p = await asyncio.create_subprocess_exec(*ffmpeg)
+    _ffmpeg_p = await asyncio.create_subprocess_exec(*ffmpeg, stdin=DEVNULL, stdout=DEVNULL, stderr=DEVNULL)
     _ffmpeg_t = asyncio.create_task(reap_ffmpeg())
     log.info(f"Recording STARTED: {_log_suffix}")
 
