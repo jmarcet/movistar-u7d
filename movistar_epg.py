@@ -630,7 +630,7 @@ async def record_program(channel_id, program_id, offset=0, record_time=0, cloud=
 async def recording_cleanup(process, retcode):
     global _CHILDREN, _t_timers
 
-    if WIN32 and retcode > 15:
+    if WIN32 and retcode not in (0, 1, 2, 15, 137, 143):
         log.debug("Recording Cleanup: Exiting!!!")
         app.stop()
 
@@ -638,14 +638,14 @@ async def recording_cleanup(process, retcode):
         port, channel_id, program_id, cloud, filename = _CHILDREN[process][0]
         del _CHILDREN[process]
 
-    if retcode in (-9, 15):  # vod dying hard on UNIX or on Windows respectively
+    if retcode == -9 or WIN32 and retcode:
         ongoing = await ongoing_vods(filename=filename)
         if ongoing:
             log.debug(f'Recording Cleanup: [{channel_id}] [{program_id}] -> Killing child: "{filename}"')
             ongoing[0].terminate()
 
-        if not _t_timers or _t_timers.done():
-            _t_timers = app.add_task(timers_check(delay=5), name="_t_timers")
+    if not _t_timers or _t_timers.done():
+        _t_timers = app.add_task(timers_check(delay=5), name="_t_timers")
 
     log.debug(f"Recording Cleanup: [{channel_id}] [{program_id}] -> {process}:{retcode} DONE")
 

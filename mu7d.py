@@ -214,15 +214,13 @@ def mu7d_config():
 
 
 async def ongoing_vods(channel_id="", program_id="", filename="", _all=False, _fast=False):
-    parent = os.getenv("U7D_PARENT")
+    parent = os.getenv("U7D_PARENT") if not WIN32 else None
     family = psutil.Process(int(parent)).children(recursive=True) if parent else psutil.process_iter()
 
     if _fast:  # For U7D we just want to know if there are recordings in place
         return "ffmpeg" in str(family)
 
-    EXT = "" if not WIN32 else ".exe" if getattr(sys, "frozen", False) else ".py"
-    regex = "%s" % sys.executable.replace("\\", "\\\\") if (WIN32 and EXT == ".py") else ""
-    regex += f"(ffmpeg|movistar_vod){EXT}" if filename and not program_id else f"movistar_vod{EXT}"
+    regex = "(comskip|ffmpeg|mkvmerge|movistar_vod).*" if filename and not program_id else "movistar_vod.*"
     regex += "(" if program_id and filename else ""
     regex += f" {channel_id} {program_id}" if program_id else ""
     regex += "|" if program_id and filename else ""
@@ -241,7 +239,7 @@ async def ongoing_vods(channel_id="", program_id="", filename="", _all=False, _f
 
 def proc_grep(proc, regex):
     try:
-        return proc if re.match(regex, " ".join(proc.cmdline())) else None
+        return proc if re.search(regex, " ".join(proc.cmdline())) else None
     except (psutil.AccessDenied, psutil.NoSuchProcess, psutil.PermissionError):
         pass
 

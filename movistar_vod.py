@@ -699,7 +699,7 @@ if __name__ == "__main__":
     except KeyboardInterrupt:
         sys.exit(1)
 
-    if _ffmpeg_r or (_pp_p and _pp_p.returncode not in (0, 1)):
+    if _ffmpeg_r or _pp_p and _pp_p.returncode:
         log.debug(f"Exiting {_ffmpeg_r if _ffmpeg_r else _pp_p.returncode}")
         sys.exit(_ffmpeg_r if _ffmpeg_r else _pp_p.returncode)
     elif not _vod_t or _vod_t.cancelled():
