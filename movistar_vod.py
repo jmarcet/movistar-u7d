@@ -79,7 +79,7 @@ def _remove(item):
             os.remove(item)
         elif os.path.isdir(item) and not os.listdir(item):
             os.rmdir(item)
-    except (FileNotFoundError, PermissionError):
+    except (FileNotFoundError, OSError, PermissionError):
         pass
 
 
