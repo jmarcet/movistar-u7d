@@ -18,12 +18,12 @@ from asyncio.exceptions import CancelledError
 from datetime import datetime, timedelta
 from filelock import FileLock, Timeout
 from glob import glob
-from psutil import NoSuchProcess, Process, boot_time
+from psutil import boot_time
 from sanic import Sanic, exceptions, response
 from sanic_prometheus import monitor
 from sanic.log import logger as log, LOGGING_CONFIG_DEFAULTS
 
-from mu7d import EXT, IPTV_DNS, TERMINATE, UA, UA_U7D, URL_MVTV, VID_EXTS, WIN32, YEAR_SECONDS
+from mu7d import EXT, IPTV_DNS, UA, UA_U7D, URL_MVTV, VID_EXTS, WIN32, YEAR_SECONDS
 from mu7d import find_free_port, get_iptv_ip, get_safe_filename, get_title_meta, mu7d_config, ongoing_vods
 from mu7d import _version
 
@@ -141,8 +141,6 @@ async def before_server_start(app, loop):
 
     if not WIN32:
         [signal.signal(sig, signal.SIG_DFL) for sig in (signal.SIGHUP, signal.SIGINT, signal.SIGTERM)]
-    elif os.path.exists(TERMINATE):
-        os.remove(TERMINATE)
 
 
 @app.listener("after_server_start")
@@ -171,27 +169,6 @@ async def after_server_start(app, loop):
 @app.listener("before_server_stop")
 async def before_server_stop(app, loop):
     cleanup_handler()
-
-    for session in (_SESSION, _SESSION_CLOUD):
-        try:
-            await session.close()
-        except CancelledError:
-            pass
-
-    if WIN32:
-        async with aiofiles.open(TERMINATE, "wb") as f:
-            await f.write(b"")
-        vods = []
-        for proc in Process().children(recursive=True):
-            try:
-                if "movistar_vod" not in " ".join(proc.cmdline()):
-                    proc.terminate()
-                elif not proc.children():
-                    vods.append(proc)
-            except NoSuchProcess:
-                pass
-        [proc.wait() for proc in vods]
-        os.remove(TERMINATE)
 
 
 async def check_process(process):

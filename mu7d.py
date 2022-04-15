@@ -281,6 +281,7 @@ async def u7d_main():
                     psutil.Process(u7d_p.pid).wait(timeout=10)
                 except (psutil.NoSuchProcess, psutil.TimeoutExpired):
                     pass
+            cleanup()
             break
 
         if epg_t in done:
@@ -317,6 +318,29 @@ if __name__ == "__main__":
         signal.signal(signal.SIGCHLD, signal.SIG_IGN)
         [signal.signal(sig, cleanup_handler) for sig in (signal.SIGHUP, signal.SIGINT, signal.SIGTERM)]
 
+    else:
+
+        def cleanup():
+            with open(TERMINATE, "wb") as f:
+                f.write(b"")
+            vods = []
+            for proc in psutil.process_iter():
+                try:
+                    name = " ".join(proc.cmdline())
+                    if "movistar_vod" in name:
+                        vods.append(proc)
+                        children = proc.children()
+                        if children:
+                            children[0].kill()
+                    elif "movistar_" in name:
+                        proc.terminate()
+                except (psutil.AccessDenied, psutil.NoSuchProcess):
+                    pass
+            if vods:
+                log.debug(f"Waiting for: {vods}")
+                [vod.wait() for vod in vods]
+            os.remove(TERMINATE)
+
     _conf = mu7d_config()
 
     log.basicConfig(
@@ -330,7 +354,11 @@ if __name__ == "__main__":
     log.info(banner)
     log.info("=" * len(banner))
 
-    if not WIN32 and ("UID" in _conf or "GID" in _conf):
+    if WIN32:
+        if os.path.exists(TERMINATE):
+            os.remove(TERMINATE)
+
+    elif "UID" in _conf or "GID" in _conf:
         log.info("Dropping privileges...")
         if "GID" in _conf:
             try:
