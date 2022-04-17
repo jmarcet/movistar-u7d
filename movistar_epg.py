@@ -18,14 +18,14 @@ from asyncio.exceptions import CancelledError
 from datetime import datetime, timedelta
 from filelock import FileLock, Timeout
 from glob import glob
-from psutil import boot_time
+from psutil import Process, boot_time
 from sanic import Sanic, exceptions, response
 from sanic_prometheus import monitor
 from sanic.log import logger as log, LOGGING_CONFIG_DEFAULTS
 
 from mu7d import EXT, IPTV_DNS, UA, UA_U7D, URL_MVTV, VID_EXTS, WIN32, YEAR_SECONDS
 from mu7d import find_free_port, get_iptv_ip, get_safe_filename, get_title_meta, mu7d_config, ongoing_vods
-from mu7d import _version
+from mu7d import launch, _version
 
 
 LOG_SETTINGS = LOGGING_CONFIG_DEFAULTS
@@ -42,8 +42,6 @@ async def before_server_start(app, loop):
     global _IPTV, _SESSION_CLOUD
 
     if not WIN32:
-        import signal
-
         [signal.signal(sig, cleanup_handler) for sig in (signal.SIGHUP, signal.SIGINT, signal.SIGTERM)]
 
     banner = f"Movistar U7D - EPG v{_version}"
@@ -166,25 +164,19 @@ async def after_server_start(app, loop):
                 await asyncio.sleep(5)
 
 
-@app.listener("before_server_stop")
-async def before_server_stop(app, loop):
-    cleanup_handler()
-
-
-async def check_process(process):
-    if WIN32 and process.returncode > 1:
+def check_task(task):
+    if WIN32 and task.result() not in (0, 1, 2, 15, 137, 143):
         app.stop()
 
 
-def cleanup_handler(signum=None, frame=None):
-    for proc in [proc for proc in [_p_tv_cloud, _p_tvgrab] if proc]:
+def cleanup_handler(signum, frame):
+    [proc.terminate() for proc in Process().children()]
+    while True:
         try:
-            log.debug(f"Terminating process={proc}")
-            proc.terminate()
-        except ProcessLookupError:
-            pass
-    if signum and frame:
-        asyncio.get_event_loop().stop()
+            os.waitpid(-1, 0)
+        except Exception:
+            break
+    asyncio.get_event_loop().stop()
 
 
 def does_recording_exist(filename):
@@ -628,7 +620,7 @@ async def recording_cleanup(process, retcode):
 
 
 async def reload_epg():
-    global _CHANNELS, _CLOUD, _EPGDATA, _p_tvgrab
+    global _CHANNELS, _CLOUD, _EPGDATA
 
     if (
         not os.path.exists(CHANNELS)
@@ -642,9 +634,9 @@ async def reload_epg():
         cmd = [sys.executable] if EXT == ".py" else []
         cmd += [f"movistar_tvg{EXT}", "--m3u", CHANNELS]
         async with tvgrab_lock:
-            _p_tvgrab = await asyncio.create_subprocess_exec(*cmd)
-            await _p_tvgrab.wait()
-        await check_process(_p_tvgrab)
+            task = app.add_task(launch(cmd))
+            await task
+        check_task(task)
     elif (
         not os.path.exists(config_data)
         or not os.path.exists(epg_data)
@@ -839,7 +831,7 @@ async def timers_check(delay=0):
 
 
 async def update_cloud():
-    global _CLOUD, _EPGDATA, _p_tv_cloud
+    global _CLOUD, _EPGDATA
 
     try:
         async with aiofiles.open(cloud_data, encoding="utf8") as f:
@@ -948,9 +940,10 @@ async def update_cloud():
             log.warning("Missing Cloud Recordings data! Need to download it. Please be patient...")
         cmd = [sys.executable] if EXT == ".py" else []
         cmd += [f"movistar_tvg{EXT}", "--cloud_m3u", CHANNELS_CLOUD, "--cloud_recordings", GUIDE_CLOUD]
-        _p_tv_cloud = await asyncio.create_subprocess_exec(*cmd)
-        await _p_tv_cloud.wait()
-        await check_process(_p_tv_cloud)
+        async with tvgrab_lock:
+            task = app.add_task(launch(cmd))
+            await task
+        check_task(task)
 
     log.info(
         f"{'Updated' if updated else 'Loaded'} Cloud Recordings data"
@@ -959,19 +952,19 @@ async def update_cloud():
 
 
 async def update_epg():
-    global _last_epg, _t_timers, _p_tvgrab
+    global _last_epg, _t_timers
     cmd = [sys.executable] if EXT == ".py" else []
     cmd += [f"movistar_tvg{EXT}", "--m3u", CHANNELS, "--guide", GUIDE]
-    for i in range(1, 6):
+    for i in range(3):
         async with tvgrab_lock:
-            _p_tvgrab = await asyncio.create_subprocess_exec(*cmd)
-            await _p_tvgrab.wait()
-        await check_process(_p_tvgrab)
+            task = app.add_task(launch(cmd))
+            await task
+        check_task(task)
 
-        if _p_tvgrab.returncode:
-            if i < 5:
-                log.error(f"Waiting 15s before trying to update EPG again [{i+1}/5]...")
-                await asyncio.sleep(15)
+        if task.result():
+            if i < 2:
+                await asyncio.sleep(3)
+                log.error(f"[{i+2}/3]...")
         else:
             await reload_epg()
             _last_epg = int(datetime.now().replace(minute=0, second=0).timestamp())
@@ -1081,6 +1074,7 @@ async def update_recordings(archive=None):
 
 if __name__ == "__main__":
     if not WIN32:
+        import signal
         from setproctitle import setproctitle
 
         setproctitle("movistar_epg")
@@ -1095,7 +1089,7 @@ if __name__ == "__main__":
     _RECORDINGS = {}
     _RECORDINGS_INC = {}
 
-    _last_bw_warning = _last_epg = _p_tv_cloud = _p_tvgrab = _t_timers = None
+    _last_bw_warning = _last_epg = _t_timers = None
 
     _conf = mu7d_config()
 

@@ -121,6 +121,20 @@ def get_title_meta(title, serie_id=None):
     }
 
 
+async def launch(cmd):
+    proc = await asyncio.create_subprocess_exec(*cmd, cwd=os.path.dirname(__file__))
+    try:
+        return await proc.wait()
+    except CancelledError:
+        log.debug(f"Cancelled: {cmd}")
+        try:
+            proc.terminate()
+        except ProcessLookupError:
+            pass
+        finally:
+            return await proc.wait()
+
+
 def mu7d_config():
     confname = "mu7d.conf"
     fileconf = ""
@@ -244,50 +258,44 @@ def proc_grep(proc, regex):
         pass
 
 
+def reaper(signum, sigframe):
+    for child in psutil.Process().children():
+        try:
+            if child.status() == "zombie":
+                child.wait()
+        except psutil.NoSuchProcess:
+            pass
+
+
 async def u7d_main():
-    async def launch_epg():
-        proc = await asyncio.create_subprocess_exec(*epg_cmd)
-        task = asyncio.create_task(reap_proc(proc), name="epg_t")
-        return proc, task
+    prefix = [sys.executable] if EXT == ".py" else []
 
-    async def launch_u7d():
-        proc = await asyncio.create_subprocess_exec(*u7d_cmd)
-        task = asyncio.create_task(reap_proc(proc), name="u7d_t")
-        return proc, task
+    epg_cmd = prefix + [f"movistar_epg{EXT}"]
+    u7d_cmd = prefix + [f"movistar_u7d{EXT}"]
 
-    async def reap_proc(proc):
-        await proc.wait()
-
-    if WIN32:
-        conf = mu7d_config()
-
-    epg_p, epg_t = await launch_epg()
-    u7d_p, u7d_t = await launch_u7d()
+    epg_t = asyncio.create_task(launch(epg_cmd), name="epg_t")
+    u7d_t = asyncio.create_task(launch(u7d_cmd), name="u7d_t")
 
     while True:
         try:
             done, pending = await asyncio.wait(asyncio.all_tasks(), return_when=asyncio.FIRST_COMPLETED)
         except CancelledError:
-            break
+            if not WIN32:
+                break
 
         if WIN32:
-            if u7d_p.pid:
+            if not u7d_t.done():
                 async with aiohttp.ClientSession() as session:
                     try:
-                        await session.get(f"http://{conf['LAN_IP']}:{conf['U7D_PORT']}/terminate")
+                        await session.get(f"http://{_conf['LAN_IP']}:{_conf['U7D_PORT']}/terminate")
                     except (ClientOSError, ServerDisconnectedError):
-                        pass
-                try:
-                    psutil.Process(u7d_p.pid).wait(timeout=10)
-                except (psutil.NoSuchProcess, psutil.TimeoutExpired):
-                    pass
+                        u7d_t.cancel()
+                await u7d_t
             cleanup()
             break
 
-        if epg_t in done:
-            epg_p, epg_t = await launch_epg()
-        elif u7d_t in done:
-            u7d_p, u7d_t = await launch_u7d()
+        epg_t = asyncio.create_task(launch(epg_cmd), name="epg_t") if epg_t in done else epg_t
+        u7d_t = asyncio.create_task(launch(u7d_cmd), name="u7d_t") if u7d_t in done else u7d_t
 
 
 if __name__ == "__main__":
@@ -308,14 +316,15 @@ if __name__ == "__main__":
 
         def cleanup_handler(signum, frame):
             [task.cancel() for task in asyncio.all_tasks()]
-            os.killpg(os.getpid(), signal.SIGTERM)
+            signal.signal(signal.SIGTERM, signal.SIG_IGN)
+            os.killpg(0, signal.SIGTERM)
             while True:
                 try:
                     os.waitpid(-1, 0)
-                except ChildProcessError:
+                except Exception:
                     break
 
-        signal.signal(signal.SIGCHLD, signal.SIG_IGN)
+        signal.signal(signal.SIGCHLD, reaper)
         [signal.signal(sig, cleanup_handler) for sig in (signal.SIGHUP, signal.SIGINT, signal.SIGTERM)]
 
     else:
@@ -323,6 +332,7 @@ if __name__ == "__main__":
         def cleanup():
             with open(TERMINATE, "wb") as f:
                 f.write(b"")
+            log.debug("cleanup WIN32")
             vods = []
             for proc in psutil.process_iter():
                 try:
@@ -331,7 +341,7 @@ if __name__ == "__main__":
                         vods.append(proc)
                         children = proc.children()
                         if children:
-                            children[0].kill()
+                            children[0].terminate()
                     elif "movistar_" in name:
                         proc.terminate()
                 except (psutil.AccessDenied, psutil.NoSuchProcess):
@@ -373,11 +383,6 @@ if __name__ == "__main__":
 
     os.environ["PATH"] = "%s;%s" % (os.path.dirname(__file__), os.getenv("PATH"))
     os.environ["U7D_PARENT"] = str(os.getpid())
-
-    prefix = [sys.executable] if EXT == ".py" else []
-
-    epg_cmd = prefix + [f"movistar_epg{EXT}"]
-    u7d_cmd = prefix + [f"movistar_u7d{EXT}"]
 
     lockfile = os.path.join(os.getenv("TMP", os.getenv("TMPDIR", "/tmp")), ".mu7d.lock")  # nosec B108
     try:
