@@ -44,6 +44,8 @@ async def before_server_start(app, loop):
     if not WIN32:
         [signal.signal(sig, cleanup_handler) for sig in (signal.SIGHUP, signal.SIGINT, signal.SIGTERM)]
 
+    app.add_task(alive())
+
     banner = f"Movistar U7D - EPG v{_version}"
     log.info("-" * len(banner))
     log.info(banner)
@@ -89,53 +91,54 @@ async def before_server_start(app, loop):
 
     await reload_epg()
 
-    if RECORDINGS:
-        global _RECORDINGS, _last_epg
+    if _CHANNELS and _EPGDATA:
+        if RECORDINGS:
+            global _RECORDINGS, _last_epg
 
-        if not _last_epg:
-            _last_epg = int(os.path.getmtime(GUIDE))
+            if not _last_epg:
+                _last_epg = int(os.path.getmtime(GUIDE))
 
-        if not os.path.exists(RECORDINGS):
-            os.makedirs(RECORDINGS)
-            return
+            if not os.path.exists(RECORDINGS):
+                os.makedirs(RECORDINGS)
+                return
 
-        oldest_epg = 9999999999
-        for channel_id in _EPGDATA:
-            first = next(iter(_EPGDATA[channel_id]))
-            if first < oldest_epg:
-                oldest_epg = first
-        try:
-            async with aiofiles.open(recordings, encoding="utf8") as f:
-                recordingsdata = ujson.loads(await f.read())
-            int_recordings = {}
-            for str_channel in recordingsdata:
-                channel_id = int(str_channel)
-                int_recordings[channel_id] = {}
-                for str_timestamp in recordingsdata[str_channel]:
-                    timestamp = int(str_timestamp)
-                    recording = recordingsdata[str_channel][str_timestamp]
-                    try:
-                        filename = recording["filename"]
-                    except KeyError:
-                        log.warning(f'Dropping old style "{recording}" from recordings.json')
-                        continue
-                    if not does_recording_exist(filename):
-                        if timestamp > oldest_epg:
-                            log.warning(f'Archived recording "{filename}" not found on disk')
-                        elif channel_id in _CLOUD and timestamp in _CLOUD[channel_id]:
-                            log.warning(f'Archived Cloud Recording "{filename}" not found on disk')
-                        else:
+            oldest_epg = 9999999999
+            for channel_id in _EPGDATA:
+                first = next(iter(_EPGDATA[channel_id]))
+                if first < oldest_epg:
+                    oldest_epg = first
+            try:
+                async with aiofiles.open(recordings, encoding="utf8") as f:
+                    recordingsdata = ujson.loads(await f.read())
+                int_recordings = {}
+                for str_channel in recordingsdata:
+                    channel_id = int(str_channel)
+                    int_recordings[channel_id] = {}
+                    for str_timestamp in recordingsdata[str_channel]:
+                        timestamp = int(str_timestamp)
+                        recording = recordingsdata[str_channel][str_timestamp]
+                        try:
+                            filename = recording["filename"]
+                        except KeyError:
+                            log.warning(f'Dropping old style "{recording}" from recordings.json')
                             continue
-                    int_recordings[channel_id][timestamp] = recording
-            _RECORDINGS = int_recordings
-        except (TypeError, ValueError) as ex:
-            log.error(f'Failed to parse "recordings.json". It will be reset!!!: {repr(ex)}')
-        except FileNotFoundError:
-            pass
+                        if not does_recording_exist(filename):
+                            if timestamp > oldest_epg:
+                                log.warning(f'Archived recording "{filename}" not found on disk')
+                            elif channel_id in _CLOUD and timestamp in _CLOUD[channel_id]:
+                                log.warning(f'Archived Cloud Recording "{filename}" not found on disk')
+                            else:
+                                continue
+                        int_recordings[channel_id][timestamp] = recording
+                _RECORDINGS = int_recordings
+            except (TypeError, ValueError) as ex:
+                log.error(f'Failed to parse "recordings.json". It will be reset!!!: {repr(ex)}')
+            except FileNotFoundError:
+                pass
 
-        await update_recordings(True)
+            await update_recordings(True)
 
-    app.add_task(update_epg_cron(), name="_t_epg")
+        app.add_task(update_epg_cron(), name="_t_epg")
 
     if not WIN32:
         [signal.signal(sig, signal.SIG_DFL) for sig in (signal.SIGHUP, signal.SIGINT, signal.SIGTERM)]
@@ -143,25 +146,39 @@ async def before_server_start(app, loop):
 
 @app.listener("after_server_start")
 async def after_server_start(app, loop):
-    if RECORDINGS:
-        global _t_timers
-        uptime = int(datetime.now().timestamp() - boot_time())
-        if not _t_timers and int(datetime.now().replace(minute=0, second=0).timestamp()) < _last_epg:
-            delay = max(10, 180 - uptime)
-            if delay > 10:
-                log.info(f"Waiting {delay}s to check recording timers since the system just booted...")
-            _t_timers = app.add_task(timers_check(delay), name="_t_timers")
-        elif not _t_timers:
-            log.warning("Delaying timers_check until the EPG is updated...")
-        log.info(f"Manual timers check => {U7D_URL}/timers_check")
+    if _last_epg:
+        if RECORDINGS:
+            global _t_timers
+            uptime = int(datetime.now().timestamp() - boot_time())
+            if not _t_timers and int(datetime.now().replace(minute=0, second=0).timestamp()) < _last_epg:
+                delay = max(10, 180 - uptime)
+                if delay > 10:
+                    log.info(f"Waiting {delay}s to check recording timers since the system just booted...")
+                _t_timers = app.add_task(timers_check(delay), name="_t_timers")
+            elif not _t_timers:
+                log.warning("Delaying timers_check until the EPG is updated...")
+            log.info(f"Manual timers check => {U7D_URL}/timers_check")
+    else:
+        app.add_task(cancel_app())
 
+
+async def alive():
     async with aiohttp.ClientSession(headers={"User-Agent": UA_U7D}) as session:
-        for i in range(5):
+        for i in range(10):
             try:
                 await session.get("https://openwrt.marcet.info/u7d/alive")
                 break
             except Exception:
-                await asyncio.sleep(5)
+                await asyncio.sleep(6)
+
+
+async def cancel_app():
+    await asyncio.sleep(1)
+    log.fatal("Multicast IPTV de Movistar no detectado")
+    if not WIN32:
+        os.kill(U7D_PARENT, signal.SIGTERM)
+    else:
+        app.stop()
 
 
 def check_task(task):

@@ -21,6 +21,7 @@ import time
 import ujson as json
 
 from aiohttp.resolver import AsyncResolver
+from contextlib import closing
 from datetime import date, datetime, timedelta
 from filelock import FileLock, Timeout
 from queue import Queue
@@ -558,46 +559,51 @@ class MulticastIPTV:
         loop = True
         max_files = 1000
         _files = {}
+        failed = 0
         first_file = ""
-        sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM, socket.IPPROTO_UDP)
-        sock.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
-        sock.settimeout(3)
-        sock.bind((mc_grp if not WIN32 else "", int(mc_port)))
-        sock.setsockopt(
-            socket.IPPROTO_IP, socket.IP_ADD_MEMBERSHIP, socket.inet_aton(mc_grp) + socket.inet_aton(_iptv)
-        )
-        # Wait for an end chunk to start by the beginning
-        while True:
-            try:
-                chunk = self.__parse_chunk(sock.recv(1500))
-                if chunk["end"]:
-                    first_file = str(chunk["filetype"]) + "_" + str(chunk["fileid"])
-                    break
-            except Exception as ex:
-                log.debug(f"Error 1 al descargar los archivos XML: {repr(ex)}")
-        # Loop until firstfile
-        while loop:
-            try:
-                xmldata = ""
-                chunk = self.__parse_chunk(sock.recv(1500))
-                # Discard headers
-                body = chunk["data"]
-                while not (chunk["end"]):
-                    xmldata += body
-                    chunk = self.__parse_chunk(sock.recv(1500))
+        with closing(socket.socket(socket.AF_INET, socket.SOCK_DGRAM, socket.IPPROTO_UDP)) as s:
+            s.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+            s.settimeout(3)
+            s.bind((mc_grp if not WIN32 else "", int(mc_port)))
+            s.setsockopt(
+                socket.IPPROTO_IP,
+                socket.IP_ADD_MEMBERSHIP,
+                socket.inet_aton(mc_grp) + socket.inet_aton(_iptv),
+            )
+            # Wait for an end chunk to start by the beginning
+            while True:
+                try:
+                    chunk = self.__parse_chunk(s.recv(1500))
+                    if chunk["end"]:
+                        first_file = str(chunk["filetype"]) + "_" + str(chunk["fileid"])
+                        break
+                except socket.timeout:
+                    log.error("Multicast IPTV de Movistar no detectado")
+                    failed += 1
+                    if failed == 3:
+                        sys.exit(1)
+            # Loop until firstfile
+            while loop:
+                try:
+                    xmldata = ""
+                    chunk = self.__parse_chunk(s.recv(1500))
+                    # Discard headers
                     body = chunk["data"]
-                # Discard last 4bytes binary footer?
-                xmldata += body[:-4]
-                _files[str(chunk["filetype"]) + "_" + str(chunk["fileid"])] = xmldata
-                # log.debug("XML: %s_%s" % (chunk["filetype"], chunk["fileid"]))
-                max_files -= 1
-                if str(chunk["filetype"]) + "_" + str(chunk["fileid"]) == first_file or max_files == 0:
-                    if VERBOSE:
-                        log.info(f"{mc_grp}:{mc_port} -> XML descargado")
-                    loop = False
-            except Exception as ex:
-                log.debug(f"Error 2 al descargar los archivos XML: {repr(ex)}")
-        sock.close()
+                    while not (chunk["end"]):
+                        xmldata += body
+                        chunk = self.__parse_chunk(s.recv(1500))
+                        body = chunk["data"]
+                    # Discard last 4bytes binary footer?
+                    xmldata += body[:-4]
+                    _files[str(chunk["filetype"]) + "_" + str(chunk["fileid"])] = xmldata
+                    # log.debug("XML: %s_%s" % (chunk["filetype"], chunk["fileid"]))
+                    max_files -= 1
+                    if str(chunk["filetype"]) + "_" + str(chunk["fileid"]) == first_file or max_files == 0:
+                        if VERBOSE:
+                            log.info(f"{mc_grp}:{mc_port} -> XML descargado")
+                        loop = False
+                except Exception as ex:
+                    log.error(f"Error al descargar los archivos XML: {repr(ex)}")
         return _files
 
     @staticmethod
