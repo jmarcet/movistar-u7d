@@ -185,7 +185,7 @@ async def cancel_app():
 
 
 def check_task(task):
-    if WIN32 and task.result() not in (0, 1, 2, 15, 137, 143):
+    if WIN32 and task.result() not in win32_normal_retcodes:
         app.stop()
 
 
@@ -585,7 +585,7 @@ async def network_saturation():
 async def reap_vod_child(process, filename):
     retcode = await process.wait()
 
-    if WIN32 and retcode not in (0, 1, 2, 15, 137, 143):
+    if WIN32 and retcode not in win32_normal_retcodes:
         log.debug("Reap VOD Child: Exiting!!!")
         app.stop()
 
@@ -1130,6 +1130,7 @@ if __name__ == "__main__":
     tvgrab_lock = asyncio.Lock()
 
     flussonic_regex = re.compile(r"\w*-?(\d{10})-?(\d+){0,1}\.?\w*")
+    win32_normal_retcodes = (0, 1, 2, 15, 137, 143)  # These are different to those from closing the console
 
     monitor(
         app,
