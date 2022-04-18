@@ -582,10 +582,24 @@ async def network_saturation():
         await asyncio.sleep(1)
 
 
-async def reap_vod_child(process):
-    log.debug(f"Awaiting VOD [{_CHILDREN[process][0][1]}] [{_CHILDREN[process][0][2]}]: {process}")
+async def reap_vod_child(process, filename):
     retcode = await process.wait()
-    await recording_cleanup(process, retcode)
+
+    if WIN32 and retcode not in (0, 1, 2, 15, 137, 143):
+        log.debug("Reap VOD Child: Exiting!!!")
+        app.stop()
+
+    if retcode == -9 or WIN32 and retcode:
+        ongoing = await ongoing_vods(filename=filename)
+        if ongoing:
+            log.debug(f'Reap VOD Child: Killing child: "{filename}"')
+            ongoing[0].terminate()
+
+    global _t_timers
+    if not _t_timers or _t_timers.done():
+        _t_timers = app.add_task(timers_check(delay=5), name="_t_timers")
+
+    log.debug(f"Reap VOD Child: {process}:{retcode} DONE")
 
 
 async def record_program(channel_id, program_id, offset=0, record_time=0, cloud=False, mp4=False, vo=False):
@@ -609,34 +623,8 @@ async def record_program(channel_id, program_id, offset=0, record_time=0, cloud=
     cmd += ["--vo"] if vo else []
 
     log.debug('Launching: "%s"' % " ".join(cmd))
-    p = await asyncio.create_subprocess_exec(*cmd)
-
-    global _CHILDREN
-    async with children_lock:
-        _CHILDREN[p] = [(port, channel_id, program_id, cloud, filename), app.add_task(reap_vod_child(p))]
-
-
-async def recording_cleanup(process, retcode):
-    global _CHILDREN, _t_timers
-
-    if WIN32 and retcode not in (0, 1, 2, 15, 137, 143):
-        log.debug("Recording Cleanup: Exiting!!!")
-        app.stop()
-
-    async with children_lock:
-        port, channel_id, program_id, cloud, filename = _CHILDREN[process][0]
-        del _CHILDREN[process]
-
-    if retcode == -9 or WIN32 and retcode:
-        ongoing = await ongoing_vods(filename=filename)
-        if ongoing:
-            log.debug(f'Recording Cleanup: [{channel_id}] [{program_id}] -> Killing child: "{filename}"')
-            ongoing[0].terminate()
-
-    if not _t_timers or _t_timers.done():
-        _t_timers = app.add_task(timers_check(delay=5), name="_t_timers")
-
-    log.debug(f"Recording Cleanup: [{channel_id}] [{program_id}] -> {process}:{retcode} DONE")
+    process = await asyncio.create_subprocess_exec(*cmd)
+    app.add_task(reap_vod_child(process, filename))
 
 
 async def reload_epg():
@@ -1103,7 +1091,6 @@ if __name__ == "__main__":
     _NETWORK_SATURATION = 0
 
     _CHANNELS = {}
-    _CHILDREN = {}
     _CLOUD = {}
     _EPGDATA = {}
     _RECORDINGS = {}
@@ -1137,7 +1124,6 @@ if __name__ == "__main__":
     timers = os.path.join(_conf["HOME"], "timers.conf")
 
     epg_lock = asyncio.Lock()
-    children_lock = asyncio.Lock()
     network_bw_lock = asyncio.Lock()
     recordings_lock = asyncio.Lock()
     recordings_inc_lock = asyncio.Lock()
