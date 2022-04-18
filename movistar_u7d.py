@@ -18,8 +18,9 @@ from asyncio.exceptions import CancelledError
 from collections import namedtuple
 from contextlib import closing
 from filelock import FileLock, Timeout
-from sanic import Sanic, exceptions, response
+from sanic import Sanic, response
 from sanic.compat import stat_async
+from sanic.exceptions import HeaderNotFound, NotFound, ServiceUnavailable
 from sanic.handlers import ContentRangeHandler
 from sanic.log import error_logger, logger as log, LOGGING_CONFIG_DEFAULTS
 from sanic.models.server_types import ConnInfo
@@ -37,28 +38,16 @@ LOG_SETTINGS["formatters"]["generic"]["datefmt"] = "[%Y-%m-%d %H:%M:%S]"
 LOG_SETTINGS["formatters"]["access"]["datefmt"] = "[%Y-%m-%d %H:%M:%S]"
 
 app = Sanic("movistar_u7d")
-app.config.update(
-    {
-        "FALLBACK_ERROR_FORMAT": "json",
-        "GRACEFUL_SHUTDOWN_TIMEOUT": 0,
-        "REQUEST_TIMEOUT": 1,
-        "RESPONSE_TIMEOUT": 1,
-    }
-)
-app.ctx.vod_client = None
 
 
 @app.listener("before_server_start")
 async def before_server_start(app, loop):
     global _CHANNELS, _IPTV, _SESSION, _SESSION_LOGOS
 
-    if not WIN32:
-        import signal
-
-        def cleanup_handler(signum, frame):
-            asyncio.get_event_loop().stop()
-
-        [signal.signal(sig, cleanup_handler) for sig in (signal.SIGHUP, signal.SIGINT, signal.SIGTERM)]
+    app.config.FALLBACK_ERROR_FORMAT = "json"
+    app.config.GRACEFUL_SHUTDOWN_TIMEOUT = 0
+    app.config.REQUEST_TIMEOUT = 1
+    app.config.RESPONSE_TIMEOUT = 1
 
     _SESSION = aiohttp.ClientSession(
         connector=aiohttp.TCPConnector(keepalive_timeout=YEAR_SECONDS, limit_per_host=1),
@@ -93,24 +82,20 @@ async def before_server_start(app, loop):
         app.add_task(network_saturated())
         log.info(f"BW: {IPTV_BW_SOFT}/{IPTV_BW_HARD} kbps / {IPTV_IFACE}")
 
-    if not app.ctx.vod_client:
-        app.ctx.vod_client = aiohttp.ClientSession(
-            connector=aiohttp.TCPConnector(
-                keepalive_timeout=YEAR_SECONDS,
-                resolver=AsyncResolver(nameservers=[IPTV_DNS]) if not WIN32 else None,
-            ),
-            headers={"User-Agent": UA},
-            json_serialize=ujson.dumps,
-        )
-
     _IPTV = get_iptv_ip()
-
-    if not WIN32:
-        [signal.signal(sig, signal.SIG_DFL) for sig in (signal.SIGHUP, signal.SIGINT, signal.SIGTERM)]
 
 
 @app.listener("after_server_start")
 async def after_server_start(app, loop):
+    app.ctx.vod_client = aiohttp.ClientSession(
+        connector=aiohttp.TCPConnector(
+            keepalive_timeout=YEAR_SECONDS,
+            resolver=AsyncResolver(nameservers=[IPTV_DNS]) if not WIN32 else None,
+        ),
+        headers={"User-Agent": UA},
+        json_serialize=ujson.dumps,
+    )
+
     banner = f"Movistar U7D - U7D v{_version}"
     if U7D_THREADS > 1:
         log.info(f"*** {banner} ***")
@@ -150,20 +135,20 @@ async def handle_channel(request, channel_id=None, channel_name=None):
         try:
             channel_id = get_channel_id(channel_name)
         except IndexError:
-            raise exceptions.NotFound(f"Requested URL {_raw_url} not found")
+            raise NotFound(f"Requested URL {_raw_url} not found")
 
     try:
         name, mc_grp, mc_port = [_CHANNELS[channel_id][t] for t in ["name", "address", "port"]]
     except (AttributeError, KeyError):
         log.error(f"{_raw_url} not found")
-        raise exceptions.NotFound(f"Requested URL {_raw_url} not found")
+        raise NotFound(f"Requested URL {_raw_url} not found")
 
     if request.method == "HEAD":
         return response.HTTPResponse(content_type=MIME_TS, status=200)
 
     if _NETWORK_SATURATED and not await ongoing_vods(_fast=True):
         log.warning(f"[{request.ip}] {_raw_url} -> Network Saturated")
-        raise exceptions.ServiceUnavailable("Network Saturated")
+        raise ServiceUnavailable("Network Saturated")
 
     sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM, socket.IPPROTO_UDP)
     sock.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
@@ -213,7 +198,7 @@ async def handle_flussonic(request, url, channel_id=None, channel_name=None, clo
         try:
             channel_id = get_channel_id(channel_name)
         except IndexError:
-            raise exceptions.NotFound(f"Requested URL {_raw_url} not found")
+            raise NotFound(f"Requested URL {_raw_url} not found")
 
     try:
         async with _SESSION.get(
@@ -222,18 +207,18 @@ async def handle_flussonic(request, url, channel_id=None, channel_name=None, clo
             channel, program_id, start, duration, offset = (await r.json()).values()
     except (AttributeError, KeyError, ValueError):
         log.error(f"{_raw_url} not found channel_id={channel_id} url={url} cloud={cloud}")
-        raise exceptions.NotFound(f"Requested URL {_raw_url} not found")
+        raise NotFound(f"Requested URL {_raw_url} not found")
 
     if request.method == "HEAD":
         return response.HTTPResponse(content_type=MIME_TS, status=200)
 
     if _NETWORK_SATURATED and not await ongoing_vods(_fast=True):
         log.warning(f"[{request.ip}] {_raw_url} -> Network Saturated")
-        raise exceptions.ServiceUnavailable("Network Saturated")
+        raise ServiceUnavailable("Network Saturated")
 
     client_port = find_free_port(_IPTV)
     args = VodArgs(channel_id, program_id, request.ip, client_port, offset, cloud)
-    vod = app.add_task(VodLoop(args, app.ctx.vod_client))
+    vod = app.add_task(VodLoop(args, request.app.ctx.vod_client))
 
     with closing(await asyncio_dgram.bind((_IPTV, client_port))) as stream:
         _response = await request.respond(content_type=MIME_TS)
@@ -278,7 +263,7 @@ async def handle_flussonic_cloud(request, url, channel_id=None, channel_name=Non
 async def handle_guide(request):
     log.info(f"[{request.ip}] {request.method} {request.url}")
     if not os.path.exists(GUIDE):
-        raise exceptions.NotFound(f"Requested URL {request.raw_url.decode()} not found")
+        raise NotFound(f"Requested URL {request.raw_url.decode()} not found")
     return await response.file(GUIDE)
 
 
@@ -287,7 +272,7 @@ async def handle_guide(request):
 async def handle_guide_cloud(request):
     log.info(f"[{request.ip}] {request.method} {request.url}")
     if not os.path.exists(GUIDE_CLOUD):
-        raise exceptions.NotFound(f"Requested URL {request.raw_url.decode()} not found")
+        raise NotFound(f"Requested URL {request.raw_url.decode()} not found")
     return await response.file(GUIDE_CLOUD)
 
 
@@ -296,7 +281,7 @@ async def handle_guide_cloud(request):
 async def handle_guide_gz(request):
     log.info(f"[{request.ip}] {request.method} {request.url}")
     if not os.path.exists(GUIDE + ".gz"):
-        raise exceptions.NotFound(f"Requested URL {request.raw_url.decode()} not found")
+        raise NotFound(f"Requested URL {request.raw_url.decode()} not found")
     return await response.file(GUIDE + ".gz")
 
 
@@ -309,7 +294,7 @@ async def handle_logos(request, cover=None, logo=None, path=None):
     elif path and cover and cover.split(".")[0].isdigit():
         orig_url = f"{URL_COVER}/{path}/{cover}"
     else:
-        raise exceptions.NotFound(f"Requested URL {request.raw_url.decode()} not found")
+        raise NotFound(f"Requested URL {request.raw_url.decode()} not found")
 
     if request.method == "HEAD":
         return response.HTTPResponse(content_type="image/jpeg", status=200)
@@ -323,7 +308,7 @@ async def handle_logos(request, cover=None, logo=None, path=None):
                 body=logo_data, content_type="image/jpeg", headers=headers, status=200
             )
         else:
-            raise exceptions.NotFound(f"Requested URL {request.raw_url.decode()} not found")
+            raise NotFound(f"Requested URL {request.raw_url.decode()} not found")
 
 
 @app.get(r"/<m3u_file:([A-Za-z1-9]+)\.m3u$>")
@@ -351,7 +336,7 @@ async def handle_m3u_files(request, m3u_file):
         return await response.file(m3u_matched, mime_type=MIME_M3U)
     else:
         log.warning(f"[{request.ip}] {msg} m3u: Not Found")
-        raise exceptions.NotFound(f"Requested URL {request.raw_url.decode()} not found")
+        raise NotFound(f"Requested URL {request.raw_url.decode()} not found")
 
 
 @app.get("/favicon.ico")
@@ -365,7 +350,7 @@ async def handle_prometheus(request):
         async with _SESSION.get(f"{EPG_URL}/metrics") as r:
             return response.text((await r.read()).decode())
     except (ClientOSError, ServerDisconnectedError):
-        raise exceptions.ServiceUnavailable("Not available")
+        raise ServiceUnavailable("Not available")
 
 
 @app.get("/record/<channel_id:int>/<url>")
@@ -379,19 +364,19 @@ async def handle_record_program(request, url, channel_id=None, channel_name=None
         try:
             channel_id = get_channel_id(channel_name)
         except IndexError:
-            raise exceptions.NotFound(f"Requested URL {request.raw_url.decode()} not found")
+            raise NotFound(f"Requested URL {request.raw_url.decode()} not found")
 
     try:
         async with _SESSION.get(f"{EPG_URL}/record/{channel_id}/{url}", params=request.args) as r:
             return response.json(await r.json())
     except (ClientOSError, ServerDisconnectedError):
-        raise exceptions.ServiceUnavailable("Not available")
+        raise ServiceUnavailable("Not available")
 
 
 @app.route("/recording/", methods=["GET", "HEAD"])
 async def handle_recording(request):
     if not RECORDINGS:
-        raise exceptions.NotFound(f"Requested URL {request.raw_url.decode()} not found")
+        raise NotFound(f"Requested URL {request.raw_url.decode()} not found")
 
     _path = urllib.parse.unquote(request.raw_url.decode().split("/recording/")[1])
     file = os.path.join(RECORDINGS, _path[1:])
@@ -406,12 +391,12 @@ async def handle_recording(request):
         elif ext in (".avi", ".mkv", ".mp4", ".mpeg", ".mpg", ".ts"):
             try:
                 _range = ContentRangeHandler(request, await stat_async(file))
-            except exceptions.HeaderNotFound:
+            except HeaderNotFound:
                 _range = None
 
             return await response.file_stream(file, mime_type=MIME_WEBM, _range=_range)
 
-    raise exceptions.NotFound(f"Requested URL {request.raw_url.decode()} not found")
+    raise NotFound(f"Requested URL {request.raw_url.decode()} not found")
 
 
 @app.get("/terminate")
@@ -429,7 +414,7 @@ async def handle_timers_check(request):
         async with _SESSION.get(f"{EPG_URL}/timers_check") as r:
             return response.json(await r.json())
     except (ClientOSError, ServerDisconnectedError):
-        raise exceptions.ServiceUnavailable("Not available")
+        raise ServiceUnavailable("Not available")
 
 
 async def network_saturated():

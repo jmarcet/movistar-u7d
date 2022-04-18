@@ -6,7 +6,7 @@ defusedxml
 dict2xml
 filelock
 netifaces
-sanic==21.12.1
+sanic
 git+https://github.com/jmarcet/sanic-prometheus
 setproctitle
 tomli

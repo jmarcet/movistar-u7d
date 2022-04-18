@@ -19,8 +19,9 @@ from datetime import datetime, timedelta
 from filelock import FileLock, Timeout
 from glob import glob
 from psutil import Process, boot_time
-from sanic import Sanic, exceptions, response
+from sanic import Sanic, response
 from sanic_prometheus import monitor
+from sanic.exceptions import NotFound, ServiceUnavailable
 from sanic.log import logger as log, LOGGING_CONFIG_DEFAULTS
 
 from mu7d import EXT, IPTV_DNS, UA, UA_U7D, URL_MVTV, VID_EXTS, WIN32, YEAR_SECONDS
@@ -34,15 +35,14 @@ LOG_SETTINGS["formatters"]["generic"]["datefmt"] = "[%Y-%m-%d %H:%M:%S]"
 LOG_SETTINGS["formatters"]["access"]["datefmt"] = "[%Y-%m-%d %H:%M:%S]"
 
 app = Sanic("movistar_epg")
-app.config.update({"FALLBACK_ERROR_FORMAT": "json", "KEEP_ALIVE_TIMEOUT": YEAR_SECONDS})
 
 
 @app.listener("before_server_start")
 async def before_server_start(app, loop):
     global _IPTV, _SESSION_CLOUD
 
-    if not WIN32:
-        [signal.signal(sig, cleanup_handler) for sig in (signal.SIGHUP, signal.SIGINT, signal.SIGTERM)]
+    app.config.FALLBACK_ERROR_FORMAT = "json"
+    app.config.KEEP_ALIVE_TIMEOUT = YEAR_SECONDS
 
     app.add_task(alive())
 
@@ -51,17 +51,20 @@ async def before_server_start(app, loop):
     log.info(banner)
     log.info("-" * len(banner))
 
-    if not WIN32 and IPTV_IFACE:
-        import netifaces
+    if not WIN32:
+        [signal.signal(sig, cleanup_handler) for sig in (signal.SIGHUP, signal.SIGINT, signal.SIGTERM)]
 
-        while True:
-            try:
-                iptv = netifaces.ifaddresses(IPTV_IFACE)[2][0]["addr"]
-                log.info(f"IPTV interface: {IPTV_IFACE}")
-                break
-            except (KeyError, ValueError):
-                log.info(f"IPTV interface: waiting for {IPTV_IFACE} to be up...")
-                await asyncio.sleep(5)
+        if IPTV_IFACE:
+            import netifaces
+
+            while True:
+                try:
+                    iptv = netifaces.ifaddresses(IPTV_IFACE)[2][0]["addr"]
+                    log.info(f"IPTV interface: {IPTV_IFACE}")
+                    break
+                except (KeyError, ValueError):
+                    log.info(f"IPTV interface: waiting for {IPTV_IFACE} to be up...")
+                    await asyncio.sleep(5)
 
     while True:
         try:
@@ -305,7 +308,7 @@ async def handle_archive(request, channel_id, program_id, cloud=False, missing=0
     try:
         _epg, timestamp = get_epg(channel_id, program_id, cloud)
     except TypeError:
-        raise exceptions.NotFound(f"Requested URL {request.raw_url.decode()} not found")
+        raise NotFound(f"Requested URL {request.raw_url.decode()} not found")
 
     filename = get_recording_name(channel_id, timestamp, cloud)
 
@@ -382,7 +385,7 @@ async def handle_program_id(request, channel_id, url):
     try:
         return response.json(get_program_id(channel_id, url, request.args.get("cloud") == "1"))
     except (AttributeError, KeyError):
-        raise exceptions.NotFound(f"Requested URL {request.raw_url.decode()} not found")
+        raise NotFound(f"Requested URL {request.raw_url.decode()} not found")
 
 
 @app.post("/prom_event/add")
@@ -466,7 +469,7 @@ async def handle_record_program(request, channel_id, url):
     try:
         channel, program_id, start, duration, offset = get_program_id(channel_id, url, cloud).values()
     except AttributeError:
-        raise exceptions.NotFound(f"Requested URL {request.raw_url.decode()} not found")
+        raise NotFound(f"Requested URL {request.raw_url.decode()} not found")
 
     if request.args.get("time"):
         record_time = int(request.args.get("time"))
@@ -475,7 +478,7 @@ async def handle_record_program(request, channel_id, url):
 
     msg = await record_program(channel_id, program_id, offset, record_time, cloud, mp4, vo)
     if msg:
-        raise exceptions.ServiceUnavailable(msg)
+        raise ServiceUnavailable(msg)
 
     return response.json(
         {
@@ -507,7 +510,7 @@ async def handle_timers_check(request):
         return response.json({"status": await log_network_saturated()}, 404)
 
     if _t_timers and not _t_timers.done():
-        raise exceptions.ServiceUnavailable("Already processing timers")
+        raise ServiceUnavailable("Already processing timers")
 
     _t_timers = app.add_task(timers_check(), name="_t_timers")
 
