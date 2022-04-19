@@ -437,15 +437,7 @@ async def vod_recording_setup(vod_info):
     else:
         _args.time = min(
             vod_info["duration"],
-            _args.time + 600
-            if _args.time > 7200
-            else _args.time + 300
-            if _args.time > 1800
-            else _args.time + 60
-            if _args.time > 900
-            else _args.time
-            if _args.time > 60
-            else 60,
+            int(_args.time * 7 / 6) if _args.time > 900 else _args.time if _args.time > 60 else 60,
         )
     _mtime = vod_info["beginTime"] / 1000 + _args.start
     _log_suffix = "[%ds] - [%s] [%s] [%s] [%d]" % (
