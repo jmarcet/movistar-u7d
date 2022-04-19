@@ -165,6 +165,16 @@ async def after_server_start(app, loop):
         app.add_task(cancel_app())
 
 
+@app.listener("before_server_stop")
+async def before_server_stop(app, loop):
+    for task in asyncio.all_tasks():
+        try:
+            task.cancel()
+            await task
+        except CancelledError:
+            pass
+
+
 async def alive():
     async with aiohttp.ClientSession(headers={"User-Agent": UA_U7D}) as session:
         for i in range(10):
