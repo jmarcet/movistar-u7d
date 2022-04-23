@@ -33,7 +33,7 @@ else:
 
 from mu7d import MIME_M3U, MIME_TS, MIME_WEBM, EPG_URL, IPTV_DNS, UA, URL_COVER, URL_LOGO, WIN32, YEAR_SECONDS
 from mu7d import find_free_port, get_iptv_ip, mu7d_config, ongoing_vods, _version
-from movistar_vod import VodLoop
+from movistar_vod import Vod
 
 
 LOG_SETTINGS = LOGGING_CONFIG_DEFAULTS
@@ -221,7 +221,7 @@ async def handle_flussonic(request, url, channel_id=None, channel_name=None, clo
 
     client_port = find_free_port(_IPTV)
     args = VodArgs(channel_id, program_id, request.ip, client_port, offset, cloud)
-    vod = app.add_task(VodLoop(args, request.app.ctx.vod_client))
+    vod = app.add_task(Vod(args, request.app.ctx.vod_client))
 
     with closing(await asyncio_dgram.bind((_IPTV, client_port))) as stream:
         _response = await request.respond(content_type=MIME_TS)
