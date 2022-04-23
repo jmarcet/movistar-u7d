@@ -3,6 +3,7 @@
 import aiofiles
 import aiohttp
 import asyncio
+import logging
 import os
 import re
 import sys
@@ -21,7 +22,6 @@ from psutil import Process, boot_time
 from sanic import Sanic, response
 from sanic_prometheus import monitor
 from sanic.exceptions import NotFound, ServiceUnavailable
-from sanic.log import logger as log, LOGGING_CONFIG_DEFAULTS
 
 if hasattr(asyncio, "exceptions"):
     from asyncio.exceptions import CancelledError
@@ -33,12 +33,9 @@ from mu7d import find_free_port, get_iptv_ip, get_safe_filename, get_title_meta,
 from mu7d import launch, _version
 
 
-LOG_SETTINGS = LOGGING_CONFIG_DEFAULTS
-LOG_SETTINGS["formatters"]["generic"]["format"] = "%(asctime)s [EPG] [%(levelname)s] %(message)s"
-LOG_SETTINGS["formatters"]["generic"]["datefmt"] = "[%Y-%m-%d %H:%M:%S]"
-LOG_SETTINGS["formatters"]["access"]["datefmt"] = "[%Y-%m-%d %H:%M:%S]"
-
 app = Sanic("movistar_epg")
+
+log = logging.getLogger("EPG")
 
 
 @app.listener("before_server_start")
@@ -1116,6 +1113,16 @@ if __name__ == "__main__":
     _last_bw_warning = _last_epg = _t_timers = None
 
     _conf = mu7d_config()
+
+    logging.basicConfig(
+        datefmt="%Y-%m-%d %H:%M:%S",
+        format="[%(asctime)s] [%(name)s] [%(levelname)s] %(message)s",
+        level=logging.DEBUG if _conf["DEBUG"] else logging.INFO,
+    )
+    logging.getLogger("asyncio").setLevel(logging.FATAL)
+    logging.getLogger("filelock").setLevel(logging.FATAL)
+    logging.getLogger("sanic.error").setLevel(logging.FATAL)
+    logging.getLogger("sanic.root").disabled = True
 
     if not os.getenv("U7D_PARENT"):
         log.critical("Must be run with mu7d")

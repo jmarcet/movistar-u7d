@@ -10,7 +10,7 @@ import codecs
 import defusedxml.ElementTree as ElTr
 import glob
 import gzip
-import logging as log
+import logging
 import os
 import random
 import re
@@ -31,6 +31,9 @@ from xml.etree.ElementTree import Element, ElementTree, SubElement  # nosec B405
 
 from mu7d import IPTV_DNS, UA, UA_U7D, WIN32, YEAR_SECONDS
 from mu7d import get_iptv_ip, get_title_meta, mu7d_config, _version
+
+
+log = logging.getLogger("TVG")
 
 
 epg_channels = [
@@ -1417,11 +1420,13 @@ if __name__ == "__main__":
     cookie_file = "movistar_tvg.cookie"
     end_points_file = "movistar_tvg.endpoints"
 
-    log.basicConfig(
+    logging.basicConfig(
         datefmt="[%Y-%m-%d %H:%M:%S]",
-        format="%(asctime)s [TVG] [%(levelname)s] %(message)s",
-        level=log.DEBUG if _conf["DEBUG"] else log.INFO,
+        format="%(asctime)s [%(name)s] [%(levelname)s] %(message)s",
+        level=logging.DEBUG if _conf["DEBUG"] else logging.INFO,
     )
+    logging.getLogger("asyncio").setLevel(logging.FATAL)
+    logging.getLogger("filelock").setLevel(logging.FATAL)
 
     # Determina la dirección IP para el IPTV y la conectividad con las DNS de Movistar
     try:

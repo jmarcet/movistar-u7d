@@ -7,7 +7,7 @@ import aiofiles
 import aiohttp
 import argparse
 import asyncio
-import logging as log
+import logging
 import os
 import psutil
 import sys
@@ -30,6 +30,9 @@ else:
 
 from mu7d import IPTV_DNS, EPG_URL, TERMINATE, UA, URL_COVER, URL_MVTV, WIN32, YEAR_SECONDS
 from mu7d import find_free_port, get_iptv_ip, mu7d_config, ongoing_vods, _version
+
+
+log = logging.getLogger("VOD")
 
 
 class RtspClient:
@@ -76,14 +79,14 @@ def _cleanup(ext, meta=False, subs=False):
 async def _cleanup_recording(exception, start=0):
     msg = exception if isinstance(exception, ValueError) else repr(exception)
     msg = "Cancelled" if isinstance(exception, CancelledError) else msg
-    log_suffix = f" [~{int(time.time() - start)}s] / [{_args.time}s]{_log_suffix}" if start else _log_suffix
+    log_suffix = f" [~{int(time.time() - start)}s] / [{_args.time}s]" if start else ""
     log.error(f"Recording FAILED{log_suffix} => {msg}")
 
     if os.path.exists(_filename + TMP_EXT):
-        log.debug(f"_cleanup_recording: cleaning only TMP file{_log_suffix}")
+        log.debug("_cleanup_recording: cleaning only TMP file")
         [_cleanup(ext) for ext in (TMP_EXT, TMP_EXT2, ".jpg", ".png")]
     else:
-        log.debug(f"_cleanup_recording: cleaning everything{_log_suffix}")
+        log.debug("_cleanup_recording: cleaning everything")
         _cleanup(NFO_EXT)
         _cleanup(VID_EXT, meta=True, subs=True)
         [_remove(file) for file in glob(f"{_filename.replace('[', '?').replace(']', '?')}.*")]
@@ -163,7 +166,7 @@ async def postprocess(archive_params, archive_url, mtime, record_time):
     async def _save_metadata(extra=False):
         nonlocal mtime
 
-        log.debug(f"Saving metadata{_log_suffix}")
+        log.debug("Saving metadata")
         cache_metadata = os.path.join(CACHE_DIR, f"{_args.program}.json")
         try:
             if os.path.exists(cache_metadata):
@@ -171,7 +174,7 @@ async def postprocess(archive_params, archive_url, mtime, record_time):
                     metadata = ujson.loads(await f.read())["data"]
 
             else:
-                log.debug(f"Getting extended info{_log_suffix}")
+                log.debug("Getting extended info")
 
                 params = {"action": "epgInfov2", "productID": _args.program, "channelID": _args.channel}
                 async with _SESSION_CLOUD.get(URL_MVTV, params=params) as resp:
@@ -182,7 +185,7 @@ async def postprocess(archive_params, archive_url, mtime, record_time):
                     await f.write(data)
 
         except (TypeError, ValueError) as ex:
-            log.warning(f"Extended info not found{_log_suffix} => {repr(ex)}")
+            log.warning(f"Extended info not found => {repr(ex)}")
             return None, None
 
         # Only the main cover, to embed in the video file
@@ -191,18 +194,18 @@ async def postprocess(archive_params, archive_url, mtime, record_time):
                 metadata[t] = int(metadata[t] / 1000)
 
             cover = metadata["cover"]
-            log.debug(f'Getting cover "{cover}"{_log_suffix}')
+            log.debug(f'Getting cover "{cover}"')
             async with _SESSION_CLOUD.get(f"{URL_COVER}/{cover}") as resp:
                 if resp.status == 200:
-                    log.debug(f'Got cover "{cover}"{_log_suffix}')
+                    log.debug(f'Got cover "{cover}"')
                     img_ext = os.path.splitext(cover)[1]
                     img_name = _filename + img_ext
-                    log.debug(f'Saving cover "{cover}" -> "{img_name}"{_log_suffix}')
+                    log.debug(f'Saving cover "{cover}"')
                     async with aiofiles.open(img_name, "wb") as f:
                         await f.write(await resp.read())
                     metadata["cover"] = os.path.basename(img_name)
                 else:
-                    log.debug(f'Failed to get cover "{cover}" -> {resp}{_log_suffix}')
+                    log.debug(f'Failed to get cover "{cover}" => {resp}')
                     return None, None
 
             img_mime = "image/jpeg" if img_ext in (".jpeg", ".jpg") else "image/png"
@@ -219,16 +222,16 @@ async def postprocess(archive_params, archive_url, mtime, record_time):
 
             for img in metadata["covers"]:
                 cover = metadata["covers"][img]
-                log.debug(f'Getting covers "{img}"{_log_suffix}')
+                log.debug(f'Getting covers "{img}"')
                 async with _SESSION_CLOUD.get(cover) as resp:
                     if resp.status != 200:
-                        log.debug(f'Failed to get covers "{img}"{_log_suffix}')
+                        log.debug(f'Failed to get cover "{img}" => {resp}')
                         continue
-                    log.debug(f'Got covers "{img}"{_log_suffix}')
+                    log.debug(f'Got cover "{img}"')
                     img_ext = os.path.splitext(cover)[1]
                     img_rel = f"{os.path.basename(_filename)}-{img}" + img_ext
                     img_name = os.path.join(metadata_dir, img_rel)
-                    log.debug(f'Saving covers "{img}" -> "{img_name}"{_log_suffix}')
+                    log.debug(f'Saving cover "{img}"')
                     async with aiofiles.open(img_name, "wb") as f:
                         await f.write(await resp.read())
                     os.utime(img_name, (-1, mtime))
@@ -249,7 +252,7 @@ async def postprocess(archive_params, archive_url, mtime, record_time):
             await f.write(dict2xml(metadata, wrap="metadata", indent="    "))
 
         os.utime(_filename + NFO_EXT, (-1, mtime))
-        log.debug(f"Metadata saved{_log_suffix}")
+        log.debug("Metadata saved")
 
     async def _step_0():
         nonlocal archive_params, archive_url
@@ -261,7 +264,7 @@ async def postprocess(archive_params, archive_url, mtime, record_time):
 
     @_check_terminate
     async def _step_1():
-        nonlocal proc
+        nonlocal proc, record_time
 
         cmd = ["mkvmerge", "--abort-on-warnings", "-q", "-o", _filename + TMP_EXT2]
         img_mime, img_name = await _save_metadata()
@@ -272,7 +275,7 @@ async def postprocess(archive_params, archive_url, mtime, record_time):
             cmd += ["--default-track", "2:1"]
         cmd += [_filename + TMP_EXT]
 
-        log.info(f"POSTPROCESS #1: Verifying recording{_log_suffix}")
+        log.info(f"POSTPROCESS #1: Verifying recording [~{record_time}s] / [{_args.time}s]")
         proc = await asyncio.create_subprocess_exec(*cmd, stdin=DEVNULL, stdout=PIPE, stderr=STDOUT)
         await _check_process("#1: Failed verifying recording")
 
@@ -291,7 +294,7 @@ async def postprocess(archive_params, archive_url, mtime, record_time):
         bad = duration < _args.time - 30
 
         archive_params["missing"] = _args.time - duration if bad else 0
-        log_suffix = f" [{duration}s] / [{_args.time}s]{_log_suffix}"
+        log_suffix = f" [{duration}s] / [{_args.time}s]"
 
         msg = f"POSTPROCESS #2: Recording is {'INCOMPLETE' if bad else 'COMPLETE'}{log_suffix}"
         if not bad:
@@ -318,13 +321,13 @@ async def postprocess(archive_params, archive_url, mtime, record_time):
             cmd += ["-map", "0", "-c", "copy", "-sn", "-movflags", "+faststart"]
             cmd += ["-f", "mp4", "-v", "panic", _filename + VID_EXT]
 
-            log.info(f"POSTPROCESS #3: Coverting remuxed recording to mp4{_log_suffix}")
+            log.info("POSTPROCESS #3: Coverting remuxed recording to mp4")
             proc = await asyncio.create_subprocess_exec(*cmd, stdin=DEVNULL, stdout=PIPE, stderr=STDOUT)
             await _check_process("#3: Failed converting remuxed recording to mp4")
 
             subs = [t for t in recording_data["tracks"] if t["type"] == "subtitles"]
             if subs:
-                log.info(f"POSTPROCESS #3B: Exporting subs from recording{_log_suffix}")
+                log.info("POSTPROCESS #3B: Exporting subs from recording")
             for track in subs:
                 filesub = "%s.%s.sub" % (_filename, track["properties"]["language"])
                 cmd = ["ffmpeg", "-i", _filename + TMP_EXT2]
@@ -340,7 +343,7 @@ async def postprocess(archive_params, archive_url, mtime, record_time):
             if WIN32 and os.path.exists(_filename + VID_EXT):
                 os.remove(_filename + VID_EXT)
             os.rename(_filename + TMP_EXT2, _filename + VID_EXT)
-            log.info(f"POSTPROCESS #3: Recording renamed to mkv{_log_suffix}")
+            log.info("POSTPROCESS #3: Recording renamed to mkv")
 
     @_check_terminate
     async def _step_4():
@@ -348,7 +351,7 @@ async def postprocess(archive_params, archive_url, mtime, record_time):
 
         cmd = ["comskip", f"--threads={COMSKIP}", "-d", "70", _filename + VID_EXT]
 
-        log.info(f"POSTPROCESS #4: COMSKIP: Checking recording for commercials{_log_suffix}")
+        log.info("POSTPROCESS #4: COMSKIP: Checking recording for commercials")
         async with aiofiles.open(COMSKIP_LOG, "ab") as f:
             start = time.time()
             proc = await asyncio.create_subprocess_exec(*cmd, stdin=DEVNULL, stdout=f, stderr=f)
@@ -357,7 +360,7 @@ async def postprocess(archive_params, archive_url, mtime, record_time):
 
         msg = (
             f"POSTPROCESS #4A: COMSKIP: Took {str(timedelta(seconds=round(end - start)))}s"
-            f" => [Commercials {'not found' if proc.returncode else 'found'}]{_log_suffix}"
+            f" => [Commercials {'not found' if proc.returncode else 'found'}]"
         )
         log.warning(msg) if proc.returncode else log.info(msg)
 
@@ -365,7 +368,7 @@ async def postprocess(archive_params, archive_url, mtime, record_time):
             cmd = ["mkvmerge", "-q", "-o", _filename + TMP_EXT2]
             cmd += ["--chapters", _filename + CHP_EXT, _filename + VID_EXT]
 
-            log.info(f"POSTPROCESS #4B: COMSKIP: Merging mkv chapters{_log_suffix}")
+            log.info("POSTPROCESS #4B: COMSKIP: Merging mkv chapters")
             proc = await asyncio.create_subprocess_exec(*cmd, stdin=DEVNULL, stdout=PIPE, stderr=STDOUT)
 
             try:
@@ -402,7 +405,7 @@ async def postprocess(archive_params, archive_url, mtime, record_time):
         status = await _step_0()  # Verify if raw recording time is OK, w/ the desired time rounded by 30s
 
         pp_lock.acquire(poll_interval=5)
-        log.info(f"Recording POSTPROCESS STARTS{_log_suffix}")
+        log.info("Recording POSTPROCESS STARTS")
 
         await _step_1()  # First remux and verification
 
@@ -411,7 +414,7 @@ async def postprocess(archive_params, archive_url, mtime, record_time):
         if COMSKIP:
             await _step_4()  # Comskip analysis
 
-        log.info(f"Recording POSTPROCESS ENDED{_log_suffix}")
+        log.info("Recording POSTPROCESS ENDED")
 
         await asyncio.shield(_step_5())  # Archive recording
 
@@ -426,7 +429,7 @@ async def postprocess(archive_params, archive_url, mtime, record_time):
 
 
 async def record_stream(vod_info):
-    global _filename, _log_suffix
+    global _filename
 
     if not _args.filename:
         from mu7d import get_safe_filename
@@ -439,19 +442,28 @@ async def record_stream(vod_info):
         _args.time = int(_args.time * 7 / 6) if _args.time > 900 else _args.time if _args.time > 60 else 60
         _args.time = min(_args.time, vod_info["duration"])
 
-    _log_suffix = ": %s [%s] [%s]" % (vod_info["channelName"], _args.channel, _args.program)
-    _log_suffix += ' [%d] "%s"' % (vod_info["beginTime"] / 1000, _args.filename)
+    log_suffix = " - %s [%s] [%s]" % (vod_info["channelName"], _args.channel, _args.program)
+    log_suffix += ' [%d] "%s"' % (vod_info["beginTime"] / 1000, _args.filename)
+
+    formatter = logging.Formatter(
+        datefmt="%Y-%m-%d %H:%M:%S",
+        fmt=f"[%(asctime)s] [%(name)s] [%(levelname)s] %(message)s{log_suffix}",
+    )
+    handler = logging.StreamHandler()
+    handler.setFormatter(formatter)
+    log.addHandler(handler)
+    log.propagate = False
 
     ongoing = await ongoing_vods(filename=_args.filename)
     if ongoing and not U7D_PARENT or len(ongoing) > 1:
-        log.error(f"Recording already ongoing{_log_suffix}")
+        log.error("Recording already ongoing")
         return 1
 
     _filename = os.path.join(RECORDINGS, _args.filename)
 
     path = os.path.dirname(_filename)
     if not os.path.exists(path):
-        log.debug(f"Creating recording subdir {path}")
+        log.debug("Creating recording subdir")
         os.makedirs(path)
 
     archive_params = {"cloud": 1} if _args.cloud else {}
@@ -469,20 +481,20 @@ async def record_stream(vod_info):
     if _args.channel in ("578", "884", "3603") or NO_SUBS:
         # matroska is not compatible with dvb_teletext subs
         # Boing, DKISS & Energy use them, so drop them
-        log.warning(f"Recording Dropping dvb_teletext subs{_log_suffix}")
+        log.warning("Recording Dropping dvb_teletext subs")
         ffmpeg.append("-sn")
 
     ffmpeg.extend(["-t", str(_args.time), "-v", "panic", "-vsync", "0", "-f", "matroska"])
     ffmpeg.append(_filename + TMP_EXT)
 
     proc = await asyncio.create_subprocess_exec(*ffmpeg, stdin=DEVNULL, stdout=DEVNULL, stderr=DEVNULL)
-    log.info(f"Recording STARTED [{_args.time}s]{_log_suffix}")
+    log.info(f"Recording STARTED [{_args.time}s]")
     start = time.time()
 
     try:
         retcode = await proc.wait()
         record_time = int(time.time() - start)
-        msg = f"Recording ENDED [~{record_time}s] / [{_args.time}s]{_log_suffix}"
+        msg = f"Recording ENDED [~{record_time}s] / [{_args.time}s]"
 
         if retcode not in (0, 1) or not U7D_PARENT:
             if retcode not in (0, 1):
@@ -549,7 +561,7 @@ async def rtsp(vod_info):
         # Close the RTSP session, reducing bandwith
         await client.send_request("TEARDOWN", session)
         client.close_connection()
-        log.debug(f"RTSP loop ended{_log_suffix}")
+        log.debug("RTSP loop ended")
 
         if __name__ == "__main__" and _args.write_to_file:
             if not rec_t.done():
@@ -623,7 +635,7 @@ if __name__ == "__main__":
 
         [signal.signal(sig, cancel_handler) for sig in (signal.SIGHUP, signal.SIGINT, signal.SIGTERM)]
 
-    _SESSION = _SESSION_CLOUD = _filename = _log_suffix = None
+    _SESSION = _SESSION_CLOUD = _filename = None
 
     _conf = mu7d_config()
 
@@ -646,12 +658,13 @@ if __name__ == "__main__":
 
     _args = parser.parse_args()
 
-    log.basicConfig(
+    logging.basicConfig(
         datefmt="%Y-%m-%d %H:%M:%S",
-        format="[%(asctime)s] [VOD] [%(levelname)s] %(message)s",
-        level=log.DEBUG if (_args.debug or _conf["DEBUG"]) else log.INFO,
+        format="[%(asctime)s] [%(name)s] [%(levelname)s] %(message)s",
+        level=logging.DEBUG if _args.debug or _conf["DEBUG"] else logging.INFO,
     )
-    log.getLogger("filelock").setLevel(log.INFO)
+    logging.getLogger("asyncio").setLevel(logging.FATAL)
+    logging.getLogger("filelock").setLevel(logging.FATAL)
 
     try:
         iptv = get_iptv_ip()
@@ -690,10 +703,10 @@ if __name__ == "__main__":
     try:
         result = asyncio.run(Vod())
         if result is not None:
-            log.debug(f"Exiting {result}{_log_suffix}")
+            log.debug(f"Exiting {result}")
             sys.exit(result)
     except (CancelledError, KeyboardInterrupt):
-        log.debug(f"Exiting 1{_log_suffix}")
+        log.debug("Exiting 1")
         sys.exit(1)
 
-    log.debug(f"Exiting 0{_log_suffix}")
+    log.debug("Exiting 0")

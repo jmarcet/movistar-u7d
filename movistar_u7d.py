@@ -5,6 +5,7 @@ import aiohttp
 import asyncio
 import asyncio_dgram
 import json
+import logging
 import os
 import socket
 import sys
@@ -21,7 +22,7 @@ from sanic import Sanic, response
 from sanic.compat import stat_async
 from sanic.exceptions import HeaderNotFound, NotFound, ServiceUnavailable
 from sanic.handlers import ContentRangeHandler
-from sanic.log import error_logger, logger as log, LOGGING_CONFIG_DEFAULTS
+from sanic.log import error_logger
 from sanic.models.server_types import ConnInfo
 from sanic.server import HttpProtocol
 from sanic.touchup.meta import TouchUpMeta
@@ -36,12 +37,9 @@ from mu7d import find_free_port, get_iptv_ip, mu7d_config, ongoing_vods, _versio
 from movistar_vod import Vod
 
 
-LOG_SETTINGS = LOGGING_CONFIG_DEFAULTS
-LOG_SETTINGS["formatters"]["generic"]["format"] = "%(asctime)s [U7D] [%(levelname)s] %(message)s"
-LOG_SETTINGS["formatters"]["generic"]["datefmt"] = "[%Y-%m-%d %H:%M:%S]"
-LOG_SETTINGS["formatters"]["access"]["datefmt"] = "[%Y-%m-%d %H:%M:%S]"
-
 app = Sanic("movistar_u7d")
+
+log = logging.getLogger("U7D")
 
 
 @app.listener("before_server_start")
@@ -484,6 +482,16 @@ if __name__ == "__main__":
     _CHILDREN = {}
 
     _conf = mu7d_config()
+
+    logging.basicConfig(
+        datefmt="%Y-%m-%d %H:%M:%S",
+        format="[%(asctime)s] [%(name)s] [%(levelname)s] %(message)s",
+        level=logging.DEBUG if _conf["DEBUG"] else logging.INFO,
+    )
+    logging.getLogger("asyncio").setLevel(logging.FATAL)
+    logging.getLogger("filelock").setLevel(logging.FATAL)
+    logging.getLogger("sanic.error").setLevel(logging.FATAL)
+    logging.getLogger("sanic.root").disabled = True
 
     if not os.getenv("U7D_PARENT"):
         log.critical("Must be run with mu7d")

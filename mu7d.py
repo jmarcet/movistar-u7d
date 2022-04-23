@@ -2,7 +2,7 @@
 
 import aiohttp
 import asyncio
-import logging as log
+import logging
 import os
 import psutil
 import re
@@ -23,6 +23,9 @@ else:
 
 
 _version = "4.9"
+
+log = logging.getLogger("INI")
+
 
 EXT = ".exe" if getattr(sys, "frozen", False) else ".py"
 WIN32 = sys.platform == "win32"
@@ -368,11 +371,13 @@ if __name__ == "__main__":
 
     _conf = mu7d_config()
 
-    log.basicConfig(
+    logging.basicConfig(
         datefmt="%Y-%m-%d %H:%M:%S",
-        format="[%(asctime)s] [INI] [%(levelname)s] %(message)s",
-        level=log.DEBUG if _conf["DEBUG"] else log.INFO,
+        format="[%(asctime)s] [%(name)s] [%(levelname)s] %(message)s",
+        level=logging.DEBUG if _conf["DEBUG"] else logging.INFO,
     )
+    logging.getLogger("asyncio").setLevel(logging.FATAL)
+    logging.getLogger("filelock").setLevel(logging.FATAL)
 
     banner = f"Movistar U7D v{_version}"
     log.info("=" * len(banner))
