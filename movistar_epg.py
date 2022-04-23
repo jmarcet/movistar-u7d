@@ -197,7 +197,7 @@ async def cancel_app():
 def check_task(task):
     if WIN32 and task.result() not in win32_normal_retcodes:
         log.debug(f"Check task: [{task}]:[{task.result()}] Exiting!!!")
-        app.stop()
+        Process().terminate()
 
 
 def cleanup_handler(signum, frame):
@@ -598,7 +598,7 @@ async def reap_vod_child(process, filename):
 
     if WIN32 and retcode not in win32_normal_retcodes:
         log.debug(f"Reap VOD Child: [{process}]:[{retcode}] Exiting!!!")
-        app.stop()
+        Process().terminate()
 
     if retcode == -9 or WIN32 and retcode:
         ongoing = await ongoing_vods(filename=filename)
