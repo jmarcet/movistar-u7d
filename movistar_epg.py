@@ -196,6 +196,7 @@ async def cancel_app():
 
 def check_task(task):
     if WIN32 and task.result() not in win32_normal_retcodes:
+        log.debug(f"Check task: [{task}]:[{task.result()}] Exiting!!!")
         app.stop()
 
 
@@ -339,7 +340,7 @@ async def handle_archive(request, channel_id, program_id, cloud=False, missing=0
     missing = int(request.args.get("missing", 0)) if request else missing
     if missing:
         if request.method == "OPTIONS" and _epg["duration"] - missing < 90:
-            log.error(f"Recording WRONG: {log_suffix}")
+            log.debug(f"Recording WRONG: {log_suffix}")
             return response.json({"status": "Recording WRONG"}, status=202)
 
         async with recordings_inc_lock:
@@ -596,20 +597,20 @@ async def reap_vod_child(process, filename):
     retcode = await process.wait()
 
     if WIN32 and retcode not in win32_normal_retcodes:
-        log.debug("Reap VOD Child: Exiting!!!")
+        log.debug(f"Reap VOD Child: [{process}]:[{retcode}] Exiting!!!")
         app.stop()
 
     if retcode == -9 or WIN32 and retcode:
         ongoing = await ongoing_vods(filename=filename)
         if ongoing:
-            log.debug(f'Reap VOD Child: Killing child: "{filename}"')
+            log.debug('Reap VOD Child: Killing child: "%s"' % " ".join(ongoing[0].cmdline()))
             ongoing[0].terminate()
 
     global _t_timers
     if not _t_timers or _t_timers.done():
         _t_timers = app.add_task(timers_check(delay=5), name="_t_timers")
 
-    log.debug(f"Reap VOD Child: {process}:{retcode} DONE")
+    log.debug(f"Reap VOD Child: [{process}]:[{retcode}] DONE")
 
 
 async def record_program(channel_id, program_id, offset=0, record_time=0, cloud=False, mp4=False, vo=False):
