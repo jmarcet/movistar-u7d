@@ -9,6 +9,7 @@ import re
 import socket
 import sys
 import tomli
+import urllib.parse
 
 from aiohttp.client_exceptions import ClientOSError, ServerDisconnectedError
 from contextlib import closing
@@ -355,6 +356,16 @@ if __name__ == "__main__":
                 [vod.wait() for vod in vods]
             os.remove(TERMINATE)
 
+    def _check_ports():
+        epg_uri = urllib.parse.urlparse(EPG_URL)
+        with closing(socket.socket(socket.AF_INET, socket.SOCK_STREAM)) as s:
+            if s.connect_ex((epg_uri.hostname, epg_uri.port)) == 0:
+                raise ValueError(f"El puerto {epg_uri.netloc} está ocupado")
+
+        with closing(socket.socket(socket.AF_INET, socket.SOCK_STREAM)) as s:
+            if s.connect_ex((_conf["LAN_IP"], _conf["U7D_PORT"])) == 0:
+                raise ValueError(f"El puerto {_conf['LAN_IP']}:{_conf['U7D_PORT']} está ocupado")
+
     _conf = mu7d_config()
 
     log.basicConfig(
@@ -391,8 +402,12 @@ if __name__ == "__main__":
     lockfile = os.path.join(os.getenv("TMP", os.getenv("TMPDIR", "/tmp")), ".mu7d.lock")  # nosec B108
     try:
         with FileLock(lockfile, timeout=0):
+            _check_ports()
             asyncio.run(u7d_main())
     except (CancelledError, KeyboardInterrupt):
+        sys.exit(1)
+    except ValueError as ex:
+        log.critical(ex)
         sys.exit(1)
     except Timeout:
         log.critical("Cannot be run more than once!")
