@@ -127,7 +127,7 @@ def get_title_meta(title, serie_id=None):
 
 
 async def launch(cmd):
-    proc = await asyncio.create_subprocess_exec(*cmd, cwd=os.path.dirname(__file__))
+    proc = await asyncio.create_subprocess_exec(*cmd, cwd=os.path.dirname(__file__) if EXT == ".py" else None)
     try:
         return await proc.wait()
     except CancelledError:
