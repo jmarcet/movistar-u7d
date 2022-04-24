@@ -80,7 +80,7 @@ async def before_server_start(app, loop):
 
     if IPTV_BW_SOFT:
         app.add_task(network_saturated())
-        log.info(f"BW: {IPTV_BW_SOFT}/{IPTV_BW_HARD} kbps / {IPTV_IFACE}")
+        log.info(f"BW: {IPTV_BW_SOFT}-{IPTV_BW_HARD} kbps / {IPTV_IFACE}")
 
     _IPTV = get_iptv_ip()
 

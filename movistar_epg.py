@@ -81,7 +81,7 @@ async def before_server_start(app, loop):
 
     if IPTV_BW_SOFT:
         app.add_task(network_saturation(), name="_t_tp")
-        log.info(f"Ignoring RECORDINGS_THREADS: BW {IPTV_BW_SOFT}/{IPTV_BW_HARD} kbps / {IPTV_IFACE}")
+        log.info(f"Ignoring RECORDINGS_THREADS => BW: {IPTV_BW_SOFT}-{IPTV_BW_HARD} kbps / {IPTV_IFACE}")
 
     _SESSION_CLOUD = aiohttp.ClientSession(
         connector=aiohttp.TCPConnector(
