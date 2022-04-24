@@ -671,16 +671,19 @@ async def reload_epg():
         return await update_epg()
 
     async with epg_lock:
+        int_channels, int_epgdata, services = {}, {}, {}
+
         try:
             async with aiofiles.open(epg_metadata, encoding="utf8") as f:
                 metadata = ujson.loads(await f.read())["data"]
+
             async with aiofiles.open(config_data, encoding="utf8") as f:
                 packages = ujson.loads(await f.read())["data"]["tvPackages"]
-            channels = metadata["channels"]
-            services = {}
+
             for package in packages.split("|") if packages != "ALL" else metadata["packages"]:
                 services = {**services, **metadata["packages"][package]["services"]}
-            int_channels = {}
+
+            channels = metadata["channels"]
             for channel in [chan for chan in channels if chan in services]:
                 int_channels[int(channel)] = channels[channel]
                 int_channels[int(channel)]["id"] = int(channels[channel]["id"])
@@ -688,41 +691,35 @@ async def reload_epg():
                 if "replacement" in channels[channel]:
                     int_channels[int(channel)]["replacement"] = int(channels[channel]["replacement"])
             _CHANNELS = int_channels
-            log.info(f"Loaded Channels metadata => {U7D_URL}/MovistarTV.m3u")
+
         except (FileNotFoundError, TypeError, ValueError) as ex:
             log.error(f"Failed to load Channels metadata {repr(ex)}")
             if os.path.exists(epg_metadata):
                 os.remove(epg_metadata)
             return await reload_epg()
 
-        await update_cloud()
-
         try:
             async with aiofiles.open(epg_data, encoding="utf8") as f:
                 epgdata = ujson.loads(await f.read())["data"]
-            int_epgdata = {}
+
             for channel in epgdata:
                 int_epgdata[int(channel)] = {}
                 for timestamp in epgdata[channel]:
                     int_epgdata[int(channel)][int(timestamp)] = epgdata[channel][timestamp]
             _EPGDATA = int_epgdata
-            log.info(f"Loaded EPG data => {U7D_URL}/guide.xml.gz")
+
         except (FileNotFoundError, TypeError, ValueError) as ex:
             log.error(f"Failed to load EPG data {repr(ex)}")
             if os.path.exists(epg_data):
                 os.remove(epg_data)
             return await reload_epg()
 
-        log.info(f"Total Channels: {len(_EPGDATA)}")
-        nr_epg = 0
-        for channel in _EPGDATA:
-            nr_epg += (
-                len(set(_EPGDATA[channel]) - (set(_CLOUD[channel]) - set(_EPGDATA[channel])))
-                if channel in _CLOUD
-                else len(_EPGDATA[channel])
-            )
-        log.info(f"Total EPG entries: {nr_epg}")
-        log.info("EPG Updated")
+        log.info(f"Channels & EPG Updated => {U7D_URL}/MovistarTV.m3u - {U7D_URL}/guide.xml.gz")
+
+        await update_cloud()
+        nr_epg = sum([len(_EPGDATA[channel]) for channel in _EPGDATA])
+
+        log.info(f"Total: {len(_EPGDATA)} Channels & {nr_epg} EPG entries")
 
 
 async def timers_check(delay=0):
@@ -863,12 +860,14 @@ async def update_cloud():
     try:
         async with aiofiles.open(cloud_data, encoding="utf8") as f:
             clouddata = ujson.loads(await f.read())["data"]
+
         int_clouddata = {}
         for channel in clouddata:
             int_clouddata[int(channel)] = {}
             for timestamp in clouddata[channel]:
                 int_clouddata[int(channel)][int(timestamp)] = clouddata[channel][timestamp]
         _CLOUD = int_clouddata
+
     except (FileNotFoundError, TypeError, ValueError):
         if os.path.exists(cloud_data):
             os.remove(cloud_data)
@@ -877,6 +876,7 @@ async def update_cloud():
         params = {"action": "recordingList", "mode": 0, "state": 2, "firstItem": 0, "numItems": 999}
         async with _SESSION_CLOUD.get(URL_MVTV, params=params) as r:
             cloud_recordings = (await r.json())["resultData"]["result"]
+
     except (ClientOSError, KeyError, ServerDisconnectedError):
         cloud_recordings = None
 
@@ -965,6 +965,7 @@ async def update_cloud():
     if updated or not os.path.exists(CHANNELS_CLOUD) or not os.path.exists(GUIDE_CLOUD):
         if not os.path.exists(CHANNELS_CLOUD) or not os.path.exists(GUIDE_CLOUD):
             log.warning("Missing Cloud Recordings data! Need to download it. Please be patient...")
+
         cmd = [sys.executable] if EXT == ".py" else []
         cmd += [f"movistar_tvg{EXT}", "--cloud_m3u", CHANNELS_CLOUD, "--cloud_recordings", GUIDE_CLOUD]
         async with tvgrab_lock:
@@ -972,10 +973,7 @@ async def update_cloud():
             await task
         check_task(task)
 
-    log.info(
-        f"{'Updated' if updated else 'Loaded'} Cloud Recordings data"
-        f"=> {U7D_URL}/MovistarTVCloud.m3u & {U7D_URL}/cloud.xml"
-    )
+    log.info(f"Cloud Recordings Updated => {U7D_URL}/MovistarTVCloud.m3u - {U7D_URL}/cloud.xml")
 
 
 async def update_epg():
