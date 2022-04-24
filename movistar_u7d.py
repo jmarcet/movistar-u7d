@@ -130,7 +130,7 @@ def get_channel_id(channel_name):
 async def handle_channel(request, channel_id=None, channel_name=None):
     _start = time.time()
     _raw_url = request.raw_url.decode()
-    _u7d_url = (U7D_URL + _raw_url + " ") if not NO_VERBOSE_LOGS else ""
+    _u7d_url = (U7D_URL + _raw_url) if not NO_VERBOSE_LOGS else ""
     if channel_name:
         try:
             channel_id = get_channel_id(channel_name)
@@ -161,16 +161,15 @@ async def handle_channel(request, channel_id=None, channel_name=None):
         _response = await request.respond(content_type=MIME_TS)
         await _response.send((await stream.recv())[0][28:])
 
-        latency = time.time() - _start
         prom = app.add_task(
             send_prom_event(
                 {
                     "method": "live",
                     "endpoint": f"{name} _ {request.ip} _ ",
                     "channel_id": channel_id,
-                    "msg": f"[{request.ip}] -> Playing {_u7d_url}[{latency:.4f}s]",
+                    "msg": f"[{request.ip}] -> Playing {_u7d_url}",
                     "id": _start,
-                    "lat": latency,
+                    "lat": time.time() - _start,
                 }
             )
         )
@@ -189,7 +188,7 @@ async def handle_channel(request, channel_id=None, channel_name=None):
 async def handle_flussonic(request, url, channel_id=None, channel_name=None, cloud=False):
     _start = time.time()
     _raw_url = request.raw_url.decode()
-    _u7d_url = (U7D_URL + _raw_url + " ") if not NO_VERBOSE_LOGS else ""
+    _u7d_url = (U7D_URL + _raw_url) if not NO_VERBOSE_LOGS else ""
 
     if not url:
         return response.empty(404)
@@ -224,7 +223,6 @@ async def handle_flussonic(request, url, channel_id=None, channel_name=None, clo
         _response = await request.respond(content_type=MIME_TS)
         await _response.send((await stream.recv())[0])
 
-        latency = time.time() - _start
         prom = app.add_task(
             send_prom_event(
                 {
@@ -233,9 +231,9 @@ async def handle_flussonic(request, url, channel_id=None, channel_name=None, clo
                     "channel_id": channel_id,
                     "url": url,
                     "id": _start,
-                    "msg": f"[{request.ip}] -> Playing {_u7d_url}[{latency:.4f}s]",
+                    "msg": f"[{request.ip}] -> Playing {_u7d_url}",
                     "cloud": cloud,
-                    "lat": latency,
+                    "lat": time.time() - _start,
                 }
             )
         )
@@ -438,11 +436,13 @@ async def network_saturated():
 
 
 async def send_prom_event(event):
+    await asyncio.sleep(0.1)
+    event["msg"] += f" [{event['lat']:.4f}s]"
+
     try:
         try:
             await _SESSION.post(f"{EPG_URL}/prom_event/add", json={**event})
-            while True:
-                await asyncio.sleep(YEAR_SECONDS)
+            await asyncio.sleep(YEAR_SECONDS)
         except CancelledError:
             event["msg"] = event["msg"].replace("Playing", "Stopping")
             await _SESSION.post(
