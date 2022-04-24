@@ -733,6 +733,10 @@ async def timers_check(delay=0):
         await log_network_saturated(nr_procs)
         return
 
+    if epg_lock.locked():  # If EPG is being updated, wait until it is done
+        await epg_lock.acquire()
+        epg_lock.release()
+
     log.info("Processing timers")
     try:
         async with aiofiles.open(timers, encoding="utf8") as f:
