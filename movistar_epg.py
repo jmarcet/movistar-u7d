@@ -1117,6 +1117,10 @@ if __name__ == "__main__":
 
     _conf = mu7d_config()
 
+    if not os.getenv("U7D_PARENT"):
+        log.critical("Must be run with mu7d")
+        sys.exit(1)
+
     CHANNELS = _conf["CHANNELS"]
     CHANNELS_CLOUD = _conf["CHANNELS_CLOUD"]
     GUIDE = _conf["GUIDE"]
@@ -1131,7 +1135,7 @@ if __name__ == "__main__":
     RECORDINGS_THREADS = _conf["RECORDINGS_THREADS"]
     U7D_URL = _conf["U7D_URL"]
 
-    U7D_PARENT = int(os.getenv("U7D_PARENT")) if os.getenv("U7D_PARENT") else 0
+    U7D_PARENT = int(os.getenv("U7D_PARENT"))
 
     cloud_data = os.path.join(_conf["HOME"], ".xmltv/cache/cloud.json")
     config_data = os.path.join(_conf["HOME"], ".xmltv/cache/config.json")

@@ -485,6 +485,10 @@ if __name__ == "__main__":
 
     _conf = mu7d_config()
 
+    if not os.getenv("U7D_PARENT"):
+        log.critical("Must be run with mu7d")
+        sys.exit(1)
+
     CHANNELS = _conf["CHANNELS"]
     CHANNELS_CLOUD = _conf["CHANNELS_CLOUD"]
     GUIDE = _conf["GUIDE"]
