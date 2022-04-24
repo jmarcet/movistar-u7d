@@ -988,7 +988,7 @@ async def update_epg():
             await reload_epg()
             _last_epg = int(datetime.now().replace(minute=0, second=0).timestamp())
             if RECORDINGS and (not _t_timers or _t_timers.done()):
-                _t_timers = app.add_task(timers_check(), name="_t_timers")
+                _t_timers = app.add_task(timers_check(delay=10), name="_t_timers")
             break
 
 
