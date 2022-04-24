@@ -153,7 +153,7 @@ async def after_server_start(app, loop):
         if RECORDINGS:
             global _t_timers
             uptime = int(datetime.now().timestamp() - boot_time())
-            if not _t_timers and int(datetime.now().replace(minute=0, second=0).timestamp()) < _last_epg:
+            if not _t_timers and int(datetime.now().replace(minute=0, second=0).timestamp()) <= _last_epg:
                 delay = max(10, 180 - uptime)
                 if delay > 10:
                     log.info(f"Waiting {delay}s to check recording timers since the system just booted...")
