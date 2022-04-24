@@ -104,7 +104,7 @@ Dentro del `docker` queda todo lo necesario y se ejecutará muy rápidamente, s�
 
  2. Si por el contrario preferimos instalarlo y usarlo directamente:
 
- - Necesitamos los paquetes `git`, `libffi-dev` y `python3-pip` instalados con el gestor de paquetes de nuestra distro. Necesitamos por lo menos `Python 3.8` A continuación instalamos las dependencias:
+ - Necesitamos los paquetes `git`, `libffi-dev` y `python3-pip` instalados con el gestor de paquetes de nuestra distro. Necesitamos por lo menos `Python 3.7` A continuación instalamos las dependencias:
 
 ```
 pip3 install -r requirements.txt

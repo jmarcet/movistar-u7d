@@ -14,7 +14,6 @@ import urllib.parse
 
 from aiohttp.client_exceptions import ClientOSError, ServerDisconnectedError
 from aiohttp.resolver import AsyncResolver
-from asyncio.exceptions import CancelledError
 from datetime import datetime, timedelta
 from filelock import FileLock, Timeout
 from glob import glob
@@ -23,6 +22,11 @@ from sanic import Sanic, response
 from sanic_prometheus import monitor
 from sanic.exceptions import NotFound, ServiceUnavailable
 from sanic.log import logger as log, LOGGING_CONFIG_DEFAULTS
+
+if hasattr(asyncio, "exceptions"):
+    from asyncio.exceptions import CancelledError
+else:
+    from asyncio import CancelledError
 
 from mu7d import EXT, IPTV_DNS, UA, UA_U7D, URL_MVTV, VID_EXTS, WIN32, YEAR_SECONDS
 from mu7d import find_free_port, get_iptv_ip, get_safe_filename, get_title_meta, mu7d_config, ongoing_vods
@@ -80,7 +84,7 @@ async def before_server_start(app, loop):
         await asyncio.sleep(5)
 
     if IPTV_BW_SOFT:
-        app.add_task(network_saturation(), name="_t_tp")
+        app.add_task(network_saturation())
         log.info(f"Ignoring RECORDINGS_THREADS => BW: {IPTV_BW_SOFT}-{IPTV_BW_HARD} kbps / {IPTV_IFACE}")
 
     _SESSION_CLOUD = aiohttp.ClientSession(
@@ -141,7 +145,7 @@ async def before_server_start(app, loop):
 
             await update_recordings(True)
 
-        app.add_task(update_epg_cron(), name="_t_epg")
+        app.add_task(update_epg_cron())
 
     if not WIN32:
         [signal.signal(sig, signal.SIG_DFL) for sig in (signal.SIGHUP, signal.SIGINT, signal.SIGTERM)]
@@ -157,7 +161,7 @@ async def after_server_start(app, loop):
                 delay = max(10, 180 - uptime)
                 if delay > 10:
                     log.info(f"Waiting {delay}s to check recording timers since the system just booted...")
-                _t_timers = app.add_task(timers_check(delay), name="_t_timers")
+                _t_timers = app.add_task(timers_check(delay))
             elif not _t_timers:
                 log.warning("Delaying timers_check until the EPG is updated...")
             log.info(f"Manual timers check => {U7D_URL}/timers_check")
@@ -335,7 +339,7 @@ async def handle_archive(request, channel_id, program_id, cloud=False, missing=0
     )
 
     if not _t_timers or _t_timers.done():
-        _t_timers = app.add_task(timers_check(delay=5), name="_t_timers")
+        _t_timers = app.add_task(timers_check(delay=5))
 
     missing = int(request.args.get("missing", 0)) if request else missing
     if missing:
@@ -375,7 +379,7 @@ async def handle_archive(request, channel_id, program_id, cloud=False, missing=0
                 _RECORDINGS[channel_id] = {}
             _RECORDINGS[channel_id][timestamp] = {"filename": filename}
 
-        app.add_task(update_recordings(channel_id), name="_t_recs")
+        app.add_task(update_recordings(channel_id))
 
         msg = f"Recording ARCHIVED: {log_suffix}"
         log.info(msg)
@@ -523,7 +527,7 @@ async def handle_timers_check(request):
     if _t_timers and not _t_timers.done():
         raise ServiceUnavailable("Already processing timers")
 
-    _t_timers = app.add_task(timers_check(), name="_t_timers")
+    _t_timers = app.add_task(timers_check())
 
     return response.json({"status": "Timers check queued"}, 200)
 
@@ -608,7 +612,7 @@ async def reap_vod_child(process, filename):
 
     global _t_timers
     if not _t_timers or _t_timers.done():
-        _t_timers = app.add_task(timers_check(delay=5), name="_t_timers")
+        _t_timers = app.add_task(timers_check(delay=5))
 
     log.debug(f"Reap VOD Child: [{process}]:[{retcode}] DONE")
 
@@ -992,7 +996,7 @@ async def update_epg():
             await reload_epg()
             _last_epg = int(datetime.now().replace(minute=0, second=0).timestamp())
             if RECORDINGS and (not _t_timers or _t_timers.done()):
-                _t_timers = app.add_task(timers_check(delay=10), name="_t_timers")
+                _t_timers = app.add_task(timers_check(delay=10))
             break
 
 

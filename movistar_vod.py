@@ -17,13 +17,17 @@ import urllib.parse
 
 from aiohttp.client_exceptions import ClientOSError, ServerDisconnectedError
 from aiohttp.resolver import AsyncResolver
-from asyncio.exceptions import CancelledError
 from asyncio.subprocess import DEVNULL, PIPE, STDOUT
 from collections import namedtuple
 from datetime import timedelta
 from dict2xml import dict2xml
 from filelock import FileLock
 from glob import glob
+
+if hasattr(asyncio, "exceptions"):
+    from asyncio.exceptions import CancelledError
+else:
+    from asyncio import CancelledError
 
 from mu7d import IPTV_DNS, EPG_URL, TERMINATE, UA, URL_COVER, URL_MVTV, WIN32, YEAR_SECONDS
 from mu7d import find_free_port, get_iptv_ip, mu7d_config, ongoing_vods, _version

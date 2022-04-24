@@ -11,10 +11,14 @@ import sys
 import tomli
 
 from aiohttp.client_exceptions import ClientOSError, ServerDisconnectedError
-from asyncio.exceptions import CancelledError
 from contextlib import closing
 from filelock import FileLock, Timeout
 from xml.sax.saxutils import unescape  # nosec B406
+
+if hasattr(asyncio, "exceptions"):
+    from asyncio.exceptions import CancelledError
+else:
+    from asyncio import CancelledError
 
 
 _version = "4.9"
@@ -273,8 +277,8 @@ async def u7d_main():
     epg_cmd = prefix + [f"movistar_epg{EXT}"]
     u7d_cmd = prefix + [f"movistar_u7d{EXT}"]
 
-    epg_t = asyncio.create_task(launch(epg_cmd), name="epg_t")
-    u7d_t = asyncio.create_task(launch(u7d_cmd), name="u7d_t")
+    epg_t = asyncio.create_task(launch(epg_cmd))
+    u7d_t = asyncio.create_task(launch(u7d_cmd))
 
     while True:
         try:
@@ -294,8 +298,8 @@ async def u7d_main():
             cleanup()
             break
 
-        epg_t = asyncio.create_task(launch(epg_cmd), name="epg_t") if epg_t in done else epg_t
-        u7d_t = asyncio.create_task(launch(u7d_cmd), name="u7d_t") if u7d_t in done else u7d_t
+        epg_t = asyncio.create_task(launch(epg_cmd)) if epg_t in done else epg_t
+        u7d_t = asyncio.create_task(launch(u7d_cmd)) if u7d_t in done else u7d_t
 
 
 if __name__ == "__main__":
