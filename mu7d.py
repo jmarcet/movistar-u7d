@@ -153,8 +153,8 @@ def mu7d_config():
         fileconf = os.path.join(os.getenv("USERPROFILE"), confname)
 
     try:
-        with open(fileconf) as f:
-            conf = tomli.loads(f.read())
+        with open(fileconf, encoding="utf8") as f:
+            conf = tomli.loads(f.read().lstrip("\ufeff"))
     except FileNotFoundError:
         conf = {}
 
