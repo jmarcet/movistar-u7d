@@ -205,7 +205,7 @@ async def handle_flussonic(request, url, channel_id=None, channel_name=None, clo
             f"{EPG_URL}/program_id/{channel_id}/{url}", params={"cloud": 1} if cloud else {}
         ) as r:
             channel, program_id, start, duration, offset = (await r.json()).values()
-    except (AttributeError, KeyError, ValueError):
+    except (AttributeError, KeyError, ValueError, ClientOSError, ServerDisconnectedError):
         log.error(f"{_raw_url} not found channel_id={channel_id} url={url} cloud={cloud}")
         raise NotFound(f"Requested URL {_raw_url} not found")
 
@@ -299,16 +299,18 @@ async def handle_logos(request, cover=None, logo=None, path=None):
     if request.method == "HEAD":
         return response.HTTPResponse(content_type="image/jpeg", status=200)
 
-    async with _SESSION_LOGOS.get(orig_url) as r:
-        if r.status == 200:
-            logo_data = await r.read()
-            headers = {}
-            headers.setdefault("Content-Disposition", f'attachment; filename="{logo}"')
-            return response.HTTPResponse(
-                body=logo_data, content_type="image/jpeg", headers=headers, status=200
-            )
-        else:
-            raise NotFound(f"Requested URL {request.raw_url.decode()} not found")
+    try:
+        async with _SESSION_LOGOS.get(orig_url) as r:
+            if r.status == 200:
+                logo_data = await r.read()
+                headers = {}
+                headers.setdefault("Content-Disposition", f'attachment; filename="{logo}"')
+                return response.HTTPResponse(
+                    body=logo_data, content_type="image/jpeg", headers=headers, status=200
+                )
+    except (ClientOSError, ServerDisconnectedError):
+        pass
+    raise NotFound(f"Requested URL {request.raw_url.decode()} not found")
 
 
 @app.get(r"/<m3u_file:([A-Za-z1-9]+)\.m3u$>")
