@@ -297,7 +297,7 @@ async def u7d_main():
                         u7d_t.cancel()
                 await u7d_t
             cleanup()
-            break
+            sys.exit(1)
 
         epg_t = asyncio.create_task(launch(epg_cmd)) if epg_t in done else epg_t
         u7d_t = asyncio.create_task(launch(u7d_cmd)) if u7d_t in done else u7d_t
