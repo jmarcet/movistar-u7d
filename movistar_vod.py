@@ -134,9 +134,6 @@ async def postprocess(record_time=0):
         _pp_p = await asyncio.create_subprocess_exec(*cmd, stdin=DEVNULL, stdout=PIPE, stderr=STDOUT)
         await _check_process(_pp_p, "#1: Failed verifying recording")
 
-        if img_name:
-            os.remove(img_name)
-
     @_check_terminate
     async def step_2(status):
         global _archive_params, _log_suffix
