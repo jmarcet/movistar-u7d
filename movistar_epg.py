@@ -884,7 +884,7 @@ async def update_cloud():
         log.info("No cloud recordings found")
         return
 
-    def fill_cloud_event():
+    def _fill_cloud_event():
         nonlocal data, meta, pid, timestamp, year
 
         episode = meta["episode"] if meta["episode"] else data["episode"] if "episode" in data else None
@@ -938,7 +938,7 @@ async def update_cloud():
                     continue
 
                 meta = get_title_meta(data["name"], data["seriesID"] if "seriesID" in data else None)
-                new_cloud[channel_id][timestamp] = fill_cloud_event()
+                new_cloud[channel_id][timestamp] = _fill_cloud_event()
                 if meta["episode_title"]:
                     new_cloud[channel_id][timestamp]["episode_title"] = meta["episode_title"]
 
@@ -1009,7 +1009,7 @@ async def update_epg_cron():
 
 
 async def update_recordings(archive=None):
-    def dump_files(files, channel=False, latest=False):
+    def _dump_files(files, channel=False, latest=False):
         m3u = ""
         for file in files:
             filename, ext = os.path.splitext(file)
@@ -1032,7 +1032,7 @@ async def update_recordings(archive=None):
             m3u += urllib.parse.quote(relname + ext) + "\n"
         return m3u
 
-    async def find_videos(path):
+    async def _find_videos(path):
         while True:
             try:
                 files = [
@@ -1067,7 +1067,7 @@ async def update_recordings(archive=None):
         else:
             topdirs = []
 
-        _files = await find_videos(RECORDINGS)
+        _files = await _find_videos(RECORDINGS)
         updated_m3u = False
         for dir in [RECORDINGS] + topdirs:
             log.debug(f'Looking for recordings in "{dir}"')
@@ -1080,11 +1080,11 @@ async def update_recordings(archive=None):
                 continue
             m3u = f"#EXTM3U name=\"{'Recordings' if dir == RECORDINGS else dir}\" dlna_extras=mpeg_ps_pal\n"
             if dir == RECORDINGS:
-                m3u += dump_files(reversed(files), latest=True)
-                m3u += dump_files(sorted(files))
+                m3u += _dump_files(reversed(files), latest=True)
+                m3u += _dump_files(sorted(files))
                 m3u_file = RECORDINGS_M3U
             else:
-                m3u += dump_files(files, channel=True)
+                m3u += _dump_files(files, channel=True)
                 m3u_file = os.path.join(os.path.join(RECORDINGS, dir), f"{dir}.m3u")
 
             async with aiofiles.open(m3u_file, "w", encoding="utf8") as f:
