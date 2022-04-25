@@ -43,7 +43,7 @@ app = Sanic("movistar_epg")
 
 @app.listener("before_server_start")
 async def before_server_start(app, loop):
-    global _IPTV, _SESSION_CLOUD
+    global _IPTV, _SESSION_CLOUD, _last_epg
 
     app.config.FALLBACK_ERROR_FORMAT = "json"
     app.config.KEEP_ALIVE_TIMEOUT = YEAR_SECONDS
@@ -99,11 +99,11 @@ async def before_server_start(app, loop):
     await reload_epg()
 
     if _CHANNELS and _EPGDATA:
-        if RECORDINGS:
-            global _RECORDINGS, _last_epg
+        if not _last_epg:
+            _last_epg = int(os.path.getmtime(GUIDE))
 
-            if not _last_epg:
-                _last_epg = int(os.path.getmtime(GUIDE))
+        if RECORDINGS:
+            global _RECORDINGS
 
             if not os.path.exists(RECORDINGS):
                 os.makedirs(RECORDINGS)
