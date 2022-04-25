@@ -278,11 +278,11 @@ def reaper(signum, sigframe):
 async def u7d_main():
     prefix = [sys.executable] if EXT == ".py" else []
 
-    epg_cmd = prefix + [f"movistar_epg{EXT}"]
     u7d_cmd = prefix + [f"movistar_u7d{EXT}"]
+    epg_cmd = prefix + [f"movistar_epg{EXT}"]
 
-    epg_t = asyncio.create_task(launch(epg_cmd))
     u7d_t = asyncio.create_task(launch(u7d_cmd))
+    epg_t = asyncio.create_task(launch(epg_cmd))
 
     while True:
         try:
@@ -302,8 +302,8 @@ async def u7d_main():
             cleanup()
             sys.exit(1)
 
-        epg_t = asyncio.create_task(launch(epg_cmd)) if epg_t in done else epg_t
         u7d_t = asyncio.create_task(launch(u7d_cmd)) if u7d_t in done else u7d_t
+        epg_t = asyncio.create_task(launch(epg_cmd)) if epg_t in done else epg_t
 
 
 if __name__ == "__main__":
