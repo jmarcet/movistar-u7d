@@ -13,7 +13,9 @@ import urllib.parse
 
 from aiohttp.client_exceptions import ClientOSError, ServerDisconnectedError
 from contextlib import closing
+from datetime import datetime
 from filelock import FileLock, Timeout
+from time import sleep
 from xml.sax.saxutils import unescape  # nosec B406
 
 if hasattr(asyncio, "exceptions"):
@@ -59,8 +61,12 @@ def find_free_port(iface=""):
 
 def get_iptv_ip():
     with closing(socket.socket(socket.AF_INET, socket.SOCK_DGRAM)) as s:
-        s.connect((IPTV_DNS, 53))
-        return s.getsockname()[0]
+        s.settimeout(1)
+        try:
+            s.connect((IPTV_DNS, 53))
+            return s.getsockname()[0]
+        except Timeout:
+            raise ValueError("Imposible conectar con DNS de Movistar IPTV")
 
 
 def get_lan_ip():
@@ -359,6 +365,24 @@ if __name__ == "__main__":
                 [vod.wait() for vod in vods]
             os.remove(TERMINATE)
 
+    def _check_iptv():
+        iptv_iface_ip = _get_iptv_iface_ip()
+        while True:
+            uptime = int(datetime.now().timestamp() - psutil.boot_time())
+            try:
+                iptv_ip = get_iptv_ip()
+                if not _conf["IPTV_IFACE"] or WIN32 or iptv_iface_ip and iptv_iface_ip == iptv_ip:
+                    log.info(f"IPTV address: {iptv_ip}")
+                    break
+                else:
+                    log.info("IPTV address: waiting for interface to be routed...")
+            except ValueError as ex:
+                if uptime < 180:
+                    log.info(ex)
+                else:
+                    raise
+            sleep(5)
+
     def _check_ports():
         epg_uri = urllib.parse.urlparse(EPG_URL)
         with closing(socket.socket(socket.AF_INET, socket.SOCK_STREAM)) as s:
@@ -368,6 +392,24 @@ if __name__ == "__main__":
         with closing(socket.socket(socket.AF_INET, socket.SOCK_STREAM)) as s:
             if s.connect_ex((_conf["LAN_IP"], _conf["U7D_PORT"])) == 0:
                 raise ValueError(f"El puerto {_conf['LAN_IP']}:{_conf['U7D_PORT']} está ocupado")
+
+    def _get_iptv_iface_ip():
+        iptv_iface = _conf["IPTV_IFACE"]
+        if iptv_iface:
+            import netifaces
+
+            while True:
+                uptime = int(datetime.now().timestamp() - psutil.boot_time())
+                try:
+                    iptv = netifaces.ifaddresses(iptv_iface)[2][0]["addr"]
+                    log.info(f"IPTV interface: {iptv_iface}")
+                    return iptv
+                except (KeyError, ValueError):
+                    if uptime < 180:
+                        log.info("IPTV interface: waiting for it...")
+                        sleep(5)
+                    else:
+                        raise ValueError(f"Unable to get address from interface {iptv_iface}...")
 
     _conf = mu7d_config()
 
@@ -407,6 +449,7 @@ if __name__ == "__main__":
     lockfile = os.path.join(os.getenv("TMP", os.getenv("TMPDIR", "/tmp")), ".mu7d.lock")  # nosec B108
     try:
         with FileLock(lockfile, timeout=0):
+            _check_iptv()
             _check_ports()
             asyncio.run(u7d_main())
     except (CancelledError, KeyboardInterrupt):

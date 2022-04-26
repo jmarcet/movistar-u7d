@@ -45,40 +45,15 @@ async def before_server_start(app, loop):
     app.config.FALLBACK_ERROR_FORMAT = "json"
     app.config.KEEP_ALIVE_TIMEOUT = YEAR_SECONDS
 
+    if not WIN32:
+        [signal.signal(sig, cleanup_handler) for sig in (signal.SIGHUP, signal.SIGINT, signal.SIGTERM)]
+
     app.add_task(alive())
 
     banner = f"Movistar U7D - EPG v{_version}"
     log.info("-" * len(banner))
     log.info(banner)
     log.info("-" * len(banner))
-
-    if not WIN32:
-        [signal.signal(sig, cleanup_handler) for sig in (signal.SIGHUP, signal.SIGINT, signal.SIGTERM)]
-
-        if IPTV_IFACE:
-            import netifaces
-
-            while True:
-                try:
-                    iptv = netifaces.ifaddresses(IPTV_IFACE)[2][0]["addr"]
-                    log.info(f"IPTV interface: {IPTV_IFACE}")
-                    break
-                except (KeyError, ValueError):
-                    log.info(f"IPTV interface: waiting for {IPTV_IFACE} to be up...")
-                    await asyncio.sleep(5)
-
-    while True:
-        try:
-            _IPTV = get_iptv_ip()
-            if _IPTV:
-                if not IPTV_IFACE or WIN32 or iptv == _IPTV:
-                    log.info(f"IPTV address: {_IPTV}")
-                    break
-                else:
-                    log.debug("IPTV address: waiting for interface to be routed...")
-        except Exception:
-            log.debug("Unable to connect to Movistar DNS")
-        await asyncio.sleep(5)
 
     if IPTV_BW_SOFT:
         app.add_task(network_saturation())
@@ -143,6 +118,8 @@ async def before_server_start(app, loop):
             await update_recordings(True)
 
         app.add_task(update_epg_cron())
+
+    _IPTV = get_iptv_ip()
 
     if not WIN32:
         [signal.signal(sig, signal.SIG_DFL) for sig in (signal.SIGHUP, signal.SIGINT, signal.SIGTERM)]
