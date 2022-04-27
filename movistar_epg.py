@@ -86,6 +86,8 @@ async def before_server_start(app, loop):
                 first = next(iter(_EPGDATA[channel_id]))
                 if first < oldest_epg:
                     oldest_epg = first
+
+            _indexed = set()
             try:
                 async with aiofiles.open(recordings, encoding="utf8") as f:
                     recordingsdata = ujson.loads(await f.read())
@@ -108,12 +110,19 @@ async def before_server_start(app, loop):
                                 log.warning(f'Archived Cloud Recording "{filename}" not found on disk')
                             else:
                                 continue
+                        else:
+                            _indexed.add(os.path.join(RECORDINGS, filename + VID_EXT))
+                            [os.utime(file, (-1, timestamp)) for file in get_recording_files(filename)]
                         int_recordings[channel_id][timestamp] = recording
                 _RECORDINGS = int_recordings
             except (TypeError, ValueError) as ex:
                 log.error(f'Failed to parse "recordings.json". It will be reset!!!: {repr(ex)}')
             except FileNotFoundError:
                 pass
+
+            for file in sorted(set(glob(f"{RECORDINGS}/**/*{VID_EXT}", recursive=True)) - _indexed):
+                timestamp = os.path.getmtime(file)
+                [os.utime(file, (-1, timestamp)) for file in get_recording_files(os.path.splitext(file)[0])]
 
             await update_recordings(True)
 
@@ -263,6 +272,16 @@ def get_program_id(channel_id, url=None, cloud=False):
         "duration": duration,
         "offset": new_start - start if new_start else 0,
     }
+
+
+def get_recording_files(fname):
+    basename = os.path.basename(fname)
+    metadata = os.path.join(RECORDINGS, os.path.join(os.path.dirname(fname), "metadata"))
+
+    files = glob(os.path.join(RECORDINGS, f"{fname.replace('[', '?').replace(']', '?')}*"))
+    files += glob(os.path.join(metadata, f"{basename.replace('[', '?').replace(']', '?')}*"))
+
+    return filter(lambda file: os.access(file, os.W_OK), files)
 
 
 def get_recording_name(channel_id, timestamp, cloud=False):
@@ -1118,6 +1137,7 @@ if __name__ == "__main__":
     RECORDINGS_PER_CHANNEL = _conf["RECORDINGS_PER_CHANNEL"]
     RECORDINGS_THREADS = _conf["RECORDINGS_THREADS"]
     U7D_URL = _conf["U7D_URL"]
+    VID_EXT = ".mkv" if not MP4_OUTPUT else ".mp4"
 
     U7D_PARENT = int(os.getenv("U7D_PARENT"))
 
