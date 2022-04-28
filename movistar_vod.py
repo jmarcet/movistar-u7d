@@ -29,7 +29,7 @@ else:
     from asyncio import CancelledError
 
 from mu7d import IPTV_DNS, EPG_URL, TERMINATE, UA, URL_COVER, URL_MVTV, WIN32, YEAR_SECONDS
-from mu7d import find_free_port, get_iptv_ip, mu7d_config, ongoing_vods, _version
+from mu7d import find_free_port, get_iptv_ip, mu7d_config, ongoing_vods, remove, _version
 
 
 log = logging.getLogger("VOD")
@@ -69,11 +69,11 @@ class RtspClient:
 
 def _cleanup(ext, meta=False, subs=False):
     if os.path.exists(_filename + ext):
-        _remove(_filename + ext)
+        remove(_filename + ext)
     if meta:
-        [_remove(t) for t in glob(f"{_filename.replace('[', '?').replace(']', '?')}.*.jpg")]
+        [remove(t) for t in glob(f"{_filename.replace('[', '?').replace(']', '?')}.*.jpg")]
     if subs:
-        [_remove(t) for t in glob(f"{_filename.replace('[', '?').replace(']', '?')}.*.sub")]
+        [remove(t) for t in glob(f"{_filename.replace('[', '?').replace(']', '?')}.*.sub")]
 
 
 async def _cleanup_recording(exception, start=0):
@@ -89,14 +89,14 @@ async def _cleanup_recording(exception, start=0):
         log.debug("_cleanup_recording: cleaning everything")
         _cleanup(NFO_EXT)
         _cleanup(VID_EXT, meta=True, subs=True)
-        [_remove(file) for file in glob(f"{_filename.replace('[', '?').replace(']', '?')}.*")]
+        [remove(file) for file in glob(f"{_filename.replace('[', '?').replace(']', '?')}.*")]
 
     if U7D_PARENT:
         path = os.path.dirname(_filename)
         parent = os.path.split(path)[0]
-        _remove(path)
+        remove(path)
         if parent != RECORDINGS:
-            _remove(parent)
+            remove(parent)
 
 
 async def _open_sessions():
@@ -116,16 +116,6 @@ async def _open_sessions():
             connector=aiohttp.TCPConnector(keepalive_timeout=YEAR_SECONDS),
             json_serialize=ujson.dumps,
         )
-
-
-def _remove(item):
-    try:
-        if os.path.isfile(item):
-            os.remove(item)
-        elif os.path.isdir(item) and not os.listdir(item):
-            os.rmdir(item)
-    except (FileNotFoundError, OSError, PermissionError):
-        pass
 
 
 async def postprocess(archive_params, archive_url, mtime, record_time):

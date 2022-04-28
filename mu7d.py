@@ -281,6 +281,16 @@ def reaper(signum, sigframe):
             pass
 
 
+def remove(item):
+    try:
+        if os.path.isfile(item):
+            os.remove(item)
+        elif os.path.isdir(item) and not os.listdir(item):
+            os.rmdir(item)
+    except (FileNotFoundError, OSError, PermissionError):
+        pass
+
+
 async def u7d_main():
     prefix = [sys.executable] if EXT == ".py" else []
 
