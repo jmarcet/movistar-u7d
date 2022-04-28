@@ -30,7 +30,7 @@ else:
 
 from mu7d import EXT, IPTV_DNS, UA, UA_U7D, URL_MVTV, VID_EXTS, WIN32, YEAR_SECONDS
 from mu7d import find_free_port, get_iptv_ip, get_safe_filename, get_title_meta, mu7d_config, ongoing_vods
-from mu7d import launch, _version
+from mu7d import launch, remove, _version
 
 
 app = Sanic("movistar_epg")
@@ -365,11 +365,27 @@ async def handle_archive(request, channel_id, program_id, cloud=False, missing=0
         log.debug(f"Recording OK: {log_suffix}")
         return response.json({"status": "Recording OK"}, status=200)
 
+    def _prune_duplicates():
+        global _RECORDINGS
+
+        found = [ts for ts in _RECORDINGS[channel_id] if _RECORDINGS[channel_id][ts]["filename"] in filename]
+        if found:
+            for ts in found:
+                duplicate = _RECORDINGS[channel_id][ts]["filename"]
+                old_files = sorted(set(get_recording_files(duplicate)) - set(get_recording_files(filename)))
+
+                [remove(file) for file in old_files]
+                [log.warning(f'REMOVED DUPLICATED "{file}"') for file in old_files]
+
+                _RECORDINGS[channel_id].pop(ts, None)
+
     log.debug(f"Checking for {filename}")
     if does_recording_exist(filename):
         async with recordings_lock:
             if channel_id not in _RECORDINGS:
                 _RECORDINGS[channel_id] = {}
+
+            _prune_duplicates()
             _RECORDINGS[channel_id][timestamp] = {"filename": filename}
 
         app.add_task(update_recordings(channel_id))
