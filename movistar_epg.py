@@ -153,13 +153,8 @@ async def after_server_start(app, loop):
 
 
 @app.listener("before_server_stop")
-async def before_server_stop(app, loop):
-    for task in asyncio.all_tasks():
-        try:
-            task.cancel()
-            await task
-        except CancelledError:
-            pass
+def before_server_stop(app=None, loop=None):
+    [task.cancel() for task in asyncio.all_tasks()]
 
 
 async def alive():
@@ -188,12 +183,7 @@ def check_task(task):
 
 
 def cleanup_handler(signum, frame):
-    [proc.terminate() for proc in Process().children()]
-    while True:
-        try:
-            os.waitpid(-1, 0)
-        except Exception:
-            break
+    before_server_stop()
     asyncio.get_event_loop().stop()
 
 
