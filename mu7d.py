@@ -15,6 +15,7 @@ from aiohttp.client_exceptions import ClientOSError, ServerDisconnectedError
 from contextlib import closing
 from datetime import datetime
 from filelock import FileLock, Timeout
+from shutil import which
 from time import sleep
 from xml.sax.saxutils import unescape  # nosec B406
 
@@ -170,7 +171,7 @@ def mu7d_config():
     if "HOME" not in conf:
         conf["HOME"] = os.getenv("HOME", os.getenv("USERPROFILE"))
 
-    if "COMSKIP" not in conf:
+    if "COMSKIP" not in conf or not which("comskip"):
         conf["COMSKIP"] = None
     else:
         conf["COMSKIP"] = min(conf["COMSKIP"], os.cpu_count())
@@ -208,7 +209,7 @@ def mu7d_config():
     if "NO_VERBOSE_LOGS" not in conf:
         conf["NO_VERBOSE_LOGS"] = False
 
-    if "RECORDINGS" not in conf:
+    if "RECORDINGS" not in conf or not which("ffmpeg") or not which("mkvmerge"):
         conf["RECORDINGS"] = conf["RECORDINGS_M3U"] = None
     else:
         conf["RECORDINGS"] = conf["RECORDINGS"].rstrip("/").rstrip("\\")
