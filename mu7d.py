@@ -25,7 +25,7 @@ else:
     from asyncio import CancelledError
 
 
-_version = "4.9"
+_version = "5.0"
 
 log = logging.getLogger("INI")
 
