@@ -386,7 +386,13 @@ async def postprocess(archive_params, archive_url, mtime, record_time):
     async def _step_5():
         nonlocal archive_params, archive_url, mtime
 
+        path = os.path.dirname(_filename)
+        parent = os.path.split(path)[0]
+
         files = glob(f"{_filename.replace('[', '?').replace(']', '?')}.*")
+        files += [path] if os.path.getmtime(path) < mtime else []
+        files += [parent] if os.path.getmtime(parent) < mtime and parent != RECORDINGS else []
+
         [os.utime(file, (-1, mtime)) for file in files if os.access(file, os.W_OK)]
 
         resp = await _SESSION.put(archive_url, params=archive_params)
