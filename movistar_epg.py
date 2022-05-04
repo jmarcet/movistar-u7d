@@ -367,7 +367,7 @@ async def handle_archive(request, channel_id, program_id, cloud=False, missing=0
                 [remove(file) for file in old_files]
                 [log.warning(f'REMOVED DUPLICATED "{file}"') for file in old_files]
 
-                _RECORDINGS[channel_id].pop(ts, None)
+                del _RECORDINGS[channel_id][ts]
 
     log.debug(f"Checking for {filename}")
     if does_recording_exist(filename):
@@ -406,9 +406,7 @@ async def handle_program_id(request, channel_id, url):
 async def handle_prom_event_add(request):
     try:
         cloud = request.json["cloud"] if "cloud" in request.json else False
-        _event = get_program_id(
-            request.json["channel_id"], request.json["url"] if "url" in request.json else None, cloud
-        )
+        _event = get_program_id(request.json["channel_id"], request.json.get("url"), cloud)
         _epg, _ = get_epg(request.json["channel_id"], _event["program_id"], cloud)
         _offset = "[%d/%d]" % (_event["offset"], _event["duration"])
         request.app.ctx.metrics["RQS_LATENCY"].labels(
@@ -436,10 +434,8 @@ async def handle_prom_event_add(request):
 @app.post("/prom_event/remove")
 async def handle_prom_event_remove(request):
     try:
-        cloud = request.json["cloud"] if "cloud" in request.json else False
-        _event = get_program_id(
-            request.json["channel_id"], request.json["url"] if "url" in request.json else None, cloud
-        )
+        cloud = request.json.get("cloud", False)
+        _event = get_program_id(request.json["channel_id"], request.json.get("url"), cloud)
         _epg, _ = get_epg(request.json["channel_id"], _event["program_id"], cloud)
         _offset = "[%d/%d]" % (_event["offset"], _event["duration"])
         if request.json["method"] == "live":
@@ -748,8 +744,8 @@ async def timers_check(delay=0):
         log.error(f"Failed to parse timers.conf: {repr(ex)}")
         return
 
-    deflang = _timers["default_language"] if "default_language" in _timers else ""
-    sync_cloud = _timers["sync_cloud"] if "sync_cloud" in _timers else False
+    deflang = _timers.get("default_language", "")
+    sync_cloud = _timers.get("sync_cloud", False)
 
     def _clean(string):
         return unicodedata.normalize("NFKD", string).encode("ASCII", "ignore").decode("utf8")
@@ -795,7 +791,7 @@ async def timers_check(delay=0):
     log.debug(f"Ongoing VODs: [{ongoing}]")
     queued = []
 
-    for str_channel_id in _timers["match"] if "match" in _timers else {}:
+    for str_channel_id in _timers.get("match", {}):
         channel_id = int(str_channel_id)
         if channel_id not in _EPGDATA:
             log.warning(f"Channel [{channel_id}] not found in EPG")
@@ -886,9 +882,9 @@ async def update_cloud():
     def _fill_cloud_event():
         nonlocal data, meta, pid, timestamp, year
 
-        episode = meta["episode"] if meta["episode"] else data["episode"] if "episode" in data else None
-        season = meta["season"] if meta["season"] else data["season"] if "season" in data else None
-        serie = meta["serie"] if meta["serie"] else data["seriesName"] if "seriesName" in data else None
+        episode = meta["episode"] if meta["episode"] else data.get("episode")
+        season = meta["season"] if meta["season"] else data.get("season")
+        serie = meta["serie"] if meta["serie"] else data.get("seriesName")
 
         return {
             "age_rating": data["ageRatingID"],
@@ -903,7 +899,7 @@ async def update_cloud():
             "start": int(timestamp),
             "year": year,
             "serie": serie,
-            "serie_id": data["seriesID"] if "seriesID" in data else None,
+            "serie_id": data.get("seriesID"),
         }
 
     new_cloud = {}
@@ -927,7 +923,7 @@ async def update_cloud():
                 params = {"action": "epgInfov2", "productID": pid, "channelID": channel_id}
                 async with _SESSION_CLOUD.get(URL_MVTV, params=params) as r:
                     _data = (await r.json())["resultData"]
-                    year = _data["productionDate"] if "productionDate" in _data else None
+                    year = _data.get("productionDate")
 
                 params = {"action": "getRecordingData", "extInfoID": pid, "channelID": channel_id, "mode": 1}
                 async with _SESSION_CLOUD.get(URL_MVTV, params=params) as r:
@@ -936,7 +932,7 @@ async def update_cloud():
                 if not data:  # There can be events with no data sometimes
                     continue
 
-                meta = get_title_meta(data["name"], data["seriesID"] if "seriesID" in data else None)
+                meta = get_title_meta(data["name"], data.get("seriesID"))
                 new_cloud[channel_id][timestamp] = _fill_cloud_event()
                 if meta["episode_title"]:
                     new_cloud[channel_id][timestamp]["episode_title"] = meta["episode_title"]
@@ -1007,7 +1003,7 @@ async def update_epg_cron():
         await asyncio.gather(asyncio.sleep(3600), update_epg())
 
 
-async def update_recordings(archive=None):
+async def update_recordings(archive=False):
     def _dump_files(files, channel=False, latest=False):
         m3u = ""
         for file in files:
@@ -1053,7 +1049,7 @@ async def update_recordings(archive=None):
             os.rename(recordings + ".tmp", recordings)
 
         if RECORDINGS_PER_CHANNEL:
-            if archive and not isinstance(archive, bool):
+            if not isinstance(archive, bool):
                 topdirs = [get_channel_dir(archive)]
             else:
                 topdirs = sorted(
@@ -1073,7 +1069,7 @@ async def update_recordings(archive=None):
             files = (
                 _files
                 if dir == RECORDINGS
-                else [file for file in _files if file.startswith(os.path.join(RECORDINGS, dir))]
+                else list(filter(lambda x: x.startswith(os.path.join(RECORDINGS, dir)), _files))
             )
             if not files:
                 continue

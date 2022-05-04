@@ -522,9 +522,7 @@ class MovistarTV:
                 async with session.get(url, headers=headers) as response:
                     if response.status == 200:
                         content = (await response.json())["resultData"]
-                        new_cookie = (
-                            response.headers["set-cookie"] if "set-cookie" in response.headers else None
-                        )
+                        new_cookie = response.headers.get("set-cookie")
                         if new_cookie and not self.__cookie:
                             self.__cookie = new_cookie
                             cache.save_cookie(self.__cookie)
@@ -1015,8 +1013,7 @@ class MulticastIPTV:
             epg_dt = epg_dt[struct.unpack("B", epg_dt[cut + 3 : cut + 4])[0] + cut + 4 :]
         return programs
 
-    def __merge_dicts(self, dict1, dict2, path=None):
-        path = [] if path is None else path
+    def __merge_dicts(self, dict1, dict2, path=[]):
         for key in dict2:
             if key in dict1:
                 if isinstance(dict1[key], dict) and isinstance(dict2[key], dict):
@@ -1123,7 +1120,7 @@ class XMLTV:
     def __get_series_data(program, ext_info):
         episode = program["episode"]
         season = program["season"]
-        stitle = program["episode_title"] if "episode_title" in program else ""
+        stitle = program.get("episode_title", "")
         return {
             "title": program["serie"] if program["serie"] else program["full_title"],
             "sub-title": stitle if not stitle.startswith("Episod") else "",
@@ -1149,7 +1146,7 @@ class XMLTV:
         tag_desc = SubElement(tag_programme, "desc", lang["es"])
         tag_desc.text = "Año: " + program["year"] + ". "
         ext_info = await mtv.get_epg_extended_info(program["pid"], channel_id)
-        orig_title = ext_info["originalTitle"] if ext_info and "originalTitle" in ext_info else None
+        orig_title = ext_info.get("originalTitle") if ext_info else None
         if orig_title and orig_title not in program["full_title"] and not orig_title.startswith("Episod"):
             tag_desc.text += f"«{orig_title}» "
         gens = self.__get_genre_and_subgenre(program["genre"])

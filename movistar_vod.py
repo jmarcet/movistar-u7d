@@ -154,8 +154,6 @@ async def postprocess(archive_params, archive_url, mtime, record_time):
         return wrapper
 
     async def _save_metadata(extra=False):
-        nonlocal mtime
-
         log.debug("Saving metadata")
         cache_metadata = os.path.join(CACHE_DIR, f"{_args.program}.json")
         try:
@@ -230,11 +228,11 @@ async def postprocess(archive_params, archive_url, mtime, record_time):
             if covers:
                 metadata["covers"] = covers
             else:
-                metadata.pop("covers", None)
+                del metadata["covers"]
                 os.rmdir(metadata_dir)
 
         for t in ("isuserfavorite", "lockdata", "logos", "name", "playcount", "resume", "watched"):
-            metadata.pop(t, None)
+            del metadata[t]
 
         metadata["title"] = _args.filename
 
@@ -245,7 +243,7 @@ async def postprocess(archive_params, archive_url, mtime, record_time):
         log.debug("Metadata saved")
 
     async def _step_0():
-        nonlocal archive_params, archive_url
+        nonlocal archive_params
 
         resp = await _SESSION.options(archive_url, params=archive_params)  # signal recording ended
         if resp.status not in (200, 201):
@@ -254,7 +252,7 @@ async def postprocess(archive_params, archive_url, mtime, record_time):
 
     @_check_terminate
     async def _step_1():
-        nonlocal proc, record_time
+        nonlocal proc
 
         cmd = ["mkvmerge", "--abort-on-warnings", "-q", "-o", _filename + TMP_EXT2]
         img_mime, img_name = await _save_metadata()
@@ -277,10 +275,7 @@ async def postprocess(archive_params, archive_url, mtime, record_time):
         proc = await asyncio.create_subprocess_exec(*cmd, stdin=DEVNULL, stdout=PIPE, stderr=DEVNULL)
         recording_data = ujson.loads((await proc.communicate())[0].decode())
 
-        if "duration" in recording_data["container"]["properties"]:
-            duration = int(int(recording_data["container"]["properties"]["duration"]) / 1000000000)
-        else:
-            duration = 0
+        duration = int(int(recording_data["container"]["properties"].get("duration", 0)) / 1000000000)
         bad = duration < _args.time - 30
 
         archive_params["missing"] = _args.time - duration if bad else 0
@@ -374,7 +369,7 @@ async def postprocess(archive_params, archive_url, mtime, record_time):
         [_cleanup(ext) for ext in (CHP_EXT, ".log", ".logo.txt", ".txt")]
 
     async def _step_5():
-        nonlocal archive_params, archive_url, mtime
+        nonlocal archive_params
 
         path = os.path.dirname(_filename)
         parent = os.path.split(path)[0]
@@ -401,7 +396,7 @@ async def postprocess(archive_params, archive_url, mtime, record_time):
         status = await _step_0()  # Verify if raw recording time is OK, w/ the desired time rounded by 30s
 
         pp_lock.acquire(poll_interval=5)
-        log.info("Recording POSTPROCESS STARTS")
+        log.debug("POSTPROCESS STARTS")
 
         await _step_1()  # First remux and verification
 
@@ -410,9 +405,9 @@ async def postprocess(archive_params, archive_url, mtime, record_time):
         if COMSKIP:
             await _step_4()  # Comskip analysis
 
-        log.info("Recording POSTPROCESS ENDED")
-
         await asyncio.shield(_step_5())  # Archive recording
+
+        log.debug("POSTPROCESS ENDED")
 
     except (CancelledError, ClientOSError, ServerDisconnectedError, ValueError) as exception:
         await asyncio.shield(_cleanup_recording(exception))
