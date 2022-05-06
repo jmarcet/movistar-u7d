@@ -229,10 +229,11 @@ async def postprocess(archive_params, archive_url, mtime, record_time):
                 metadata["covers"] = covers
             else:
                 del metadata["covers"]
-                os.rmdir(metadata_dir)
+                remove(metadata_dir)
 
         for t in ("isuserfavorite", "lockdata", "logos", "name", "playcount", "resume", "watched"):
-            del metadata[t]
+            if t in metadata:
+                del metadata[t]
 
         metadata["title"] = _args.filename
 
