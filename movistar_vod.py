@@ -227,6 +227,7 @@ async def postprocess(archive_params, archive_url, mtime, record_time):
 
             if covers:
                 metadata["covers"] = covers
+                os.utime(metadata_dir, (-1, mtime))
             else:
                 del metadata["covers"]
                 remove(metadata_dir)
@@ -328,6 +329,7 @@ async def postprocess(archive_params, archive_url, mtime, record_time):
         else:
             if WIN32 and os.path.exists(_filename + VID_EXT):
                 os.remove(_filename + VID_EXT)
+            os.utime(_filename + TMP_EXT2, (-1, mtime))
             os.rename(_filename + TMP_EXT2, _filename + VID_EXT)
             log.info("POSTPROCESS #3: Recording renamed to mkv")
 
@@ -362,6 +364,7 @@ async def postprocess(archive_params, archive_url, mtime, record_time):
 
                 if WIN32 and os.path.exists(_filename + VID_EXT):
                     os.remove(_filename + VID_EXT)
+                os.utime(_filename + TMP_EXT2, (-1, mtime))
                 os.rename(_filename + TMP_EXT2, _filename + VID_EXT)
             except ValueError as exception:
                 log.error(exception)
@@ -372,20 +375,14 @@ async def postprocess(archive_params, archive_url, mtime, record_time):
     async def _step_5():
         nonlocal archive_params
 
-        path = os.path.dirname(_filename)
-        parent = os.path.split(path)[0]
-
-        files = glob(f"{_filename.replace('[', '?').replace(']', '?')}.*")
-        files += [path] if os.path.getmtime(path) < mtime else []
-        files += [parent] if os.path.getmtime(parent) < mtime and parent != RECORDINGS else []
-
-        [os.utime(file, (-1, mtime)) for file in files if os.access(file, os.W_OK)]
-
         resp = await _SESSION.put(archive_url, params=archive_params)
         if resp.status == 200:
             await _save_metadata(extra=True)
         else:
             raise ValueError("Failed")
+
+        files = [os.path.dirname(_filename)] + glob(f"{_filename.replace('[', '?').replace(']', '?')}.*")
+        [os.utime(file, (-1, mtime)) for file in files if os.access(file, os.W_OK)]
 
     await asyncio.sleep(0.1)  # Prioritize the main loop
     lockfile = os.path.join(os.getenv("TMP", os.getenv("TMPDIR", "/tmp")), ".movistar_vod.lock")  # nosec B108

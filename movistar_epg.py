@@ -1073,6 +1073,20 @@ async def update_recordings(archive=False):
             )
             if not files:
                 continue
+
+            if archive is True and dir != RECORDINGS:
+                for subdir in os.listdir(os.path.join(RECORDINGS, dir)):
+                    subdir = os.path.join(RECORDINGS, dir, subdir)
+                    if not os.path.isdir(subdir):
+                        continue
+                    try:
+                        newest = os.path.getmtime(list(filter(lambda x: x.startswith(subdir), files))[-1])
+                    except IndexError:
+                        continue
+                    os.utime(subdir, (-1, newest))
+                    if os.path.exists(os.path.join(subdir, "metadata")):
+                        os.utime(os.path.join(subdir, "metadata"), (-1, newest))
+
             m3u = f"#EXTM3U name=\"{'Recordings' if dir == RECORDINGS else dir}\" dlna_extras=mpeg_ps_pal\n"
             if dir == RECORDINGS:
                 m3u += _dump_files(reversed(files), latest=True)
@@ -1084,8 +1098,13 @@ async def update_recordings(archive=False):
 
             async with aiofiles.open(m3u_file, "w", encoding="utf8") as f:
                 await f.write(m3u)
+
+            newest = int(os.path.getmtime(files[-1]))
+            [os.utime(file, (-1, newest)) for file in (m3u_file, os.path.join(RECORDINGS, dir))]
+
             if RECORDINGS_PER_CHANNEL and len(topdirs):
                 log.info(f"Wrote m3u [{m3u_file[len(RECORDINGS) + 1 :]}]")
+
             updated_m3u = True
 
         if updated_m3u:
