@@ -438,7 +438,6 @@ async def network_saturated():
 
 
 async def send_prom_event(event):
-    await asyncio.sleep(0.1)
     event["msg"] += f" [{event['lat']:.4f}s]"
 
     try:
