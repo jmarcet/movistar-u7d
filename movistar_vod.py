@@ -153,7 +153,7 @@ async def postprocess(archive_params, archive_url, mtime, record_time):
 
         return wrapper
 
-    async def _save_metadata(extra=False):
+    async def _save_metadata(newest_ts=None):
         log.debug("Saving metadata")
         cache_metadata = os.path.join(CACHE_DIR, f"{_args.program}.json")
         try:
@@ -177,7 +177,7 @@ async def postprocess(archive_params, archive_url, mtime, record_time):
             return None, None
 
         # Only the main cover, to embed in the video file
-        if not extra:
+        if not newest_ts:
             for t in ["beginTime", "endTime", "expDate"]:
                 metadata[t] = int(metadata[t] / 1000)
 
@@ -227,7 +227,7 @@ async def postprocess(archive_params, archive_url, mtime, record_time):
 
             if covers:
                 metadata["covers"] = covers
-                os.utime(metadata_dir, (-1, mtime))
+                os.utime(metadata_dir, (-1, newest_ts))
             else:
                 del metadata["covers"]
                 remove(metadata_dir)
@@ -375,14 +375,18 @@ async def postprocess(archive_params, archive_url, mtime, record_time):
     async def _step_5():
         nonlocal archive_params
 
+        files = glob(f"{_filename.replace('[', '?').replace(']', '?')}.*")
+        newest = sorted(glob(f"{os.path.dirname(_filename)}/*{VID_EXT}"), key=os.path.getmtime)[-1]
+        newest_ts = os.path.getmtime(newest)
+
         resp = await _SESSION.put(archive_url, params=archive_params)
         if resp.status == 200:
-            await _save_metadata(extra=True)
+            await _save_metadata(newest_ts)
         else:
             raise ValueError("Failed")
 
-        files = [os.path.dirname(_filename)] + glob(f"{_filename.replace('[', '?').replace(']', '?')}.*")
         [os.utime(file, (-1, mtime)) for file in files if os.access(file, os.W_OK)]
+        os.utime(os.path.dirname(_filename), (-1, newest_ts))
 
     await asyncio.sleep(0.1)  # Prioritize the main loop
     lockfile = os.path.join(os.getenv("TMP", os.getenv("TMPDIR", "/tmp")), ".movistar_vod.lock")  # nosec B108
