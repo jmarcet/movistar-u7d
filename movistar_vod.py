@@ -178,9 +178,6 @@ async def postprocess(archive_params, archive_url, mtime, record_time):
 
         # Only the main cover, to embed in the video file
         if not newest_ts:
-            for t in ["beginTime", "endTime", "expDate"]:
-                metadata[t] = int(metadata[t] / 1000)
-
             cover = metadata["cover"]
             log.debug(f'Getting cover "{cover}"')
             async with _SESSION_CLOUD.get(f"{URL_COVER}/{cover}") as resp:
@@ -232,11 +229,10 @@ async def postprocess(archive_params, archive_url, mtime, record_time):
                 del metadata["covers"]
                 remove(metadata_dir)
 
-        for t in ("isuserfavorite", "lockdata", "logos", "name", "playcount", "resume", "watched"):
-            if t in metadata:
-                del metadata[t]
-
-        metadata["title"] = _args.filename
+        drop_keys = ("isuserfavorite", "lockdata", "logos", "name", "playcount", "resume", "watched")
+        metadata = {k: v for k, v in metadata.items() if k not in drop_keys}
+        metadata.update({k: int(metadata[k] / 1000) for k in ("beginTime", "endTime", "expDate")})
+        metadata.update({"title": _args.filename})
 
         async with aiofiles.open(_filename + NFO_EXT, "w", encoding="utf8") as f:
             await f.write(dict2xml(metadata, wrap="metadata", indent="    "))
