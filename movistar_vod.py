@@ -235,6 +235,7 @@ async def postprocess(archive_params, archive_url, mtime, record_time):
         metadata.update({"title": _args.filename})
 
         async with aiofiles.open(_filename + NFO_EXT, "w", encoding="utf8") as f:
+            await f.write('<?xml version="1.0" encoding="UTF-8"?>\n')
             await f.write(dict2xml(metadata, wrap="metadata", indent="    "))
 
         os.utime(_filename + NFO_EXT, (-1, mtime))
