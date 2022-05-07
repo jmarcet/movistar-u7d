@@ -241,12 +241,11 @@ async def postprocess(archive_params, archive_url, mtime, record_time):
         log.debug("Metadata saved")
 
     async def _step_0():
-        nonlocal archive_params
+        nonlocal archive_params, resp
 
         resp = await _SESSION.options(archive_url, params=archive_params)  # signal recording ended
         if resp.status not in (200, 201):
             raise ValueError("Too short, missing: %ss" % archive_params["missing"])
-        return resp.status
 
     @_check_terminate
     async def _step_1():
@@ -267,7 +266,7 @@ async def postprocess(archive_params, archive_url, mtime, record_time):
 
     @_check_terminate
     async def _step_2():
-        nonlocal archive_params, proc, status
+        nonlocal archive_params, proc, recording_data, resp
 
         cmd = ["mkvmerge", "-J", _filename + TMP_EXT2]
         proc = await asyncio.create_subprocess_exec(*cmd, stdin=DEVNULL, stdout=PIPE, stderr=DEVNULL)
@@ -283,7 +282,7 @@ async def postprocess(archive_params, archive_url, mtime, record_time):
         if not bad:
             log.info(msg)
         else:
-            if status == 201:
+            if resp.status == 201:  # From _step_0()
                 log.warning(msg)
             else:
                 log.error(msg)
@@ -292,8 +291,8 @@ async def postprocess(archive_params, archive_url, mtime, record_time):
         return recording_data
 
     @_check_terminate
-    async def _step_3(recording_data):
-        nonlocal proc
+    async def _step_3():
+        nonlocal proc, recording_data
 
         _cleanup(".nfo")  # These are created by Jellyfin
         _cleanup(TMP_EXT)
@@ -366,7 +365,7 @@ async def postprocess(archive_params, archive_url, mtime, record_time):
                 log.error(exception)
                 _cleanup(TMP_EXT2)
 
-        [_cleanup(ext) for ext in (CHP_EXT, ".log", ".logo.txt", ".txt")]
+        list(map(_cleanup, (CHP_EXT, ".log", ".logo.txt", ".txt")))
 
     async def _step_5():
         nonlocal archive_params
@@ -385,20 +384,22 @@ async def postprocess(archive_params, archive_url, mtime, record_time):
         os.utime(os.path.dirname(_filename), (-1, newest_ts))
 
     await asyncio.sleep(0.1)  # Prioritize the main loop
+
+    proc = recording_data = resp = None
+    archive_params["missing"] = (_args.time - record_time) if record_time < _args.time - 30 else 0
+
     lockfile = os.path.join(os.getenv("TMP", os.getenv("TMPDIR", "/tmp")), ".movistar_vod.lock")  # nosec B108
     pp_lock = FileLock(lockfile)
-    proc = None
 
     try:
-        archive_params["missing"] = (_args.time - record_time) if (record_time < _args.time - 30) else 0
-        status = await _step_0()  # Verify if raw recording time is OK, w/ the desired time rounded by 30s
+        await _step_0()  # Verify if raw recording time is OK, w/ the desired time rounded by 30s
 
         pp_lock.acquire(poll_interval=5)
         log.debug("POSTPROCESS STARTS")
 
-        await _step_1()  # First remux and verification
-
-        await _step_3(await _step_2())  # Parse the recording data and then remux to mp4 or rename to mkv
+        await _step_1()  # Remux and verify recording
+        await _step_2()  # Parse the recording data
+        await _step_3()  # Remux to mp4 or rename to mkv
 
         if COMSKIP:
             await _step_4()  # Comskip analysis
