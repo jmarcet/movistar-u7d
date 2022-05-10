@@ -1027,19 +1027,6 @@ async def update_recordings(archive=False):
             m3u += urllib.parse.quote(relname + ext) + "\n"
         return m3u
 
-    async def _find_videos(path):
-        while True:
-            try:
-                files = [
-                    file
-                    for file in glob(f"{path}/**", recursive=True)
-                    if os.path.splitext(file)[1] in VID_EXTS
-                ]
-                files.sort(key=os.path.getmtime)
-                return files
-            except FileNotFoundError:
-                await asyncio.sleep(1)
-
     async with recordings_lock:
         if archive and _RECORDINGS:
             async with aiofiles.open(recordings + ".tmp", "w", encoding="utf8") as f:
@@ -1047,6 +1034,15 @@ async def update_recordings(archive=False):
             if WIN32 and os.path.exists(recordings):
                 os.remove(recordings)
             os.rename(recordings + ".tmp", recordings)
+
+        while True:
+            try:
+                _files = glob(f"{RECORDINGS}/**", recursive=True)
+                _files = list(filter(lambda x: os.path.splitext(x)[1] in VID_EXTS, _files))
+                _files.sort(key=os.path.getmtime)
+                break
+            except FileNotFoundError:
+                await asyncio.sleep(1)
 
         if RECORDINGS_PER_CHANNEL:
             if not isinstance(archive, bool):
@@ -1062,7 +1058,6 @@ async def update_recordings(archive=False):
         else:
             topdirs = []
 
-        _files = await _find_videos(RECORDINGS)
         updated_m3u = False
         for dir in [RECORDINGS] + topdirs:
             log.debug(f'Looking for recordings in "{dir}"')
