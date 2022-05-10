@@ -154,30 +154,31 @@ async def postprocess(archive_params, archive_url, mtime, record_time):
         return wrapper
 
     async def _save_metadata(newest_ts=None):
-        log.debug("Saving metadata")
-        cache_metadata = os.path.join(CACHE_DIR, f"{_args.program}.json")
-        try:
-            if os.path.exists(cache_metadata):
-                async with aiofiles.open(cache_metadata, encoding="utf8") as f:
-                    metadata = ujson.loads(await f.read())["data"]
-
-            else:
-                log.debug("Getting extended info")
-
-                params = {"action": "epgInfov2", "productID": _args.program, "channelID": _args.channel}
-                async with _SESSION_CLOUD.get(URL_MVTV, params=params) as resp:
-                    metadata = (await resp.json())["resultData"]
-
-                data = ujson.dumps({"data": metadata}, ensure_ascii=False, indent=4, sort_keys=True)
-                async with aiofiles.open(cache_metadata, "w", encoding="utf8") as f:
-                    await f.write(data)
-
-        except (TypeError, ValueError) as ex:
-            log.warning(f"Extended info not found => {repr(ex)}")
-            return None, None
+        nonlocal metadata
 
         # Only the main cover, to embed in the video file
         if not newest_ts:
+            cache_metadata = os.path.join(CACHE_DIR, f"{_args.program}.json")
+            try:
+                if os.path.exists(cache_metadata):
+                    async with aiofiles.open(cache_metadata, encoding="utf8") as f:
+                        metadata = ujson.loads(await f.read())["data"]
+
+                else:
+                    log.debug("Getting extended info")
+
+                    params = {"action": "epgInfov2", "productID": _args.program, "channelID": _args.channel}
+                    async with _SESSION_CLOUD.get(URL_MVTV, params=params) as resp:
+                        metadata = (await resp.json())["resultData"]
+
+                    data = ujson.dumps({"data": metadata}, ensure_ascii=False, indent=4, sort_keys=True)
+                    async with aiofiles.open(cache_metadata, "w", encoding="utf8") as f:
+                        await f.write(data)
+
+            except (TypeError, ValueError) as ex:
+                log.warning(f"Extended info not found => {repr(ex)}")
+                return None, None
+
             cover = metadata["cover"]
             log.debug(f'Getting cover "{cover}"')
             async with _SESSION_CLOUD.get(f"{URL_COVER}/{cover}") as resp:
@@ -190,11 +191,14 @@ async def postprocess(archive_params, archive_url, mtime, record_time):
                         await f.write(await resp.read())
                     metadata["cover"] = os.path.basename(img_name)
                 else:
-                    log.debug(f'Failed to get cover "{cover}" => {resp}')
+                    log.warning(f'Failed to get cover "{cover}" => {resp}')
                     return None, None
 
             img_mime = "image/jpeg" if img_ext in (".jpeg", ".jpg") else "image/png"
             return img_mime, img_name
+
+        elif not metadata:
+            return
 
         log.debug(f"Metadata={metadata}")
         # Save all the available metadata
@@ -386,7 +390,7 @@ async def postprocess(archive_params, archive_url, mtime, record_time):
 
     await asyncio.sleep(0.1)  # Prioritize the main loop
 
-    proc = recording_data = resp = None
+    metadata = proc = recording_data = resp = None
     archive_params["missing"] = (_args.time - record_time) if record_time < _args.time - 30 else 0
 
     lockfile = os.path.join(os.getenv("TMP", os.getenv("TMPDIR", "/tmp")), ".movistar_vod.lock")  # nosec B108
