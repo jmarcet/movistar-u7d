@@ -15,6 +15,7 @@ from aiohttp.client_exceptions import ClientOSError, ServerDisconnectedError
 from contextlib import closing
 from datetime import datetime
 from filelock import FileLock, Timeout
+from glob import glob
 from shutil import which
 from time import sleep
 from xml.sax.saxutils import unescape  # nosec B406
@@ -134,6 +135,10 @@ def get_title_meta(title, serie_id=None):
         "episode_title": episode_title,
         "is_serie": is_serie,
     }
+
+
+def glob_safe(string):
+    return glob(f"{string.replace('[', '?').replace(']', '?')}")
 
 
 async def launch(cmd):

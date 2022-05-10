@@ -29,8 +29,8 @@ else:
     from asyncio import CancelledError
 
 from mu7d import EXT, IPTV_DNS, UA, UA_U7D, URL_MVTV, VID_EXTS, WIN32, YEAR_SECONDS
-from mu7d import find_free_port, get_iptv_ip, get_safe_filename, get_title_meta, mu7d_config, ongoing_vods
-from mu7d import launch, remove, _version
+from mu7d import find_free_port, get_iptv_ip, get_safe_filename, get_title_meta, glob_safe, ongoing_vods
+from mu7d import launch, mu7d_config, remove, _version
 
 
 app = Sanic("movistar_epg")
@@ -191,7 +191,7 @@ def does_recording_exist(filename):
     return bool(
         [
             file
-            for file in glob(os.path.join(RECORDINGS, f"{filename.replace('[', '?').replace(']', '?')}.*"))
+            for file in glob_safe(os.path.join(RECORDINGS, f"{filename}.*"))
             if os.path.splitext(file)[1] in VID_EXTS
         ]
     )
@@ -268,8 +268,8 @@ def get_recording_files(fname):
     basename = os.path.basename(fname)
     metadata = os.path.join(RECORDINGS, os.path.join(os.path.dirname(fname), "metadata"))
 
-    files = glob(os.path.join(RECORDINGS, f"{fname.replace('[', '?').replace(']', '?')}*"))
-    files += glob(os.path.join(metadata, f"{basename.replace('[', '?').replace(']', '?')}*"))
+    files = glob_safe(os.path.join(RECORDINGS, f"{fname}*"))
+    files += glob_safe(os.path.join(metadata, f"{basename}*"))
 
     return filter(lambda file: os.access(file, os.W_OK), files)
 
@@ -1012,7 +1012,7 @@ async def update_recordings(archive=False):
             if os.path.exists(filename + ".jpg"):
                 logo = relname + ".jpg"
             else:
-                _logo = glob(f"{filename.replace('[', '?').replace(']', '?')}*.jpg")
+                _logo = glob_safe(f"{filename}*.jpg")
                 if len(_logo) and os.path.isfile(_logo[0]):
                     logo = _logo[0][len(RECORDINGS) + 1 :]
                 else:

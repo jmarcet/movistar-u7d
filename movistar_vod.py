@@ -21,7 +21,6 @@ from asyncio.subprocess import DEVNULL, PIPE, STDOUT
 from datetime import timedelta
 from dict2xml import dict2xml
 from filelock import FileLock
-from glob import glob
 
 if hasattr(asyncio, "exceptions"):
     from asyncio.exceptions import CancelledError
@@ -29,7 +28,7 @@ else:
     from asyncio import CancelledError
 
 from mu7d import IPTV_DNS, EPG_URL, TERMINATE, UA, URL_COVER, URL_MVTV, WIN32, YEAR_SECONDS
-from mu7d import find_free_port, get_iptv_ip, mu7d_config, ongoing_vods, remove, _version
+from mu7d import find_free_port, get_iptv_ip, glob_safe, mu7d_config, ongoing_vods, remove, _version
 
 
 log = logging.getLogger("VOD")
@@ -71,9 +70,9 @@ def _cleanup(ext, meta=False, subs=False):
     if os.path.exists(_filename + ext):
         remove(_filename + ext)
     if meta:
-        [remove(t) for t in glob(f"{_filename.replace('[', '?').replace(']', '?')}.*.jpg")]
+        list(map(remove, glob_safe(f"{_filename}.*.jpg")))
     if subs:
-        [remove(t) for t in glob(f"{_filename.replace('[', '?').replace(']', '?')}.*.sub")]
+        list(map(remove, glob_safe(f"{_filename}.*.sub")))
 
 
 async def _cleanup_recording(exception, start=0):
@@ -84,12 +83,12 @@ async def _cleanup_recording(exception, start=0):
 
     if os.path.exists(_filename + TMP_EXT):
         log.debug("_cleanup_recording: cleaning only TMP file")
-        [_cleanup(ext) for ext in (TMP_EXT, TMP_EXT2, ".jpg", ".png")]
+        list(map(_cleanup, (TMP_EXT, TMP_EXT2, ".jpg", ".png")))
     else:
         log.debug("_cleanup_recording: cleaning everything")
         _cleanup(NFO_EXT)
         _cleanup(VID_EXT, meta=True, subs=True)
-        [remove(file) for file in glob(f"{_filename.replace('[', '?').replace(']', '?')}.*")]
+        list(map(remove, glob_safe(f"{_filename}.*")))
 
     if U7D_PARENT:
         path = os.path.dirname(_filename)
@@ -375,8 +374,8 @@ async def postprocess(archive_params, archive_url, mtime, record_time):
     async def _step_5():
         nonlocal archive_params
 
-        files = glob(f"{_filename.replace('[', '?').replace(']', '?')}.*")
-        newest = sorted(glob(f"{os.path.dirname(_filename)}/*{VID_EXT}"), key=os.path.getmtime)[-1]
+        files = glob_safe(f"{_filename}.*")
+        newest = sorted(glob_safe(f"{os.path.dirname(_filename)}/*{VID_EXT}"), key=os.path.getmtime)[-1]
         newest_ts = os.path.getmtime(newest)
 
         resp = await _SESSION.put(archive_url, params=archive_params)
