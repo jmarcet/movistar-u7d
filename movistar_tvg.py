@@ -557,7 +557,7 @@ class MulticastIPTV:
         except Exception as ex:
             raise ValueError(f"get_chunk: error al analizar los datos {repr(ex)}")
 
-    def __get_xml_files(self, mc_grp, mc_port):
+    def __get_xml_files(self, mc_grp, mc_port, init=False):
         loop = True
         max_files = 1000
         _files = {}
@@ -580,10 +580,11 @@ class MulticastIPTV:
                         first_file = str(chunk["filetype"]) + "_" + str(chunk["fileid"])
                         break
                 except socket.timeout:
-                    log.error("Multicast IPTV de Movistar no detectado")
                     failed += 1
+                    msg = "Multicast IPTV de Movistar no detectado" if init else "Imposible descargar XML"
+                    log.error(msg)
                     if failed == 3:
-                        sys.exit(1)
+                        raise ValueError(msg)
             # Loop until firstfile
             while loop:
                 try:
@@ -697,7 +698,7 @@ class MulticastIPTV:
                 log.info("Buscando el Proveedor de Servicios de %s" % self.__get_demarcation_name())
             data = cache.load_service_provider_data()
             if not data:
-                xml = self.__get_xml_files(config["mcast_grp"], config["mcast_port"])["1_0"]
+                xml = self.__get_xml_files(config["mcast_grp"], config["mcast_port"], init=True)["1_0"]
                 result = re.findall(
                     "DEM_" + str(config["demarcation"]) + r'\..*?Address="(.*?)".*?\s*Port="(.*?)".*?',
                     xml,
@@ -934,7 +935,7 @@ class MulticastIPTV:
 
     def __get_epg_data(self, mcast_grp, mcast_port):
         while True:
-            xml = self.__get_xml_files(mcast_grp, mcast_port)
+            xml = self.__get_xml_files(mcast_grp, mcast_port, init=True)
             _msg = "[" + " ".join(sorted(xml)) + "] / [2_0 5_0 6_0]"
             if "2_0" in xml and "5_0" in xml and "6_0" in xml:
                 if VERBOSE:
@@ -1441,4 +1442,7 @@ if __name__ == "__main__":
         sys.exit(1)
     except Timeout:
         log.critical("Cannot be run more than once!")
+        sys.exit(1)
+    except ValueError as ex:
+        log.critical(ex)
         sys.exit(1)
