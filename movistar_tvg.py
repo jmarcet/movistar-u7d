@@ -1427,15 +1427,9 @@ if __name__ == "__main__":
     logging.getLogger("asyncio").setLevel(logging.FATAL)
     logging.getLogger("filelock").setLevel(logging.FATAL)
 
-    # Determina la dirección IP para el IPTV y la conectividad con las DNS de Movistar
-    try:
-        _iptv = get_iptv_ip()
-    except Exception:
-        log.critical("Unable to connect to Movistar DNS")
-        sys.exit(1)
-
     lockfile = os.path.join(os.getenv("TMP", os.getenv("TMPDIR", "/tmp")), ".movistar_tvg.lock")  # nosec B108
     try:
+        _iptv = get_iptv_ip()
         with FileLock(lockfile, timeout=0):
             asyncio.run(tvg_main())
     except KeyboardInterrupt:
