@@ -445,7 +445,7 @@ async def send_prom_event(event):
             await _SESSION.post(f"{EPG_URL}/prom_event/add", json={**event})
             await asyncio.sleep(YEAR_SECONDS)
         except CancelledError:
-            event["msg"] = event["msg"].replace("Playing", "Stopping")
+            event["msg"] = event["msg"].replace("Playing", "Stopped")
             await _SESSION.post(
                 f"{EPG_URL}/prom_event/remove", json={**event, "offset": time.time() - event["id"]}
             )

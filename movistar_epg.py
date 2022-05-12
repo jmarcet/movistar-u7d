@@ -402,72 +402,12 @@ async def handle_program_id(request, channel_id, url):
         raise NotFound(f"Requested URL {request.raw_url.decode()} not found")
 
 
-@app.post("/prom_event/add")
-async def handle_prom_event_add(request):
+@app.post("/prom_event/<method>")
+async def handle_prom_event(request, method):
     try:
-        cloud = request.json["cloud"] if "cloud" in request.json else False
-        _event = get_program_id(request.json["channel_id"], request.json.get("url"), cloud)
-        _epg, _ = get_epg(request.json["channel_id"], _event["program_id"], cloud)
-        _offset = "[%d/%d]" % (_event["offset"], _event["duration"])
-        request.app.ctx.metrics["RQS_LATENCY"].labels(
-            request.json["method"],
-            request.json["endpoint"] + _epg["full_title"] + f" _ {_offset}",
-            request.json["id"],
-        ).observe(float(request.json["lat"]))
-        log.info(
-            '%s [%s] [%s] [%s] [%s] "%s" _ %s'
-            % (
-                request.json["msg"],
-                _event["channel"],
-                request.json["channel_id"],
-                _event["program_id"],
-                _event["start"],
-                _epg["full_title"],
-                _offset,
-            )
-        )
-    except KeyError:
-        return response.empty(404)
-    return response.empty(200)
-
-
-@app.post("/prom_event/remove")
-async def handle_prom_event_remove(request):
-    try:
-        cloud = request.json.get("cloud", False)
-        _event = get_program_id(request.json["channel_id"], request.json.get("url"), cloud)
-        _epg, _ = get_epg(request.json["channel_id"], _event["program_id"], cloud)
-        _offset = "[%d/%d]" % (_event["offset"], _event["duration"])
-        if request.json["method"] == "live":
-            found = False
-            for _metric in request.app.ctx.metrics["RQS_LATENCY"]._metrics:
-                if request.json["method"] in _metric and str(request.json["id"]) in _metric:
-                    found = True
-                    break
-            if found:
-                request.app.ctx.metrics["RQS_LATENCY"].remove(*_metric)
-        else:
-            request.app.ctx.metrics["RQS_LATENCY"].remove(
-                request.json["method"],
-                request.json["endpoint"] + _epg["full_title"] + f" _ {_offset}",
-                request.json["id"],
-            )
-            _offset = "[%d/%d]" % (_event["offset"] + request.json["offset"], _event["duration"])
-        log.info(
-            '%s [%s] [%s] [%s] [%s] "%s" _ %s'
-            % (
-                request.json["msg"],
-                _event["channel"],
-                request.json["channel_id"],
-                _event["program_id"],
-                _event["start"],
-                _epg["full_title"],
-                _offset,
-            )
-        )
-    except KeyError:
-        return response.empty(404)
-    return response.empty(200)
+        return response.empty(200)
+    finally:
+        await prom_event(request, method)
 
 
 @app.get("/record/<channel_id:int>/<url>")
@@ -590,6 +530,36 @@ async def network_saturation():
 
         before, last = now, cur
         await asyncio.sleep(1)
+
+
+async def prom_event(request, method):
+    cloud = request.json.get("cloud", False)
+
+    _event = get_program_id(request.json["channel_id"], request.json.get("url"), cloud)
+    _epg, _ = get_epg(request.json["channel_id"], _event["program_id"], cloud)
+
+    if method == "add":
+        offset = "[%d/%d]" % (_event["offset"], _event["duration"])
+
+        request.app.ctx.metrics["RQS_LATENCY"].labels(
+            request.json["method"],
+            request.json["endpoint"] + _epg["full_title"] + f" _ {offset}",
+            request.json["id"],
+        ).observe(float(request.json["lat"]))
+
+    else:
+        start, end = _event["offset"], _event["offset"] + request.json["offset"]
+        offset = "[%d-%d/%d]" % (start, end, _event["duration"])
+
+        for _metric in request.app.ctx.metrics["RQS_LATENCY"]._metrics:
+            if (request.json["method"] and request.json["id"]) in _metric:
+                request.app.ctx.metrics["RQS_LATENCY"].remove(*_metric)
+                break
+
+    log.info(
+        f'{request.json["msg"]} [{_event["channel"]}] [{request.json["channel_id"]}] '
+        f'[{_event["program_id"]}] [{_event["start"]}] "{_epg["full_title"]}" _ {offset}'
+    )
 
 
 async def reap_vod_child(process, filename):
