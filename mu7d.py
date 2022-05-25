@@ -298,6 +298,10 @@ def remove(item):
 
 
 async def u7d_main():
+    if not WIN32:
+        signal.signal(signal.SIGCHLD, reaper)
+        [signal.signal(sig, cleanup_handler) for sig in (signal.SIGHUP, signal.SIGINT, signal.SIGTERM)]
+
     prefix = [sys.executable] if EXT == ".py" else []
 
     u7d_cmd = prefix + [f"movistar_u7d{EXT}"]
@@ -353,9 +357,6 @@ if __name__ == "__main__":
                     os.waitpid(-1, 0)
                 except Exception:
                     break
-
-        signal.signal(signal.SIGCHLD, reaper)
-        [signal.signal(sig, cleanup_handler) for sig in (signal.SIGHUP, signal.SIGINT, signal.SIGTERM)]
 
     else:
 
