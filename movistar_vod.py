@@ -614,7 +614,7 @@ async def Vod(args=None, vod_client=None):
             await _SESSION.close()
 
             # Exitcode from the last recording subprocess, to discern when the proxy has to stop on WIN32
-            return rtsp_t.result()
+            return rtsp_t.result() if vod_info else 1
 
 
 if __name__ == "__main__":
