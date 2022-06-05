@@ -315,7 +315,7 @@ class Cache:
             with open(f"{app_dir}{sep}cache{sep}{cfile}", "r", encoding="utf8") as f:
                 return json.load(f)["data"]
         except (IOError, KeyError, ValueError):
-            return None
+            pass
 
     @staticmethod
     def __save(cfile, data):
@@ -335,7 +335,7 @@ class Cache:
     def load_end_points(self):
         if not self.__end_points:
             self.__end_points = self.__load(end_points_file)
-        return self.__end_points if self.__end_points else end_points
+        return self.__end_points or end_points
 
     def save_end_points(self, data):
         log.info(f"Nuevos End Points: {sorted(data.keys())}")
@@ -436,7 +436,7 @@ class MovistarTV:
                 cache.save_epg_extended_info(data)
             except Exception as ex:
                 log.debug(f"Información extendida no encontrada: {pid} {repr(ex)}")
-                return None
+                return
         return data
 
     @staticmethod
@@ -451,7 +451,6 @@ class MovistarTV:
         for ep in sorted(eps):
             if eps[ep] not in self.__end_points_down:
                 return eps[ep]
-        return None
 
     def get_first_end_point(self):
         eps = self.__get_end_points()
@@ -505,12 +504,12 @@ class MovistarTV:
 
     async def __get_service_data(self, action):
         if self.__web_service_down:
-            return None
+            return
         ep = self.get_end_point()
         if not ep:
             log.warning("Servicio Web de Movistar TV caído: decargando guía básica")
             self.__web_service_down = True
-            return None
+            return
         __attempts = 10
         while __attempts > 0:
             try:
@@ -1002,16 +1001,16 @@ class MulticastIPTV:
                 "age_rating": struct.unpack("B", epg_dt[24:25])[0],
                 "full_title": meta_data["full_title"],
                 "serie_id": serie_id,
-                "episode": meta_data["episode"] if meta_data["episode"] else episode,
+                "episode": meta_data["episode"] or episode,
                 "year": str(struct.unpack(">H", epg_dt[title_end + 9 : title_end + 11])[0]),
                 "serie": meta_data["serie"],
-                "season": meta_data["season"] if meta_data["season"] else season,
+                "season": meta_data["season"] or season,
                 "is_serie": meta_data["is_serie"],
             }
             if meta_data["episode_title"]:
                 programs[start]["episode_title"] = meta_data["episode_title"]
             pr_title_end = struct.unpack("B", epg_dt[title_end + 12 : title_end + 13])[0] + title_end + 13
-            cut = pr_title_end if pr_title_end else title_end
+            cut = pr_title_end or title_end
             epg_dt = epg_dt[struct.unpack("B", epg_dt[cut + 3 : cut + 4])[0] + cut + 4 :]
         return programs
 
@@ -1100,7 +1099,7 @@ class XMLTV:
     @staticmethod
     def __get_key_and_subkey(code, genres):
         if not genres:
-            return None
+            return
         genre = next(
             genre
             for genre in genres
@@ -1124,7 +1123,7 @@ class XMLTV:
         season = program["season"]
         stitle = program.get("episode_title", "")
         return {
-            "title": program["serie"] if program["serie"] else program["full_title"],
+            "title": program["serie"] or program["full_title"],
             "sub-title": stitle if not stitle.startswith("Episod") else "",
             "season": season,
             "episode": episode,
@@ -1429,8 +1428,8 @@ if __name__ == "__main__":
 
     lockfile = os.path.join(os.getenv("TMP", os.getenv("TMPDIR", "/tmp")), ".movistar_tvg.lock")  # nosec B108
     try:
-        _iptv = get_iptv_ip()
         with FileLock(lockfile, timeout=0):
+            _iptv = get_iptv_ip()
             asyncio.run(tvg_main())
     except KeyboardInterrupt:
         sys.exit(1)

@@ -852,9 +852,9 @@ async def update_cloud():
     def _fill_cloud_event():
         nonlocal data, meta, pid, timestamp, year
 
-        episode = meta["episode"] if meta["episode"] else data.get("episode")
-        season = meta["season"] if meta["season"] else data.get("season")
-        serie = meta["serie"] if meta["serie"] else data.get("seriesName")
+        episode = meta["episode"] or data.get("episode")
+        season = meta["season"] or data.get("season")
+        serie = meta["serie"] or data.get("seriesName")
 
         return {
             "age_rating": data["ageRatingID"],
