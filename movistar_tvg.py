@@ -17,6 +17,7 @@ import re
 import socket
 import struct
 import sys
+import threading
 import time
 import ujson as json
 
@@ -25,7 +26,6 @@ from contextlib import closing
 from datetime import date, datetime, timedelta
 from filelock import FileLock, Timeout
 from queue import Queue
-from threading import Thread
 from xml.dom import minidom  # nosec B408
 from xml.etree.ElementTree import Element, ElementTree, SubElement  # nosec B405
 
@@ -266,15 +266,19 @@ genre_map = {
 }
 
 
-class MulticastEPGFetcher(Thread):
-    def __init__(self, queue):
-        Thread.__init__(self, daemon=True)
+class MulticastEPGFetcher(threading.Thread):
+    def __init__(self, queue, exc_queue):
+        threading.Thread.__init__(self, daemon=True)
         self.queue = queue
+        self.exc_queue = exc_queue
 
     def run(self):
         while True:
             mcast = self.queue.get()
-            iptv.get_day(mcast["mcast_grp"], mcast["mcast_port"], mcast["source"])
+            try:
+                iptv.get_day(mcast["mcast_grp"], mcast["mcast_port"], mcast["source"])
+            except Exception as ex:
+                self.exc_queue.put(ex)
             self.queue.task_done()
 
 
@@ -556,7 +560,7 @@ class MulticastIPTV:
         except Exception as ex:
             raise ValueError(f"get_chunk: error al analizar los datos {repr(ex)}")
 
-    def __get_xml_files(self, mc_grp, mc_port, init=False):
+    def __get_xml_files(self, mc_grp, mc_port):
         loop = True
         max_files = 1000
         _files = {}
@@ -578,10 +582,13 @@ class MulticastIPTV:
                     if chunk["end"]:
                         first_file = str(chunk["filetype"]) + "_" + str(chunk["fileid"])
                         break
-                except socket.timeout:
-                    failed += 1
-                    msg = "Multicast IPTV de Movistar no detectado" if init else "Imposible descargar XML"
+                except TimeoutError:
+                    if threading.current_thread() == threading.main_thread():
+                        msg = "Multicast IPTV de Movistar no detectado"
+                    else:
+                        msg = "Imposible descargar XML"
                     log.error(msg)
+                    failed += 1
                     if failed == 3:
                         raise ValueError(msg)
             # Loop until firstfile
@@ -697,7 +704,7 @@ class MulticastIPTV:
                 log.info("Buscando el Proveedor de Servicios de %s" % self.__get_demarcation_name())
             data = cache.load_service_provider_data()
             if not data:
-                xml = self.__get_xml_files(config["mcast_grp"], config["mcast_port"], init=True)["1_0"]
+                xml = self.__get_xml_files(config["mcast_grp"], config["mcast_port"])["1_0"]
                 result = re.findall(
                     "DEM_" + str(config["demarcation"]) + r'\..*?Address="(.*?)".*?\s*Port="(.*?)".*?',
                     xml,
@@ -730,12 +737,12 @@ class MulticastIPTV:
         self.__epg[day] = self.__get_xml_files(mcast_grp, mcast_port)
 
     def __get_bin_epg_threaded(self):
-        queue = Queue()
+        queue, exc_queue = Queue(), Queue()
         threads = tvg_threads
         self.__epg = [{} for r in range(len(self.__xml_data["segments"]))]
         log.info(f"Multithread: {threads} descargas simultáneas")
         for n in range(threads):
-            process = MulticastEPGFetcher(queue)
+            process = MulticastEPGFetcher(queue, exc_queue)
             process.start()
         for key in sorted(self.__xml_data["segments"]):
             queue.put(
@@ -746,6 +753,8 @@ class MulticastIPTV:
                 }
             )
         queue.join()
+        if exc_queue.qsize():
+            raise exc_queue.get()
 
     @staticmethod
     def __drop_encrypted_channels(epg):
@@ -934,7 +943,7 @@ class MulticastIPTV:
 
     def __get_epg_data(self, mcast_grp, mcast_port):
         while True:
-            xml = self.__get_xml_files(mcast_grp, mcast_port, init=True)
+            xml = self.__get_xml_files(mcast_grp, mcast_port)
             _msg = "[" + " ".join(sorted(xml)) + "] / [2_0 5_0 6_0]"
             if "2_0" in xml and "5_0" in xml and "6_0" in xml:
                 if VERBOSE:
