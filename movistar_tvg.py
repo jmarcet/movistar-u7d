@@ -329,47 +329,19 @@ class Cache:
             except AttributeError:
                 json.dump({"data": data}, f, ensure_ascii=False, sort_keys=True)
 
+    def load_cloud_epg(self):
+        return self.__load("cloud.json")
+
+    def load_config(self):
+        return self.__load("config.json")
+
     def load_cookie(self):
         return self.__load(cookie_file)
-
-    def save_cookie(self, data):
-        # log.debug(f"Set-Cookie: {data}")
-        self.__save(cookie_file, data)
 
     def load_end_points(self):
         if not self.__end_points:
             self.__end_points = self.__load(end_points_file)
         return self.__end_points or end_points
-
-    def save_end_points(self, data):
-        log.info(f"Nuevos End Points: {sorted(data.keys())}")
-        self.__end_points = data
-        self.__save(end_points_file, data)
-
-    def load_epg_extended_info(self, pid):
-        return self.__programs[pid] if pid in self.__programs else self.__load(f"programs{sep}{pid}.json")
-
-    def save_epg_extended_info(self, data):
-        self.__programs[data["productID"]] = data
-        self.__save("programs%s%s.json" % (sep, data["productID"]), data)
-
-    def load_config(self):
-        return self.__load("config.json")
-
-    def save_config(self, data):
-        self.__save("config.json", data)
-
-    def load_service_provider_data(self):
-        return self.__load("provider.json")
-
-    def save_service_provider_data(self, data):
-        self.__save("provider.json", data)
-
-    def save_epg_data(self, data):
-        self.__save("epg_metadata.json", data)
-
-    def load_cloud_epg(self):
-        return self.__load("cloud.json")
 
     async def load_epg(self):
         data = self.__load("epg.json")
@@ -400,8 +372,36 @@ class Cache:
                 )
         return data
 
+    def load_epg_extended_info(self, pid):
+        return self.__programs[pid] if pid in self.__programs else self.__load(f"programs{sep}{pid}.json")
+
+    def load_service_provider_data(self):
+        return self.__load("provider.json")
+
+    def save_config(self, data):
+        self.__save("config.json", data)
+
+    def save_cookie(self, data):
+        # log.debug(f"Set-Cookie: {data}")
+        self.__save(cookie_file, data)
+
+    def save_end_points(self, data):
+        log.info(f"Nuevos End Points: {sorted(data.keys())}")
+        self.__end_points = data
+        self.__save(end_points_file, data)
+
     def save_epg(self, data):
         self.__save("epg.json", data)
+
+    def save_epg_data(self, data):
+        self.__save("epg_metadata.json", data)
+
+    def save_epg_extended_info(self, data):
+        self.__programs[data["productID"]] = data
+        self.__save("programs%s%s.json" % (sep, data["productID"]), data)
+
+    def save_service_provider_data(self, data):
+        self.__save("provider.json", data)
 
 
 class MovistarTV:
@@ -415,17 +415,67 @@ class MovistarTV:
         log.info("Descargando configuración del cliente")
         return await self.__get_service_data("getClientProfile")
 
-    async def __get_platform_profile(self):
-        log.info("Descargando perfil del servicio")
-        return await self.__get_service_data("getPlatformProfile")
-
     async def __get_config_params(self):
         log.info("Descargando parámetros de configuración")
         return await self.__get_service_data("getConfigurationParams")
 
+    @staticmethod
+    def __get_end_points():
+        try:
+            return config["end_points"]
+        except TypeError:
+            return cache.load_end_points()
+
     async def __get_genres(self, tv_wholesaler):
         log.info("Descargando mapa de géneros")
         return await self.__get_service_data(f"getEpgSubGenres&tvWholesaler={tv_wholesaler}")
+
+    async def __get_platform_profile(self):
+        log.info("Descargando perfil del servicio")
+        return await self.__get_service_data("getPlatformProfile")
+
+    async def __get_service_data(self, action):
+        if self.__web_service_down:
+            return
+        ep = self.get_end_point()
+        if not ep:
+            log.warning("Servicio Web de Movistar TV caído: decargando guía básica")
+            self.__web_service_down = True
+            return
+        __attempts = 10
+        while __attempts > 0:
+            try:
+                headers = {}
+                if self.__cookie:
+                    for ck in self.__cookie.split("; "):
+                        if "=" in ck:
+                            headers["Cookie"] = self.__cookie
+                url = f"{ep}/appserver/mvtv.do?action={action}"
+                async with session.get(url, headers=headers) as response:
+                    if response.status == 200:
+                        content = (await response.json())["resultData"]
+                        new_cookie = response.headers.get("set-cookie")
+                        if new_cookie and not self.__cookie:
+                            self.__cookie = new_cookie
+                            cache.save_cookie(self.__cookie)
+                        elif new_cookie and new_cookie != self.__cookie:
+                            cache.save_cookie(new_cookie)
+                        return content
+            except Exception as ex:
+                __attempts -= 1
+                log.debug(f"Timeout: {ep}, reintentos: {__attempts} => {repr(ex)}")
+                continue
+
+    @staticmethod
+    def __update_end_points(data):
+        cache.save_end_points(data)
+        return data
+
+    def get_end_point(self):
+        eps = self.__get_end_points()
+        for ep in sorted(eps):
+            if eps[ep] not in self.__end_points_down:
+                return eps[ep]
 
     async def get_epg_extended_info(self, pid, channel_id):
         try:
@@ -443,19 +493,6 @@ class MovistarTV:
                 return
         return data
 
-    @staticmethod
-    def __get_end_points():
-        try:
-            return config["end_points"]
-        except TypeError:
-            return cache.load_end_points()
-
-    def get_end_point(self):
-        eps = self.__get_end_points()
-        for ep in sorted(eps):
-            if eps[ep] not in self.__end_points_down:
-                return eps[ep]
-
     def get_first_end_point(self):
         eps = self.__get_end_points()
         for ep in sorted(eps):
@@ -464,11 +501,6 @@ class MovistarTV:
     def get_random_end_point(self):
         eps = self.__get_end_points()
         return eps[random.choice(eps.keys())]  # nosec B311
-
-    @staticmethod
-    def __update_end_points(data):
-        cache.save_end_points(data)
-        return data
 
     async def get_service_config(self):
         cfg = cache.load_config()
@@ -506,38 +538,6 @@ class MovistarTV:
         cache.save_config(conf)
         return conf
 
-    async def __get_service_data(self, action):
-        if self.__web_service_down:
-            return
-        ep = self.get_end_point()
-        if not ep:
-            log.warning("Servicio Web de Movistar TV caído: decargando guía básica")
-            self.__web_service_down = True
-            return
-        __attempts = 10
-        while __attempts > 0:
-            try:
-                headers = {}
-                if self.__cookie:
-                    for ck in self.__cookie.split("; "):
-                        if "=" in ck:
-                            headers["Cookie"] = self.__cookie
-                url = f"{ep}/appserver/mvtv.do?action={action}"
-                async with session.get(url, headers=headers) as response:
-                    if response.status == 200:
-                        content = (await response.json())["resultData"]
-                        new_cookie = response.headers.get("set-cookie")
-                        if new_cookie and not self.__cookie:
-                            self.__cookie = new_cookie
-                            cache.save_cookie(self.__cookie)
-                        elif new_cookie and new_cookie != self.__cookie:
-                            cache.save_cookie(new_cookie)
-                        return content
-            except Exception as ex:
-                __attempts -= 1
-                log.debug(f"Timeout: {ep}, reintentos: {__attempts} => {repr(ex)}")
-                continue
-
 
 class MulticastIPTV:
     def __init__(self):
@@ -545,20 +545,182 @@ class MulticastIPTV:
         self.__epg = None
 
     @staticmethod
-    def __parse_chunk(data):
+    def __decode_string(string):
+        _t = ("".join(chr(char ^ 0x15) for char in string)).encode("latin1").decode("utf8")
+        return _t.replace("&quot;", "«", 1).replace("&quot;", "»", 1)
+
+    @staticmethod
+    def __drop_encrypted_channels(epg):
+        clean_channels = {}
+        for channel in list(set(epg) & set(epg_channels)):
+            clean_channels[channel] = epg[channel]
+        return clean_channels
+
+    def __get_bin_epg(self):
+        queue, exc_queue = Queue(), Queue()
+        threads = tvg_threads
+        self.__epg = [{} for r in range(len(self.__xml_data["segments"]))]
+        log.info(f"Multithread: {threads} descargas simultáneas")
+        for n in range(threads):
+            process = MulticastEPGFetcher(queue, exc_queue)
+            process.start()
+        for key in sorted(self.__xml_data["segments"]):
+            queue.put(
+                {
+                    "mcast_grp": self.__xml_data["segments"][key]["Address"],
+                    "mcast_port": self.__xml_data["segments"][key]["Port"],
+                    "source": key,
+                }
+            )
+        queue.join()
+        if exc_queue.qsize():
+            raise exc_queue.get()
+
+    @staticmethod
+    def __get_channels(xml_channels):
+        root = ElTr.fromstring(xml_channels.replace("\n", " "))
+        services = root[0][0].findall("{urn:dvb:ipisdns:2006}SingleService")
+        channel_list = {}
+        for i in services:
+            channel_id = "unknown"
+            try:
+                channel_id = i[1].attrib["ServiceName"]
+                channel_list[channel_id] = {
+                    "id": channel_id,
+                    "address": i[0][0].attrib["Address"],
+                    "port": i[0][0].attrib["Port"],
+                    "name": i[2][0].text.encode("latin1").decode("utf8"),
+                    "shortname": i[2][1].text.encode("latin1").decode("utf8"),
+                    "genre": i[2][3][0].text.encode("latin1").decode("utf8"),
+                    "logo_uri": i[1].attrib["logoURI"]
+                    if "logoURI" in i[1].attrib
+                    else "MAY_1/imSer/4146.jpg",
+                }
+                if i[2][4].tag == "{urn:dvb:ipisdns:2006}ReplacementService":
+                    channel_list[channel_id]["replacement"] = i[2][4][0].attrib["ServiceName"]
+            except (KeyError, IndexError) as ex:
+                log.debug(f"El canal {channel_id} no tiene la estructura correcta: {repr(ex)}")
+        if VERBOSE:
+            log.info("Canales: %i" % len(channel_list))
+        return channel_list
+
+    @staticmethod
+    def __get_demarcation_name():
+        for demarcation in demarcations:
+            if demarcations[demarcation] == config["demarcation"]:
+                return demarcation
+        return config["demarcation"]
+
+    def __get_epg_data(self, mcast_grp, mcast_port):
+        while True:
+            xml = self.__get_xml_files(mcast_grp, mcast_port)
+            _msg = "[" + " ".join(sorted(xml)) + "] / [2_0 5_0 6_0]"
+            if "2_0" in xml and "5_0" in xml and "6_0" in xml:
+                if VERBOSE:
+                    log.info(f"Ficheros XML descargados: {_msg}")
+                break
+            else:
+                log.warning(f"Ficheros XML incompletos: {_msg}")
+                time.sleep(10)
+        if VERBOSE:
+            log.info("Descargando canales y paquetes")
         try:
-            chunk = {
-                "end": struct.unpack("B", data[:1])[0],
-                "size": struct.unpack(">HB", data[1:4])[0],
-                "filetype": struct.unpack("B", data[4:5])[0],
-                "fileid": struct.unpack(">H", data[5:7])[0] & 0x0FFF,
-                "chunk_number": struct.unpack(">H", data[8:10])[0] >> 4,
-                "chunk_total": struct.unpack("B", data[10:11])[0],
-                "data": data[12:].decode("latin1"),
-            }
-            return chunk
+            self.__xml_data["channels"] = self.__get_channels(xml["2_0"])
+            self.__xml_data["packages"] = self.__get_packages(xml["5_0"])
+            if VERBOSE:
+                log.info("Descargando índices")
+            self.__xml_data["segments"] = self.__get_segments(xml["6_0"])
         except Exception as ex:
-            raise ValueError(f"get_chunk: error al analizar los datos {repr(ex)}")
+            log.debug(f"{repr(ex)}")
+            log.warning("Error descargando datos de la EPG. Reintentando...")
+            return self.__get_epg_data(mcast_grp, mcast_port)
+        cache.save_epg_data(self.__xml_data)
+
+    @staticmethod
+    def __get_packages(xml):
+        root = ElTr.fromstring(xml.replace("\n", " "))
+        packages = root[0].findall("{urn:dvb:ipisdns:2006}Package")
+        package_list = {}
+        for package in packages:
+            package_name = "unknown"
+            try:
+                package_name = package[0].text
+                package_list[package_name] = {
+                    "id": package.attrib["Id"],
+                    "name": package_name,
+                    "services": {},
+                }
+                for service in package:
+                    if not service.tag == "{urn:dvb:ipisdns:2006}PackageName":
+                        service_id = service[0].attrib["ServiceName"]
+                        package_list[package_name]["services"][service_id] = service[1].text
+            except (AttributeError, IndexError, KeyError):
+                log.debug(f"El paquete {package_name} no tiene la estructura correcta")
+        if VERBOSE:
+            log.info(f"Paquetes: {len(package_list)}")
+        return package_list
+
+    def __get_sane_epg(self, epg):
+        sane_epg = {}
+        for channel_key in epg:
+            _channels = self.__xml_data["channels"]
+            for channel_id in _channels:
+                if (
+                    "replacement" in _channels[channel_id]
+                    and _channels[channel_id]["replacement"] == channel_key
+                ):
+                    sane_epg[channel_id] = epg[channel_key]
+                    break
+            if channel_id not in sane_epg:
+                sane_epg[channel_key] = epg[channel_key]
+        return sane_epg
+
+    @staticmethod
+    def __get_segments(xml):
+        root = ElTr.fromstring(xml.replace("\n", " "))
+        payloads = root[0][1][1].findall("{urn:dvb:ipisdns:2006}DVBBINSTP")
+        segment_list = {}
+        for segments in payloads:
+            source = "unknown"
+            try:
+                source = segments.attrib["Source"]
+                segment_list[source] = {
+                    "Source": source,
+                    "Port": segments.attrib["Port"],
+                    "Address": segments.attrib["Address"],
+                    "Segments": {},
+                }
+                for segment in segments[0]:
+                    segment_id = segment.attrib["ID"]
+                    segment_list[source]["Segments"][segment_id] = segment.attrib["Version"]
+            except KeyError:
+                log.debug(f"El segmento {source} no tiene la estructura correcta")
+        if VERBOSE:
+            log.info("Días de EPG: %i" % len(segment_list))
+        return segment_list
+
+    def __get_service_provider_ip(self):
+        try:
+            if VERBOSE:
+                log.info("Buscando el Proveedor de Servicios de %s" % self.__get_demarcation_name())
+            data = cache.load_service_provider_data()
+            if not data:
+                xml = self.__get_xml_files(config["mcast_grp"], config["mcast_port"])["1_0"]
+                result = re.findall(
+                    "DEM_" + str(config["demarcation"]) + r'\..*?Address="(.*?)".*?\s*Port="(.*?)".*?',
+                    xml,
+                    re.DOTALL,
+                )[0]
+                data = {"mcast_grp": result[0], "mcast_port": result[1]}
+                cache.save_service_provider_data(data)
+            if VERBOSE:
+                log.info(
+                    "Proveedor de Servicios de %s: %s" % (self.__get_demarcation_name(), data["mcast_grp"])
+                )
+            return data
+        except Exception as ex:
+            log.warning(f"Usando el Proveedor de Servicios por defecto: 239.0.2.150 {repr(ex)}")
+            return default_service_provider
 
     def __get_xml_files(self, mc_grp, mc_port):
         loop = True
@@ -615,158 +777,93 @@ class MulticastIPTV:
                     log.error(f"Error al descargar los archivos XML: {repr(ex)}")
         return _files
 
-    @staticmethod
-    def __get_channels(xml_channels):
-        root = ElTr.fromstring(xml_channels.replace("\n", " "))
-        services = root[0][0].findall("{urn:dvb:ipisdns:2006}SingleService")
-        channel_list = {}
-        for i in services:
-            channel_id = "unknown"
-            try:
-                channel_id = i[1].attrib["ServiceName"]
-                channel_list[channel_id] = {
-                    "id": channel_id,
-                    "address": i[0][0].attrib["Address"],
-                    "port": i[0][0].attrib["Port"],
-                    "name": i[2][0].text.encode("latin1").decode("utf8"),
-                    "shortname": i[2][1].text.encode("latin1").decode("utf8"),
-                    "genre": i[2][3][0].text.encode("latin1").decode("utf8"),
-                    "logo_uri": i[1].attrib["logoURI"]
-                    if "logoURI" in i[1].attrib
-                    else "MAY_1/imSer/4146.jpg",
-                }
-                if i[2][4].tag == "{urn:dvb:ipisdns:2006}ReplacementService":
-                    channel_list[channel_id]["replacement"] = i[2][4][0].attrib["ServiceName"]
-            except (KeyError, IndexError) as ex:
-                log.debug(f"El canal {channel_id} no tiene la estructura correcta: {repr(ex)}")
-        if VERBOSE:
-            log.info("Canales: %i" % len(channel_list))
-        return channel_list
+    def __merge_dicts(self, dict1, dict2, path=[]):
+        for key in dict2:
+            if key in dict1:
+                if isinstance(dict1[key], dict) and isinstance(dict2[key], dict):
+                    self.__merge_dicts(dict1[key], dict2[key], path + [str(key)])
+                elif dict1[key] == dict2[key]:
+                    pass
+                else:
+                    raise ValueError("Conflicto en %s" % ".".join(path + [str(key)]))
+            else:
+                dict1[key] = dict2[key]
+        return dict1
+
+    def __parse_bin_epg(self):
+        merged_epg = {}
+        for epg_day in self.__epg:
+            programs = {}
+            for ch_id in epg_day:
+                if epg_day[ch_id] and "replacement" not in epg_day[ch_id]:
+                    head = self.__parse_bin_epg_header(epg_day[ch_id])
+                    programs[str(head["service_id"])] = self.__parse_bin_epg_body(head["data"])
+            self.__merge_dicts(merged_epg, programs)
+        log.info(f"Canales con EPG: {len(merged_epg)}")
+        cache.save_epg(merged_epg)
+        return merged_epg
+
+    def __parse_bin_epg_body(self, data):
+        epg_dt = data[:-4]
+        programs = {}
+        while epg_dt:
+            start = struct.unpack(">I", epg_dt[4:8])[0]
+            duration = struct.unpack(">H", epg_dt[8:10])[0]
+            title_end = struct.unpack("B", epg_dt[31:32])[0] + 32
+            episode = struct.unpack("B", epg_dt[title_end + 8 : title_end + 9])[0]
+            season = struct.unpack("B", epg_dt[title_end + 11 : title_end + 12])[0]
+            full_title = self.__decode_string(epg_dt[32:title_end])
+            serie_id = struct.unpack(">H", epg_dt[title_end + 5 : title_end + 7])[0]
+            meta_data = get_title_meta(full_title, serie_id)
+            programs[start] = {
+                "pid": struct.unpack(">I", epg_dt[:4])[0],
+                "start": start,
+                "duration": duration,
+                "end": start + duration,
+                "genre": "{:02X}".format(struct.unpack("B", epg_dt[20:21])[0]),
+                "age_rating": struct.unpack("B", epg_dt[24:25])[0],
+                "full_title": meta_data["full_title"],
+                "serie_id": serie_id,
+                "episode": meta_data["episode"] or episode,
+                "year": str(struct.unpack(">H", epg_dt[title_end + 9 : title_end + 11])[0]),
+                "serie": meta_data["serie"],
+                "season": meta_data["season"] or season,
+                "is_serie": meta_data["is_serie"],
+            }
+            if meta_data["episode_title"]:
+                programs[start]["episode_title"] = meta_data["episode_title"]
+            pr_title_end = struct.unpack("B", epg_dt[title_end + 12 : title_end + 13])[0] + title_end + 13
+            cut = pr_title_end or title_end
+            epg_dt = epg_dt[struct.unpack("B", epg_dt[cut + 3 : cut + 4])[0] + cut + 4 :]
+        return programs
 
     @staticmethod
-    def __get_packages(xml):
-        root = ElTr.fromstring(xml.replace("\n", " "))
-        packages = root[0].findall("{urn:dvb:ipisdns:2006}Package")
-        package_list = {}
-        for package in packages:
-            package_name = "unknown"
-            try:
-                package_name = package[0].text
-                package_list[package_name] = {
-                    "id": package.attrib["Id"],
-                    "name": package_name,
-                    "services": {},
-                }
-                for service in package:
-                    if not service.tag == "{urn:dvb:ipisdns:2006}PackageName":
-                        service_id = service[0].attrib["ServiceName"]
-                        package_list[package_name]["services"][service_id] = service[1].text
-            except (AttributeError, IndexError, KeyError):
-                log.debug(f"El paquete {package_name} no tiene la estructura correcta")
-        if VERBOSE:
-            log.info(f"Paquetes: {len(package_list)}")
-        return package_list
+    def __parse_bin_epg_header(data):
+        data = data.encode("latin1")
+        body = struct.unpack("B", data[6:7])[0] + 7
+        return {
+            "size": struct.unpack(">H", data[1:3])[0],
+            "service_id": struct.unpack(">H", data[3:5])[0],
+            "service_version": struct.unpack("B", data[5:6])[0],
+            "service_url": data[7:body],
+            "data": data[body:],
+        }
 
     @staticmethod
-    def __get_segments(xml):
-        root = ElTr.fromstring(xml.replace("\n", " "))
-        payloads = root[0][1][1].findall("{urn:dvb:ipisdns:2006}DVBBINSTP")
-        segment_list = {}
-        for segments in payloads:
-            source = "unknown"
-            try:
-                source = segments.attrib["Source"]
-                segment_list[source] = {
-                    "Source": source,
-                    "Port": segments.attrib["Port"],
-                    "Address": segments.attrib["Address"],
-                    "Segments": {},
-                }
-                for segment in segments[0]:
-                    segment_id = segment.attrib["ID"]
-                    segment_list[source]["Segments"][segment_id] = segment.attrib["Version"]
-            except KeyError:
-                log.debug(f"El segmento {source} no tiene la estructura correcta")
-        if VERBOSE:
-            log.info("Días de EPG: %i" % len(segment_list))
-        return segment_list
-
-    @staticmethod
-    def __get_demarcation_name():
-        for demarcation in demarcations:
-            if demarcations[demarcation] == config["demarcation"]:
-                return demarcation
-        return config["demarcation"]
-
-    def __get_service_provider_ip(self):
+    def __parse_chunk(data):
         try:
-            if VERBOSE:
-                log.info("Buscando el Proveedor de Servicios de %s" % self.__get_demarcation_name())
-            data = cache.load_service_provider_data()
-            if not data:
-                xml = self.__get_xml_files(config["mcast_grp"], config["mcast_port"])["1_0"]
-                result = re.findall(
-                    "DEM_" + str(config["demarcation"]) + r'\..*?Address="(.*?)".*?\s*Port="(.*?)".*?',
-                    xml,
-                    re.DOTALL,
-                )[0]
-                data = {"mcast_grp": result[0], "mcast_port": result[1]}
-                cache.save_service_provider_data(data)
-            if VERBOSE:
-                log.info(
-                    "Proveedor de Servicios de %s: %s" % (self.__get_demarcation_name(), data["mcast_grp"])
-                )
-            return data
+            chunk = {
+                "end": struct.unpack("B", data[:1])[0],
+                "size": struct.unpack(">HB", data[1:4])[0],
+                "filetype": struct.unpack("B", data[4:5])[0],
+                "fileid": struct.unpack(">H", data[5:7])[0] & 0x0FFF,
+                "chunk_number": struct.unpack(">H", data[8:10])[0] >> 4,
+                "chunk_total": struct.unpack("B", data[10:11])[0],
+                "data": data[12:].decode("latin1"),
+            }
+            return chunk
         except Exception as ex:
-            log.warning(f"Usando el Proveedor de Servicios por defecto: 239.0.2.150 {repr(ex)}")
-            return default_service_provider
-
-    def get_day(self, mcast_grp, mcast_port, source):
-        day = int(source.split("_")[1]) - 1
-        log.info("Descargando XML " + source.split(".")[0] + f" -> {mcast_grp}:{mcast_port}")
-        self.__epg[day] = self.__get_xml_files(mcast_grp, mcast_port)
-
-    def __get_bin_epg(self):
-        queue, exc_queue = Queue(), Queue()
-        threads = tvg_threads
-        self.__epg = [{} for r in range(len(self.__xml_data["segments"]))]
-        log.info(f"Multithread: {threads} descargas simultáneas")
-        for n in range(threads):
-            process = MulticastEPGFetcher(queue, exc_queue)
-            process.start()
-        for key in sorted(self.__xml_data["segments"]):
-            queue.put(
-                {
-                    "mcast_grp": self.__xml_data["segments"][key]["Address"],
-                    "mcast_port": self.__xml_data["segments"][key]["Port"],
-                    "source": key,
-                }
-            )
-        queue.join()
-        if exc_queue.qsize():
-            raise exc_queue.get()
-
-    @staticmethod
-    def __drop_encrypted_channels(epg):
-        clean_channels = {}
-        for channel in list(set(epg) & set(epg_channels)):
-            clean_channels[channel] = epg[channel]
-        return clean_channels
-
-    def __get_sane_epg(self, epg):
-        sane_epg = {}
-        for channel_key in epg:
-            _channels = self.__xml_data["channels"]
-            for channel_id in _channels:
-                if (
-                    "replacement" in _channels[channel_id]
-                    and _channels[channel_id]["replacement"] == channel_key
-                ):
-                    sane_epg[channel_id] = epg[channel_key]
-                    break
-            if channel_id not in sane_epg:
-                sane_epg[channel_key] = epg[channel_key]
-        return sane_epg
+            raise ValueError(f"get_chunk: error al analizar los datos {repr(ex)}")
 
     def check_epg(self, epg):
         has_errors = False
@@ -873,6 +970,11 @@ class MulticastIPTV:
     def get_cloud_epg(self):
         return self.__drop_encrypted_channels(cache.load_cloud_epg())
 
+    def get_day(self, mcast_grp, mcast_port, source):
+        day = int(source.split("_")[1]) - 1
+        log.info("Descargando XML " + source.split(".")[0] + f" -> {mcast_grp}:{mcast_port}")
+        self.__epg[day] = self.__get_xml_files(mcast_grp, mcast_port)
+
     async def get_epg(self):
         cached_epg = await cache.load_epg()
         if cached_epg:
@@ -928,202 +1030,17 @@ class MulticastIPTV:
         log.info(f"Eventos: Arreglados = {fixed} _ Caducados = {expired} _ Descartados = {broken}")
         return (cached_epg, True)
 
-    def __get_epg_data(self, mcast_grp, mcast_port):
-        while True:
-            xml = self.__get_xml_files(mcast_grp, mcast_port)
-            _msg = "[" + " ".join(sorted(xml)) + "] / [2_0 5_0 6_0]"
-            if "2_0" in xml and "5_0" in xml and "6_0" in xml:
-                if VERBOSE:
-                    log.info(f"Ficheros XML descargados: {_msg}")
-                break
-            else:
-                log.warning(f"Ficheros XML incompletos: {_msg}")
-                time.sleep(10)
-        if VERBOSE:
-            log.info("Descargando canales y paquetes")
-        try:
-            self.__xml_data["channels"] = self.__get_channels(xml["2_0"])
-            self.__xml_data["packages"] = self.__get_packages(xml["5_0"])
-            if VERBOSE:
-                log.info("Descargando índices")
-            self.__xml_data["segments"] = self.__get_segments(xml["6_0"])
-        except Exception as ex:
-            log.debug(f"{repr(ex)}")
-            log.warning("Error descargando datos de la EPG. Reintentando...")
-            return self.__get_epg_data(mcast_grp, mcast_port)
-        cache.save_epg_data(self.__xml_data)
-
     def get_service_provider_data(self):
         if not self.__xml_data:
             connection = self.__get_service_provider_ip()
             self.__get_epg_data(connection["mcast_grp"], connection["mcast_port"])
         return self.__xml_data
 
-    @staticmethod
-    def __decode_string(string):
-        _t = ("".join(chr(char ^ 0x15) for char in string)).encode("latin1").decode("utf8")
-        return _t.replace("&quot;", "«", 1).replace("&quot;", "»", 1)
-
-    @staticmethod
-    def __parse_bin_epg_header(data):
-        data = data.encode("latin1")
-        body = struct.unpack("B", data[6:7])[0] + 7
-        return {
-            "size": struct.unpack(">H", data[1:3])[0],
-            "service_id": struct.unpack(">H", data[3:5])[0],
-            "service_version": struct.unpack("B", data[5:6])[0],
-            "service_url": data[7:body],
-            "data": data[body:],
-        }
-
-    def __parse_bin_epg_body(self, data):
-        epg_dt = data[:-4]
-        programs = {}
-        while epg_dt:
-            start = struct.unpack(">I", epg_dt[4:8])[0]
-            duration = struct.unpack(">H", epg_dt[8:10])[0]
-            title_end = struct.unpack("B", epg_dt[31:32])[0] + 32
-            episode = struct.unpack("B", epg_dt[title_end + 8 : title_end + 9])[0]
-            season = struct.unpack("B", epg_dt[title_end + 11 : title_end + 12])[0]
-            full_title = self.__decode_string(epg_dt[32:title_end])
-            serie_id = struct.unpack(">H", epg_dt[title_end + 5 : title_end + 7])[0]
-            meta_data = get_title_meta(full_title, serie_id)
-            programs[start] = {
-                "pid": struct.unpack(">I", epg_dt[:4])[0],
-                "start": start,
-                "duration": duration,
-                "end": start + duration,
-                "genre": "{:02X}".format(struct.unpack("B", epg_dt[20:21])[0]),
-                "age_rating": struct.unpack("B", epg_dt[24:25])[0],
-                "full_title": meta_data["full_title"],
-                "serie_id": serie_id,
-                "episode": meta_data["episode"] or episode,
-                "year": str(struct.unpack(">H", epg_dt[title_end + 9 : title_end + 11])[0]),
-                "serie": meta_data["serie"],
-                "season": meta_data["season"] or season,
-                "is_serie": meta_data["is_serie"],
-            }
-            if meta_data["episode_title"]:
-                programs[start]["episode_title"] = meta_data["episode_title"]
-            pr_title_end = struct.unpack("B", epg_dt[title_end + 12 : title_end + 13])[0] + title_end + 13
-            cut = pr_title_end or title_end
-            epg_dt = epg_dt[struct.unpack("B", epg_dt[cut + 3 : cut + 4])[0] + cut + 4 :]
-        return programs
-
-    def __merge_dicts(self, dict1, dict2, path=[]):
-        for key in dict2:
-            if key in dict1:
-                if isinstance(dict1[key], dict) and isinstance(dict2[key], dict):
-                    self.__merge_dicts(dict1[key], dict2[key], path + [str(key)])
-                elif dict1[key] == dict2[key]:
-                    pass
-                else:
-                    raise ValueError("Conflicto en %s" % ".".join(path + [str(key)]))
-            else:
-                dict1[key] = dict2[key]
-        return dict1
-
-    def __parse_bin_epg(self):
-        merged_epg = {}
-        for epg_day in self.__epg:
-            programs = {}
-            for ch_id in epg_day:
-                if epg_day[ch_id] and "replacement" not in epg_day[ch_id]:
-                    head = self.__parse_bin_epg_header(epg_day[ch_id])
-                    programs[str(head["service_id"])] = self.__parse_bin_epg_body(head["data"])
-            self.__merge_dicts(merged_epg, programs)
-        log.info(f"Canales con EPG: {len(merged_epg)}")
-        cache.save_epg(merged_epg)
-        return merged_epg
-
 
 class XMLTV:
     def __init__(self, data):
         self.__channels = data["channels"]
         self.__packages = data["packages"]
-
-    async def generate_xml(self, parsed_epg, verbose):
-        if VERBOSE:
-            log.info("Generando la guía XMLTV...")
-        root = Element(
-            "tv",
-            {
-                "date": datetime.now().strftime("%Y%m%d%H%M%S"),
-                "generator_info_url": "http://wiki.xmltv.org/index.php/XMLTVFormat",
-            },
-        )
-        tz_offset = int(abs(time.timezone / 3600))
-        services = self.__get_client_channels()
-        for channel_id in sorted(services, key=lambda key: int(services[key])):
-            if channel_id in self.__channels:
-                tag_channel = Element("channel", {"id": f"{channel_id}.movistar.tv"})
-                tag_dname = SubElement(tag_channel, "display-name")
-                tag_dname.text = self.__channels[channel_id]["name"]
-                root.append(tag_channel)
-            else:
-                log.debug(f"El canal {channel_id} no tiene EPG")
-
-        if VERBOSE:
-            log.info("XML: Descargando info extendida")
-        for channel_id in [
-            cid
-            for cid in sorted(services, key=lambda key: int(services[key]))
-            if cid in self.__channels and cid in parsed_epg
-        ]:
-            channel_name = self.__channels[channel_id]["name"]
-            if channel_id not in epg_channels:
-                log.debug(f'XML: Saltando canal encriptado "{channel_name}" {channel_id}')
-                continue
-
-            if verbose and VERBOSE:
-                log.info(f'XML: "{channel_name}"')
-
-            _tasks = [
-                self.__build_programme_tag(channel_id, parsed_epg[channel_id][program], tz_offset)
-                for program in sorted(parsed_epg[channel_id])
-            ]
-            [root.append(program) for program in (await asyncio.gather(*_tasks))]
-        return ElementTree(root)
-
-    @staticmethod
-    def __get_genre_and_subgenre(code):
-        return {
-            "genre": genre_map[code[0]]["0"],
-            "sub-genre": None if code[1] == "0" else genre_map[code[0]][code[1]],
-        }
-
-    @staticmethod
-    def __get_key_and_subkey(code, genres):
-        if not genres:
-            return
-        genre = next(
-            genre
-            for genre in genres
-            if genre["id"].upper() == (code[0] if code[0] == "0" else ("%s%s" % (code[0], "0")).upper())
-        )
-        subgenre = (
-            None
-            if code[1] == "0"
-            else next(
-                subgenre
-                for subgenre in genre["subgenres"]
-                if subgenre["id"].upper()
-                == (code[1].upper() if code[0] == "0" else ("%s%s" % (code[0], code[1])).upper())
-            )
-        )
-        return {"key": genre["name"], "sub-key": subgenre["name"] if subgenre else None}
-
-    @staticmethod
-    def __get_series_data(program, ext_info):
-        episode = program["episode"]
-        season = program["season"]
-        stitle = program.get("episode_title", "")
-        return {
-            "title": program["serie"] or program["full_title"],
-            "sub-title": stitle if not stitle.startswith("Episod") else "",
-            "season": season,
-            "episode": episode,
-        }
 
     async def __build_programme_tag(self, channel_id, program, tz_offset):
         dst_start = time.localtime(int(program["start"])).tm_isdst
@@ -1215,17 +1132,6 @@ class XMLTV:
                 tag_subkeyword.text = keys["sub-key"]
         return tag_programme
 
-    def write_m3u(self, file_path, cloud=None):
-        m3u = self.__generate_m3u(file_path, cloud)
-        self.__write_to_disk(file_path, m3u)
-
-    def __get_client_channels(self):
-        services = {}
-        for package in config["tvPackages"].split("|") if config["tvPackages"] != "ALL" else self.__packages:
-            if package in self.__packages:
-                services.update(self.__packages[package]["services"])
-        return services
-
     def __generate_m3u(self, file_path, cloud=None):
         m3u = '#EXTM3U name="'
         m3u += "Cloud " if cloud else ""
@@ -1268,11 +1174,105 @@ class XMLTV:
                 m3u += f"/{channel_id}/mpegts\n"
         return m3u
 
+    def __get_client_channels(self):
+        services = {}
+        for package in config["tvPackages"].split("|") if config["tvPackages"] != "ALL" else self.__packages:
+            if package in self.__packages:
+                services.update(self.__packages[package]["services"])
+        return services
+
+    @staticmethod
+    def __get_genre_and_subgenre(code):
+        return {
+            "genre": genre_map[code[0]]["0"],
+            "sub-genre": None if code[1] == "0" else genre_map[code[0]][code[1]],
+        }
+
+    @staticmethod
+    def __get_key_and_subkey(code, genres):
+        if not genres:
+            return
+        genre = next(
+            genre
+            for genre in genres
+            if genre["id"].upper() == (code[0] if code[0] == "0" else ("%s%s" % (code[0], "0")).upper())
+        )
+        subgenre = (
+            None
+            if code[1] == "0"
+            else next(
+                subgenre
+                for subgenre in genre["subgenres"]
+                if subgenre["id"].upper()
+                == (code[1].upper() if code[0] == "0" else ("%s%s" % (code[0], code[1])).upper())
+            )
+        )
+        return {"key": genre["name"], "sub-key": subgenre["name"] if subgenre else None}
+
+    @staticmethod
+    def __get_series_data(program, ext_info):
+        episode = program["episode"]
+        season = program["season"]
+        stitle = program.get("episode_title", "")
+        return {
+            "title": program["serie"] or program["full_title"],
+            "sub-title": stitle if not stitle.startswith("Episod") else "",
+            "season": season,
+            "episode": episode,
+        }
+
     @staticmethod
     def __write_to_disk(file_path, content):
         with codecs.open(file_path, "w", "UTF-8") as file_h:
             file_h.write(content)
             file_h.close()
+
+    async def generate_xml(self, parsed_epg, verbose):
+        if VERBOSE:
+            log.info("Generando la guía XMLTV...")
+        root = Element(
+            "tv",
+            {
+                "date": datetime.now().strftime("%Y%m%d%H%M%S"),
+                "generator_info_url": "http://wiki.xmltv.org/index.php/XMLTVFormat",
+            },
+        )
+        tz_offset = int(abs(time.timezone / 3600))
+        services = self.__get_client_channels()
+        for channel_id in sorted(services, key=lambda key: int(services[key])):
+            if channel_id in self.__channels:
+                tag_channel = Element("channel", {"id": f"{channel_id}.movistar.tv"})
+                tag_dname = SubElement(tag_channel, "display-name")
+                tag_dname.text = self.__channels[channel_id]["name"]
+                root.append(tag_channel)
+            else:
+                log.debug(f"El canal {channel_id} no tiene EPG")
+
+        if VERBOSE:
+            log.info("XML: Descargando info extendida")
+        for channel_id in [
+            cid
+            for cid in sorted(services, key=lambda key: int(services[key]))
+            if cid in self.__channels and cid in parsed_epg
+        ]:
+            channel_name = self.__channels[channel_id]["name"]
+            if channel_id not in epg_channels:
+                log.debug(f'XML: Saltando canal encriptado "{channel_name}" {channel_id}')
+                continue
+
+            if verbose and VERBOSE:
+                log.info(f'XML: "{channel_name}"')
+
+            _tasks = [
+                self.__build_programme_tag(channel_id, parsed_epg[channel_id][program], tz_offset)
+                for program in sorted(parsed_epg[channel_id])
+            ]
+            [root.append(program) for program in (await asyncio.gather(*_tasks))]
+        return ElementTree(root)
+
+    def write_m3u(self, file_path, cloud=None):
+        m3u = self.__generate_m3u(file_path, cloud)
+        self.__write_to_disk(file_path, m3u)
 
 
 def create_args_parser():
