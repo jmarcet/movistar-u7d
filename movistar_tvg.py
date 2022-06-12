@@ -721,22 +721,12 @@ class MulticastIPTV:
             log.warning(f"Usando el Proveedor de Servicios por defecto: 239.0.2.150 {repr(ex)}")
             return default_service_provider
 
-    def __get_bin_epg(self):
-        self.__epg = []
-        for key in sorted(self.__xml_data["segments"]):
-            log.info(f"Descargando {key}")
-            self.__epg.append(
-                self.__get_xml_files(
-                    self.__xml_data["segments"][key]["Address"], self.__xml_data["segments"][key]["Port"]
-                )
-            )
-
     def get_day(self, mcast_grp, mcast_port, source):
         day = int(source.split("_")[1]) - 1
         log.info("Descargando XML " + source.split(".")[0] + f" -> {mcast_grp}:{mcast_port}")
         self.__epg[day] = self.__get_xml_files(mcast_grp, mcast_port)
 
-    def __get_bin_epg_threaded(self):
+    def __get_bin_epg(self):
         queue, exc_queue = Queue(), Queue()
         threads = tvg_threads
         self.__epg = [{} for r in range(len(self.__xml_data["segments"]))]
@@ -891,10 +881,7 @@ class MulticastIPTV:
                 if "1" in cached_epg
                 else self.__drop_encrypted_channels(cached_epg)
             )
-        if use_multithread:
-            self.__get_bin_epg_threaded()
-        else:
-            self.__get_bin_epg()
+        self.__get_bin_epg()
         try:
             new_epg = self.__drop_encrypted_channels(self.__get_sane_epg(self.__parse_bin_epg()))
             log.info(f"Conservando {len(new_epg)} canales en abierto")
@@ -1422,7 +1409,6 @@ if __name__ == "__main__":
     lang = {"es": {"lang": "es"}, "en": {"lang": "en"}}
     max_credits = 4
     sep = "\\" if WIN32 else "/"
-    use_multithread = True
 
     cookie_file = "movistar_tvg.cookie"
     end_points_file = "movistar_tvg.endpoints"
