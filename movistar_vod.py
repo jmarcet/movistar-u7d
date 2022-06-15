@@ -249,7 +249,7 @@ async def postprocess(archive_params, archive_url, mtime, record_time):
 
         resp = await _SESSION.options(archive_url, params=archive_params)  # signal recording ended
         if resp.status not in (200, 201):
-            raise ValueError("Too short, missing: %ss" % archive_params["missing"])
+            raise ValueError("Too short, missing: %ds" % (_args.time - archive_params["recorded"]))
 
     @_check_terminate
     async def _step_1():
@@ -279,7 +279,7 @@ async def postprocess(archive_params, archive_url, mtime, record_time):
         duration = int(int(recording_data["container"]["properties"].get("duration", 0)) / 1000000000)
         bad = duration < _args.time - 30
 
-        archive_params["missing"] = _args.time - duration if bad else 0
+        archive_params["recorded"] = duration if bad else 0
         log_suffix = f" [{duration}s] / [{_args.time}s]"
 
         msg = f"POSTPROCESS #2: Recording is {'INCOMPLETE' if bad else 'COMPLETE'}{log_suffix}"
@@ -390,7 +390,7 @@ async def postprocess(archive_params, archive_url, mtime, record_time):
     await asyncio.sleep(0.1)  # Prioritize the main loop
 
     metadata = proc = recording_data = resp = None
-    archive_params["missing"] = (_args.time - record_time) if record_time < _args.time - 30 else 0
+    archive_params["recorded"] = record_time if record_time < _args.time - 30 else 0
 
     lockfile = os.path.join(os.getenv("TMP", os.getenv("TMPDIR", "/tmp")), ".movistar_vod.lock")  # nosec B108
     pp_lock = FileLock(lockfile)

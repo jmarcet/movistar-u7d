@@ -298,7 +298,7 @@ def get_recording_name(channel_id, timestamp, cloud=False):
 
 
 @app.route("/archive/<channel_id:int>/<program_id:int>", methods=["OPTIONS", "PUT"])
-async def handle_archive(request, channel_id, program_id, cloud=False, missing=0):
+async def handle_archive(request, channel_id, program_id, cloud=False):
     global _RECORDINGS, _t_timers
 
     cloud = request.args.get("cloud") == "1" if request else cloud
@@ -324,10 +324,10 @@ async def handle_archive(request, channel_id, program_id, cloud=False, missing=0
     if not _t_timers or _t_timers.done():
         _t_timers = app.add_task(timers_check(delay=5))
 
-    missing = int(request.args.get("missing", 0)) if request else missing
-    if missing:
-        if request.method == "OPTIONS" and _epg["duration"] - missing < 90:
-            log.debug(f"Recording WRONG: {log_suffix}")
+    recorded = int(request.args.get("recorded", 0))
+    if recorded:
+        if request.method == "OPTIONS" and recorded < 90:
+            log.error(f"Recording WRONG: {log_suffix}")
             return response.json({"status": "Recording WRONG"}, status=202)
 
         async with recordings_inc_lock:
@@ -335,7 +335,7 @@ async def handle_archive(request, channel_id, program_id, cloud=False, missing=0
                 _RECORDINGS_INC[channel_id] = {}
             if program_id not in _RECORDINGS_INC[channel_id]:
                 _RECORDINGS_INC[channel_id][program_id] = []
-            _RECORDINGS_INC[channel_id][program_id].append(missing)
+            _RECORDINGS_INC[channel_id][program_id].append(recorded)
             _t = _RECORDINGS_INC[channel_id][program_id]
 
         if request.method == "OPTIONS" and len(_t) > 2 and _t[-3] == _t[-2] and _t[-2] == _t[-1]:
