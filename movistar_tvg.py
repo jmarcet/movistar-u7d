@@ -513,6 +513,7 @@ class MovistarTV:
         platform = await self.__get_platform_profile()
         params = await self.__get_config_params()
         dvb_entry_point = platform["dvbConfig"]["dvbipiEntryPoint"].split(":")
+        uri = platform[list(filter(lambda f: re.search("base.*uri", f, re.IGNORECASE), platform.keys()))[0]]
         if VERBOSE:
             log.info("tvPackages: %s" % client["tvPackages"])
             log.info("Demarcation: %s" % client["demarcation"])
@@ -523,16 +524,10 @@ class MovistarTV:
             "end_points": self.__update_end_points(platform["endPoints"]),
             "mcast_grp": dvb_entry_point[0],
             "mcast_port": int(dvb_entry_point[1]),
-            "tvChannelLogoPath": "%s%s" % (platform["RES_BASE_URI"], params["tvChannelLogoPath"]),
-            "tvCoversPath": "%s%s%s290x429/"
-            % (platform["RES_BASE_URI"], params["tvCoversPath"], params["portraitSubPath"]),
+            "tvChannelLogoPath": "%s%s" % (uri, params["tvChannelLogoPath"]),
+            "tvCoversPath": "%s%s%s290x429/" % (uri, params["tvCoversPath"], params["portraitSubPath"]),
             "tvCoversLandscapePath": "%s%s%s%s"
-            % (
-                platform["RES_BASE_URI"],
-                params["tvCoversPath"],
-                params["landscapeSubPath"],
-                params["bigSubpath"],
-            ),
+            % (uri, params["tvCoversPath"], params["landscapeSubPath"], params["bigSubpath"]),
             "genres": await self.__get_genres(client["tvWholesaler"]),
         }
         cache.save_config(conf)
