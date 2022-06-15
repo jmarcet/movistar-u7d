@@ -136,20 +136,18 @@ async def before_server_start(app, loop):
 
 @app.listener("after_server_start")
 async def after_server_start(app, loop):
-    if _last_epg:
-        if RECORDINGS:
-            global _t_timers
-            uptime = int(datetime.now().timestamp() - boot_time())
-            if not _t_timers and int(datetime.now().replace(minute=0, second=0).timestamp()) <= _last_epg:
-                delay = max(10, 180 - uptime)
-                if delay > 10:
-                    log.info(f"Waiting {delay}s to check recording timers since the system just booted...")
-                _t_timers = app.add_task(timers_check(delay))
-            elif not _t_timers:
-                log.warning("Delaying timers_check until the EPG is updated...")
-            log.info(f"Manual timers check => {U7D_URL}/timers_check")
-    else:
-        app.add_task(cancel_app())
+    if _last_epg and RECORDINGS:
+        global _t_timers
+
+        uptime = int(datetime.now().timestamp() - boot_time())
+        if not _t_timers and int(datetime.now().replace(minute=0, second=0).timestamp()) <= _last_epg:
+            delay = max(10, 180 - uptime)
+            if delay > 10:
+                log.info(f"Waiting {delay}s to check recording timers since the system just booted...")
+            _t_timers = app.add_task(timers_check(delay))
+        elif not _t_timers:
+            log.warning("Delaying timers_check until the EPG is updated...")
+        log.info(f"Manual timers check => {U7D_URL}/timers_check")
 
 
 @app.listener("before_server_stop")
@@ -169,7 +167,6 @@ async def alive():
 
 async def cancel_app():
     await asyncio.sleep(1)
-    log.fatal("Multicast IPTV de Movistar no detectado")
     if not WIN32:
         os.kill(U7D_PARENT, signal.SIGTERM)
     else:
@@ -391,7 +388,7 @@ async def handle_archive(request, channel_id, program_id, cloud=False):
 
 @app.get("/channels/")
 async def handle_channels(request):
-    return response.json(_CHANNELS)
+    return response.json(_CHANNELS) if _CHANNELS else response.empty(404)
 
 
 @app.get("/program_id/<channel_id:int>/<url>")
@@ -625,6 +622,8 @@ async def reload_epg():
             task = app.add_task(launch(cmd))
             await task
         check_task(task)
+        if not os.path.exists(CHANNELS):
+            return app.add_task(cancel_app())
     elif (
         not os.path.exists(config_data)
         or not os.path.exists(epg_data)
@@ -941,7 +940,7 @@ async def update_cloud():
     log.info(f"Cloud Recordings Updated => {U7D_URL}/MovistarTVCloud.m3u - {U7D_URL}/cloud.xml")
 
 
-async def update_epg():
+async def update_epg(abort_on_error=False):
     global _last_epg, _t_timers
     cmd = [sys.executable] if EXT == ".py" else []
     cmd += [f"movistar_tvg{EXT}", "--m3u", CHANNELS, "--guide", GUIDE]
@@ -955,6 +954,8 @@ async def update_epg():
             if i < 2:
                 await asyncio.sleep(3)
                 log.error(f"[{i+2}/3]...")
+            elif abort_on_error or not _CHANNELS or not _EPGDATA:
+                app.add_task(cancel_app())
         else:
             await reload_epg()
             _last_epg = int(datetime.now().replace(minute=0, second=0).timestamp())
@@ -967,7 +968,7 @@ async def update_epg_cron():
     last_datetime = datetime.now().replace(minute=0, second=0, microsecond=0)
     if os.path.getmtime(GUIDE) < last_datetime.timestamp():
         log.warning("EPG too old. Updating it...")
-        await update_epg()
+        await update_epg(abort_on_error=True)
     await asyncio.sleep((last_datetime + timedelta(hours=1) - datetime.now()).total_seconds())
     while True:
         await asyncio.gather(asyncio.sleep(3600), update_epg())

@@ -70,8 +70,6 @@ epg_channels = [
     "4990",
 ]
 
-default_service_provider = {"mcast_grp": "239.0.2.150", "mcast_port": "3937"}
-
 demarcations = {
     "Andalucia": 15,
     "Aragon": 34,
@@ -411,14 +409,6 @@ class MovistarTV:
         self.__web_service_down = False
         self.__session = None
 
-    async def __get_client_profile(self):
-        log.info("Descargando configuración del cliente")
-        return await self.__get_service_data("getClientProfile")
-
-    async def __get_config_params(self):
-        log.info("Descargando parámetros de configuración")
-        return await self.__get_service_data("getConfigurationParams")
-
     @staticmethod
     def __get_end_points():
         try:
@@ -429,10 +419,6 @@ class MovistarTV:
     async def __get_genres(self, tv_wholesaler):
         log.info("Descargando mapa de géneros")
         return await self.__get_service_data(f"getEpgSubGenres&tvWholesaler={tv_wholesaler}")
-
-    async def __get_platform_profile(self):
-        log.info("Descargando perfil del servicio")
-        return await self.__get_service_data("getPlatformProfile")
 
     async def __get_service_data(self, action):
         if self.__web_service_down:
@@ -509,9 +495,14 @@ class MovistarTV:
                 log.info("tvPackages: %s" % cfg["tvPackages"])
                 log.info("Demarcation: %s" % cfg["demarcation"])
             return cfg
-        client = await self.__get_client_profile()
-        platform = await self.__get_platform_profile()
-        params = await self.__get_config_params()
+        log.info("Descargando configuración del cliente, parámetros de configuración y perfil del servicio")
+        client, params, platform = await asyncio.gather(
+            self.__get_service_data("getClientProfile"),
+            self.__get_service_data("getConfigurationParams"),
+            self.__get_service_data("getPlatformProfile"),
+        )
+        if not client or not platform or not params:
+            raise ValueError("IPTV de Movistar no detectado")
         dvb_entry_point = platform["dvbConfig"]["dvbipiEntryPoint"].split(":")
         uri = platform[list(filter(lambda f: re.search("base.*uri", f, re.IGNORECASE), platform.keys()))[0]]
         if VERBOSE:
@@ -695,27 +686,21 @@ class MulticastIPTV:
         return segment_list
 
     def __get_service_provider_ip(self):
-        try:
-            if VERBOSE:
-                log.info("Buscando el Proveedor de Servicios de %s" % self.__get_demarcation_name())
-            data = cache.load_service_provider_data()
-            if not data:
-                xml = self.__get_xml_files(config["mcast_grp"], config["mcast_port"])["1_0"]
-                result = re.findall(
-                    "DEM_" + str(config["demarcation"]) + r'\..*?Address="(.*?)".*?\s*Port="(.*?)".*?',
-                    xml,
-                    re.DOTALL,
-                )[0]
-                data = {"mcast_grp": result[0], "mcast_port": result[1]}
-                cache.save_service_provider_data(data)
-            if VERBOSE:
-                log.info(
-                    "Proveedor de Servicios de %s: %s" % (self.__get_demarcation_name(), data["mcast_grp"])
-                )
-            return data
-        except Exception as ex:
-            log.warning(f"Usando el Proveedor de Servicios por defecto: 239.0.2.150 {repr(ex)}")
-            return default_service_provider
+        if VERBOSE:
+            log.info("Buscando el Proveedor de Servicios de %s" % self.__get_demarcation_name())
+        data = cache.load_service_provider_data()
+        if not data:
+            xml = self.__get_xml_files(config["mcast_grp"], config["mcast_port"])["1_0"]
+            result = re.findall(
+                "DEM_" + str(config["demarcation"]) + r'\..*?Address="(.*?)".*?\s*Port="(.*?)".*?',
+                xml,
+                re.DOTALL,
+            )[0]
+            data = {"mcast_grp": result[0], "mcast_port": result[1]}
+            cache.save_service_provider_data(data)
+        if VERBOSE:
+            log.info("Proveedor de Servicios de %s: %s" % (self.__get_demarcation_name(), data["mcast_grp"]))
+        return data
 
     def __get_xml_files(self, mc_grp, mc_port):
         loop = True

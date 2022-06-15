@@ -74,7 +74,6 @@ async def before_server_start(app, loop):
                     )
                     break
                 else:
-                    log.error("Failed to get channel list from EPG service")
                     await asyncio.sleep(5)
         except (ClientOSError, ServerDisconnectedError):
             log.debug("Waiting for EPG service...")
