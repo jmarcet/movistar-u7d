@@ -206,7 +206,7 @@ async def handle_flussonic(request, url, channel_id=None, channel_name=None, clo
         ) as r:
             channel, program_id, start, duration, offset = (await r.json()).values()
     except (AttributeError, KeyError, ValueError, ClientOSError, ServerDisconnectedError):
-        log.error(f"{_raw_url} not found channel_id={channel_id} url={url} cloud={cloud}")
+        log.error(f"{_raw_url} not found {channel_id=} {url=} {cloud=}")
         raise NotFound(f"Requested URL {_raw_url} not found")
 
     if request.method == "HEAD":

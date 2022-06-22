@@ -199,7 +199,7 @@ async def postprocess(archive_params, archive_url, mtime, record_time):
         elif not metadata:
             return
 
-        log.debug(f"Metadata={metadata}")
+        log.debug(f"{metadata=}")
         # Save all the available metadata
         if "covers" in metadata:
             covers = {}
@@ -603,7 +603,7 @@ async def Vod(args=None, vod_client=None):
             log.error(msg)
 
     if vod_info:
-        # log.debug(f"[{_args.channel}] [{_args.program}]: vod_info={vod_info}")
+        # log.debug(f"[{_args.channel}] [{_args.program}]: {vod_info=}")
         # Start the RTSP Session
         rtsp_t = asyncio.create_task(rtsp(vod_info))
         await rtsp_t

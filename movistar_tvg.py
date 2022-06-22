@@ -501,7 +501,7 @@ class MovistarTV:
             self.__get_service_data("getConfigurationParams"),
             self.__get_service_data("getPlatformProfile"),
         )
-        if not client or not platform or not params:
+        if not client or not params or not platform:
             raise ValueError("IPTV de Movistar no detectado")
         dvb_entry_point = platform["dvbConfig"]["dvbipiEntryPoint"].split(":")
         uri = platform[list(filter(lambda f: re.search("base.*uri", f, re.IGNORECASE), platform.keys()))[0]]
@@ -851,7 +851,7 @@ class MulticastIPTV:
             prev_end = 0
             for timestamp in sorted(epg[channel]):
                 if prev_end > timestamp:
-                    log.debug(f"[{channel}] prev_end={prev_end} > {timestamp}")
+                    log.debug(f"[{channel}] {prev_end=} > {timestamp}")
                     has_errors = True
                 prev_end = epg[channel][timestamp]["end"]
         return has_errors
@@ -881,10 +881,10 @@ class MulticastIPTV:
                     if cached_epg:
                         if _next in new_epg[channel] and _start not in new_epg[channel]:
                             stales.add(_start)
-                            # log.debug(f"[{channel}] _start={_start} _end={_end} _next={_next} stale 1")
+                            # log.debug(f"[{channel}] {_start=} {_end=} {_next=} stale 1")
                         elif _start in new_epg[channel] and _next not in new_epg[channel]:
                             stales.add(_next)
-                            # log.debug(f"[{channel}] _start={_start} _end={_end} _next={_next} stale 2")
+                            # log.debug(f"[{channel}] {_start=} {_end=} {_next=} stale 2")
                         else:
                             log.debug(
                                 f"[{epg_name}] [{channel}] COLLAPSE {_start}->{_end} & {_next} in EPG!!!"
@@ -897,7 +897,7 @@ class MulticastIPTV:
                                 epg[channel][timestamp]["duration"] = _next - _start
                     else:
                         if _end not in epg[channel]:
-                            log.debug(f"[{epg_name}] [{channel}] OVER {timestamp} end={_end} -> next={_next}")
+                            log.debug(f"[{epg_name}] [{channel}] OVER {timestamp} {_end=} -> {_next=}")
                             epg[channel][timestamp]["end"] = _next
                             epg[channel][timestamp]["duration"] = _next - _start
                             fixed_over += 1

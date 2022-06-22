@@ -201,14 +201,14 @@ def get_channel_dir(channel_id):
 def get_epg(channel_id, program_id, cloud=False):
     guide = _CLOUD if cloud else _EPGDATA
     if channel_id not in guide:
-        log.error(f"channel_id={channel_id} not found")
+        log.error(f"{channel_id=} not found")
         return
 
     for timestamp in sorted(guide[channel_id]):
         _epg = guide[channel_id][timestamp]
         if program_id == _epg["pid"]:
             return _epg, timestamp
-    log.error(f"channel_id={channel_id} program_id={program_id} not found")
+    log.error(f"{channel_id=} {program_id=} not found")
 
 
 def get_program_id(channel_id, url=None, cloud=False):
