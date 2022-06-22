@@ -323,7 +323,7 @@ async def handle_archive(request, channel_id, program_id, cloud=False):
 
     recorded = int(request.args.get("recorded", 0))
     if recorded:
-        if request.method == "OPTIONS" and recorded < 90:
+        if request.method == "OPTIONS" and recorded < 45:
             log.error(f"Recording WRONG: {log_suffix}")
             return response.json({"status": "Recording WRONG"}, status=202)
 
