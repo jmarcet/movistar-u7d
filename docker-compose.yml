@@ -24,9 +24,10 @@ services:
     # mem_limit: 3gb
     # memswap_limit: 3gb
     # healthcheck:
-    #   test: /app/health.sh
-    #   interval: 300s
+    #   test: nc -zv $LAN_IP 8888
+    #   test: nc -zv 127.0.0.1 8889
+    #   interval: 10s
     #   timeout: 5s
-    #   retries: 3
+    #   retries: 5
 
 # vim: et ci pi sts=2 sw=2 ts=2
