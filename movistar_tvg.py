@@ -724,7 +724,7 @@ class MulticastIPTV:
                     if chunk["end"]:
                         first_file = str(chunk["filetype"]) + "_" + str(chunk["fileid"])
                         break
-                except TimeoutError:
+                except OSError:
                     if threading.current_thread() == threading.main_thread():
                         msg = "Multicast IPTV de Movistar no detectado"
                     else:

@@ -67,7 +67,7 @@ def get_iptv_ip():
         try:
             s.connect((IPTV_DNS, 53))
             return s.getsockname()[0]
-        except Timeout:
+        except OSError:
             raise ValueError("Imposible conectar con DNS de Movistar IPTV")
 
 
