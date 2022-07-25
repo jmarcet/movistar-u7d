@@ -301,7 +301,7 @@ class Cache:
 
     @staticmethod
     def __clean():
-        for file in glob.glob(f"{app_dir}{sep}cache{sep}programs{sep}*.json"):
+        for file in glob.glob(os.path.join(cache_dir, "programs", "*.json")):
             try:
                 with open(file, encoding="utf8") as f:
                     _data = json.load(f)["data"]
@@ -314,14 +314,14 @@ class Cache:
     @staticmethod
     def __load(cfile):
         try:
-            with open(f"{app_dir}{sep}cache{sep}{cfile}", "r", encoding="utf8") as f:
+            with open(os.path.join(cache_dir, cfile), "r", encoding="utf8") as f:
                 return json.load(f)["data"]
         except (IOError, KeyError, ValueError):
             pass
 
     @staticmethod
     def __save(cfile, data):
-        with open(f"{app_dir}{sep}cache{sep}{cfile}", "w", encoding="utf8") as f:
+        with open(os.path.join(cache_dir, cfile), "w", encoding="utf8") as f:
             try:
                 json.dump({"data": data}, f, ensure_ascii=False, indent=4, sort_keys=True)
             except AttributeError:
@@ -371,7 +371,10 @@ class Cache:
         return data
 
     def load_epg_extended_info(self, pid):
-        return self.__programs[pid] if pid in self.__programs else self.__load(f"programs{sep}{pid}.json")
+        if pid in self.__programs:
+            return self.__programs[pid]
+        else:
+            return self.__load(os.path.join("programs", f"{pid}.json"))
 
     def load_service_provider_data(self):
         return self.__load("provider.json")
@@ -396,7 +399,7 @@ class Cache:
 
     def save_epg_extended_info(self, data):
         self.__programs[data["productID"]] = data
-        self.__save("programs%s%s.json" % (sep, data["productID"]), data)
+        self.__save(os.path.join("programs", f'{data["productID"]}.json'), data)
 
     def save_service_provider_data(self, data):
         self.__save("provider.json", data)
@@ -1380,6 +1383,7 @@ if __name__ == "__main__":
     VERBOSE = cache = config = deadline = epg = iptv = mtv = session = xmltv = None
 
     app_dir = os.path.join(_conf["HOME"], ".xmltv")
+    cache_dir = os.path.join(app_dir, "cache")
     epg_channels += _conf["EXTRA_CHANNELS"]
     lan_ip = _conf["LAN_IP"]
     tvg_threads = _conf["TVG_THREADS"]
@@ -1388,7 +1392,6 @@ if __name__ == "__main__":
     age_rating = ["0", "0", "0", "7", "12", "16", "17", "18"]
     lang = {"es": {"lang": "es"}, "en": {"lang": "en"}}
     max_credits = 4
-    sep = "\\" if WIN32 else "/"
 
     cookie_file = "movistar_tvg.cookie"
     end_points_file = "movistar_tvg.endpoints"

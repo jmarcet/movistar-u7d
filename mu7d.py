@@ -142,6 +142,7 @@ def glob_safe(string):
 
 
 async def launch(cmd):
+    cmd = [sys.executable, *cmd] if EXT == ".py" else cmd
     proc = await asyncio.create_subprocess_exec(*cmd, cwd=os.path.dirname(__file__) if EXT == ".py" else None)
     try:
         return await proc.wait()
@@ -302,10 +303,8 @@ async def u7d_main():
         signal.signal(signal.SIGCHLD, reaper)
         [signal.signal(sig, cleanup_handler) for sig in (signal.SIGHUP, signal.SIGINT, signal.SIGTERM)]
 
-    prefix = [sys.executable] if EXT == ".py" else []
-
-    u7d_cmd = prefix + [f"movistar_u7d{EXT}"]
-    epg_cmd = prefix + [f"movistar_epg{EXT}"]
+    u7d_cmd = [f"movistar_u7d{EXT}"]
+    epg_cmd = [f"movistar_epg{EXT}"]
 
     u7d_t = asyncio.create_task(launch(u7d_cmd))
     epg_t = asyncio.create_task(launch(epg_cmd))

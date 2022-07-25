@@ -607,30 +607,18 @@ async def record_program(channel_id, program_id, offset=0, record_time=0, cloud=
 async def reload_epg():
     global _CHANNELS, _CLOUD, _EPGDATA
 
-    if (
-        not os.path.exists(CHANNELS)
-        and os.path.exists(config_data)
-        and os.path.exists(epg_data)
-        and os.path.exists(epg_metadata)
-        and os.path.exists(GUIDE)
-        and os.path.exists(GUIDE + ".gz")
+    if not os.path.exists(CHANNELS) and all(
+        map(os.path.exists, (config_data, epg_data, epg_metadata, GUIDE, GUIDE + ".gz"))
     ):
         log.warning("Missing channel list! Need to download it. Please be patient...")
-        cmd = [sys.executable] if EXT == ".py" else []
-        cmd += [f"movistar_tvg{EXT}", "--m3u", CHANNELS]
+        cmd = [f"movistar_tvg{EXT}", "--m3u", CHANNELS]
         async with tvgrab_lock:
             task = app.add_task(launch(cmd))
             await task
         check_task(task)
         if not os.path.exists(CHANNELS):
             return app.add_task(cancel_app())
-    elif (
-        not os.path.exists(config_data)
-        or not os.path.exists(epg_data)
-        or not os.path.exists(epg_metadata)
-        or not os.path.exists(GUIDE)
-        or not os.path.exists(GUIDE + ".gz")
-    ):
+    elif not all(map(os.path.exists, (CHANNELS, config_data, epg_data, epg_metadata, GUIDE, GUIDE + ".gz"))):
         log.warning("Missing channels data! Need to download it. Please be patient...")
         return await update_epg()
 
@@ -851,23 +839,19 @@ async def update_cloud():
     def _fill_cloud_event():
         nonlocal data, meta, pid, timestamp, year
 
-        episode = meta["episode"] or data.get("episode")
-        season = meta["season"] or data.get("season")
-        serie = meta["serie"] or data.get("seriesName")
-
         return {
             "age_rating": data["ageRatingID"],
             "duration": data["duration"],
             "end": int(str(data["endTime"])[:-3]),
-            "episode": episode,
+            "episode": meta["episode"] or data.get("episode"),
             "full_title": meta["full_title"],
             "genre": data["theme"],
             "is_serie": meta["is_serie"],
             "pid": pid,
-            "season": season,
+            "season": meta["season"] or data.get("season"),
             "start": int(timestamp),
             "year": year,
-            "serie": serie,
+            "serie": meta["serie"] or data.get("seriesName"),
             "serie_id": data.get("seriesID"),
         }
 
@@ -930,8 +914,7 @@ async def update_cloud():
         if not os.path.exists(CHANNELS_CLOUD) or not os.path.exists(GUIDE_CLOUD):
             log.warning("Missing Cloud Recordings data! Need to download it. Please be patient...")
 
-        cmd = [sys.executable] if EXT == ".py" else []
-        cmd += [f"movistar_tvg{EXT}", "--cloud_m3u", CHANNELS_CLOUD, "--cloud_recordings", GUIDE_CLOUD]
+        cmd = [f"movistar_tvg{EXT}", "--cloud_m3u", CHANNELS_CLOUD, "--cloud_recordings", GUIDE_CLOUD]
         async with tvgrab_lock:
             task = app.add_task(launch(cmd))
             await task
@@ -942,8 +925,7 @@ async def update_cloud():
 
 async def update_epg(abort_on_error=False):
     global _last_epg, _t_timers
-    cmd = [sys.executable] if EXT == ".py" else []
-    cmd += [f"movistar_tvg{EXT}", "--m3u", CHANNELS, "--guide", GUIDE]
+    cmd = [f"movistar_tvg{EXT}", "--m3u", CHANNELS, "--guide", GUIDE]
     for i in range(3):
         async with tvgrab_lock:
             task = app.add_task(launch(cmd))
