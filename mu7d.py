@@ -137,8 +137,8 @@ def get_title_meta(title, serie_id=None):
     }
 
 
-def glob_safe(string):
-    return glob(f"{string.replace('[', '?').replace(']', '?')}")
+def glob_safe(string, recursive=False):
+    return glob(f"{string.replace('[', '?').replace(']', '?')}", recursive=recursive)
 
 
 async def launch(cmd):
