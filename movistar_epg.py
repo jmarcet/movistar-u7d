@@ -15,6 +15,7 @@ import urllib.parse
 
 from aiohttp.client_exceptions import ClientOSError, ServerDisconnectedError
 from aiohttp.resolver import AsyncResolver
+from collections import defaultdict
 from datetime import datetime, timedelta
 from filelock import FileLock, Timeout
 from glob import glob
@@ -261,6 +262,10 @@ def get_program_id(channel_id, url=None, cloud=False):
     }
 
 
+def get_program_name(filename):
+    return os.path.split(os.path.dirname(filename))[1]
+
+
 def get_recording_files(fname):
     fname = fname.rstrip(VID_EXT)
     absname = os.path.join(RECORDINGS, fname)
@@ -364,15 +369,28 @@ async def handle_archive(request, channel_id, program_id, cloud=False):
         global _RECORDINGS
 
         found = [ts for ts in _RECORDINGS[channel_id] if _RECORDINGS[channel_id][ts]["filename"] in filename]
-        if found:
-            for ts in found:
-                duplicate = _RECORDINGS[channel_id][ts]["filename"]
-                old_files = sorted(set(get_recording_files(duplicate)) - set(get_recording_files(filename)))
+        for ts in found:
+            duplicate = _RECORDINGS[channel_id][ts]["filename"]
+            old_files = sorted(set(get_recording_files(duplicate)) - set(get_recording_files(filename)))
+
+            [remove(file) for file in old_files]
+            [log.warning(f'REMOVED DUPLICATED "{file}"') for file in old_files]
+
+            del _RECORDINGS[channel_id][ts]
+
+    def _prune_old():
+        program = get_program_name(filename)
+        if program not in _KEEP[channel_id]:
+            return
+
+        search = os.path.join(RECORDINGS, os.path.dirname(filename), f"*{VID_EXT}")
+        siblings = sorted(glob_safe(search), key=os.path.getmtime)
+        if len(siblings) > _KEEP[channel_id][program]:
+            for fname in siblings[0 : len(siblings) - _KEEP[channel_id][program]]:
+                old_files = sorted(get_recording_files(fname))
 
                 [remove(file) for file in old_files]
-                [log.warning(f'REMOVED DUPLICATED "{file}"') for file in old_files]
-
-                del _RECORDINGS[channel_id][ts]
+                [log.warning(f'REMOVED "{file}"') for file in old_files]
 
     log.debug(f"Checking for {filename}")
     if does_recording_exist(filename):
@@ -381,6 +399,8 @@ async def handle_archive(request, channel_id, program_id, cloud=False):
                 _RECORDINGS[channel_id] = {}
 
             _prune_duplicates()
+            if channel_id in _KEEP:
+                _prune_old()
             _RECORDINGS[channel_id][timestamp] = {"filename": filename}
 
         app.add_task(update_recordings(channel_id))
@@ -716,9 +736,15 @@ async def timers_check(delay=0):
         return unicodedata.normalize("NFKD", string).encode("ASCII", "ignore").decode("utf8")
 
     async def _record(cloud=False):
-        nonlocal channel_id, channel_name, ongoing, queued, nr_procs, recs, timer_match, timestamp, vo
+        nonlocal channel_id, channel_name, keep, kept, nr_procs, ongoing
+        nonlocal queued, recs, repeat, timer_match, timestamp, vo
 
         filename = get_recording_name(channel_id, timestamp, cloud)
+        program = get_program_name(filename)
+
+        if keep and re.search(_clean(timer_match), _clean(program), re.IGNORECASE):
+            kept[channel_id][program] = keep
+
         if filename in ongoing or (channel_id, timestamp) in queued:
             return
 
@@ -728,8 +754,10 @@ async def timers_check(delay=0):
         if not cloud and timestamp + duration >= _last_epg:
             return
 
-        if channel_id in recs and filename in str(recs[channel_id]):
-            return
+        if channel_id in recs:
+            r = list(filter(lambda event: recs[channel_id][event]["filename"] == filename, recs[channel_id]))
+            if r and (not repeat or timestamp < r[0]):
+                return  # only repeat a recording when asked to and it's more recent than the archived
 
         if cloud or re.search(_clean(timer_match), _clean(title), re.IGNORECASE):
             if await record_program(channel_id, pid, 0, 0 if cloud else duration, cloud, MP4_OUTPUT, vo):
@@ -754,7 +782,7 @@ async def timers_check(delay=0):
 
     ongoing = await ongoing_vods(_all=True)  # we want to check against all ongoing vods, also in pp
     log.debug(f"Ongoing VODs: [{ongoing}]")
-    queued = []
+    kept, queued = defaultdict(dict), []
 
     for str_channel_id in _timers.get("match", {}):
         channel_id = int(str_channel_id)
@@ -764,12 +792,13 @@ async def timers_check(delay=0):
         channel_name = _CHANNELS[channel_id]["name"]
 
         for timer_match in _timers["match"][str_channel_id]:
-            fixed_timer = 0
+            fixed_timer, keep, repeat = 0, False, False
             lang = deflang
             if " ## " in timer_match:
                 match_split = timer_match.split(" ## ")
                 timer_match = match_split[0]
-                for res in match_split[1:3]:
+                for res in [res.lower().strip() for res in match_split[1:]]:
+
                     if res[0].isnumeric():
                         try:
                             hour, minute = [int(t) for t in res.split(":")]
@@ -779,6 +808,13 @@ async def timers_check(delay=0):
                             log.debug(f'[{channel_name}] "{timer_match}" {hour:02}:{minute:02} {fixed_timer}')
                         except ValueError:
                             log.warning(f'Failed to parse [{channel_name}] "{timer_match}" [{res}] correctly')
+
+                    elif res.startswith("keep"):
+                        keep = int(res.lstrip("keep"))
+
+                    elif res == "repeat":
+                        repeat = True
+
                     else:
                         lang = res
             vo = lang == "VO"
@@ -802,7 +838,8 @@ async def timers_check(delay=0):
                 ts for ts in timestamps if (channel_id not in recs or ts not in recs[channel_id])
             ]:
                 if await _record():
-                    return
+                    sync_cloud = False
+                    break
 
     if sync_cloud:
         vo = _timers["sync_cloud_language"] == "VO" if "sync_cloud_language" in _timers else False
@@ -811,7 +848,10 @@ async def timers_check(delay=0):
                 ts for ts in _CLOUD[channel_id] if (channel_id not in recs or ts not in recs[channel_id])
             ]:
                 if await _record(cloud=True):
-                    return
+                    break
+
+    global _KEEP
+    _KEEP = kept
 
 
 async def update_cloud():
@@ -1080,6 +1120,7 @@ if __name__ == "__main__":
     _CHANNELS = {}
     _CLOUD = {}
     _EPGDATA = {}
+    _KEEP = {}
     _RECORDINGS = {}
     _RECORDINGS_INC = {}
 
