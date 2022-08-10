@@ -262,11 +262,19 @@ def get_program_id(channel_id, url=None, cloud=False):
 
 
 def get_recording_files(fname):
+    fname = fname.rstrip(VID_EXT)
+    absname = os.path.join(RECORDINGS, fname)
     basename = os.path.basename(fname)
-    metadata = os.path.join(RECORDINGS, os.path.join(os.path.dirname(fname), "metadata"))
+    path = os.path.dirname(absname)
 
-    files = glob_safe(os.path.join(RECORDINGS, f"{fname}*"))
-    files += glob_safe(os.path.join(metadata, f"{basename}*"))
+    metadata = os.path.join(path, "metadata")
+    nfo = os.path.join(path, basename + NFO_EXT)
+
+    files = glob_safe(os.path.join(path, f"{basename}.*"))
+    files += glob_safe(os.path.join(metadata, f"{basename}-*"))
+    files += [nfo] if os.path.exists(nfo) else []
+    files += [metadata] if os.path.exists(metadata) else []
+    files += [path] if path != RECORDINGS else []
 
     return filter(lambda file: os.access(file, os.W_OK), files)
 
