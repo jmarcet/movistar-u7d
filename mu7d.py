@@ -434,8 +434,8 @@ if __name__ == "__main__":
         format="[%(asctime)s] [%(name)s] [%(levelname)s] %(message)s",
         level=logging.DEBUG if _conf["DEBUG"] else logging.INFO,
     )
-    logging.getLogger("asyncio").setLevel(logging.FATAL)
-    logging.getLogger("filelock").setLevel(logging.FATAL)
+    logging.getLogger("asyncio").setLevel(logging.DEBUG if _conf["DEBUG"] else logging.FATAL)
+    logging.getLogger("filelock").setLevel(logging.DEBUG if _conf["DEBUG"] else logging.FATAL)
 
     banner = f"Movistar U7D v{_version}"
     log.info("=" * len(banner))
