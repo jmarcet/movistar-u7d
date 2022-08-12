@@ -16,7 +16,7 @@ import urllib.parse
 from aiohttp.client_exceptions import ClientOSError, ServerDisconnectedError
 from aiohttp.resolver import AsyncResolver
 from collections import defaultdict
-from datetime import datetime, timedelta
+from datetime import date, datetime, timedelta
 from filelock import FileLock, Timeout
 from glob import glob
 from psutil import Process, boot_time
@@ -112,7 +112,7 @@ async def before_server_start(app, loop):
                             else:
                                 continue
                         else:
-                            _indexed.add(os.path.join(RECORDINGS, filename + VID_EXT))
+                            _indexed.add(get_path(filename))
                             [os.utime(file, (-1, timestamp)) for file in get_recording_files(filename)]
                         int_recordings[channel_id][timestamp] = recording
                 _RECORDINGS = int_recordings
@@ -210,6 +210,10 @@ def get_epg(channel_id, program_id, cloud=False):
         if program_id == _epg["pid"]:
             return _epg, timestamp
     log.error(f"{channel_id=} {program_id=} not found")
+
+
+def get_path(filename):
+    return os.path.join(RECORDINGS, filename + VID_EXT)
 
 
 def get_program_id(channel_id, url=None, cloud=False):
@@ -365,42 +369,15 @@ async def handle_archive(request, channel_id, program_id, cloud=False):
         log.debug(f"Recording OK: {log_suffix}")
         return response.json({"status": "Recording OK"}, status=200)
 
-    def _prune_duplicates():
-        global _RECORDINGS
-
-        found = [ts for ts in _RECORDINGS[channel_id] if _RECORDINGS[channel_id][ts]["filename"] in filename]
-        for ts in found:
-            duplicate = _RECORDINGS[channel_id][ts]["filename"]
-            old_files = sorted(set(get_recording_files(duplicate)) - set(get_recording_files(filename)))
-
-            [remove(file) for file in old_files]
-            [log.warning(f'REMOVED DUPLICATED "{file}"') for file in old_files]
-
-            del _RECORDINGS[channel_id][ts]
-
-    def _prune_old():
-        program = get_program_name(filename)
-        if program not in _KEEP[channel_id]:
-            return
-
-        search = os.path.join(RECORDINGS, os.path.dirname(filename), f"*{VID_EXT}")
-        siblings = sorted(glob_safe(search), key=os.path.getmtime)
-        if len(siblings) > _KEEP[channel_id][program]:
-            for fname in siblings[0 : len(siblings) - _KEEP[channel_id][program]]:
-                old_files = sorted(get_recording_files(fname))
-
-                [remove(file) for file in old_files]
-                [log.warning(f'REMOVED "{file}"') for file in old_files]
-
     log.debug(f"Checking for {filename}")
     if does_recording_exist(filename):
         async with recordings_lock:
             if channel_id not in _RECORDINGS:
                 _RECORDINGS[channel_id] = {}
 
-            _prune_duplicates()
+            prune_duplicates(channel_id, filename)
             if channel_id in _KEEP:
-                _prune_old()
+                prune_expired(channel_id, filename)
             _RECORDINGS[channel_id][timestamp] = {"filename": filename}
 
         app.add_task(update_recordings(channel_id))
@@ -587,6 +564,49 @@ async def prom_event(request, method):
     )
 
 
+def prune_duplicates(channel_id, filename):
+    global _RECORDINGS
+
+    found = [ts for ts in _RECORDINGS[channel_id] if _RECORDINGS[channel_id][ts]["filename"] in filename]
+    for ts in found:
+        duplicate = _RECORDINGS[channel_id][ts]["filename"]
+        old_files = sorted(set(get_recording_files(duplicate)) - set(get_recording_files(filename)))
+
+        [remove(file) for file in old_files]
+        [log.warning(f'REMOVED DUPLICATED "{file}"') for file in old_files]
+
+        del _RECORDINGS[channel_id][ts]
+
+
+def prune_expired(channel_id, filename):
+    program = get_program_name(filename)
+    if program not in _KEEP[channel_id]:
+        return
+
+    siblings = [
+        ts
+        for ts in sorted(_RECORDINGS[channel_id])
+        if os.path.split(_RECORDINGS[channel_id][ts]["filename"])[0] == os.path.split(filename)[0]
+    ]
+    if not siblings:
+        return
+
+    def _drop(ts):
+        filename = _RECORDINGS[channel_id][ts]["filename"]
+        old_files = sorted(get_recording_files(filename))
+        [remove(file) for file in old_files]
+        del _RECORDINGS[channel_id][ts]
+        [log.warning(f'REMOVED "{file}"') for file in old_files if not os.path.exists(file)]
+
+    if _KEEP[channel_id][program] < 0:
+        max_days = abs(_KEEP[channel_id][program])
+        newest = date.fromtimestamp(max(siblings[-1], os.path.getmtime(get_path(filename))))
+        [_drop(ts) for ts in siblings if (newest - date.fromtimestamp(ts)).days > max_days]
+
+    elif len(siblings) >= _KEEP[channel_id][program]:
+        [_drop(ts) for ts in siblings[0 : len(siblings) - _KEEP[channel_id][program] + 1]]
+
+
 async def reap_vod_child(process, filename):
     retcode = await process.wait()
 
@@ -735,6 +755,15 @@ async def timers_check(delay=0):
     def _clean(string):
         return unicodedata.normalize("NFKD", string).encode("ASCII", "ignore").decode("utf8")
 
+    def _exit():
+        global _KEEP
+        nonlocal kept
+        _KEEP = kept
+
+    def _filter_recorded(timestamps):
+        nonlocal channel_id, recs
+        return filter(lambda ts: channel_id not in recs or ts not in recs[channel_id], timestamps)
+
     async def _record(cloud=False):
         nonlocal channel_id, channel_name, keep, kept, nr_procs, ongoing
         nonlocal queued, recs, repeat, timer_match, timestamp, vo
@@ -802,15 +831,15 @@ async def timers_check(delay=0):
                     if res[0].isnumeric():
                         try:
                             hour, minute = [int(t) for t in res.split(":")]
-                            fixed_timer = int(
-                                datetime.now().replace(hour=hour, minute=minute, second=0).timestamp()
-                            )
+                            _ts = datetime.now().replace(hour=hour, minute=minute, second=0).timestamp()
+                            fixed_timer = int(_ts)
                             log.debug(f'[{channel_name}] "{timer_match}" {hour:02}:{minute:02} {fixed_timer}')
                         except ValueError:
                             log.warning(f'Failed to parse [{channel_name}] "{timer_match}" [{res}] correctly')
 
                     elif res.startswith("keep"):
-                        keep = int(res.lstrip("keep"))
+                        keep = int(res.lstrip("keep").rstrip("d"))
+                        keep = -keep if res.endswith("d") else keep
 
                     elif res == "repeat":
                         repeat = True
@@ -834,24 +863,17 @@ async def timers_check(delay=0):
                 timestamps = found_ts
 
             log.debug(f"Checking timer: [{channel_name}] [{channel_id}] [{_clean(timer_match)}]")
-            for timestamp in [
-                ts for ts in timestamps if (channel_id not in recs or ts not in recs[channel_id])
-            ]:
+            for timestamp in _filter_recorded(timestamps):
                 if await _record():
-                    sync_cloud = False
-                    break
+                    return _exit()
 
     if sync_cloud:
-        vo = _timers["sync_cloud_language"] == "VO" if "sync_cloud_language" in _timers else False
+        vo = _timers.get("sync_cloud_language", "") == "VO"
         for channel_id in _CLOUD:
-            for timestamp in [
-                ts for ts in _CLOUD[channel_id] if (channel_id not in recs or ts not in recs[channel_id])
-            ]:
+            for timestamp in _filter_recorded(sorted(_CLOUD[channel_id])):
                 if await _record(cloud=True):
-                    break
-
-    global _KEEP
-    _KEEP = kept
+                    return _exit()
+    _exit()
 
 
 async def update_cloud():
