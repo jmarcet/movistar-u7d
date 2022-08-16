@@ -22,6 +22,7 @@ import time
 import ujson as json
 
 from aiohttp.resolver import AsyncResolver
+from collections import defaultdict
 from contextlib import closing
 from datetime import date, datetime, timedelta
 from filelock import FileLock, Timeout
@@ -37,37 +38,37 @@ log = logging.getLogger("TVG")
 
 
 epg_channels = [
-    "2543",
-    "4455",
-    "4919",
-    "2524",
-    "1825",
-    "1826",
-    "2526",
-    "884",
-    "4714",
-    "3223",
-    "844",
-    "1221",
-    "4063",
-    "2544",
-    "3063",
-    "657",
-    "663",
-    "4716",
-    "4715",
-    "3185",
-    "1616",
-    "578",
-    "4467",
-    "5104",
-    "743",
-    "582",
-    "3603",
-    "3443",
-    "5029",
-    "3103",
-    "4990",
+    2543,
+    4455,
+    4919,
+    2524,
+    1825,
+    1826,
+    2526,
+    884,
+    4714,
+    3223,
+    844,
+    1221,
+    4063,
+    2544,
+    3063,
+    657,
+    663,
+    4716,
+    4715,
+    3185,
+    1616,
+    578,
+    4467,
+    5104,
+    743,
+    582,
+    3603,
+    3443,
+    5029,
+    3103,
+    4990,
 ]
 
 demarcations = {
@@ -328,7 +329,11 @@ class Cache:
                 json.dump({"data": data}, f, ensure_ascii=False, sort_keys=True)
 
     def load_cloud_epg(self):
-        return self.__load("cloud.json")
+        data = self.__load("cloud.json")
+        _int_data = defaultdict(dict)
+        for channel in data:
+            _int_data[int(channel)] = {int(k): v for k, v in data[channel].items()}
+        return _int_data
 
     def load_config(self):
         return self.__load("config.json")
@@ -368,7 +373,11 @@ class Cache:
                     "Caché de EPG no encontrada. "
                     "Tendrá que esperar unos días para poder acceder a todo el archivo de los útimos 7 días."
                 )
-        return data
+        if data:
+            _int_data = defaultdict(dict)
+            for channel in data:
+                _int_data[int(channel)] = {int(k): v for k, v in data[channel].items()}
+            return _int_data
 
     def load_epg_extended_info(self, pid):
         if pid in self.__programs:
@@ -573,7 +582,7 @@ class MulticastIPTV:
         for i in services:
             channel_id = "unknown"
             try:
-                channel_id = i[1].attrib["ServiceName"]
+                channel_id = int(i[1].attrib["ServiceName"])
                 channel_list[channel_id] = {
                     "id": channel_id,
                     "address": i[0][0].attrib["Address"],
@@ -586,9 +595,9 @@ class MulticastIPTV:
                     else "MAY_1/imSer/4146.jpg",
                 }
                 if i[2][4].tag == "{urn:dvb:ipisdns:2006}ReplacementService":
-                    channel_list[channel_id]["replacement"] = i[2][4][0].attrib["ServiceName"]
-            except (KeyError, IndexError) as ex:
-                log.debug(f"El canal {channel_id} no tiene la estructura correcta: {repr(ex)}")
+                    channel_list[channel_id]["replacement"] = int(i[2][4][0].attrib["ServiceName"])
+            except (KeyError, IndexError):
+                pass
         if VERBOSE:
             log.info("Canales: %i" % len(channel_list))
         return channel_list
@@ -780,7 +789,7 @@ class MulticastIPTV:
             for ch_id in epg_day:
                 if epg_day[ch_id] and "replacement" not in epg_day[ch_id]:
                     head = self.__parse_bin_epg_header(epg_day[ch_id])
-                    programs[str(head["service_id"])] = self.__parse_bin_epg_body(head["data"])
+                    programs[head["service_id"]] = self.__parse_bin_epg_body(head["data"])
             self.__merge_dicts(merged_epg, programs)
         log.info(f"Canales con EPG: {len(merged_epg)}")
         cache.save_epg(merged_epg)
@@ -1126,11 +1135,11 @@ class XMLTV:
         services = self.__get_client_channels()
         if cloud:
             cloud_services = {}
-            for (id, channel) in services.items():
+            for id, channel in services.items():
                 if id in cloud:
                     cloud_services[id] = channel
             services = cloud_services
-        channels = sorted(services, key=lambda key: int(services[key]))
+        channels = sorted(services, key=lambda key: services[key])
         if not cloud:
             channels = channels[1:] + channels[:1]
         _fresh = not os.path.exists(file_path)
@@ -1162,7 +1171,7 @@ class XMLTV:
         for package in config["tvPackages"].split("|") if config["tvPackages"] != "ALL" else self.__packages:
             if package in self.__packages:
                 services.update(self.__packages[package]["services"])
-        return services
+        return {int(k): int(v) for k, v in services.items()}
 
     @staticmethod
     def __get_genre_and_subgenre(code):
@@ -1222,7 +1231,7 @@ class XMLTV:
         )
         tz_offset = int(abs(time.timezone / 3600))
         services = self.__get_client_channels()
-        for channel_id in sorted(services, key=lambda key: int(services[key])):
+        for channel_id in sorted(services, key=lambda key: services[key]):
             if channel_id in self.__channels:
                 tag_channel = Element("channel", {"id": f"{channel_id}.movistar.tv"})
                 tag_dname = SubElement(tag_channel, "display-name")
@@ -1235,7 +1244,7 @@ class XMLTV:
             log.info("XML: Descargando info extendida")
         for channel_id in [
             cid
-            for cid in sorted(services, key=lambda key: int(services[key]))
+            for cid in sorted(services, key=lambda key: services[key])
             if cid in self.__channels and cid in parsed_epg
         ]:
             channel_name = self.__channels[channel_id]["name"]

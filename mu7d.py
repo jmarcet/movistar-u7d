@@ -188,7 +188,7 @@ def mu7d_config():
     if "EXTRA_CHANNELS" not in conf:
         conf["EXTRA_CHANNELS"] = []
     else:
-        conf["EXTRA_CHANNELS"] = conf["EXTRA_CHANNELS"].split(" ")
+        conf["EXTRA_CHANNELS"] = list(map(int, conf["EXTRA_CHANNELS"].split(" ")))
 
     if "IPTV_IFACE" not in conf or WIN32:
         conf["IPTV_IFACE"] = conf["IPTV_BW_SOFT"] = conf["IPTV_BW_HARD"] = None
