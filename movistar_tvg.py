@@ -348,21 +348,25 @@ class Cache:
 
     async def load_epg(self):
         data = self.__load("epg.json")
-        if not data:
+        now = datetime.now()
+        remote_cache_ts = int(now.replace(hour=0, minute=59, second=0).timestamp())
+        if now.hour == 0 and now.minute < 59:
+            remote_cache_ts -= 3600 * 24
+        if not data or int(os.path.getmtime(os.path.join(cache_dir, "epg.json"))) < remote_cache_ts:
             async with aiohttp.ClientSession(headers={"User-Agent": UA_U7D}) as session:
                 for i in range(5):
                     log.info("Intentando obtener Caché de EPG actualizada...")
                     try:
                         async with session.get("https://openwrt.marcet.info/epg.json") as r:
                             if r.status == 200:
-                                data = (await r.json())["data"]
+                                res = await r.json()
                                 log.info("Obtenida Caché de EPG actualizada")
+                                data = res["data"]
                                 break
                             if i < 4:
                                 log.warning(f"No ha habido suerte. Reintentando en 15s... [{i+2}/5]")
                                 await asyncio.sleep(15)
                     except Exception as ex:
-                        data = None
                         if i < 4:
                             log.warning(
                                 f"No ha habido suerte. Reintentando en 15s... [{i+2}/5] => {repr(ex)}"
