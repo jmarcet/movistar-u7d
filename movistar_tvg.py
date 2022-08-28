@@ -383,6 +383,24 @@ class Cache:
                 _int_data[int(channel)] = {int(k): v for k, v in data[channel].items()}
             return _int_data
 
+    def load_epg_metadata(self):
+        metadata = self.__load("epg_metadata.json")
+        if not metadata:
+            return
+
+        now = datetime.now()
+        update_time = int(now.replace(hour=0, minute=0, second=0).timestamp())
+        log.debug(f"Fecha de actualización de epg_metadata: [{time.ctime(update_time)}] [{update_time}]")
+        if int(os.path.getmtime(os.path.join(app_dir, "cache", "epg_metadata.json"))) < update_time:
+            log.debug("Actualizando metadatos de la EPG")
+            return
+
+        channels_data = defaultdict(dict)
+        for channel in metadata["channels"]:
+            channels_data[int(channel)] = metadata["channels"][channel]
+        metadata.update({"channels": channels_data})
+        return metadata
+
     def load_epg_extended_info(self, pid):
         if pid in self.__programs:
             return self.__programs[pid]
@@ -407,12 +425,12 @@ class Cache:
     def save_epg(self, data):
         self.__save("epg.json", data)
 
-    def save_epg_data(self, data):
-        self.__save("epg_metadata.json", data)
-
     def save_epg_extended_info(self, data):
         self.__programs[data["productID"]] = data
         self.__save(os.path.join("programs", f'{data["productID"]}.json'), data)
+
+    def save_epg_metadata(self, data):
+        self.__save("epg_metadata.json", data)
 
     def save_service_provider_data(self, data):
         self.__save("provider.json", data)
@@ -715,7 +733,7 @@ class MulticastIPTV:
             log.debug(f"{repr(ex)}")
             log.warning("Error descargando datos de la EPG. Reintentando...")
             return self.__get_epg_data(mcast_grp, mcast_port)
-        cache.save_epg_data(self.__xml_data)
+        cache.save_epg_metadata(self.__xml_data)
 
     @staticmethod
     def __get_packages(xml):
@@ -1002,7 +1020,10 @@ class MulticastIPTV:
         return cached_epg, True
 
     def get_service_provider_data(self):
-        if not self.__xml_data:
+        data = cache.load_epg_metadata()
+        if data:
+            self.__xml_data = data
+        else:
             connection = self.__get_service_provider_ip()
             self.__get_epg_data(connection["mcast_grp"], connection["mcast_port"])
         return self.__xml_data
