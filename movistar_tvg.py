@@ -31,7 +31,7 @@ from xml.dom import minidom  # nosec B408
 from xml.etree.ElementTree import Element, ElementTree, SubElement  # nosec B405
 
 from mu7d import IPTV_DNS, UA, UA_U7D, WIN32, YEAR_SECONDS
-from mu7d import get_iptv_ip, get_title_meta, mu7d_config, _version
+from mu7d import get_iptv_ip, get_local_info, get_title_meta, mu7d_config, _version
 
 
 log = logging.getLogger("TVG")
@@ -330,10 +330,10 @@ class Cache:
 
     def load_cloud_epg(self):
         data = self.__load("cloud.json")
-        _int_data = defaultdict(dict)
+        cloud_epg = defaultdict(dict)
         for channel in data:
-            _int_data[int(channel)] = {int(k): v for k, v in data[channel].items()}
-        return _int_data
+            cloud_epg[int(channel)] = {int(k): v for k, v in data[channel].items()}
+        return cloud_epg
 
     def load_config(self):
         return self.__load("config.json")
@@ -378,10 +378,10 @@ class Cache:
                     "Tendrá que esperar unos días para poder acceder a todo el archivo de los útimos 7 días."
                 )
         if data:
-            _int_data = defaultdict(dict)
+            epg = defaultdict(dict)
             for channel in data:
-                _int_data[int(channel)] = {int(k): v for k, v in data[channel].items()}
-            return _int_data
+                epg[int(channel)] = {int(k): v for k, v in data[channel].items()}
+            return epg
 
     def load_epg_metadata(self):
         metadata = self.__load("epg_metadata.json")
@@ -404,8 +404,31 @@ class Cache:
     def load_epg_extended_info(self, pid):
         if pid in self.__programs:
             return self.__programs[pid]
-        else:
-            return self.__load(os.path.join("programs", f"{pid}.json"))
+        return self.__load(os.path.join("programs", f"{pid}.json"))
+
+    def load_local_epg(self):
+        try:
+            with open(os.path.join(_conf["HOME"], "recordings.json"), "r", encoding="utf8") as f:
+                data = json.load(f)
+        except (IOError, KeyError, ValueError):
+            return
+
+        local_epg = defaultdict(dict)
+        for channel in data:
+            local_epg[int(channel)] = {int(k): v for k, v in data[channel].items()}
+
+        # Recordings can overlap, so we need to shorten the duration when they do
+        for channel in sorted(local_epg):
+            sorted_channel = sorted(local_epg[channel])
+            for i in range(len(sorted_channel) - 1):
+                ts = sorted_channel[i]
+                _next = sorted_channel[i + 1]
+                _end = ts + local_epg[channel][ts]["duration"]
+
+                if _end > _next:
+                    local_epg[channel][ts]["duration"] = _next - ts
+
+        return local_epg
 
     def load_service_provider_data(self):
         return self.__load("provider.json")
@@ -414,7 +437,6 @@ class Cache:
         self.__save("config.json", data)
 
     def save_cookie(self, data):
-        # log.debug(f"Set-Cookie: {data}")
         self.__save(cookie_file, data)
 
     def save_end_points(self, data):
@@ -497,7 +519,7 @@ class MovistarTV:
             if eps[ep] not in self.__end_points_down:
                 return eps[ep]
 
-    async def get_epg_extended_info(self, pid, channel_id):
+    async def get_epg_extended_info(self, channel_id, pid, ts):
         try:
             data = cache.load_epg_extended_info(pid)
         except Exception as ex:
@@ -509,14 +531,13 @@ class MovistarTV:
                 )
                 cache.save_epg_extended_info(data)
             except Exception as ex:
-                log.debug(f"Información extendida no encontrada: {pid} {repr(ex)}")
+                log.warning(f"Información extra no encontrada: [{channel_id}] [{ts}] [{pid}] => {repr(ex)}")
                 return
         return data
 
     def get_first_end_point(self):
         eps = self.__get_end_points()
-        for ep in sorted(eps):
-            return eps[ep]
+        return sorted(eps)[0]
 
     def get_random_end_point(self):
         eps = self.__get_end_points()
@@ -564,15 +585,22 @@ class MulticastIPTV:
         self.__xml_data = {}
         self.__epg = None
 
+    def __clean_epg_channels(self, epg):
+        services = {}
+        _packages = self.__xml_data["packages"]
+        for package in config["tvPackages"].split("|") if config["tvPackages"] != "ALL" else _packages:
+            if package in _packages:
+                services.update(_packages[package]["services"])
+        subscribed = [int(k) for k in services.keys()]
+
+        clean_epg = {}
+        for channel in set(epg) & set(epg_channels) & set(subscribed):
+            clean_epg[channel] = epg[channel]
+        return clean_epg
+
     def __decode_string(self, string):
         _t = ("".join(chr(char ^ 0x15) for char in string)).encode("latin1").decode("utf8")
         return _t.replace("&quot;", "«", 1).replace("&quot;", "»", 1)
-
-    def __drop_encrypted(self, epg):
-        clean_channels = {}
-        for channel in set(epg) & set(epg_channels):
-            clean_channels[channel] = epg[channel]
-        return clean_channels
 
     def __expire_epg(self, epg):
         expired = 0
@@ -584,7 +612,7 @@ class MulticastIPTV:
 
     def __find_gaps(self, epg, channel, sorted_channel, new_epg=None, new_gaps=None):
         drop = defaultdict(list)
-        fixed = 0
+        gaps = fixed = 0
         is_new_epg = new_gaps is not None
         name = "New EPG" if is_new_epg else "Cached EPG"
         now = int(datetime.now().timestamp())
@@ -593,7 +621,7 @@ class MulticastIPTV:
             ts = sorted_channel[i]
             _end = epg[channel][ts]["end"]
             _next = epg[channel][sorted_channel[i + 1]]["start"]
-            __ts, __end, __next = [time.ctime(x) for x in (ts, _end, _next)]
+            __ts, __end, __next = map(time.ctime, (ts, _end, _next))
 
             if _end < _next:
                 msg = f"[{channel}] {name} GAP [{ts}] FROM:[{__end}] [{_end}] - TO:[{__next}] [{_next}]"
@@ -601,13 +629,15 @@ class MulticastIPTV:
                     log.debug(msg)
                     new_gaps[channel].append((_end, _next))
                 elif ts < now:
+                    gaps += _next - _end
                     log.error(msg)
 
             elif _end > _next:
                 if (epg[channel][ts]["full_title"] == epg[channel][_next]["full_title"] or ts < now) and (
-                    not is_new_epg or ts not in new_epg[channel]
+                    new_epg and ts not in new_epg[channel] and _next - ts < 900
                 ):
                     drop[channel].append(ts)
+                    gaps += _next - ts
                     msg = f"[{channel}] {name} DROP -> GAP FROM:[{__ts}] [{ts}] - TO:[{__next}] [{_next}]"
                 else:
                     epg[channel][ts]["end"] = _next
@@ -616,11 +646,11 @@ class MulticastIPTV:
                 log.debug(msg) if ts > now else log.warning(msg)
                 fixed += 1
 
-        for channel in drop:
-            for ts in drop[channel]:
-                del epg[channel][ts]
+        for channel_id in drop:
+            for ts in drop[channel_id]:
+                del epg[channel_id][ts]
 
-        return fixed
+        return fixed, gaps
 
     def __fix_epg(self, epg):
         fixed_diff = fixed_over = 0
@@ -640,7 +670,7 @@ class MulticastIPTV:
                     )
                     fixed_diff += 1
 
-            fixed_over += self.__find_gaps(epg, channel, _new, new_gaps=new_gaps)
+            fixed_over += self.__find_gaps(epg, channel, _new, new_gaps=new_gaps)[0]
 
         if fixed_diff or fixed_over:
             log.warning("El nuevo EPG contenía errores")
@@ -893,18 +923,22 @@ class MulticastIPTV:
                     if (
                         ts < new_start
                         or ts >= new_end
-                        or any(filter(lambda gap: ts >= gap[0] and ts < gap[1], new_gaps[channel]))
+                        or any(filter(lambda gap: gap[0] <= ts < gap[1], new_gaps[channel]))
                     ):
                         cached_epg[ts] = epg[channel][ts]
                 epg[channel] = {**cached_epg, **new_epg[channel]}
             else:
                 epg[channel] = new_epg[channel]
 
+        gaps = 0
         for channel in sorted(epg):
             sorted_channel = sorted(epg[channel])
-            fixed += self.__find_gaps(epg, channel, sorted_channel, new_epg=new_epg)
+            _fixed, _gaps = self.__find_gaps(epg, channel, sorted_channel, new_epg=new_epg)
+            fixed += _fixed
+            gaps += _gaps
 
-        log.info(f"Eventos: Arreglados = {fixed} - Caducados = {expired}")
+        gap_msg = f" - Huecos = {str(timedelta(seconds=gaps))}s" if gaps else ""
+        log.info(f"Eventos: Arreglados = {fixed} - Caducados = {expired}{gap_msg}")
 
     def __parse_bin_epg(self):
         merged_epg = {}
@@ -982,7 +1016,7 @@ class MulticastIPTV:
             raise ValueError(f"get_chunk: error al analizar los datos {repr(ex)}")
 
     def get_cloud_epg(self):
-        return self.__drop_encrypted(cache.load_cloud_epg())
+        return self.__clean_epg_channels(cache.load_cloud_epg())
 
     def get_day(self, mcast_grp, mcast_port, source):
         day = int(source.split("_")[1]) - 1
@@ -990,10 +1024,10 @@ class MulticastIPTV:
         self.__epg[day] = self.__get_xml_files(mcast_grp, mcast_port)
 
     async def get_epg(self):
-        cached_epg = self.__drop_encrypted(await cache.load_epg())
+        cached_epg = self.__clean_epg_channels(await cache.load_epg())
         self.__get_bin_epg()
         try:
-            new_epg = self.__drop_encrypted(self.__get_sane_epg(self.__parse_bin_epg()))
+            new_epg = self.__clean_epg_channels(self.__get_sane_epg(self.__parse_bin_epg()))
             log.info(f"Conservando {len(new_epg)} canales en abierto")
         except Exception as ex:
             log.debug(f"{repr(ex)}")
@@ -1034,11 +1068,27 @@ class XMLTV:
         self.__channels = data["channels"]
         self.__packages = data["packages"]
 
-    async def __build_programme_tag(self, channel_id, program, tz_offset):
-        dst_start = time.localtime(int(program["start"])).tm_isdst
-        dst_stop = time.localtime(int(program["end"])).tm_isdst
+    async def __build_programme_tag(self, channel_id, ts, program, tz_offset):
+        local = "filename" in program
+
+        if not local:
+            ext_info = await mtv.get_epg_extended_info(channel_id, program["pid"], program["start"])
+        else:
+            filename = os.path.join(_conf["RECORDINGS"], program["filename"])
+            ext_info = await get_local_info(channel_id, ts, filename, extended=True)
+            if not ext_info:
+                log.error(f"Metadatos no encontrados: {program=}")
+                return
+            # Use the corrected duration to avoid overlaps
+            ext_info["end"] = ts + program["duration"]
+            program = ext_info
+
+        dst_start = time.localtime(program["start"]).tm_isdst
+        dst_stop = time.localtime(program["end"]).tm_isdst
         start = datetime.fromtimestamp(program["start"]).strftime("%Y%m%d%H%M%S")
         stop = datetime.fromtimestamp(program["end"]).strftime("%Y%m%d%H%M%S")
+        year = program["year"] or ext_info.get("productionDate", "") if ext_info else ""
+
         tag_programme = Element(
             "programme",
             {
@@ -1047,67 +1097,94 @@ class XMLTV:
                 "stop": f"{stop} +0{tz_offset + dst_stop}00",
             },
         )
-        tag_title = SubElement(tag_programme, "title", lang["es"])
-        tag_title.text = program["full_title"]
-        tag_desc = SubElement(tag_programme, "desc", lang["es"])
-        tag_desc.text = "Año: " + program["year"] + ". "
-        ext_info = await mtv.get_epg_extended_info(program["pid"], channel_id)
-        orig_title = ext_info.get("originalTitle") if ext_info else None
-        if orig_title and orig_title not in program["full_title"] and not orig_title.startswith("Episod"):
-            tag_desc.text += f"«{orig_title}» "
-        gens = self.__get_genre_and_subgenre(program["genre"])
-        keys = self.__get_key_and_subkey(program["genre"], config["genres"])
-        # Series
-        if program["is_serie"] or program["serie_id"] > 0:
-            tsse = self.__get_series_data(program, ext_info)
-            tag_title.text = tsse["title"]
-            tag_stitle = SubElement(tag_programme, "sub-title", lang["es"])
-            tag_stitle.text = tsse["sub-title"]
+
+        if year:
             tag_date = SubElement(tag_programme, "date")
-            tag_date.text = program["year"]
-            tag_episode_num = SubElement(tag_programme, "episode-num", {"system": "xmltv_ns"})
-            tag_episode_num.text = (
-                str(int(tsse["season"]) - 1 if tsse["season"] else "")
-                + "."
-                + str(int(tsse["episode"]) - 1 if tsse["episode"] else "")
-            )
-        # Películas y otros
-        elif ext_info:
-            if "productionDate" in ext_info:
-                if "Movie" in gens["genre"]:
-                    tag_stitle = SubElement(tag_programme, "sub-title", lang["es"])
-                    tag_stitle.text = str(ext_info["productionDate"])
-                tag_date = SubElement(tag_programme, "date")
-                tag_date.text = str(ext_info["productionDate"])
-                tag_desc.text = "Año: " + tag_date.text + ". "
-        # Comunes a los tres
+            tag_date.text = year
+
+        tag_title = SubElement(tag_programme, "title", lang["es"])
+
+        _match = False
+        if ext_info and ext_info["theme"] == "Cine" or program["genre"].startswith("1"):
+            is_serie = False
+        elif ext_info and "seriesName" in ext_info and "serie" in program and ": " in ext_info["seriesName"]:
+            is_serie = True
+            _match = False
+            if "episode_title" in program:
+                del program["episode_title"]
+            program["serie"] = ext_info["seriesName"]
+        else:
+            _match = series_regex.match(program["full_title"])
+            is_serie = _match or program["is_serie"] or ": " in program["full_title"]
+        if is_serie:
+            title, subtitle = _match.groups() if _match else (None, None)
+            stitle = program.get("episode_title", "")
+            stitle = "" if stitle.startswith("Episod") else stitle
+
+            if not subtitle and not stitle:
+                if ": " in program["full_title"]:
+                    title, subtitle = program["full_title"].split(": ", 1)
+                elif program["season"] and program["episode"]:
+                    subtitle = f'S{program["season"]:02}E{program["episode"]:02}'
+                elif program["episode"]:
+                    subtitle = f'Ep. {program["episode"]}'
+            elif "episode" in program and str(program["episode"]) not in stitle:
+                stitle = f'Ep. {program["episode"]} - {stitle}'
+
+            tag_title.text = title or program["serie"] or program["full_title"]
+            tag_stitle = SubElement(tag_programme, "sub-title", lang["es"])
+            tag_stitle.text = subtitle or stitle
+        else:
+            tag_title.text = program["full_title"]
+
+        if local:
+            _match = daily_regex.match(tag_title.text)
+            if _match:
+                tag_title.text = _match.groups()[0]
+
         if ext_info:
-            if ("mainActors" or "directors") in ext_info:
-                tag_credits = SubElement(tag_programme, "credits")
-                if "directors" in ext_info:
-                    tag_desc.text += ",".join(ext_info["directors"])
-                    tag_desc.text += ". "
-                    length = (
-                        len(ext_info["directors"])
-                        if len(ext_info["directors"]) <= max_credits
-                        else max_credits
-                    )
-                    for director in ext_info["directors"][:length]:
-                        tag_director = SubElement(tag_credits, "director")
-                        tag_director.text = director.strip()
-                if "mainActors" in ext_info:
-                    tag_desc.text += ",".join(ext_info["mainActors"])
-                    tag_desc.text += "."
-                    length = (
-                        len(ext_info["mainActors"])
-                        if len(ext_info["mainActors"]) <= max_credits
-                        else max_credits
-                    )
-                    for actor in ext_info["mainActors"][:length]:
-                        tag_actor = SubElement(tag_credits, "actor")
-                        tag_actor.text = actor.strip()
-            SubElement(tag_programme, "icon", {"src": f"{u7d_url}/Covers/" + ext_info["cover"]})
-            tag_desc.text += "\n\n" + ext_info["description"]
+            tag_desc = SubElement(tag_programme, "desc", lang["es"])
+            tag_desc.text = ""
+            orig_title = ext_info.get("originalTitle", "")
+            orig_title = "" if "Episod" in orig_title or orig_title == "Cine" else orig_title
+            _clean_title = program["full_title"].lower().replace("(", "").replace(")", "")
+
+            if orig_title:
+                if ext_info["theme"] in ("Cine", "Documentales") and not is_serie:
+                    tag_stitle = SubElement(tag_programme, "sub-title", lang["es"])
+                    tag_stitle.text = f"«{orig_title}»"
+
+                    _match = cinema_regex.match(program["full_title"])
+                    if _match and orig_title and orig_title in _match.groups():
+                        tag_title.text = " ".join([x for x in _match.groups() if x and x != orig_title])
+
+                elif orig_title.lower() not in _clean_title and _clean_title not in orig_title.lower():
+                    tag_desc.text += f"«{orig_title}»"
+
+            if any((key in ext_info for key in ("mainActors", "producer", "producers", "directors"))):
+                tag_desc.text += (" " if tag_desc.text else "") + (f"Año: {year}. " if year else "")
+                for key in ("mainActors", "producer", "producers", "directors"):
+                    if key in ext_info:
+                        field = ext_info[key]
+                        if key != "producer":
+                            if isinstance(field, list):
+                                field = [item.strip() for item in field]
+                            else:
+                                field = [list(field.values())[0]] if isinstance(field, dict) else [field]
+                                field = field[0] if isinstance(field[0], list) else field
+                        else:
+                            field = field.split(", ")
+                        tag_desc.text += ", ".join(field) + ". "
+                tag_desc.text += "\n"
+
+            tag_desc.text += ("\n" if tag_desc.text else "") + ext_info["description"]
+
+            if ext_info["cover"]:
+                src = f"{u7d_url}/{'recording/?' if local else 'Covers/'}" + ext_info["cover"]
+                SubElement(tag_programme, "icon", {"src": src})
+
+        gens = self.__get_genre_and_subgenre(program["genre"]) if not local else program["gens"]
+        keys = self.__get_key_and_subkey(program["genre"], config["genres"]) if not local else None
         tag_rating = SubElement(tag_programme, "rating", {"system": "pl"})
         tag_value = SubElement(tag_rating, "value")
         tag_value.text = age_rating[program["age_rating"]]
@@ -1122,47 +1199,48 @@ class XMLTV:
             if keys["sub-key"]:
                 tag_subkeyword = SubElement(tag_programme, "keyword")
                 tag_subkeyword.text = keys["sub-key"]
+
         return tag_programme
 
-    def __generate_m3u(self, file_path, cloud=None):
+    def __generate_m3u(self, file_path, cloud=None, local=None):
         m3u = '#EXTM3U name="'
-        m3u += "Cloud " if cloud else ""
+        m3u += "Cloud " if cloud else "Local " if local else ""
         m3u += 'MovistarTV" catchup="flussonic-ts" catchup-days="'
-        m3u += '9999" ' if cloud else '8" '
+        m3u += '9999" ' if (cloud or local) else '8" '
         m3u += f'dlna_extras=mpeg_ps_pal max-conn="12" refresh="1200" url-tvg="{u7d_url}/'
-        m3u += "cloud.xml" if cloud else "guide.xml.gz"
+        m3u += "cloud.xml" if cloud else "local.xml" if local else "guide.xml.gz"
         m3u += '"\n'
         services = self.__get_client_channels()
-        if cloud:
-            cloud_services = {}
+        if cloud or local:
+            _services = {}
             for id, channel in services.items():
-                if id in cloud:
-                    cloud_services[id] = channel
-            services = cloud_services
+                if id in (cloud or local):
+                    _services[id] = channel
+            services = _services
         channels = sorted(services, key=lambda key: services[key])
-        if not cloud:
+        if not cloud and not local:
             channels = channels[1:] + channels[:1]
         _fresh = not os.path.exists(file_path)
         for channel_id in channels:
             if channel_id in self.__channels:
                 channel_name = self.__channels[channel_id]["name"]
-                channel_tag = "Cloud" if cloud else "U7D"
+                channel_tag = "Cloud" if cloud else "Local" if local else "U7D"
                 channel_tag += " - TDT Movistar.es"
                 channel_number = services[channel_id]
-                if channel_number == "0":
-                    channel_number = "999"
+                if channel_number == 0:
+                    channel_number = 999
                 channel_logo = f"{u7d_url}/Logos/" + self.__channels[channel_id]["logo_uri"]
-                if channel_id not in epg_channels:
+                if channel_id not in epg_channels and not local:
                     msg = f'M3U: Saltando canal encriptado "{channel_name}" {channel_id}'
                     log.info(msg) if _fresh else log.debug(msg)
                     continue
-                m3u += f'#EXTINF:-1 ch-number="{channel_number}" '
+                m3u += f'#EXTINF:-1 ch-number="{channel_number}" audio-track="2" '
                 m3u += f'tvg-id="{channel_id}.movistar.tv" '
                 m3u += f'group-title="{channel_tag}" '
                 m3u += f'tvg-logo="{channel_logo}"'
                 m3u += f",{channel_name}\n"
                 m3u += f"{u7d_url}"
-                m3u += "/cloud" if cloud else ""
+                m3u += "/cloud" if cloud else "/local" if local else ""
                 m3u += f"/{channel_id}/mpegts\n"
         return m3u
 
@@ -1202,24 +1280,11 @@ class XMLTV:
         return {"key": genre["name"], "sub-key": subgenre["name"] if subgenre else None}
 
     @staticmethod
-    def __get_series_data(program, ext_info):
-        episode = program["episode"]
-        season = program["season"]
-        stitle = program.get("episode_title", "")
-        return {
-            "title": program["serie"] or program["full_title"],
-            "sub-title": stitle if not stitle.startswith("Episod") else "",
-            "season": season,
-            "episode": episode,
-        }
-
-    @staticmethod
     def __write_to_disk(file_path, content):
-        with codecs.open(file_path, "w", "UTF-8") as file_h:
-            file_h.write(content)
-            file_h.close()
+        with codecs.open(file_path, "w", "UTF-8") as f:
+            f.write(content)
 
-    async def generate_xml(self, parsed_epg, verbose):
+    async def generate_xml(self, parsed_epg, verbose, local=False):
         if VERBOSE:
             log.info("Generando la guía XMLTV...")
         root = Element(
@@ -1237,33 +1302,31 @@ class XMLTV:
                 tag_dname = SubElement(tag_channel, "display-name")
                 tag_dname.text = self.__channels[channel_id]["name"]
                 root.append(tag_channel)
-            else:
-                log.debug(f"El canal {channel_id} no tiene EPG")
 
         if VERBOSE:
             log.info("XML: Descargando info extendida")
         for channel_id in [
             cid
             for cid in sorted(services, key=lambda key: services[key])
-            if cid in self.__channels and cid in parsed_epg
+            if (cid in self.__channels or local) and cid in parsed_epg
         ]:
             channel_name = self.__channels[channel_id]["name"]
-            if channel_id not in epg_channels:
-                log.debug(f'XML: Saltando canal encriptado "{channel_name}" {channel_id}')
+            if channel_id not in epg_channels and not local:
+                log.info(f'XML: Saltando canal encriptado "{channel_name}" {channel_id}')
                 continue
 
             if verbose and VERBOSE:
                 log.info(f'XML: "{channel_name}"')
 
             _tasks = [
-                self.__build_programme_tag(channel_id, parsed_epg[channel_id][program], tz_offset)
+                self.__build_programme_tag(channel_id, program, parsed_epg[channel_id][program], tz_offset)
                 for program in sorted(parsed_epg[channel_id])
             ]
-            [root.append(program) for program in (await asyncio.gather(*_tasks))]
+            [root.append(program) for program in (await asyncio.gather(*_tasks)) if program]
         return ElementTree(root)
 
-    def write_m3u(self, file_path, cloud=None):
-        m3u = self.__generate_m3u(file_path, cloud)
+    def write_m3u(self, file_path, cloud=None, local=None):
+        m3u = self.__generate_m3u(file_path, cloud, local)
         self.__write_to_disk(file_path, m3u)
 
 
@@ -1282,12 +1345,19 @@ def create_args_parser():
     parser.add_argument(
         "--cloud_recordings", help="Exporta guía xmltv de Grabaciones en la Nube a este fichero."
     )
+    parser.add_argument(
+        "--local_m3u", help="Exporta canales con Grabaciones en Local, en formato m3u, a este fichero."
+    )
+    parser.add_argument(
+        "--local_recordings", help="Exporta guía xmltv de Grabaciones en Local a este fichero."
+    )
     return parser
 
 
-def export_channels(m3u_file, cloud=None):
-    xmltv.write_m3u(m3u_file, cloud)
-    log.info(f"Lista de canales " f'{"de Grabaciones en la Nube " if cloud else ""}' f"exportada: {m3u_file}")
+def export_channels(m3u_file, cloud=None, local=None):
+    xmltv.write_m3u(m3u_file, cloud, local)
+    msg = f" de Grabaciones en {'la Nube' if cloud else 'Local'}" if cloud or local else ""
+    log.info(f"Lista de canales{msg} exportada: {m3u_file}")
 
 
 async def tvg_main():
@@ -1298,12 +1368,15 @@ async def tvg_main():
     # Obtiene los argumentos de entrada
     args = create_args_parser().parse_args()
 
-    if args.cloud_m3u or args.cloud_recordings:
+    if (args.cloud_m3u or args.cloud_recordings) and (args.local_m3u or args.local_recordings):
+        return
+    if args.cloud_m3u or args.cloud_recordings or args.local_m3u or args.local_recordings:
         VERBOSE = False
-        if args.cloud_m3u:
-            log.info("Generando Lista de canales de Grabaciones en la Nube...")
-        if args.cloud_recordings:
-            log.info("Generando Guía XMLTV de Grabaciones en la Nube...")
+        zone = "la Nube" if args.cloud_m3u or args.cloud_recordings else "Local"
+        if args.cloud_m3u or args.local_m3u:
+            log.info(f"Generando Lista de canales de Grabaciones en {zone}...")
+        if args.cloud_recordings or args.local_recordings:
+            log.info(f"Generando Guía XMLTV de Grabaciones en {zone}...")
     else:
         VERBOSE = True
         banner = f"Movistar U7D - TVG v{_version}"
@@ -1314,6 +1387,7 @@ async def tvg_main():
 
     # Crea la caché
     cache = Cache()
+    cached = False
 
     session = aiohttp.ClientSession(
         connector=aiohttp.TCPConnector(
@@ -1345,19 +1419,26 @@ async def tvg_main():
         # Descarga los segments de cada EPG_X_BIN.imagenio.es y devuelve la guía decodificada
         if args.guide:
             epg, cached = await iptv.get_epg()
-        elif args.cloud_m3u or args.cloud_recordings:
-            epg = cache.load_cloud_epg()
+
+        elif args.cloud_m3u or args.cloud_recordings or args.local_m3u or args.local_recordings:
+            if args.cloud_m3u or args.cloud_recordings:
+                epg = cache.load_cloud_epg()
+            else:
+                epg = cache.load_local_epg()
             if not epg:
-                log.error("No existe caché de grabaciones en la nube. Debe generarla con movistar_epg")
+                log.error(f"No existe caché de grabaciones en {zone}. Debe generarla con movistar_epg")
                 return
-            if args.cloud_m3u:
-                export_channels(args.cloud_m3u, list(epg))
-            if not args.cloud_recordings:
+            if args.cloud_m3u or args.local_m3u:
+                export_channels(
+                    args.cloud_m3u or args.local_m3u,
+                    cloud=list(epg) if args.cloud_m3u else None,
+                    local=list(epg) if args.local_m3u else None,
+                )
+            if not args.cloud_recordings and not args.local_recordings:
                 return
-            cached = False
 
         # Genera el árbol XMLTV de los paquetes contratados
-        epg_x = await xmltv.generate_xml(epg, verbose=not cached)
+        epg_x = await xmltv.generate_xml(epg, not cached, args.local_m3u or args.local_recordings)
         dom = minidom.parseString(ElTr.tostring(epg_x.getroot()))  # nosec B318
 
         if args.guide:
@@ -1366,10 +1447,11 @@ async def tvg_main():
             with gzip.open(args.guide + ".gz", "wt", encoding="utf8") as f:
                 dom.writexml(f, indent="    ", addindent="    ", newl="\n", encoding="UTF-8")
             msg = "EPG de %i canales y %i días descargada" % (len(epg), len(xdata["segments"]))
-        elif args.cloud_recordings:
-            with open(args.cloud_recordings, "w", encoding="utf8") as f:
+
+        elif args.cloud_recordings or args.local_recordings:
+            with open(args.cloud_recordings or args.local_recordings, "w", encoding="utf8") as f:
                 dom.writexml(f, indent="    ", addindent="    ", newl="\n", encoding="UTF-8")
-            msg = "EPG de Grabaciones en la Nube descargada"
+            msg = f"EPG de Grabaciones en {zone} {'generada' if zone == 'Local' else 'descargada'}"
 
         total_time = str(timedelta(seconds=round(time.time() - time_start)))
         log.info(f"{msg} en {total_time}s")
@@ -1405,6 +1487,10 @@ if __name__ == "__main__":
     cookie_file = "movistar_tvg.cookie"
     end_points_file = "movistar_tvg.endpoints"
 
+    cinema_regex = re.compile(r"^(.+?) \(([^)]+)\) ?(:?\(?.+\)?)?$")
+    daily_regex = re.compile(r"^(.+?) - \d{8}$")
+    series_regex = re.compile(r"^(.+) (S\d+E\d+(?: - .+)?)$")
+
     logging.basicConfig(
         datefmt="[%Y-%m-%d %H:%M:%S]",
         format="%(asctime)s [%(name)s] [%(levelname)s] %(message)s",
@@ -1423,7 +1509,4 @@ if __name__ == "__main__":
         sys.exit(1)
     except Timeout:
         log.critical("Cannot be run more than once!")
-        sys.exit(1)
-    except ValueError as ex:
-        log.critical(ex)
         sys.exit(1)

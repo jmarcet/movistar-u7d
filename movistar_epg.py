@@ -12,9 +12,11 @@ import tomli
 import ujson
 import unicodedata
 import urllib.parse
+import xmltodict
 
 from aiohttp.client_exceptions import ClientOSError, ServerDisconnectedError
 from aiohttp.resolver import AsyncResolver
+from asyncio.subprocess import DEVNULL, PIPE
 from collections import defaultdict
 from datetime import date, datetime, timedelta
 from filelock import FileLock, Timeout
@@ -29,9 +31,9 @@ if hasattr(asyncio, "exceptions"):
 else:
     from asyncio import CancelledError
 
-from mu7d import EXT, IPTV_DNS, UA, UA_U7D, URL_MVTV, VID_EXTS, WIN32, YEAR_SECONDS
-from mu7d import find_free_port, get_iptv_ip, get_safe_filename, get_title_meta, glob_safe, ongoing_vods
-from mu7d import launch, mu7d_config, remove, _version
+from mu7d import DROP_KEYS, EXT, IPTV_DNS, NFO_EXT, UA, UA_U7D, URL_MVTV, VID_EXTS, WIN32, YEAR_SECONDS
+from mu7d import find_free_port, get_iptv_ip, get_local_info, get_safe_filename, get_title_meta
+from mu7d import glob_safe, launch, mu7d_config, ongoing_vods, remove, utime, _version
 
 
 app = Sanic("movistar_epg")
@@ -88,44 +90,51 @@ async def before_server_start(app, loop):
                 if first < oldest_epg:
                     oldest_epg = first
 
-            _indexed = set()
-            try:
-                async with aiofiles.open(recordings, encoding="utf8") as f:
-                    recordingsdata = ujson.loads(await f.read())
-                int_recordings = {}
-                for str_channel in recordingsdata:
-                    channel_id = int(str_channel)
-                    int_recordings[channel_id] = {}
-                    for str_timestamp in recordingsdata[str_channel]:
-                        timestamp = int(str_timestamp)
-                        recording = recordingsdata[str_channel][str_timestamp]
-                        try:
-                            filename = recording["filename"]
-                        except KeyError:
-                            log.warning(f'Dropping old style "{recording}" from recordings.json')
-                            continue
-                        if not does_recording_exist(filename):
-                            if timestamp > oldest_epg:
-                                log.warning(f'Archived recording "{filename}" not found on disk')
-                            elif channel_id in _CLOUD and timestamp in _CLOUD[channel_id]:
-                                log.warning(f'Archived Cloud Recording "{filename}" not found on disk')
-                            else:
+            if _conf["RECORDINGS_UPGRADE"]:
+                await upgrade_recordings()
+
+            if not _conf["RECORDINGS_REINDEX"]:
+                _indexed = set()
+                try:
+                    async with aiofiles.open(recordings, encoding="utf8") as f:
+                        recordingsdata = ujson.loads(await f.read())
+                    int_recordings = {}
+                    for str_channel in recordingsdata:
+                        channel_id = int(str_channel)
+                        int_recordings[channel_id] = {}
+                        for str_timestamp in recordingsdata[str_channel]:
+                            timestamp = int(str_timestamp)
+                            recording = recordingsdata[str_channel][str_timestamp]
+                            try:
+                                filename = recording["filename"]
+                            except KeyError:
+                                log.warning(f'Dropping old style "{recording}" from recordings.json')
                                 continue
-                        else:
-                            _indexed.add(get_path(filename))
-                            [os.utime(file, (-1, timestamp)) for file in get_recording_files(filename)]
-                        int_recordings[channel_id][timestamp] = recording
-                _RECORDINGS = int_recordings
-            except (TypeError, ValueError) as ex:
-                log.error(f'Failed to parse "recordings.json". It will be reset!!!: {repr(ex)}')
-            except FileNotFoundError:
-                pass
+                            if not does_recording_exist(filename):
+                                if timestamp > oldest_epg:
+                                    log.warning(f'Archived recording "{filename}" not found on disk')
+                                elif channel_id in _CLOUD and timestamp in _CLOUD[channel_id]:
+                                    log.warning(f'Archived Cloud Recording "{filename}" not found on disk')
+                                else:
+                                    continue
+                            else:
+                                _indexed.add(get_path(filename))
+                                utime(timestamp, *get_recording_files(filename))
+                            int_recordings[channel_id][timestamp] = recording
+                    _RECORDINGS = int_recordings
+                except (TypeError, ValueError) as ex:
+                    log.error(f'Failed to parse "recordings.json". It will be reset!!!: {repr(ex)}')
+                    remove(CHANNELS_LOCAL, GUIDE_LOCAL)
+                except FileNotFoundError:
+                    remove(CHANNELS_LOCAL, GUIDE_LOCAL)
 
-            for file in sorted(set(glob(f"{RECORDINGS}/**/*{VID_EXT}", recursive=True)) - _indexed):
-                timestamp = os.path.getmtime(file)
-                [os.utime(file, (-1, timestamp)) for file in get_recording_files(os.path.splitext(file)[0])]
+                for file in sorted(set(glob(f"{RECORDINGS}/**/*{VID_EXT}", recursive=True)) - _indexed):
+                    utime(os.path.getmtime(file), *get_recording_files(os.path.splitext(file)[0]))
 
-            await update_recordings(True)
+                await update_recordings(True)
+
+            else:
+                await reindex_recordings()
 
         app.add_task(update_epg_cron())
 
@@ -212,11 +221,11 @@ def get_epg(channel_id, program_id, cloud=False):
     log.error(f"{channel_id=} {program_id=} not found")
 
 
-def get_path(filename):
-    return os.path.join(RECORDINGS, filename + VID_EXT)
+def get_path(filename, bare=False):
+    return os.path.join(RECORDINGS, filename + (VID_EXT if not bare else ""))
 
 
-def get_program_id(channel_id, url=None, cloud=False):
+def get_program_id(channel_id, url=None, cloud=False, local=False):
     if not url:
         start = int(time.time())
     elif len(url) == 10:
@@ -233,7 +242,7 @@ def get_program_id(channel_id, url=None, cloud=False):
     channel = _CHANNELS[channel_id]["name"]
     last_timestamp = new_start = 0
 
-    if not cloud:
+    if not cloud and not local:
         if start not in _EPGDATA[channel_id]:
             for timestamp in _EPGDATA[channel_id]:
                 if timestamp > start:
@@ -243,19 +252,28 @@ def get_program_id(channel_id, url=None, cloud=False):
                 return
             start, new_start = last_timestamp, start
         program_id, duration = [_EPGDATA[channel_id][start][t] for t in ["pid", "duration"]]
+
+    elif cloud and local:
+        return
+
     else:
-        if channel_id not in _CLOUD:
+        guide = _CLOUD if cloud else _RECORDINGS if local else {}
+        if channel_id not in guide:
             return
-        if start in _CLOUD[channel_id]:
-            duration = _CLOUD[channel_id][start]["duration"]
+        if start in guide[channel_id]:
+            duration = guide[channel_id][start]["duration"]
         else:
-            for timestamp in _CLOUD[channel_id]:
-                duration = _CLOUD[channel_id][timestamp]["duration"]
+            for timestamp in guide[channel_id]:
+                duration = guide[channel_id][timestamp]["duration"]
                 if start > timestamp and start < timestamp + duration:
                     start, new_start = timestamp, start
+                    break
             if not new_start:
                 return
-        program_id = _CLOUD[channel_id][start]["pid"]
+        if cloud:
+            program_id = _CLOUD[channel_id][start]["pid"]
+        else:
+            program_id = get_path(_RECORDINGS[channel_id][start]["filename"])
 
     return {
         "channel": channel,
@@ -341,7 +359,7 @@ async def handle_archive(request, channel_id, program_id, cloud=False):
     recorded = int(request.args.get("recorded", 0))
     if recorded:
         if request.method == "OPTIONS" and recorded < 45:
-            log.error(f"Recording WRONG: {log_suffix}")
+            log.error(f"Recording WRONG -> RETRY: {log_suffix}")
             return response.json({"status": "Recording WRONG"}, status=202)
 
         async with recordings_inc_lock:
@@ -352,18 +370,11 @@ async def handle_archive(request, channel_id, program_id, cloud=False):
             _RECORDINGS_INC[channel_id][program_id].append(recorded)
             _t = _RECORDINGS_INC[channel_id][program_id]
 
-        if request.method == "OPTIONS" and len(_t) > 2 and _t[-3] == _t[-2] and _t[-2] == _t[-1]:
-            log.warning(f"Recording Incomplete KEEP: {log_suffix}: {_t}")
-            return response.json({"status": "Recording Incomplete KEEP"}, status=201)
+            if request.method == "OPTIONS" and len(_t) > 3:
+                _RECORDINGS_INC[channel_id][program_id] = _t = _t[-3:]
 
-        elif request.method == "PUT" and len(_t) > 3 and _t[-4] == _t[-3] and _t[-3] == _t[-2]:
-            log.warning(f"Recording Incomplete KEPT: {log_suffix}: {_t}")
-            async with recordings_inc_lock:
-                del _RECORDINGS_INC[channel_id][program_id]
-
-        else:
-            log.error(f"Recording Incomplete RETRY: {log_suffix}: {_t}")
-            return response.json({"status": "Recording Incomplete RETRY"}, status=202)
+        log.error(f"Recording Incomplete -> RETRY: {log_suffix}: {_t}")
+        return response.json({"status": "Recording Incomplete RETRY"}, status=202)
 
     elif request.method == "OPTIONS":
         log.debug(f"Recording OK: {log_suffix}")
@@ -378,11 +389,21 @@ async def handle_archive(request, channel_id, program_id, cloud=False):
             prune_duplicates(channel_id, filename)
             if channel_id in _KEEP:
                 prune_expired(channel_id, filename)
-            _RECORDINGS[channel_id][timestamp] = {"filename": filename}
+
+            nfo = await get_local_info(channel_id, timestamp, get_path(filename, bare=True))
+            _RECORDINGS[channel_id][timestamp] = {"duration": nfo["duration"], "filename": filename}
+
+        errors = ""
+        async with recordings_inc_lock:
+            if channel_id in _RECORDINGS_INC and program_id in _RECORDINGS_INC[channel_id]:
+                _t = _RECORDINGS_INC[channel_id][program_id]
+                if len(_t) == 3 and _t[0] == _t[1] == _t[2]:
+                    errors = f' with issues [{_t[0]}/{nfo["duration"]}]'
+                del _RECORDINGS_INC[channel_id][program_id]
 
         app.add_task(update_recordings(channel_id))
 
-        msg = f"Recording ARCHIVED: {log_suffix}"
+        msg = f"Recording ARCHIVED{errors}: {log_suffix}"
         log.info(msg)
         return response.json({"status": msg}, ensure_ascii=False)
     else:
@@ -399,7 +420,8 @@ async def handle_channels(request):
 @app.get("/program_id/<channel_id:int>/<url>")
 async def handle_program_id(request, channel_id, url):
     try:
-        return response.json(get_program_id(channel_id, url, request.args.get("cloud") == "1"))
+        cloud, local = request.args.get("cloud", "") == "1", request.args.get("local", "") == "1"
+        return response.json(get_program_id(channel_id, url, cloud, local))
     except (AttributeError, KeyError):
         raise NotFound(f"Requested URL {request.raw_url.decode()} not found")
 
@@ -415,7 +437,7 @@ async def handle_prom_event(request, method):
 @app.get("/record/<channel_id:int>/<url>")
 async def handle_record_program(request, channel_id, url):
     cloud = request.args.get("cloud") == "1"
-    mp4 = request.args.get("mp4") == "1"
+    mkv = request.args.get("mkv") == "1"
     vo = request.args.get("vo") == "1"
 
     try:
@@ -428,7 +450,7 @@ async def handle_record_program(request, channel_id, url):
     else:
         record_time = duration - offset
 
-    msg = await record_program(channel_id, program_id, offset, record_time, cloud, mp4, vo)
+    msg = await record_program(channel_id, program_id, offset, record_time, cloud, mkv, vo)
     if msg:
         raise ServiceUnavailable(msg)
 
@@ -536,9 +558,14 @@ async def network_saturation():
 
 async def prom_event(request, method):
     cloud = request.json.get("cloud", False)
+    local = not request.json["lat"]
 
-    _event = get_program_id(request.json["channel_id"], request.json.get("url"), cloud)
-    _epg, _ = get_epg(request.json["channel_id"], _event["program_id"], cloud)
+    _event = get_program_id(request.json["channel_id"], request.json.get("url"), cloud, local)
+    if not local:
+        _epg = get_epg(request.json["channel_id"], _event["program_id"], cloud)[0]
+    else:
+        path = _event["program_id"].rstrip(VID_EXT)
+        _epg = await get_local_info(request.json["channel_id"], _event["start"], path, extended=True)
 
     if method == "add":
         offset = "[%d/%d]" % (_event["offset"], _event["duration"])
@@ -558,10 +585,14 @@ async def prom_event(request, method):
                 request.app.ctx.metrics["RQS_LATENCY"].remove(*_metric)
                 break
 
-    log.info(
-        f'{request.json["msg"]} [{_event["channel"]}] [{request.json["channel_id"]}] '
-        f'[{_event["program_id"]}] [{_event["start"]}] "{_epg["full_title"]}" _ {offset}'
-    )
+    if local and method == "remove":
+        return
+
+    msg = f'{request.json["msg"]} [{_event["channel"]}] [{request.json["channel_id"]}] '
+    msg += f'[{_event["program_id"]}] ' if not local else ""
+    msg += f'[{_event["start"]}] "{_epg["full_title"]}" _ {offset}'
+
+    log.info(msg)
 
 
 def prune_duplicates(channel_id, filename):
@@ -572,7 +603,7 @@ def prune_duplicates(channel_id, filename):
         duplicate = _RECORDINGS[channel_id][ts]["filename"]
         old_files = sorted(set(get_recording_files(duplicate)) - set(get_recording_files(filename)))
 
-        [remove(file) for file in old_files]
+        remove(*old_files)
         [log.warning(f'REMOVED DUPLICATED "{file}"') for file in old_files]
 
         del _RECORDINGS[channel_id][ts]
@@ -594,7 +625,7 @@ def prune_expired(channel_id, filename):
     def _drop(ts):
         filename = _RECORDINGS[channel_id][ts]["filename"]
         old_files = sorted(get_recording_files(filename))
-        [remove(file) for file in old_files]
+        remove(*old_files)
         del _RECORDINGS[channel_id][ts]
         [log.warning(f'REMOVED "{file}"') for file in old_files if not os.path.exists(file)]
 
@@ -627,7 +658,7 @@ async def reap_vod_child(process, filename):
     log.debug(f"Reap VOD Child: [{process}]:[{retcode}] DONE")
 
 
-async def record_program(channel_id, program_id, offset=0, record_time=0, cloud=False, mp4=False, vo=False):
+async def record_program(channel_id, program_id, offset=0, record_time=0, cloud=False, mkv=False, vo=False):
     timestamp = get_epg(channel_id, program_id, cloud)[1]
     filename = get_recording_name(channel_id, timestamp, cloud)
     if await ongoing_vods(channel_id, program_id, filename):
@@ -644,12 +675,52 @@ async def record_program(channel_id, program_id, offset=0, record_time=0, cloud=
     cmd += ["-s", str(offset)] if offset else []
     cmd += ["-t", str(record_time)] if record_time else []
     cmd += ["--cloud"] if cloud else []
-    cmd += ["--mp4"] if mp4 else []
+    cmd += ["--mkv"] if mkv else []
     cmd += ["--vo"] if vo else []
+
+    async with recordings_inc_lock:
+        if channel_id in _RECORDINGS_INC and program_id in _RECORDINGS_INC[channel_id]:
+            _t = _RECORDINGS_INC[channel_id][program_id]
+            if len(_t) == 3 and _t[0] == _t[1] == _t[2]:
+                cmd += ["--force"]
 
     log.debug('Launching: "%s"' % " ".join(cmd))
     process = await asyncio.create_subprocess_exec(*cmd)
     app.add_task(reap_vod_child(process, filename))
+
+
+async def reindex_recordings():
+    log.warning("REINDEXING RECORDINGS")
+    _recordings = defaultdict(dict)
+
+    for nfo_file in sorted(glob(f"{RECORDINGS}/**/*{NFO_EXT}", recursive=True)):
+        basename = nfo_file[:-13]
+        if not any((os.path.exists(basename + ext) for ext in VID_EXTS)):
+            log.error(f"No recording found: {basename=} {nfo_file=}")
+            [remove(file) for file in get_recording_files(basename)]
+            continue
+
+        try:
+            async with aiofiles.open(nfo_file, encoding="utf-8") as f:
+                xml = await f.read()
+
+            nfo = xmltodict.parse(xml)["metadata"]
+        except Exception as ex:
+            log.error(f"Cannot read {nfo_file=} => {repr(ex)}")
+            [remove(file) for file in get_recording_files(basename)]
+            continue
+
+        channel_id, duration, timestamp = map(int, (nfo["serviceUID"], nfo["duration"], nfo["beginTime"]))
+        filename = nfo["cover"][:-4]
+        _recordings[channel_id][timestamp] = {"duration": duration, "filename": filename}
+
+    if len(_recordings):
+        global _RECORDINGS
+        async with recordings_lock:
+            _RECORDINGS = _recordings
+
+        await update_recordings(True)
+        app.add_task(update_epg_local())
 
 
 async def reload_epg():
@@ -789,7 +860,7 @@ async def timers_check(delay=0):
                 return  # only repeat a recording when asked to and it's more recent than the archived
 
         if cloud or re.search(_clean(timer_match), _clean(title), re.IGNORECASE):
-            if await record_program(channel_id, pid, 0, 0 if cloud else duration, cloud, MP4_OUTPUT, vo):
+            if await record_program(channel_id, pid, 0, 0 if cloud else duration, cloud, MKV_OUTPUT, vo):
                 return
 
             log.info(
@@ -1026,6 +1097,16 @@ async def update_epg_cron():
         await asyncio.gather(asyncio.sleep(3600), update_epg())
 
 
+async def update_epg_local():
+    if not RECORDINGS:
+        return
+
+    cmd = [f"movistar_tvg{EXT}", "--local_m3u", CHANNELS_LOCAL, "--local_recordings", GUIDE_LOCAL]
+
+    async with tvgrab_lock:
+        await launch(cmd)
+
+
 async def update_recordings(archive=False):
     def _dump_files(files, channel=False, latest=False):
         m3u = ""
@@ -1054,8 +1135,7 @@ async def update_recordings(archive=False):
         if archive and _RECORDINGS:
             async with aiofiles.open(recordings + ".tmp", "w", encoding="utf8") as f:
                 await f.write(ujson.dumps(_RECORDINGS, ensure_ascii=False, indent=4, sort_keys=True))
-            if WIN32 and os.path.exists(recordings):
-                os.remove(recordings)
+            remove(recordings)
             os.rename(recordings + ".tmp", recordings)
 
         while True:
@@ -1101,9 +1181,9 @@ async def update_recordings(archive=False):
                         newest = os.path.getmtime(list(filter(lambda x: x.startswith(subdir), files))[-1])
                     except IndexError:
                         continue
-                    os.utime(subdir, (-1, newest))
+                    utime(newest, subdir)
                     if os.path.exists(os.path.join(subdir, "metadata")):
-                        os.utime(os.path.join(subdir, "metadata"), (-1, newest))
+                        utime(newest, os.path.join(subdir, "metadata"))
 
             m3u = f"#EXTM3U name=\"{'Recordings' if dir == RECORDINGS else dir}\" dlna_extras=mpeg_ps_pal\n"
             if dir == RECORDINGS:
@@ -1118,15 +1198,89 @@ async def update_recordings(archive=False):
                 await f.write(m3u)
 
             newest = int(os.path.getmtime(files[-1]))
-            [os.utime(file, (-1, newest)) for file in (m3u_file, os.path.join(RECORDINGS, dir))]
+            utime(newest, *(m3u_file, os.path.join(RECORDINGS, dir)))
 
             if RECORDINGS_PER_CHANNEL and len(topdirs):
                 log.info(f"Wrote m3u [{m3u_file[len(RECORDINGS) + 1 :]}]")
 
             updated_m3u = True
 
-        if updated_m3u:
-            log.info(f"Local Recordings Updated => {U7D_URL}/Recordings.m3u")
+    if updated_m3u:
+        log.info(f"Local Recordings Updated => {U7D_URL}/Recordings.m3u")
+
+    if not isinstance(archive, bool) or (not os.path.exists(GUIDE_LOCAL) and len(_RECORDINGS)):
+        app.add_task(update_epg_local())
+
+
+async def upgrade_recordings():
+    log.warning("UPGRADING RECORDINGS METADATA")
+    covers = wrong = 0
+
+    for recording in sorted(glob(f"{RECORDINGS}/**/*{VID_EXT}", recursive=True)):
+        basename, ext = os.path.splitext(recording)
+        nfo_file = basename + NFO_EXT
+
+        if not os.path.exists(nfo_file):
+            log.error(f"Dropping recording. Could not find {nfo_file=}")
+            [remove(file) for file in get_recording_files(basename)]
+            continue
+
+        mtime = int(os.path.getmtime(recording))
+
+        async with aiofiles.open(nfo_file, encoding="utf-8") as f:
+            xml = await f.read()
+
+        xml = "\n".join([line for line in xml.splitlines() if "5S_signLanguage" not in line])
+
+        cmd = ["ffprobe", "-i", recording, "-show_entries", "format=duration"]
+        cmd += ["-v", "quiet", "-of", "json"]
+        proc = await asyncio.create_subprocess_exec(*cmd, stdin=DEVNULL, stdout=PIPE, stderr=DEVNULL)
+        recording_data = ujson.loads((await proc.communicate())[0].decode())
+        duration = round(float(recording_data["format"]["duration"]))
+
+        try:
+            nfo = xmltodict.parse(xml)["metadata"]
+        except Exception as ex:
+            log.error(f"Metadata malformed: {nfo_file=} => {repr(ex)}")
+            raise
+
+        _start, _end, _exp = [nfo[x] for x in ("beginTime", "endTime", "expDate")]
+        _start, _end, _exp = [int(int(x) / 1000) if len(x) == 13 else int(x) for x in (_start, _end, _exp)]
+
+        nfo.update({"beginTime": mtime, "duration": duration, "endTime": mtime + duration, "expDate": _exp})
+        nfo.update({"name": os.path.basename(basename)})
+
+        [nfo.pop(key) for key in DROP_KEYS if key in nfo]
+
+        if os.path.exists(basename + ".jpg"):
+            nfo.update({"cover": basename[len(RECORDINGS) + 1 :] + ".jpg"})
+            covers += 1
+        else:
+            log.error(f'No cover found: "{basename}"')
+            [remove(file) for file in get_recording_files(basename)]
+            continue
+
+        if _start != mtime:
+            log.debug(f"{recording=}\n{_start=} {mtime=} {duration=} {_end=}")
+            wrong += 1
+
+        try:
+            xml = xmltodict.unparse({"metadata": nfo}, pretty=True)
+        except Exception as ex:
+            log.error(f"Metadata malformed: {nfo_file=} => {repr(ex)}")
+            [remove(file) for file in get_recording_files(basename)]
+            continue
+
+        async with aiofiles.open(nfo_file + ".tmp", "w", encoding="utf8") as f:
+            await f.write(xml)
+
+        remove(nfo_file)
+        os.rename(nfo_file + ".tmp", nfo_file)
+        utime(mtime, nfo_file)
+
+    log.info(f"Updated #{covers} covers & Fixed #{wrong} timestamps")
+
+    await update_recordings(True)
 
 
 if __name__ == "__main__":
@@ -1167,18 +1321,20 @@ if __name__ == "__main__":
 
     CHANNELS = _conf["CHANNELS"]
     CHANNELS_CLOUD = _conf["CHANNELS_CLOUD"]
+    CHANNELS_LOCAL = _conf["CHANNELS_LOCAL"]
     GUIDE = _conf["GUIDE"]
     GUIDE_CLOUD = _conf["GUIDE_CLOUD"]
+    GUIDE_LOCAL = _conf["GUIDE_LOCAL"]
     IPTV_BW_HARD = _conf["IPTV_BW_HARD"]
     IPTV_BW_SOFT = _conf["IPTV_BW_SOFT"]
     IPTV_IFACE = _conf["IPTV_IFACE"]
-    MP4_OUTPUT = _conf["MP4_OUTPUT"]
+    MKV_OUTPUT = _conf["MKV_OUTPUT"]
     RECORDINGS = _conf["RECORDINGS"]
     RECORDINGS_M3U = _conf["RECORDINGS_M3U"]
     RECORDINGS_PER_CHANNEL = _conf["RECORDINGS_PER_CHANNEL"]
     RECORDINGS_THREADS = _conf["RECORDINGS_THREADS"]
     U7D_URL = _conf["U7D_URL"]
-    VID_EXT = ".mkv" if not MP4_OUTPUT else ".mp4"
+    VID_EXT = ".mkv" if MKV_OUTPUT else ".ts"
 
     U7D_PARENT = int(os.getenv("U7D_PARENT"))
 

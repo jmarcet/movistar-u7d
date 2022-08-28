@@ -3,7 +3,6 @@ aiohttp
 asyncio
 asyncio_dgram
 defusedxml
-dict2xml
 filelock
 netifaces
 sanic
@@ -11,3 +10,4 @@ git+https://github.com/jmarcet/sanic-prometheus
 setproctitle
 tomli
 ujson
+xmltodict

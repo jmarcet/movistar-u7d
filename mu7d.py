@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
 
+import aiofiles
 import aiohttp
 import asyncio
 import logging
@@ -10,6 +11,7 @@ import socket
 import sys
 import tomli
 import urllib.parse
+import xmltodict
 
 from aiohttp.client_exceptions import ClientOSError, ServerDisconnectedError
 from contextlib import closing
@@ -26,7 +28,7 @@ else:
     from asyncio import CancelledError
 
 
-_version = "5.2"
+_version = "6.0alpha"
 
 log = logging.getLogger("INI")
 
@@ -34,11 +36,13 @@ log = logging.getLogger("INI")
 EXT = ".exe" if getattr(sys, "frozen", False) else ".py"
 WIN32 = sys.platform == "win32"
 
+ATOM = 188
+CHUNK = 1316
 EPG_URL = "http://127.0.0.1:8889"
 IPTV_DNS = "172.26.23.3"
 MIME_M3U = "audio/x-mpegurl"
-MIME_TS = "video/MP2T;audio/mp3"
 MIME_WEBM = "video/webm"
+NFO_EXT = "-movistar.nfo"
 TERMINATE = os.path.join(os.getenv("TMP"), ".mu7d.terminate") if WIN32 else None
 UA = "libcurl-agent/1.0 [IAL] WidgetManager Safari/538.1 CAP:803fd12a 1"
 UA_U7D = f"movistar-u7d v{_version} [{sys.platform}] [{EXT}]"
@@ -47,7 +51,11 @@ URL_COVER = f"{URL_BASE}/covers/programmeImages/portrait/290x429"
 URL_LOGO = f"{URL_BASE}/channelLogo"
 URL_MVTV = "http://www-60.svc.imagenio.telefonica.net:2001/appserver/mvtv.do"
 VID_EXTS = (".avi", ".mkv", ".mp4", ".mpeg", ".mpg", ".ts")
+VID_EXTS_KEEP = (*VID_EXTS, ".tmp", ".tmp2")
 YEAR_SECONDS = 365 * 24 * 60 * 60
+
+DROP_KEYS = ["5S_signLanguage", "hasDolby", "isHdr", "isPromotional", "isuserfavorite", "lockdata", "logos"]
+DROP_KEYS += ["opvr", "playcount", "recordingAllowed", "resume", "startOver", "watched", "wishListEnabled"]
 
 title_select_regex = re.compile(r".+ T\d+ .+")
 title_1_regex = re.compile(r"(.+(?!T\d)) +T(\d+)(?: *Ep?.? *(\d+))?[ -]*(.*)")
@@ -77,6 +85,36 @@ def get_lan_ip():
         return s.getsockname()[0]
 
 
+async def get_local_info(channel, timestamp, path, extended=False):
+    try:
+        nfo_file = path + NFO_EXT
+        if not os.path.exists(nfo_file):
+            return
+        async with aiofiles.open(nfo_file, encoding="utf-8") as f:
+            nfo = xmltodict.parse(await f.read())["metadata"]
+        nfo.update({k: int(v) for k, v in nfo.items() if k in ("beginTime", "duration", "endTime")})
+        if extended:
+            nfo.update(
+                {
+                    "start": nfo["beginTime"],
+                    "end": nfo["endTime"],
+                    "full_title": nfo.get("name"),
+                    "age_rating": int(nfo.get("ageRatingID")),
+                    "description": nfo.get("description") or nfo.get("synopsis") or "",
+                    "episode_title": nfo.get("episodeName", ""),
+                    "gens": {"genre": nfo.get("genre", ""), "sub-genre": nfo.get("labelGenre", "")},
+                    "genre": nfo.get("productType"),
+                    "is_serie": "seriesID" in nfo,
+                    "serie": nfo.get("seriesName", ""),
+                    "serie_id": int(nfo.get("seriesID", 0)),
+                    "year": nfo.get("productionDate", ""),
+                }
+            )
+        return nfo
+    except Exception as ex:
+        log.error(f'Cannot get extended local metadata: [{channel}] [{timestamp}] "{path=}" => {repr(ex)}')
+
+
 def get_safe_filename(filename):
     filename = filename.replace(":", ",").replace("...", "…").replace("(", "[").replace(")", "]")
     keepcharacters = (" ", ",", ".", "_", "-", "¡", "!", "[", "]")
@@ -89,6 +127,8 @@ def get_title_meta(title, serie_id=None):
     except TypeError:
         _t = title.replace("\n", " ").replace("\r", " ")
     full_title = _t.replace(" / ", ": ").replace("/", "")
+    if re.search(r"\)\w", full_title):
+        full_title = full_title.replace("(", "").replace(")", "")
 
     if title_select_regex.match(full_title):
         x = title_1_regex.search(full_title)
@@ -112,7 +152,7 @@ def get_title_meta(title, serie_id=None):
         episode_title = _x[3].strip() if _x[3] else episode_title
         if episode_title and "-" in episode_title:
             episode_title = episode_title.replace("- ", "-").replace(" -", "-").replace("-", " - ")
-        is_serie = serie and episode
+        is_serie = bool(serie and episode)
         if ": " in serie and episode and not episode_title:
             episode_title = serie.split(":")[1].strip()
             serie = serie.split(":")[0].strip()
@@ -206,8 +246,8 @@ def mu7d_config():
     if "LAN_IP" not in conf:
         conf["LAN_IP"] = get_lan_ip()
 
-    if "MP4_OUTPUT" not in conf:
-        conf["MP4_OUTPUT"] = False
+    if "MKV_OUTPUT" not in conf:
+        conf["MKV_OUTPUT"] = False
 
     if "NO_SUBS" not in conf:
         conf["NO_SUBS"] = False
@@ -223,6 +263,12 @@ def mu7d_config():
 
     if "RECORDINGS_PER_CHANNEL" not in conf:
         conf["RECORDINGS_PER_CHANNEL"] = True
+
+    if "RECORDINGS_REINDEX" not in conf:
+        conf["RECORDINGS_REINDEX"] = False
+
+    if "RECORDINGS_UPGRADE" not in conf:
+        conf["RECORDINGS_UPGRADE"] = False
 
     if not WIN32 and conf["IPTV_BW_SOFT"]:
         conf["RECORDINGS_THREADS"] = 9999
@@ -241,8 +287,10 @@ def mu7d_config():
 
     conf["CHANNELS"] = os.path.join(conf["HOME"], "MovistarTV.m3u")
     conf["CHANNELS_CLOUD"] = os.path.join(conf["HOME"], "MovistarTVCloud.m3u")
+    conf["CHANNELS_LOCAL"] = os.path.join(conf["HOME"], "MovistarTVLocal.m3u")
     conf["GUIDE"] = os.path.join(conf["HOME"], "guide.xml")
     conf["GUIDE_CLOUD"] = os.path.join(conf["HOME"], "cloud.xml")
+    conf["GUIDE_LOCAL"] = os.path.join(conf["HOME"], "local.xml")
     conf["U7D_URL"] = f"http://{conf['LAN_IP']}:{conf['U7D_PORT']}"
 
     return conf
@@ -288,14 +336,26 @@ def reaper(signum, sigframe):
             pass
 
 
-def remove(item):
-    try:
-        if os.path.isfile(item):
-            os.remove(item)
-        elif os.path.isdir(item) and not os.listdir(item):
-            os.rmdir(item)
-    except (FileNotFoundError, OSError, PermissionError):
-        pass
+def remove(*items):
+    for item in items:
+        try:
+            if os.path.isfile(item):
+                os.remove(item)
+            elif os.path.isdir(item):
+                if not os.listdir(item):
+                    os.rmdir(item)
+                elif os.path.split(item)[1] != "metadata":
+                    _glob = sorted(glob(f"{item}/**/*", recursive=True), reverse=True)
+                    if not any(filter(lambda file: any(file.endswith(ext) for ext in VID_EXTS_KEEP), _glob)):
+                        [os.remove(x) for x in filter(os.path.isfile, _glob)]
+                        [os.rmdir(x) for x in filter(os.path.isdir, _glob)]
+                        os.rmdir(item)
+        except (FileNotFoundError, OSError, PermissionError):
+            pass
+
+
+def utime(timestamp, *items):
+    [os.utime(item, (-1, timestamp)) for item in items if os.access(item, os.W_OK)]
 
 
 async def u7d_main():
@@ -460,6 +520,7 @@ if __name__ == "__main__":
                 log.warning(f"Could not drop privileges to GID {_conf['GID']}")
 
     os.environ["PATH"] = "%s;%s" % (os.path.dirname(__file__), os.getenv("PATH"))
+    os.environ["PYTHONOPTIMIZE"] = "0" if _conf["DEBUG"] else "2"
     os.environ["U7D_PARENT"] = str(os.getpid())
 
     lockfile = os.path.join(os.getenv("TMP", os.getenv("TMPDIR", "/tmp")), ".mu7d.lock")  # nosec B108
