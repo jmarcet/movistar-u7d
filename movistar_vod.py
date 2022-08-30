@@ -195,7 +195,7 @@ async def postprocess(archive_params, archive_url, mtime, record_time):
             img_mime = "image/jpeg" if img_ext in (".jpeg", ".jpg") else "image/png"
             return img_mime, img_name
 
-        elif not metadata:
+        if not metadata:
             return
 
         log.debug(f"{metadata=}")
@@ -477,7 +477,7 @@ async def record_stream(vod_info):
             await asyncio.shield(_cleanup_recording(CancelledError(), start))
             return retcode
 
-        elif not U7D_PARENT:
+        if not U7D_PARENT:
             if os.path.exists(_filename + TMP_EXT):
                 _cleanup(VID_EXT)
                 os.rename(_filename + TMP_EXT, _filename + VID_EXT)
@@ -526,7 +526,7 @@ async def rtsp(vod_info):
         # Start the RTSP keep alive loop
         while True:
             if __name__ == "__main__" and _args.write_to_file:
-                done, pending = await asyncio.wait({rec_t}, timeout=30)
+                done, _ = await asyncio.wait({rec_t}, timeout=30)
                 if rec_t in done:
                     break
             else:
@@ -548,13 +548,13 @@ async def rtsp(vod_info):
                 pp_t = rec_t.result()
                 await pp_t
                 return pp_t.result()
-            else:
-                return rec_t.result()
+
+            return rec_t.result()
 
 
-async def Vod(args=None, vod_client=None):
+async def Vod(args=None, vod_client=None):  # noqa: N802
     if __name__ == "__main__":
-        global _SESSION, _SESSION_CLOUD
+        global _SESSION_CLOUD
 
         await _open_sessions()
     else:

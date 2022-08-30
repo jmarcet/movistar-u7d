@@ -167,7 +167,7 @@ def before_server_stop(app=None, loop=None):
 
 async def alive():
     async with aiohttp.ClientSession(headers={"User-Agent": UA_U7D}) as session:
-        for i in range(10):
+        for _ in range(10):
             try:
                 await session.get("https://openwrt.marcet.info/u7d/alive")
                 break
@@ -265,7 +265,7 @@ def get_program_id(channel_id, url=None, cloud=False, local=False):
         else:
             for timestamp in guide[channel_id]:
                 duration = guide[channel_id][timestamp]["duration"]
-                if start > timestamp and start < timestamp + duration:
+                if timestamp < start < timestamp + duration:
                     start, new_start = timestamp, start
                     break
             if not new_start:
@@ -331,7 +331,7 @@ def get_recording_name(channel_id, timestamp, cloud=False):
 
 @app.route("/archive/<channel_id:int>/<program_id:int>", methods=["OPTIONS", "PUT"])
 async def handle_archive(request, channel_id, program_id, cloud=False):
-    global _RECORDINGS, _t_timers
+    global _t_timers
 
     cloud = request.args.get("cloud") == "1" if request else cloud
 
@@ -376,7 +376,7 @@ async def handle_archive(request, channel_id, program_id, cloud=False):
         log.error(f"Recording Incomplete -> RETRY: {log_suffix}: {_t}")
         return response.json({"status": "Recording Incomplete RETRY"}, status=202)
 
-    elif request.method == "OPTIONS":
+    if request.method == "OPTIONS":
         log.debug(f"Recording OK: {log_suffix}")
         return response.json({"status": "Recording OK"}, status=200)
 
@@ -406,10 +406,10 @@ async def handle_archive(request, channel_id, program_id, cloud=False):
         msg = f"Recording ARCHIVED{errors}: {log_suffix}"
         log.info(msg)
         return response.json({"status": msg}, ensure_ascii=False)
-    else:
-        msg = f"Recording NOT ARCHIVED: {log_suffix}"
-        log.error(msg)
-        return response.json({"status": msg}, ensure_ascii=False, status=203)
+
+    msg = f"Recording NOT ARCHIVED: {log_suffix}"
+    log.error(msg)
+    return response.json({"status": msg}, ensure_ascii=False, status=203)
 
 
 @app.get("/channels/")
@@ -596,8 +596,6 @@ async def prom_event(request, method):
 
 
 def prune_duplicates(channel_id, filename):
-    global _RECORDINGS
-
     found = [ts for ts in _RECORDINGS[channel_id] if _RECORDINGS[channel_id][ts]["filename"] in filename]
     for ts in found:
         duplicate = _RECORDINGS[channel_id][ts]["filename"]
@@ -665,7 +663,7 @@ async def record_program(channel_id, program_id, offset=0, record_time=0, cloud=
         msg = f'Recording already ongoing: [{channel_id}] [{program_id}] "{filename}"'
         log.warning(msg)
         return msg
-    elif _NETWORK_SATURATION:
+    if _NETWORK_SATURATION:
         return await log_network_saturated()
 
     port = find_free_port(_IPTV)
@@ -724,7 +722,7 @@ async def reindex_recordings():
 
 
 async def reload_epg():
-    global _CHANNELS, _CLOUD, _EPGDATA
+    global _CHANNELS, _EPGDATA
 
     if not os.path.exists(CHANNELS) and all(
         map(os.path.exists, (config_data, epg_data, epg_metadata, GUIDE, GUIDE + ".gz"))
@@ -788,7 +786,7 @@ async def reload_epg():
         log.info(f"Channels & EPG Updated => {U7D_URL}/MovistarTV.m3u - {U7D_URL}/guide.xml.gz")
 
         await update_cloud()
-        nr_epg = sum([len(_EPGDATA[channel]) for channel in _EPGDATA])
+        nr_epg = sum((len(_EPGDATA[channel]) for channel in _EPGDATA))
 
         log.info(f"Total: {len(_EPGDATA)} Channels & {nr_epg} EPG entries")
 
@@ -948,7 +946,7 @@ async def timers_check(delay=0):
 
 
 async def update_cloud():
-    global _CLOUD, _EPGDATA
+    global _CLOUD
 
     try:
         async with aiofiles.open(cloud_data, encoding="utf8") as f:
@@ -1035,8 +1033,8 @@ async def update_cloud():
     if new_cloud and (not _CLOUD or set(new_cloud) != set(_CLOUD)):
         updated = True
     else:
-        for id in new_cloud:
-            if set(new_cloud[id]) != set(_CLOUD[id]):
+        for channel_id in new_cloud:
+            if set(new_cloud[channel_id]) != set(_CLOUD[channel_id]):
                 updated = True
                 break
 
@@ -1117,7 +1115,7 @@ async def update_recordings(archive=False):
                 logo = relname + ".jpg"
             else:
                 _logo = glob_safe(f"{filename}*.jpg")
-                if len(_logo) and os.path.isfile(_logo[0]):
+                if _logo and os.path.isfile(_logo[0]):
                     logo = _logo[0][len(RECORDINGS) + 1 :]
                 else:
                     logo = ""
@@ -1153,28 +1151,28 @@ async def update_recordings(archive=False):
             else:
                 topdirs = sorted(
                     [
-                        dir
-                        for dir in os.listdir(RECORDINGS)
-                        if re.match(r"^[0-9]+\. ", dir) and os.path.isdir(os.path.join(RECORDINGS, dir))
+                        _dir
+                        for _dir in os.listdir(RECORDINGS)
+                        if re.match(r"^[0-9]+\. ", _dir) and os.path.isdir(os.path.join(RECORDINGS, _dir))
                     ]
                 )
         else:
             topdirs = []
 
         updated_m3u = False
-        for dir in [RECORDINGS] + topdirs:
-            log.debug(f'Looking for recordings in "{dir}"')
+        for _dir in [RECORDINGS] + topdirs:
+            log.debug(f'Looking for recordings in "{_dir}"')
             files = (
                 _files
-                if dir == RECORDINGS
-                else list(filter(lambda x: x.startswith(os.path.join(RECORDINGS, dir)), _files))
+                if _dir == RECORDINGS
+                else list(filter(lambda x: x.startswith(os.path.join(RECORDINGS, _dir)), _files))
             )
             if not files:
                 continue
 
-            if archive is True and dir != RECORDINGS:
-                for subdir in os.listdir(os.path.join(RECORDINGS, dir)):
-                    subdir = os.path.join(RECORDINGS, dir, subdir)
+            if archive is True and _dir != RECORDINGS:
+                for subdir in os.listdir(os.path.join(RECORDINGS, _dir)):
+                    subdir = os.path.join(RECORDINGS, _dir, subdir)
                     if not os.path.isdir(subdir):
                         continue
                     try:
@@ -1185,22 +1183,22 @@ async def update_recordings(archive=False):
                     if os.path.exists(os.path.join(subdir, "metadata")):
                         utime(newest, os.path.join(subdir, "metadata"))
 
-            m3u = f"#EXTM3U name=\"{'Recordings' if dir == RECORDINGS else dir}\" dlna_extras=mpeg_ps_pal\n"
-            if dir == RECORDINGS:
+            m3u = f"#EXTM3U name=\"{'Recordings' if _dir == RECORDINGS else _dir}\" dlna_extras=mpeg_ps_pal\n"
+            if _dir == RECORDINGS:
                 m3u += _dump_files(reversed(files), latest=True)
                 m3u += _dump_files(sorted(files))
                 m3u_file = RECORDINGS_M3U
             else:
                 m3u += _dump_files(files, channel=True)
-                m3u_file = os.path.join(os.path.join(RECORDINGS, dir), f"{dir}.m3u")
+                m3u_file = os.path.join(os.path.join(RECORDINGS, _dir), f"{_dir}.m3u")
 
             async with aiofiles.open(m3u_file, "w", encoding="utf8") as f:
                 await f.write(m3u)
 
             newest = int(os.path.getmtime(files[-1]))
-            utime(newest, *(m3u_file, os.path.join(RECORDINGS, dir)))
+            utime(newest, *(m3u_file, os.path.join(RECORDINGS, _dir)))
 
-            if RECORDINGS_PER_CHANNEL and len(topdirs):
+            if RECORDINGS_PER_CHANNEL and topdirs:
                 log.info(f"Wrote m3u [{m3u_file[len(RECORDINGS) + 1 :]}]")
 
             updated_m3u = True
@@ -1217,7 +1215,7 @@ async def upgrade_recordings():
     covers = wrong = 0
 
     for recording in sorted(glob(f"{RECORDINGS}/**/*{VID_EXT}", recursive=True)):
-        basename, ext = os.path.splitext(recording)
+        basename = os.path.splitext(recording)[0]
         nfo_file = basename + NFO_EXT
 
         if not os.path.exists(nfo_file):

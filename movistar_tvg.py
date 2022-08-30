@@ -463,7 +463,6 @@ class MovistarTV:
         self.__cookie = cache.load_cookie()
         self.__end_points_down = []
         self.__web_service_down = False
-        self.__session = None
 
     @staticmethod
     def __get_end_points():
@@ -591,7 +590,7 @@ class MulticastIPTV:
         for package in config["tvPackages"].split("|") if config["tvPackages"] != "ALL" else _packages:
             if package in _packages:
                 services.update(_packages[package]["services"])
-        subscribed = [int(k) for k in services.keys()]
+        subscribed = [int(k) for k in services]
 
         clean_epg = {}
         for channel in set(epg) & set(epg_channels) & set(subscribed):
@@ -690,7 +689,7 @@ class MulticastIPTV:
         threads = tvg_threads
         self.__epg = [{} for r in range(len(self.__xml_data["segments"]))]
         log.info(f"Multithread: {threads} descargas simultáneas")
-        for n in range(threads):
+        for _ in range(threads):
             process = MulticastEPGFetcher(queue, exc_queue)
             process.start()
         for key in sorted(self.__xml_data["segments"]):
@@ -748,9 +747,8 @@ class MulticastIPTV:
                 if VERBOSE:
                     log.info(f"Ficheros XML descargados: {_msg}")
                 break
-            else:
-                log.warning(f"Ficheros XML incompletos: {_msg}")
-                time.sleep(10)
+            log.warning(f"Ficheros XML incompletos: {_msg}")
+            time.sleep(10)
         if VERBOSE:
             log.info("Descargando canales y paquetes")
         try:
@@ -793,14 +791,16 @@ class MulticastIPTV:
         sane_epg = {}
         for channel_key in epg:
             _channels = self.__xml_data["channels"]
+            assigned = False
             for channel_id in _channels:
                 if (
                     "replacement" in _channels[channel_id]
                     and _channels[channel_id]["replacement"] == channel_key
                 ):
                     sane_epg[channel_id] = epg[channel_key]
+                    assigned = True
                     break
-            if channel_id not in sane_epg:
+            if not assigned:
                 sane_epg[channel_key] = epg[channel_key]
         return sane_epg
 
@@ -883,7 +883,7 @@ class MulticastIPTV:
                     chunk = self.__parse_chunk(s.recv(1500))
                     # Discard headers
                     body = chunk["data"]
-                    while not (chunk["end"]):
+                    while not chunk["end"]:
                         xmldata += body
                         chunk = self.__parse_chunk(s.recv(1500))
                         body = chunk["data"]
@@ -1213,9 +1213,9 @@ class XMLTV:
         services = self.__get_client_channels()
         if cloud or local:
             _services = {}
-            for id, channel in services.items():
-                if id in (cloud or local):
-                    _services[id] = channel
+            for channel_id, channel in services.items():
+                if channel_id in (cloud or local):
+                    _services[channel_id] = channel
             services = _services
         channels = sorted(services, key=lambda key: services[key])
         if not cloud and not local:

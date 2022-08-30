@@ -75,8 +75,7 @@ async def before_server_start(app, loop):
                         object_hook=lambda d: {int(k) if k.isdigit() else k: v for k, v in d.items()},
                     )
                     break
-                else:
-                    await asyncio.sleep(5)
+                await asyncio.sleep(5)
         except (ClientOSError, ServerDisconnectedError):
             log.debug("Waiting for EPG service...")
             await asyncio.sleep(1)
@@ -217,7 +216,7 @@ async def handle_flussonic(request, url, channel_id=None, channel_name=None, clo
     try:
         params = {"cloud": int(cloud), "local": int(local)}
         async with _SESSION.get(f"{EPG_URL}/program_id/{channel_id}/{url}", params=params) as r:
-            channel, program_id, start, duration, offset = (await r.json()).values()
+            _, program_id, _, duration, offset = (await r.json()).values()
     except (AttributeError, KeyError, ValueError, ClientOSError, ServerDisconnectedError):
         log.error(f"{_raw_url} not found {channel_id=} {url=} {cloud=} {local=}")
         raise NotFound(f"Requested URL {_raw_url} not found")
@@ -283,7 +282,7 @@ async def handle_flussonic(request, url, channel_id=None, channel_name=None, clo
 @app.route("/cloud/<channel_id:int>/<url>", methods=["GET", "HEAD"])
 @app.route(r"/cloud/<channel_name:([A-Za-z1-9]+)>/<url>", methods=["GET", "HEAD"])
 async def handle_flussonic_cloud(request, url, channel_id=None, channel_name=None):
-    if url == "live" or url == "mpegts":
+    if url in ("live", "mpegts"):
         return await handle_channel(request, channel_id, channel_name)
     return await handle_flussonic(request, url, channel_id, channel_name, cloud=True)
 
@@ -291,7 +290,7 @@ async def handle_flussonic_cloud(request, url, channel_id=None, channel_name=Non
 @app.route("/local/<channel_id:int>/<url>", methods=["GET", "HEAD"])
 @app.route(r"/local/<channel_name:([A-Za-z1-9]+)>/<url>", methods=["GET", "HEAD"])
 async def handle_flussonic_local(request, url, channel_id=None, channel_name=None):
-    if url == "live" or url == "mpegts":
+    if url in ("live", "mpegts"):
         return await handle_channel(request, channel_id, channel_name)
     return await handle_flussonic(request, url, channel_id, channel_name, local=True)
 
@@ -381,9 +380,9 @@ async def handle_m3u_files(request, m3u_file):
     if m3u_matched and os.path.exists(m3u_matched):
         log.info(f'[{request.ip}] {request.method} {request.url} => "{m3u_matched}"')
         return await response.file(m3u_matched, mime_type=MIME_M3U)
-    else:
-        log.warning(f"[{request.ip}] {request.method}: {request.url} => Not Found")
-        raise NotFound(f"Requested URL {request.raw_url.decode()} not found")
+
+    log.warning(f"[{request.ip}] {request.method}: {request.url} => Not Found")
+    raise NotFound(f"Requested URL {request.raw_url.decode()} not found")
 
 
 @app.get("/favicon.ico")
@@ -435,7 +434,7 @@ async def handle_recording(request):
         if ext == ".jpg":
             return await response.file(file)
 
-        elif ext in VID_EXTS:
+        if ext in VID_EXTS:
             try:
                 _range = ContentRangeHandler(request, await stat_async(file))
             except HeaderNotFound:

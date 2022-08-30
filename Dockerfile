@@ -49,7 +49,7 @@ RUN \
     if [ "$TARGETARCH" = "amd64" ]; then \
         apk add libva libva-intel-driver sqlite-libs wrk; \
         pip install --upgrade pip; \
-        pip install bandit black flake8 ipython pycodestyle; \
+        pip install bandit black flake8 ipython pycodestyle pylint; \
     fi
 
 COPY --from=buildstage /tmp/argtable-build/usr/lib/ /usr/lib/

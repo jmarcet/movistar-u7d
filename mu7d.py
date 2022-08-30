@@ -314,10 +314,8 @@ async def ongoing_vods(channel_id="", program_id="", filename="", _all=False, _f
     if not _all:
         if filename and not program_id:
             return vods
-        else:
-            return [proc for proc in vods if "ffmpeg" in str(proc.children())]
-    else:
-        return "|".join([" ".join(proc.cmdline()).strip() for proc in vods])
+        return [proc for proc in vods if "ffmpeg" in str(proc.children())]
+    return "|".join([" ".join(proc.cmdline()).strip() for proc in vods])
 
 
 def proc_grep(proc, regex):
@@ -371,7 +369,7 @@ async def u7d_main():
 
     while True:
         try:
-            done, pending = await asyncio.wait(asyncio.all_tasks(), return_when=asyncio.FIRST_COMPLETED)
+            done, _ = await asyncio.wait(asyncio.all_tasks(), return_when=asyncio.FIRST_COMPLETED)
         except CancelledError:
             if not WIN32:
                 break
@@ -450,8 +448,7 @@ if __name__ == "__main__":
                 if not _conf["IPTV_IFACE"] or WIN32 or iptv_iface_ip and iptv_iface_ip == iptv_ip:
                     log.info(f"IPTV address: {iptv_ip}")
                     break
-                else:
-                    log.info("IPTV address: waiting for interface to be routed...")
+                log.info("IPTV address: waiting for interface to be routed...")
             except ValueError as ex:
                 if uptime < 180:
                     log.info(ex)
