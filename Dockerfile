@@ -1,7 +1,7 @@
 ############## build stage ##############
 FROM python:3.10-alpine as buildstage
 
-ARG TARGETARCH
+ARG TARGETARCH="amd64"
 
 ARG ARGTABLE_VER="2.13"
 ARG ARGTABLE_VER1="2-13"
@@ -10,7 +10,7 @@ COPY patches/ /tmp/patches/
 
 RUN sed -e 's:alpine\/[.0-9v]\+\/:alpine/edge/:g' -i /etc/apk/repositories
 RUN apk update && apk upgrade --available --prune --purge
-RUN apk add autoconf automake build-base curl ffmpeg4-dev git libtool
+RUN apk add autoconf automake build-base curl ffmpeg4-dev git libssl1.1 libtool
 RUN \
     mkdir -p /tmp/argtable && \
     curl -o /tmp/argtable-src.tar.gz -L \
@@ -35,7 +35,7 @@ RUN \
 ############## runtime stage ##############
 FROM python:3.10-alpine
 
-ARG TARGETARCH
+ARG TARGETARCH="amd64"
 
 ENV HOME=/home
 ENV PYTHONPATH=/app
@@ -43,11 +43,12 @@ ENV TMP=/tmp
 
 RUN sed -e 's:alpine\/[.0-9v]\+\/:alpine/edge/:g' -i /etc/apk/repositories
 RUN apk update && apk upgrade --available --prune --purge
-RUN apk add bash curl ffmpeg4-libs ffmpeg git htop mkvtoolnix s6 vim
+RUN apk add bash curl ffmpeg4-libs ffmpeg git htop libssl1.1 mkvtoolnix s6 vim
 
 RUN \
     if [ "$TARGETARCH" = "amd64" ]; then \
         apk add libva libva-intel-driver sqlite-libs wrk; \
+        pip install --upgrade pip; \
         pip install bandit black flake8 ipython pycodestyle; \
     fi
 
