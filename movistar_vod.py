@@ -262,9 +262,9 @@ async def postprocess(archive_params, archive_url, mtime, record_time):
             cmd += ["--attachment-mime-type", img_mime, "--attach-file", img_name]
         cmd += [_filename + TMP_EXT]
 
-        log.info(f"POSTPROCESS #1: Verifying recording [~{record_time}s] / [{_args.time}s]")
+        log.info(f"POSTPROCESS #1 - Verifying recording [~{record_time}s] / [{_args.time}s]")
         proc = await asyncio.create_subprocess_exec(*cmd, stdin=DEVNULL, stdout=PIPE)
-        await _check_process("#1: Failed verifying recording")
+        await _check_process("#1 - Failed verifying recording")
 
         if _args.mkv:
             _cleanup(TMP_EXT)
@@ -287,7 +287,7 @@ async def postprocess(archive_params, archive_url, mtime, record_time):
         archive_params["recorded"] = duration if bad else 0
         log_suffix = f" [{duration}s] / [{_args.time}s]"
 
-        msg = f"POSTPROCESS #2: Recording is {'INCOMPLETE' if bad else 'COMPLETE'}{log_suffix}"
+        msg = f"POSTPROCESS #2 - Recording is {'INCOMPLETE' if bad else 'COMPLETE'}{log_suffix}"
         if bad:
             log.error(msg)
             raise ValueError(msg.lstrip("POSTPROCESS "))
@@ -303,18 +303,18 @@ async def postprocess(archive_params, archive_url, mtime, record_time):
 
         cmd = ["comskip", f"--threads={COMSKIP}", "-d", "70", _filename + VID_EXT]
 
-        log.info("POSTPROCESS #3: COMSKIP: Checking recording for commercials")
+        log.info("POSTPROCESS #3 - COMSKIP - Checking recording for commercials")
         async with aiofiles.open(COMSKIP_LOG, "ab") as f:
             start = time.time()
             proc = await asyncio.create_subprocess_exec(*cmd, stdin=DEVNULL, stdout=f, stderr=f)
             try:
-                await _check_process("#3: COMSKIP: Failed checking recording for commercials")
+                await _check_process("#3 - COMSKIP - Failed checking recording for commercials")
             except ValueError as exception:
                 log.error(exception)
             end = time.time()
 
         msg = (
-            f"POSTPROCESS #3: COMSKIP: Took {str(timedelta(seconds=round(end - start)))}s"
+            f"POSTPROCESS #3 - COMSKIP - Took {str(timedelta(seconds=round(end - start)))}s"
             f" => [Commercials {'not found' if proc.returncode else 'found'}]"
         )
         log.warning(msg) if proc.returncode else log.info(msg)
@@ -327,11 +327,11 @@ async def postprocess(archive_params, archive_url, mtime, record_time):
             cmd = ["mkvmerge", "-q", "-o", _filename + TMP_EXT]
             cmd += ["--chapters", _filename + CHP_EXT, _filename + VID_EXT]
 
-            log.info("POSTPROCESS #4: COMSKIP: Merging mkv chapters")
+            log.info("POSTPROCESS #4 - COMSKIP - Merging mkv chapters")
             proc = await asyncio.create_subprocess_exec(*cmd, stdin=DEVNULL, stdout=PIPE)
 
             try:
-                await _check_process("#4: COMSKIP: Failed merging mkv chapters")
+                await _check_process("#4 - COMSKIP: Failed merging mkv chapters")
 
                 _cleanup(VID_EXT)
                 utime(mtime, _filename + TMP_EXT)
@@ -407,7 +407,7 @@ async def record_stream(vod_info):
         _args.time = int(_args.time * 7 / 6) if _args.time > 900 else _args.time if _args.time > 60 else 60
         _args.time = min(_args.time, vod_info["duration"])
 
-    log_suffix = " - %s [%s] [%s]" % (vod_info["channelName"], _args.channel, _args.program)
+    log_suffix = ": [%s] [%s] [%s]" % (vod_info["channelName"], _args.channel, _args.program)
     log_suffix += ' [%d] "%s"' % (vod_info["beginTime"] / 1000, _args.filename)
     log_suffix += " [FORCED]" if _args.force else ""
 
@@ -587,7 +587,7 @@ async def Vod(args=None, vod_client=None):  # noqa: N802
 
     try:
         if vod_info:
-            # log.debug(f"[{_args.channel}] [{_args.program}]: {vod_info=}")
+            log.debug("[%s] [%s]: vod_info=%s" % (_args.channel, _args.program, str(vod_info)))
             # Start the RTSP Session
             rtsp_t = asyncio.create_task(rtsp(vod_info))
             await rtsp_t
