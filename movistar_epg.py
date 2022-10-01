@@ -950,6 +950,7 @@ async def timers_check(delay=0):
     if sync_cloud:
         vo = _timers.get("sync_cloud_language", "") == "VO"
         for channel_id in _CLOUD:
+            channel_name = _CHANNELS[channel_id]["name"]
             for timestamp in _filter_recorded(sorted(_CLOUD[channel_id])):
                 if await _record(cloud=True):
                     return _exit()
