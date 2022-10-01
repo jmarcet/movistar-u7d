@@ -437,6 +437,7 @@ async def handle_prom_event(request, method):
 @app.get("/record/<channel_id:int>/<url>")
 async def handle_record_program(request, channel_id, url):
     cloud = request.args.get("cloud") == "1"
+    comskip = request.args.get("comskip") == "1"
     mkv = request.args.get("mkv") == "1"
     vo = request.args.get("vo") == "1"
 
@@ -450,7 +451,7 @@ async def handle_record_program(request, channel_id, url):
     else:
         record_time = duration - offset
 
-    msg = await record_program(channel_id, program_id, offset, record_time, cloud, mkv, vo)
+    msg = await record_program(channel_id, program_id, offset, record_time, cloud, comskip, mkv, vo)
     if msg:
         raise ServiceUnavailable(msg)
 
@@ -656,11 +657,11 @@ async def reap_vod_child(process, filename):
     log.debug(f"Reap VOD Child: [{process}]:[{retcode}] DONE")
 
 
-async def record_program(channel_id, program_id, offset=0, record_time=0, cloud=False, mkv=False, vo=False):
-    timestamp = get_epg(channel_id, program_id, cloud)[1]
+async def record_program(channel_id, pid, offset=0, time=0, cloud=False, comskip=False, mkv=False, vo=False):
+    timestamp = get_epg(channel_id, pid, cloud)[1]
     filename = get_recording_name(channel_id, timestamp, cloud)
-    if await ongoing_vods(channel_id, program_id, filename):
-        msg = f'Recording already ongoing: [{channel_id}] [{program_id}] "{filename}"'
+    if await ongoing_vods(channel_id, pid, filename):
+        msg = f'Recording already ongoing: [{channel_id}] [{pid}] "{filename}"'
         log.warning(msg)
         return msg
     if _NETWORK_SATURATION:
@@ -668,17 +669,18 @@ async def record_program(channel_id, program_id, offset=0, record_time=0, cloud=
 
     port = find_free_port(_IPTV)
     cmd = [sys.executable] if EXT == ".py" else []
-    cmd += [f"movistar_vod{EXT}", str(channel_id), str(program_id), "-p", str(port), "-w"]
+    cmd += [f"movistar_vod{EXT}", str(channel_id), str(pid), "-p", str(port), "-w"]
     cmd += ["-o", filename]
     cmd += ["-s", str(offset)] if offset else []
-    cmd += ["-t", str(record_time)] if record_time else []
+    cmd += ["-t", str(time)] if time else []
     cmd += ["--cloud"] if cloud else []
+    cmd += ["--comskip"] if comskip else []
     cmd += ["--mkv"] if mkv else []
     cmd += ["--vo"] if vo else []
 
     async with recordings_inc_lock:
-        if channel_id in _RECORDINGS_INC and program_id in _RECORDINGS_INC[channel_id]:
-            _t = _RECORDINGS_INC[channel_id][program_id]
+        if channel_id in _RECORDINGS_INC and pid in _RECORDINGS_INC[channel_id]:
+            _t = _RECORDINGS_INC[channel_id][pid]
             if len(_t) == 3 and _t[0] == _t[1] == _t[2]:
                 cmd += ["--force"]
 
@@ -834,8 +836,8 @@ async def timers_check(delay=0):
         return filter(lambda ts: channel_id not in recs or ts not in recs[channel_id], timestamps)
 
     async def _record(cloud=False):
-        nonlocal channel_id, channel_name, keep, kept, nr_procs, ongoing
-        nonlocal queued, recs, repeat, timer_match, timestamp, vo
+        nonlocal channel_id, channel_name, comskip, keep, kept, nr_procs
+        nonlocal ongoing, queued, recs, repeat, timer_match, timestamp, vo
 
         filename = get_recording_name(channel_id, timestamp, cloud)
         program = get_program_name(filename)
@@ -858,13 +860,15 @@ async def timers_check(delay=0):
                 return  # only repeat a recording when asked to and it's more recent than the archived
 
         if cloud or re.search(_clean(timer_match), _clean(title), re.IGNORECASE):
-            if await record_program(channel_id, pid, 0, 0 if cloud else duration, cloud, MKV_OUTPUT, vo):
+            _time = 0 if cloud else duration
+            if await record_program(channel_id, pid, 0, _time, cloud, comskip, MKV_OUTPUT, vo):
                 return
 
             log.info(
-                f"Found {'Cloud Recording' if cloud else 'MATCH'}: "
-                f'[{channel_name}] [{channel_id}] [{pid}] [{timestamp}] "{filename}"'
+                f"Found {'Cloud Recording' if cloud else 'MATCH'}"
+                f"{' [COMSKIP]' if comskip else ''}"
                 f"{' [VO]' if vo else ''}"
+                f': [{channel_name}] [{channel_id}] [{pid}] [{timestamp}] "{filename}"'
             )
 
             queued.append((channel_id, timestamp))
@@ -890,6 +894,7 @@ async def timers_check(delay=0):
         channel_name = _CHANNELS[channel_id]["name"]
 
         for timer_match in _timers["match"][str_channel_id]:
+            comskip = _timers.get("comskip", False)
             fixed_timer, keep, repeat = 0, False, False
             lang = deflang
             if " ## " in timer_match:
@@ -906,9 +911,15 @@ async def timers_check(delay=0):
                         except ValueError:
                             log.warning(f'Failed to parse [{channel_name}] "{timer_match}" [{res}] correctly')
 
+                    elif res == "comskip":
+                        comskip = True
+
                     elif res.startswith("keep"):
                         keep = int(res.lstrip("keep").rstrip("d"))
                         keep = -keep if res.endswith("d") else keep
+
+                    elif res == "nocomskip":
+                        comskip = False
 
                     elif res == "repeat":
                         repeat = True

@@ -630,6 +630,7 @@ if __name__ == "__main__":
     parser.add_argument("--time", "-t", help="recording time in seconds", type=int)
 
     parser.add_argument("--cloud", help="the event is from a cloud recording", action="store_true")
+    parser.add_argument("--comskip", help="do comercials analysis", action="store_true")
     parser.add_argument("--debug", help="enable debug logs", action="store_true")
     parser.add_argument("--force", help="continue recording after error", action="store_true")
     parser.add_argument("--mkv", help="output recording in mkv container", action="store_true")
@@ -664,7 +665,7 @@ if __name__ == "__main__":
             sys.exit(1)
 
         CACHE_DIR = os.path.join(_conf["HOME"], ".xmltv/cache/programs")
-        COMSKIP = _conf["COMSKIP"]
+        COMSKIP = _args.comskip and _conf["COMSKIP"]
         COMSKIP_LOG = os.path.join(_conf["HOME"], "comskip.log") if COMSKIP else None
         NO_SUBS = _conf["NO_SUBS"]
         RECORDINGS = _conf["RECORDINGS"]
