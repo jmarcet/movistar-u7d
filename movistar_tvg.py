@@ -317,7 +317,7 @@ class Cache:
         try:
             with open(os.path.join(cache_dir, cfile), "r", encoding="utf8") as f:
                 return json.load(f)["data"]
-        except (IOError, KeyError, ValueError):
+        except (FileNotFoundError, IOError, KeyError, ValueError):
             pass
 
     @staticmethod
@@ -480,7 +480,7 @@ class MovistarTV:
             return
         ep = self.get_end_point()
         if not ep:
-            log.warning("Servicio Web de Movistar TV caído: decargando guía básica")
+            log.error("Servicio Web de Movistar TV caído: decargando guía básica")
             self.__web_service_down = True
             return
         __attempts = 10
@@ -504,8 +504,7 @@ class MovistarTV:
                         return content
             except Exception as ex:
                 __attempts -= 1
-                log.debug(f"Timeout: {ep}, reintentos: {__attempts} => {repr(ex)}")
-                continue
+                log.warning(f"Timeout: {ep}, reintentos: {__attempts} => {repr(ex)}")
 
     @staticmethod
     def __update_end_points(data):
@@ -519,19 +518,13 @@ class MovistarTV:
                 return eps[ep]
 
     async def get_epg_extended_info(self, channel_id, pid, ts):
-        try:
-            data = cache.load_epg_extended_info(pid)
-        except Exception as ex:
-            log.debug(f"{repr(ex)}")
+        data = cache.load_epg_extended_info(pid)
         if not data:
-            try:
-                data = await self.__get_service_data(
-                    f"epgInfov2&productID={pid}&channelID={channel_id}&extra=1"
-                )
-                cache.save_epg_extended_info(data)
-            except Exception as ex:
-                log.warning(f"Información extra no encontrada: [{channel_id}] [{ts}] [{pid}] => {repr(ex)}")
+            data = await self.__get_service_data(f"epgInfov2&productID={pid}&channelID={channel_id}&extra=1")
+            if not data:
+                log.warning(f"Información extendida no encontrada: [{channel_id}] [{ts}] [{pid}]")
                 return
+            cache.save_epg_extended_info(data)
         return data
 
     def get_first_end_point(self):
