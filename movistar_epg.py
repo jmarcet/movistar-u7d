@@ -397,7 +397,7 @@ async def handle_archive(request, channel_id, program_id, cloud=False):
         async with recordings_inc_lock:
             if channel_id in _RECORDINGS_INC and program_id in _RECORDINGS_INC[channel_id]:
                 _t = _RECORDINGS_INC[channel_id][program_id]
-                if len(_t) == 3 and _t[0] == _t[1] == _t[2]:
+                if (len(_t) == 2 and abs(_t[1] - _t[0]) < 3) or (len(_t) == 3 and abs(_t[2] - _t[1]) < 3):
                     errors = f' with issues [{_t[0]}/{nfo["duration"]}]'
                 del _RECORDINGS_INC[channel_id][program_id]
 
@@ -681,7 +681,7 @@ async def record_program(channel_id, pid, offset=0, time=0, cloud=False, comskip
     async with recordings_inc_lock:
         if channel_id in _RECORDINGS_INC and pid in _RECORDINGS_INC[channel_id]:
             _t = _RECORDINGS_INC[channel_id][pid]
-            if len(_t) == 3 and _t[0] == _t[1] == _t[2]:
+            if (len(_t) == 2 and abs(_t[1] - _t[0]) < 3) or (len(_t) == 3 and abs(_t[2] - _t[1]) < 3):
                 cmd += ["--force"]
 
     log.debug('Launching: "%s"' % " ".join(cmd))
