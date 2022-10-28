@@ -5,7 +5,7 @@ asyncio_dgram
 defusedxml
 filelock
 netifaces
-sanic
+sanic==22.6.2
 git+https://github.com/jmarcet/sanic-prometheus
 setproctitle
 tomli

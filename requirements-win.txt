@@ -3,7 +3,7 @@ asyncio
 asyncio-dgram
 defusedxml
 filelock
-sanic
+sanic==22.6.2
 git+https://github.com/jmarcet/sanic-prometheus
 tomli
 ujson
