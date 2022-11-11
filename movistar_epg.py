@@ -382,6 +382,7 @@ async def handle_archive(request, channel_id, program_id, cloud=False):
 
     log.debug(f"Checking for {filename}")
     if does_recording_exist(filename):
+        errors = ""
         async with recordings_lock:
             if channel_id not in _RECORDINGS:
                 _RECORDINGS[channel_id] = {}
@@ -391,23 +392,26 @@ async def handle_archive(request, channel_id, program_id, cloud=False):
                 prune_expired(channel_id, filename)
 
             nfo = await get_local_info(channel_id, timestamp, get_path(filename, bare=True))
-            _RECORDINGS[channel_id][timestamp] = {"duration": nfo["duration"], "filename": filename}
+            if timestamp == nfo["beginTime"]:
+                _RECORDINGS[channel_id][timestamp] = {"duration": nfo["duration"], "filename": filename}
+            else:
+                errors = ", event changed -> aborted"
 
-        errors = ""
-        async with recordings_inc_lock:
-            if channel_id in _RECORDINGS_INC and program_id in _RECORDINGS_INC[channel_id]:
-                _t = _RECORDINGS_INC[channel_id][program_id]
-                if (len(_t) == 2 and abs(_t[1] - _t[0]) < 3) or (len(_t) == 3 and abs(_t[2] - _t[1]) < 3):
-                    errors = f' with issues [{_t[0]}/{nfo["duration"]}]'
-                del _RECORDINGS_INC[channel_id][program_id]
+        if not errors:
+            async with recordings_inc_lock:
+                if channel_id in _RECORDINGS_INC and program_id in _RECORDINGS_INC[channel_id]:
+                    _t = _RECORDINGS_INC[channel_id][program_id]
+                    if (len(_t) == 2 and abs(_t[1] - _t[0]) < 3) or (len(_t) == 3 and abs(_t[2] - _t[1]) < 3):
+                        errors = f' with issues [{_t[0]}/{nfo["duration"]}]'
+                    del _RECORDINGS_INC[channel_id][program_id]
 
-        app.add_task(update_recordings(channel_id))
+            app.add_task(update_recordings(channel_id))
 
-        msg = f"Recording ARCHIVED{errors}: {log_suffix}"
-        log.info(msg)
-        return response.json({"status": msg}, ensure_ascii=False)
+            msg = f"Recording ARCHIVED{errors}: {log_suffix}"
+            log.info(msg)
+            return response.json({"status": msg}, ensure_ascii=False)
 
-    msg = f"Recording NOT ARCHIVED: {log_suffix}"
+    msg = f"Recording NOT ARCHIVED{errors}: {log_suffix}"
     log.error(msg)
     return response.json({"status": msg}, ensure_ascii=False, status=203)
 
@@ -851,7 +855,8 @@ async def timers_check(delay=0):
         guide = _CLOUD if cloud else _EPGDATA
         duration, pid, title = [guide[channel_id][timestamp][t] for t in ["duration", "pid", "full_title"]]
 
-        if not cloud and timestamp + duration >= _last_epg:
+        now = int(datetime.now().timestamp())
+        if not cloud and timestamp >= _last_epg + 3600:
             return
 
         if channel_id in recs:
@@ -861,6 +866,11 @@ async def timers_check(delay=0):
 
         if cloud or re.search(_clean(timer_match), _clean(title), re.IGNORECASE):
             _time = 0 if cloud else duration
+            if timestamp > now:
+                global _t_timers_next
+                if not _t_timers_next or _t_timers_next.done():
+                    _t_timers_next = app.add_task(timers_check(delay=timestamp - now))
+                return
             if await record_program(channel_id, pid, 0, _time, cloud, comskip, MKV_OUTPUT, vo):
                 return
 
@@ -928,10 +938,10 @@ async def timers_check(delay=0):
                         lang = res
             vo = lang == "VO"
 
-            timestamps = [ts for ts in reversed(_EPGDATA[channel_id]) if ts < _last_epg]
+            timestamps = [ts for ts in reversed(_EPGDATA[channel_id]) if ts < _last_epg + 3600]
             if fixed_timer:
                 # fixed timers are checked daily, so we want today's and all of last week
-                fixed_timestamps = [fixed_timer] if fixed_timer < _last_epg else []
+                fixed_timestamps = [fixed_timer] if fixed_timer < _last_epg + 3600 else []
                 fixed_timestamps += [fixed_timer - i * 24 * 3600 for i in range(1, 8)]
 
                 found_ts = []
@@ -1310,7 +1320,7 @@ if __name__ == "__main__":
     _RECORDINGS = {}
     _RECORDINGS_INC = {}
 
-    _last_bw_warning = _last_epg = _t_timers = None
+    _last_bw_warning = _last_epg = _t_timers = _t_timers_next = None
 
     _conf = mu7d_config()
 
