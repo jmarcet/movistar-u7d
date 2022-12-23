@@ -282,7 +282,7 @@ async def postprocess(archive_params, archive_url, mtime, record_time):
         recording_data = ujson.loads((await proc.communicate())[0].decode())
         duration = round(float(recording_data["format"]["duration"]))
 
-        bad = duration < _args.time - 30
+        bad = duration / _args.time < 0.95
 
         archive_params["recorded"] = duration if bad else 0
         log_suffix = f" [{duration}s] / [{_args.time}s]"
