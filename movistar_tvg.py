@@ -519,7 +519,7 @@ class MovistarTV:
 
     async def get_epg_extended_info(self, channel_id, pid, ts):
         data = cache.load_epg_extended_info(pid)
-        if not data:
+        if not data or int(data["beginTime"] / 1000) != ts:
             data = await self.__get_service_data(f"epgInfov2&productID={pid}&channelID={channel_id}&extra=1")
             if not data:
                 log.warning(f"Información extendida no encontrada: [{channel_id}] [{ts}] [{pid}]")

@@ -162,7 +162,7 @@ async def postprocess(archive_params, archive_url, mtime, record_time):
                     async with aiofiles.open(cache_metadata, encoding="utf8") as f:
                         metadata = ujson.loads(await f.read())["data"]
 
-                else:
+                if not metadata or int(metadata["beginTime"] / 1000 + _args.start) != mtime:
                     log.debug("Getting extended info")
 
                     params = {"action": "epgInfov2", "productID": _args.program, "channelID": _args.channel}
@@ -273,7 +273,7 @@ async def postprocess(archive_params, archive_url, mtime, record_time):
 
     @_check_terminate
     async def _step_2():
-        nonlocal archive_params, duration, metadata, proc, resp
+        nonlocal archive_params, duration, proc, resp
 
         cmd = ["ffprobe", "-i", _filename + TMP_EXT2, "-show_entries", "format=duration"]
         cmd += ["-v", "quiet", "-of", "json"]
