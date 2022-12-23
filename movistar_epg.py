@@ -855,8 +855,8 @@ async def timers_check(delay=0):
         guide = _CLOUD if cloud else _EPGDATA
         duration, pid, title = [guide[channel_id][timestamp][t] for t in ["duration", "pid", "full_title"]]
 
-        now = int(datetime.now().timestamp())
-        if not cloud and timestamp >= _last_epg + 3600:
+        now = int(datetime.now().timestamp()) - 60
+        if not cloud and timestamp > _last_epg + 3600:
             return
 
         if channel_id in recs:
@@ -938,10 +938,10 @@ async def timers_check(delay=0):
                         lang = res
             vo = lang == "VO"
 
-            timestamps = [ts for ts in reversed(_EPGDATA[channel_id]) if ts < _last_epg + 3600]
+            timestamps = [ts for ts in reversed(_EPGDATA[channel_id]) if ts <= _last_epg + 3600]
             if fixed_timer:
                 # fixed timers are checked daily, so we want today's and all of last week
-                fixed_timestamps = [fixed_timer] if fixed_timer < _last_epg + 3600 else []
+                fixed_timestamps = [fixed_timer] if fixed_timer <= _last_epg + 3600 else []
                 fixed_timestamps += [fixed_timer - i * 24 * 3600 for i in range(1, 8)]
 
                 found_ts = []
