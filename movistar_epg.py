@@ -308,9 +308,9 @@ def get_recording_files(fname):
 
 def get_recording_name(channel_id, timestamp, cloud=False):
     guide = _CLOUD if cloud else _EPGDATA
-    daily_news_program = (
-        not guide[channel_id][timestamp]["is_serie"] and guide[channel_id][timestamp]["genre"] == "06"
-    )
+    daily_program = not guide[channel_id][timestamp]["is_serie"] and guide[channel_id][timestamp][
+        "genre"
+    ].startswith("0")
 
     if RECORDINGS_PER_CHANNEL:
         path = os.path.join(RECORDINGS, get_channel_dir(channel_id))
@@ -318,12 +318,12 @@ def get_recording_name(channel_id, timestamp, cloud=False):
         path = RECORDINGS
     if guide[channel_id][timestamp]["serie"]:
         path = os.path.join(path, get_safe_filename(guide[channel_id][timestamp]["serie"]))
-    elif daily_news_program:
+    elif daily_program:
         path = os.path.join(path, get_safe_filename(guide[channel_id][timestamp]["full_title"]))
     path = path.rstrip(".").rstrip(",")
 
     filename = os.path.join(path, get_safe_filename(guide[channel_id][timestamp]["full_title"]))
-    if daily_news_program:
+    if daily_program:
         filename += f' - {datetime.fromtimestamp(timestamp).strftime("%Y%m%d")}'
 
     return filename[len(RECORDINGS) + 1 :]
