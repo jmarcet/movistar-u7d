@@ -947,7 +947,7 @@ async def timers_check(delay=0):
                 found_ts = []
                 for ts in timestamps:
                     for fixed_ts in fixed_timestamps:
-                        if abs(ts - fixed_ts) <= 900:
+                        if abs(ts - fixed_ts) <= 1500:
                             found_ts.append(ts)
                             break
                 timestamps = found_ts
