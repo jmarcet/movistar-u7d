@@ -187,6 +187,7 @@ async def postprocess(archive_params, archive_url, mtime, record_time):
                     log.debug(f'Saving cover "{cover}"')
                     async with aiofiles.open(img_name, "wb") as f:
                         await f.write(await resp.read())
+                    utime(mtime, img_name)
                     metadata["cover"] = img_name[len(RECORDINGS) + 1 :]
                 else:
                     log.warning(f'Failed to get cover "{cover}" => {resp}')
@@ -299,6 +300,18 @@ async def postprocess(archive_params, archive_url, mtime, record_time):
 
     @_check_terminate
     async def _step_3():
+        nonlocal archive_params, newest_ts
+
+        newest = sorted(glob_safe(f"{os.path.dirname(_filename)}/*{VID_EXT}"), key=os.path.getmtime)[-1]
+        newest_ts = os.path.getmtime(newest)
+
+        await _save_metadata(newest_ts)
+        resp = await _SESSION.put(archive_url, params=archive_params)
+        if resp.status != 200:
+            raise ValueError("Failed")
+
+    @_check_terminate
+    async def _step_4():
         nonlocal proc
 
         cmd = ["comskip", f"--threads={COMSKIP}", "-d", "70", _filename + VID_EXT]
@@ -320,8 +333,8 @@ async def postprocess(archive_params, archive_url, mtime, record_time):
         log.warning(msg) if proc.returncode else log.info(msg)
 
     @_check_terminate
-    async def _step_4():
-        nonlocal proc
+    async def _step_5():
+        nonlocal newest_ts, proc
 
         if _args.mkv and proc.returncode == 0 and os.path.exists(_filename + CHP_EXT):
             cmd = ["mkvmerge", "-q", "-o", _filename + TMP_EXT]
@@ -343,24 +356,11 @@ async def postprocess(archive_params, archive_url, mtime, record_time):
             finally:
                 _cleanup(CHP_EXT)
 
-    async def _step_5():
-        nonlocal archive_params
-
-        newest = sorted(glob_safe(f"{os.path.dirname(_filename)}/*{VID_EXT}"), key=os.path.getmtime)[-1]
-        newest_ts = os.path.getmtime(newest)
-
-        await _save_metadata(newest_ts)
-        resp = await _SESSION.put(archive_url, params=archive_params)
-        if resp.status != 200:
-            raise ValueError("Failed")
-
         _cleanup(".log", ".logo.txt")
-        utime(mtime, *glob_safe(f"{_filename}.*"))
-        utime(newest_ts, os.path.dirname(_filename))
 
     await asyncio.sleep(0.1)  # Prioritize the main loop
 
-    duration = metadata = proc = resp = None
+    duration = metadata = newest_ts = proc = resp = None
     archive_params["recorded"] = record_time if record_time < _args.time - 30 else 0
 
     lockfile = os.path.join(os.getenv("TMP", os.getenv("TMPDIR", "/tmp")), ".movistar_vod.lock")  # nosec B108
@@ -375,11 +375,14 @@ async def postprocess(archive_params, archive_url, mtime, record_time):
         await _step_1()  # Verify recording
         await _step_2()  # Check actual length
 
-        if COMSKIP:
-            await _step_3()  # Comskip analysis
-            await _step_4()  # Merge chapters if recording to mkv
+        await asyncio.shield(_step_3())  # Archive recording
 
-        await asyncio.shield(_step_5())  # Archive recording
+        if COMSKIP:
+            await _step_4()  # Comskip analysis
+            await _step_5()  # Merge chapters if recording to mkv
+
+        utime(mtime, *glob_safe(f"{_filename}.*"))
+        utime(newest_ts, os.path.dirname(_filename))
 
         log.debug("POSTPROCESS ENDED")
 
