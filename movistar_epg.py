@@ -289,7 +289,7 @@ def get_program_name(filename):
 
 
 def get_recording_files(fname):
-    fname = fname.rstrip(VID_EXT)
+    fname = fname.removesuffix(VID_EXT)
     absname = os.path.join(RECORDINGS, fname)
     basename = os.path.basename(fname)
     path = os.path.dirname(absname)
@@ -569,7 +569,7 @@ async def prom_event(request, method):
     if not local:
         _epg = get_epg(request.json["channel_id"], _event["program_id"], cloud)[0]
     else:
-        path = _event["program_id"].rstrip(VID_EXT)
+        path = _event["program_id"].removesuffix(VID_EXT)
         _epg = await get_local_info(request.json["channel_id"], _event["start"], path, extended=True)
 
     if method == "add":
