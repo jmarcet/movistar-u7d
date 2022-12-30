@@ -1101,8 +1101,8 @@ class XMLTV:
         if ext_info and ext_info["theme"] == "Cine" or program["genre"].startswith("1"):
             is_serie = False
         elif ext_info and "seriesName" in ext_info and "serie" in program and ": " in ext_info["seriesName"]:
+            _match = series_regex.match(program["full_title"])
             is_serie = True
-            _match = False
             if "episode_title" in program:
                 del program["episode_title"]
             program["serie"] = ext_info["seriesName"]
@@ -1110,14 +1110,14 @@ class XMLTV:
             _match = series_regex.match(program["full_title"])
             is_serie = _match or program["is_serie"] or ": " in program["full_title"]
         if is_serie:
-            title, subtitle = _match.groups() if _match else (None, None)
+            title, subtitle = _match.groups() if _match else (program["full_title"], None)
             stitle = program.get("episode_title", "")
             stitle = "" if stitle.startswith("Episod") else stitle
 
             if not subtitle and not stitle:
                 if ": " in program["full_title"]:
                     title, subtitle = program["full_title"].split(": ", 1)
-                elif program["season"] and program["episode"]:
+                elif program["season"] is not None and program["episode"]:
                     subtitle = f'S{program["season"]:02}E{program["episode"]:02}'
                 elif program["episode"]:
                     subtitle = f'Ep. {program["episode"]}'
