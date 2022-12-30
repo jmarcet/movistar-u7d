@@ -294,7 +294,7 @@ async def postprocess(archive_params, archive_url, mtime, record_time):
             raise ValueError(msg.lstrip("POSTPROCESS "))
         log.info(msg)
 
-        _cleanup(VID_EXT)
+        _cleanup(CHP_EXT, NFO_EXT, VID_EXT, ".txt")
         utime(mtime, _filename + TMP_EXT2)
         os.rename(_filename + TMP_EXT2, _filename + VID_EXT)
 
@@ -673,7 +673,7 @@ if __name__ == "__main__":
         NO_SUBS = _conf["NO_SUBS"]
         RECORDINGS = _conf["RECORDINGS"]
 
-        CHP_EXT = ".mkvtoolnix.chapters" if _args.mkv else None
+        CHP_EXT = ".mkvtoolnix.chapters" if _args.mkv else ".ffmeta"
         TMP_EXT = ".tmp"
         TMP_EXT2 = ".tmp2"
         VID_EXT = ".mkv" if _args.mkv else ".ts"
