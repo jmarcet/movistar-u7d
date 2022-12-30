@@ -229,7 +229,7 @@ async def handle_flussonic(request, url, channel_id=None, channel_name=None, clo
             if program_id.endswith(".ts"):
                 _stat = await stat_async(program_id)
                 bytepos = round(offset * _stat.st_size / duration)
-                bytepos -= bytepos % ATOM
+                bytepos -= bytepos % CHUNK
                 to_send = _stat.st_size - bytepos
 
                 async with await open_async(program_id, mode="rb") as f:
