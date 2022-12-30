@@ -586,7 +586,7 @@ async def prom_event(request, method):
         offset = "[%d-%d/%d]" % (start, end, _event["duration"])
 
         for _metric in request.app.ctx.metrics["RQS_LATENCY"]._metrics:
-            if (request.json["method"] and request.json["id"]) in _metric:
+            if request.json["method"] in _metric and str(request.json["id"]) in _metric:
                 request.app.ctx.metrics["RQS_LATENCY"].remove(*_metric)
                 break
 
