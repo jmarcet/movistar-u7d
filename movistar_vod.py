@@ -625,6 +625,7 @@ if __name__ == "__main__":
     parser.add_argument("channel", help="channel id")
     parser.add_argument("program", help="program id")
 
+    parser.add_argument("-b", type=int, default=0)
     parser.add_argument("--client_ip", "-i", help="client ip address")
     parser.add_argument("--filename", "-o", help="output bare filename, relative to RECORDINGS path")
 

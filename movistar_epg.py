@@ -664,16 +664,25 @@ async def reap_vod_child(process, filename):
 async def record_program(channel_id, pid, offset=0, time=0, cloud=False, comskip=False, mkv=False, vo=False):
     timestamp = get_epg(channel_id, pid, cloud)[1]
     filename = get_recording_name(channel_id, timestamp, cloud)
-    if await ongoing_vods(channel_id, pid, filename):
-        msg = f'Recording already ongoing: [{channel_id}] [{pid}] "{filename}"'
-        log.warning(msg)
-        return msg
+
+    ongoing = await ongoing_vods(filename=filename, _all=True)
+    if ongoing:
+        if f"{channel_id} {pid} -b {timestamp} " in ongoing:
+            msg = f'Recording already ongoing: [{channel_id}] [{pid}] "{filename}"'
+            log.warning(msg)
+            return msg
+
+        log.warning(f'Event CHANGED => CANCELLING ongoing recording [{channel_id}] [{pid}] "{filename}"')
+        ongoing = await ongoing_vods(channel_id, pid, filename)
+        ongoing[0].terminate()
+        await asyncio.sleep(5)
+
     if _NETWORK_SATURATION:
         return await log_network_saturated()
 
     port = find_free_port(_IPTV)
     cmd = [sys.executable] if EXT == ".py" else []
-    cmd += [f"movistar_vod{EXT}", str(channel_id), str(pid), "-p", str(port), "-w"]
+    cmd += [f"movistar_vod{EXT}", str(channel_id), str(pid), "-b", str(timestamp), "-p", str(port), "-w"]
     cmd += ["-o", filename]
     cmd += ["-s", str(offset)] if offset else []
     cmd += ["-t", str(time)] if time else []
@@ -849,11 +858,15 @@ async def timers_check(delay=0):
         if keep and re.search(_clean(timer_match), _clean(program), re.IGNORECASE):
             kept[channel_id][program] = keep
 
-        if filename in ongoing or (channel_id, timestamp) in queued:
+        if (channel_id, timestamp) in queued:
             return
 
         guide = _CLOUD if cloud else _EPGDATA
         duration, pid, title = [guide[channel_id][timestamp][t] for t in ["duration", "pid", "full_title"]]
+
+        if filename in ongoing:
+            if f"{channel_id} {pid} -b {timestamp} " in await ongoing_vods(filename=filename, _all=True):
+                return
 
         now = int(datetime.now().timestamp()) - 60
         if not cloud and timestamp > _last_epg + 3600:
