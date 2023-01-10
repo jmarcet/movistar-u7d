@@ -565,24 +565,25 @@ async def Vod(args=None, vod_client=None):  # noqa: N802
         _SESSION_CLOUD = vod_client
         _args = args
 
-    async def _get_info():
+    async def _get_info(_log=False):
         params = {"action": "getRecordingData" if _args.cloud else "getCatchUpUrl"}
         params.update({"extInfoID": _args.program, "channelID": _args.channel, "mode": 1})
 
+        msg = f"Could not get uri for [{_args.channel}] [{_args.program}]:"
         try:
             async with _SESSION_CLOUD.get(URL_MVTV, params=params) as r:
-                return (await r.json())["resultData"]
+                res = await r.json()
+            if res.get("resultData"):
+                return res["resultData"]
+            if _log:
+                log.error(f'{msg} "%s"' % res["resultText"])
         except (ClientOSError, KeyError, ServerDisconnectedError, TypeError) as ex:
-            log.error(f"{repr(ex)}")
+            log.error(f'{msg} "{repr(ex)}"')
 
     # Get info about the requested program from Movistar. Attempt it twice.
     vod_info = await _get_info()
     if not vod_info:
-        msg = f"Could not get uri for [{_args.channel}] [{_args.program}]"
-        log.warning(msg)
-        vod_info = await _get_info()
-        if not vod_info:
-            log.error(msg)
+        vod_info = await _get_info(_log=True)
 
     try:
         if vod_info:
