@@ -353,7 +353,7 @@ async def handle_archive(request, channel_id, program_id, cloud=False):
         filename,
     )
 
-    if not _t_timers or _t_timers.done():
+    if not timers_lock.locked() and (not _t_timers or _t_timers.done()):
         _t_timers = app.add_task(timers_check(delay=5))
 
     recorded = int(request.args.get("recorded", 0))
@@ -488,7 +488,7 @@ async def handle_timers_check(request):
     if _NETWORK_SATURATION:
         return response.json({"status": await log_network_saturated()}, 404)
 
-    if _t_timers and not _t_timers.done():
+    if timers_lock.locked() or (_t_timers and not _t_timers.done()):
         raise ServiceUnavailable("Already processing timers")
 
     _t_timers = app.add_task(timers_check())
@@ -655,7 +655,7 @@ async def reap_vod_child(process, filename):
             ongoing[0].terminate()
 
     global _t_timers
-    if not _t_timers or _t_timers.done():
+    if not timers_lock.locked() and (not _t_timers or _t_timers.done()):
         _t_timers = app.add_task(timers_check(delay=5))
 
     log.debug(f"Reap VOD Child: [{process}]:[{retcode}] DONE")
@@ -809,40 +809,19 @@ async def reload_epg():
 async def timers_check(delay=0):
     await asyncio.sleep(delay)
 
-    if not os.path.exists(timers):
-        log.debug("timers_check: no timers.conf found")
-        return
-
-    nr_procs = len(await ongoing_vods())
-    if _NETWORK_SATURATION or nr_procs >= RECORDINGS_THREADS:
-        await log_network_saturated(nr_procs)
-        return
-
-    if epg_lock.locked():  # If EPG is being updated, wait until it is done
-        await epg_lock.acquire()
-        epg_lock.release()
-
-    log.info("Processing timers")
-    try:
-        async with aiofiles.open(timers, encoding="utf8") as f:
-            try:
-                _timers = tomli.loads(await f.read())
-            except ValueError:
-                _timers = ujson.loads(await f.read())
-    except (TypeError, ValueError) as ex:
-        log.error(f"Failed to parse timers.conf: {repr(ex)}")
-        return
-
-    deflang = _timers.get("default_language", "")
-    sync_cloud = _timers.get("sync_cloud", False)
-
     def _clean(string):
         return unicodedata.normalize("NFKD", string).encode("ASCII", "ignore").decode("utf8")
 
     def _exit():
-        global _KEEP
-        nonlocal kept
+        global _KEEP, _t_timers_next
+        nonlocal kept, next_timers
         _KEEP = kept
+        if next_timers:
+            title, ts = sorted(next_timers, key=lambda x: x[1])[0]
+            if not _t_timers_next or _t_timers_next.get_name() != f"{ts}":
+                log.info(f'Adding timers_check() @ {datetime.fromtimestamp(ts + 30)} "{title}"')
+                now = round(datetime.now().timestamp())
+                _t_timers_next = app.add_task(timers_check(delay=ts + 30 - now), name=f"{ts}")
 
     def _filter_recorded(timestamps):
         nonlocal channel_id, recs
@@ -868,7 +847,6 @@ async def timers_check(delay=0):
             if f"{channel_id} {pid} -b {timestamp} " in await ongoing_vods(filename=filename, _all=True):
                 return
 
-        now = int(datetime.now().timestamp()) - 60
         if not cloud and timestamp > _last_epg + 3600:
             return
 
@@ -879,10 +857,9 @@ async def timers_check(delay=0):
 
         if cloud or re.search(_clean(timer_match), _clean(title), re.IGNORECASE):
             _time = 0 if cloud else duration
-            if timestamp > now:
-                global _t_timers_next
-                if not _t_timers_next or _t_timers_next.done():
-                    _t_timers_next = app.add_task(timers_check(delay=timestamp - now))
+            now = round(datetime.now().timestamp())
+            if timestamp + 30 > now:
+                next_timers.append((title, timestamp))
                 return
             if await record_program(channel_id, pid, 0, _time, cloud, comskip, MKV_OUTPUT, vo):
                 return
@@ -902,82 +879,115 @@ async def timers_check(delay=0):
                 await log_network_saturated(nr_procs)
                 return -1
 
-    async with recordings_lock:
-        recs = _RECORDINGS.copy()
+    async with timers_lock:
+        if not os.path.exists(timers):
+            log.debug("timers_check: no timers.conf found")
+            return
 
-    ongoing = await ongoing_vods(_all=True)  # we want to check against all ongoing vods, also in pp
-    log.debug(f"Ongoing VODs: [{ongoing}]")
-    kept, queued = defaultdict(dict), []
+        if epg_lock.locked():  # If EPG is being updated, wait until it is done
+            await epg_lock.acquire()
+            epg_lock.release()
 
-    for str_channel_id in _timers.get("match", {}):
-        channel_id = int(str_channel_id)
-        if channel_id not in _EPGDATA:
-            log.warning(f"Channel [{channel_id}] not found in EPG")
-            continue
-        channel_name = _CHANNELS[channel_id]["name"]
+        log.info("Processing timers")
+        try:
+            async with aiofiles.open(timers, encoding="utf8") as f:
+                try:
+                    _timers = tomli.loads(await f.read())
+                except ValueError:
+                    _timers = ujson.loads(await f.read())
+        except (TypeError, ValueError) as ex:
+            log.error(f"Failed to parse timers.conf: {repr(ex)}")
+            return
 
-        for timer_match in _timers["match"][str_channel_id]:
-            comskip = _timers.get("comskip", False)
-            fixed_timer, keep, repeat = 0, False, False
-            lang = deflang
-            if " ## " in timer_match:
-                match_split = timer_match.split(" ## ")
-                timer_match = match_split[0]
-                for res in [res.lower().strip() for res in match_split[1:]]:
+        deflang = _timers.get("default_language", "")
+        sync_cloud = _timers.get("sync_cloud", False)
 
-                    if res[0].isnumeric():
-                        try:
-                            hour, minute = [int(t) for t in res.split(":")]
-                            _ts = datetime.now().replace(hour=hour, minute=minute, second=0).timestamp()
-                            fixed_timer = int(_ts)
-                            log.debug(f'[{channel_name}] "{timer_match}" {hour:02}:{minute:02} {fixed_timer}')
-                        except ValueError:
-                            log.warning(f'Failed to parse [{channel_name}] "{timer_match}" [{res}] correctly')
+        nr_procs = len(await ongoing_vods())
+        if _NETWORK_SATURATION or nr_procs >= RECORDINGS_THREADS:
+            await log_network_saturated(nr_procs)
+            return
 
-                    elif res == "comskip":
-                        comskip = True
+        async with recordings_lock:
+            recs = _RECORDINGS.copy()
 
-                    elif res.startswith("keep"):
-                        keep = int(res.lstrip("keep").rstrip("d"))
-                        keep = -keep if res.endswith("d") else keep
+        ongoing = await ongoing_vods(_all=True)  # we want to check against all ongoing vods, also in pp
+        log.debug(f"Ongoing VODs: [{ongoing}]")
 
-                    elif res == "nocomskip":
-                        comskip = False
+        kept, next_timers, queued = defaultdict(dict), [], []
 
-                    elif res == "repeat":
-                        repeat = True
-
-                    else:
-                        lang = res
-            vo = lang == "VO"
-
-            timestamps = [ts for ts in sorted(_EPGDATA[channel_id]) if ts <= _last_epg + 3600]
-            if fixed_timer:
-                # fixed timers are checked daily, so we want today's and all of last week
-                fixed_timestamps = [fixed_timer] if fixed_timer <= _last_epg + 3600 else []
-                fixed_timestamps += [fixed_timer - i * 24 * 3600 for i in range(1, 8)]
-
-                found_ts = []
-                for ts in timestamps:
-                    for fixed_ts in fixed_timestamps:
-                        if abs(ts - fixed_ts) <= 1500:
-                            found_ts.append(ts)
-                            break
-                timestamps = found_ts
-
-            log.debug(f"Checking timer: [{channel_name}] [{channel_id}] [{_clean(timer_match)}]")
-            for timestamp in _filter_recorded(timestamps):
-                if await _record():
-                    return _exit()
-
-    if sync_cloud:
-        vo = _timers.get("sync_cloud_language", "") == "VO"
-        for channel_id in _CLOUD:
+        for str_channel_id in _timers.get("match", {}):
+            channel_id = int(str_channel_id)
+            if channel_id not in _EPGDATA:
+                log.warning(f"Channel [{channel_id}] not found in EPG")
+                continue
             channel_name = _CHANNELS[channel_id]["name"]
-            for timestamp in _filter_recorded(sorted(_CLOUD[channel_id])):
-                if await _record(cloud=True):
-                    return _exit()
-    _exit()
+
+            for timer_match in _timers["match"][str_channel_id]:
+                comskip = _timers.get("comskip", False)
+                fixed_timer, keep, repeat = 0, False, False
+                lang = deflang
+                if " ## " in timer_match:
+                    match_split = timer_match.split(" ## ")
+                    timer_match = match_split[0]
+                    for res in [res.lower().strip() for res in match_split[1:]]:
+
+                        if res[0].isnumeric():
+                            try:
+                                hour, minute = [int(t) for t in res.split(":")]
+                                _ts = datetime.now().replace(hour=hour, minute=minute, second=0).timestamp()
+                                fixed_timer = int(_ts)
+                                log.debug(
+                                    f'[{channel_name}] "{timer_match}" {hour:02}:{minute:02} {fixed_timer}'
+                                )
+                            except ValueError:
+                                log.warning(
+                                    f'Failed to parse [{channel_name}] "{timer_match}" [{res}] correctly'
+                                )
+
+                        elif res == "comskip":
+                            comskip = True
+
+                        elif res.startswith("keep"):
+                            keep = int(res.lstrip("keep").rstrip("d"))
+                            keep = -keep if res.endswith("d") else keep
+
+                        elif res == "nocomskip":
+                            comskip = False
+
+                        elif res == "repeat":
+                            repeat = True
+
+                        else:
+                            lang = res
+                vo = lang == "VO"
+
+                timestamps = [ts for ts in sorted(_EPGDATA[channel_id]) if ts <= _last_epg + 3600]
+                if fixed_timer:
+                    # fixed timers are checked daily, so we want today's and all of last week
+                    fixed_timestamps = [fixed_timer] if fixed_timer <= _last_epg + 3600 else []
+                    fixed_timestamps += [fixed_timer - i * 24 * 3600 for i in range(1, 8)]
+
+                    found_ts = []
+                    for ts in timestamps:
+                        for fixed_ts in fixed_timestamps:
+                            if abs(ts - fixed_ts) <= 1500:
+                                found_ts.append(ts)
+                                break
+                    timestamps = found_ts
+
+                log.debug(f"Checking timer: [{channel_name}] [{channel_id}] [{_clean(timer_match)}]")
+                for timestamp in _filter_recorded(timestamps):
+                    if await _record():
+                        return _exit()
+
+        if sync_cloud:
+            vo = _timers.get("sync_cloud_language", "") == "VO"
+            for channel_id in _CLOUD:
+                channel_name = _CHANNELS[channel_id]["name"]
+                for timestamp in _filter_recorded(sorted(_CLOUD[channel_id])):
+                    if await _record(cloud=True):
+                        return _exit()
+        _exit()
 
 
 async def update_cloud():
@@ -1115,7 +1125,7 @@ async def update_epg(abort_on_error=False):
         else:
             await reload_epg()
             _last_epg = int(datetime.now().replace(minute=0, second=0).timestamp())
-            if RECORDINGS and (not _t_timers or _t_timers.done()):
+            if RECORDINGS and not timers_lock.locked() and (not _t_timers or _t_timers.done()):
                 _t_timers = app.add_task(timers_check(delay=10))
             break
 
@@ -1382,6 +1392,7 @@ if __name__ == "__main__":
     network_bw_lock = asyncio.Lock()
     recordings_lock = asyncio.Lock()
     recordings_inc_lock = asyncio.Lock()
+    timers_lock = asyncio.Lock()
     tvgrab_lock = asyncio.Lock()
 
     flussonic_regex = re.compile(r"\w*-?(\d{10})-?(\d+){0,1}\.?\w*")
