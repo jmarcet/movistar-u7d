@@ -16,6 +16,7 @@ import xmltodict
 
 from aiohttp.client_exceptions import ClientOSError, ServerDisconnectedError
 from aiohttp.resolver import AsyncResolver
+from asyncio.exceptions import CancelledError
 from asyncio.subprocess import DEVNULL, PIPE
 from collections import defaultdict
 from datetime import date, datetime, timedelta
@@ -25,11 +26,6 @@ from psutil import Process, boot_time
 from sanic import Sanic, response
 from sanic_prometheus import monitor
 from sanic.exceptions import NotFound, ServiceUnavailable
-
-if hasattr(asyncio, "exceptions"):
-    from asyncio.exceptions import CancelledError
-else:
-    from asyncio import CancelledError
 
 from mu7d import DROP_KEYS, EXT, IPTV_DNS, NFO_EXT, UA, UA_U7D, URL_MVTV, VID_EXTS, WIN32, YEAR_SECONDS
 from mu7d import find_free_port, get_iptv_ip, get_local_info, get_safe_filename, get_title_meta

@@ -15,6 +15,7 @@ import urllib.parse
 
 from aiohttp.client_exceptions import ClientOSError, ServerDisconnectedError
 from aiohttp.resolver import AsyncResolver
+from asyncio.exceptions import CancelledError
 from asyncio.subprocess import DEVNULL, PIPE
 from collections import namedtuple
 from contextlib import closing
@@ -28,11 +29,6 @@ from sanic.log import error_logger
 from sanic.models.server_types import ConnInfo
 from sanic.server import HttpProtocol
 from sanic.touchup.meta import TouchUpMeta
-
-if hasattr(asyncio, "exceptions"):
-    from asyncio.exceptions import CancelledError
-else:
-    from asyncio import CancelledError
 
 from mu7d import ATOM, CHUNK, EPG_URL, IPTV_DNS, MIME_M3U, MIME_WEBM, UA, URL_COVER, URL_LOGO, VID_EXTS, WIN32
 from mu7d import YEAR_SECONDS, find_free_port, get_iptv_ip, mu7d_config, ongoing_vods, _version

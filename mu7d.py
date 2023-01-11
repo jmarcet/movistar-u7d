@@ -14,6 +14,7 @@ import urllib.parse
 import xmltodict
 
 from aiohttp.client_exceptions import ClientOSError, ServerDisconnectedError
+from asyncio.exceptions import CancelledError
 from contextlib import closing
 from datetime import datetime
 from filelock import FileLock, Timeout
@@ -21,11 +22,6 @@ from glob import glob
 from shutil import which
 from time import sleep
 from xml.sax.saxutils import unescape  # nosec B406
-
-if hasattr(asyncio, "exceptions"):
-    from asyncio.exceptions import CancelledError
-else:
-    from asyncio import CancelledError
 
 
 _version = "6.0alpha"
