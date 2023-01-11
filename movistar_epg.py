@@ -951,7 +951,7 @@ async def timers_check(delay=0):
                         lang = res
             vo = lang == "VO"
 
-            timestamps = [ts for ts in reversed(_EPGDATA[channel_id]) if ts <= _last_epg + 3600]
+            timestamps = [ts for ts in sorted(_EPGDATA[channel_id]) if ts <= _last_epg + 3600]
             if fixed_timer:
                 # fixed timers are checked daily, so we want today's and all of last week
                 fixed_timestamps = [fixed_timer] if fixed_timer <= _last_epg + 3600 else []
