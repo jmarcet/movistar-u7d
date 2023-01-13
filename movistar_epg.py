@@ -259,7 +259,7 @@ def get_program_id(channel_id, url=None, cloud=False, local=False):
         if start in guide[channel_id]:
             duration = guide[channel_id][start]["duration"]
         else:
-            for timestamp in guide[channel_id]:
+            for timestamp in reversed(guide[channel_id]):
                 duration = guide[channel_id][timestamp]["duration"]
                 if timestamp < start < timestamp + duration:
                     start, new_start = timestamp, start
