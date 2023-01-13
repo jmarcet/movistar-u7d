@@ -8,7 +8,6 @@ from mu7d import _version
 build_exe_options = {
     "include_files": sanic.__path__
     + ["comskip.ini", "mu7d.conf", "ffmpeg.exe", "mkvmerge.exe", "timers.conf"],
-    "includes": ["anyio._backends._asyncio"],
     "excludes": ["test", "tkinter", "unittest"],
     "optimize": 2,
 }

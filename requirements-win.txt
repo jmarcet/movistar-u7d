@@ -9,4 +9,6 @@ tomli
 ujson
 wmi
 xmltodict
-cx_Freeze
+# https://github.com/marcelotduarte/cx_Freeze#installation
+# pip install --pre --extra-index-url https://marcelotduarte.github.io/packages/ cx_Freeze
+cx_Freeze>=6.14.0.dev2
