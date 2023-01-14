@@ -10,6 +10,7 @@ import asyncio
 import logging
 import os
 import psutil
+import re
 import sys
 import time
 import ujson
@@ -112,7 +113,23 @@ async def _open_sessions():
         )
 
 
-async def postprocess(archive_params, archive_url, mtime, record_time):
+async def get_vod_info(_log=False):
+    params = {"action": "getRecordingData" if _args.cloud else "getCatchUpUrl"}
+    params.update({"extInfoID": _args.program, "channelID": _args.channel, "mode": 1})
+
+    msg = f"Could not get uri for [{_args.channel}] [{_args.program}]:"
+    try:
+        async with _SESSION_CLOUD.get(URL_MVTV, params=params) as r:
+            res = await r.json()
+        if res.get("resultData"):
+            return res["resultData"]
+        if _log:
+            log.error(f'{msg} "%s"' % res["resultText"])
+    except (ClientOSError, KeyError, ServerDisconnectedError, TypeError) as ex:
+        log.error(f'{msg} "{repr(ex)}"')
+
+
+async def postprocess(archive_params, archive_url, mtime, record_time, vod_info):
     async def _check_process(msg):
         nonlocal proc
 
@@ -146,6 +163,13 @@ async def postprocess(archive_params, archive_url, mtime, record_time):
             return await fn(*args, **kwargs)
 
         return wrapper
+
+    async def _get_duration(recording):
+        cmd = ["ffprobe", "-i", recording, "-show_entries", "format=duration", "-v", "quiet", "-of", "json"]
+        proc = await asyncio.create_subprocess_exec(*cmd, stdin=DEVNULL, stdout=PIPE, stderr=DEVNULL)
+        recording_data = ujson.loads((await proc.communicate())[0].decode())
+
+        return round(float(recording_data["format"]["duration"]))
 
     async def _save_metadata(newest_ts=None):
         nonlocal duration, metadata
@@ -270,14 +294,9 @@ async def postprocess(archive_params, archive_url, mtime, record_time):
 
     @_check_terminate
     async def _step_2():
-        nonlocal archive_params, duration, proc, resp
+        nonlocal archive_params, duration, mtime, proc, resp, vod_info
 
-        cmd = ["ffprobe", "-i", _filename + TMP_EXT2, "-show_entries", "format=duration"]
-        cmd += ["-v", "quiet", "-of", "json"]
-
-        proc = await asyncio.create_subprocess_exec(*cmd, stdin=DEVNULL, stdout=PIPE, stderr=DEVNULL)
-        recording_data = ujson.loads((await proc.communicate())[0].decode())
-        duration = round(float(recording_data["format"]["duration"]))
+        duration = await _get_duration(_filename + TMP_EXT2)
 
         bad = duration / _args.time < 0.95
 
@@ -290,24 +309,41 @@ async def postprocess(archive_params, archive_url, mtime, record_time):
             raise ValueError(msg.lstrip("POSTPROCESS "))
         log.info(msg)
 
-        _cleanup(CHP_EXT, NFO_EXT, VID_EXT, ".txt")
+        new_vod_info = await get_vod_info(_log=True)
+        if not new_vod_info:
+            return
+        vod_info = new_vod_info
+
+        new_mtime = int(vod_info["beginTime"] / 1000 + _args.start)
+        if mtime != new_mtime:
+            msg = f"POSTPROCESS #2B: Event CHANGED beginTime={new_mtime - mtime:+}"
+            log.info(msg)
+
+            if new_mtime < mtime:
+                raise ValueError(msg.lstrip("POSTPROCESS "))
+
+            shifted = str(timedelta(seconds=new_mtime - mtime))
+
+            cmd = ["ffmpeg", "-i", _filename + TMP_EXT2, "-ss", shifted, "-c", "copy", "-map", "0"]
+            cmd += ["-metadata", 'service_provider="Movistar IPTV"']
+            cmd += ["-metadata", 'service_name="%s"' % vod_info["channelName"]]
+            cmd += ["-v", "fatal", "-y", "-f", "matroska" if _args.mkv else "mpegts", _filename + TMP_EXT]
+
+            log.info(f'POSTPROCESS #2B: Cutting first {new_mtime - mtime}s "{cmd}"')
+            proc = await asyncio.create_subprocess_exec(*cmd, stdin=DEVNULL, stdout=DEVNULL)
+            await _check_process(f"#2B: Failed cutting first {new_mtime - mtime}s")
+
+            _cleanup(TMP_EXT2)
+            os.rename(_filename + TMP_EXT, _filename + TMP_EXT2)
+
+            mtime = new_mtime
+
+        _cleanup(CHP_EXT, NFO_EXT, VID_EXT, ".log", ".logo.txt", ".txt")
         utime(mtime, _filename + TMP_EXT2)
         os.rename(_filename + TMP_EXT2, _filename + VID_EXT)
 
     @_check_terminate
     async def _step_3():
-        nonlocal archive_params, newest_ts
-
-        newest = sorted(glob_safe(f"{os.path.dirname(_filename)}/*{VID_EXT}"), key=os.path.getmtime)[-1]
-        newest_ts = os.path.getmtime(newest)
-
-        await _save_metadata(newest_ts)
-        resp = await _SESSION.put(archive_url, params=archive_params)
-        if resp.status != 200:
-            raise ValueError("Failed")
-
-    @_check_terminate
-    async def _step_4():
         nonlocal proc
 
         cmd = ["comskip", f"--threads={COMSKIP}", "-d", "70", _filename + VID_EXT]
@@ -329,37 +365,97 @@ async def postprocess(archive_params, archive_url, mtime, record_time):
         log.warning(msg) if proc.returncode else log.info(msg)
 
     @_check_terminate
-    async def _step_5():
-        nonlocal newest_ts, proc
+    async def _step_4():
+        nonlocal duration, proc
 
-        if _args.mkv and proc.returncode == 0 and os.path.exists(_filename + CHP_EXT):
-            cmd = ["mkvmerge", "-q", "-o", _filename + TMP_EXT]
-            cmd += ["--chapters", _filename + CHP_EXT, _filename + VID_EXT]
+        if proc.returncode == 0 and os.path.exists(_filename + CHP_EXT):
+            if _args.comskipcut and not _args.mkv:
+                intervals = []
+                pieces = []
 
-            log.info("POSTPROCESS #4 - COMSKIP - Merging mkv chapters")
-            proc = await asyncio.create_subprocess_exec(*cmd, stdin=DEVNULL, stdout=PIPE)
+                async with aiofiles.open(_filename + CHP_EXT) as f:
+                    c = await f.read()
 
-            try:
-                await _check_process("#4 - COMSKIP: Failed merging mkv chapters")
+                segments = list(
+                    filter(lambda x: "Show Segment" in x, (" ".join(c.splitlines()).split("[CHAPTER]"))[1:])
+                )
+                for segment in segments:
+                    r = re.match(r" TIMEBASE=[^ ]+ START=([^ ]+) END=([^ ]+) .+", segment)
+                    start, end = map(lambda x: str(timedelta(seconds=int(x) / 100)), r.groups())
+                    intervals.append((start, end))
 
-                _cleanup(VID_EXT)
-                utime(mtime, _filename + TMP_EXT)
-                os.rename(_filename + TMP_EXT, _filename + VID_EXT)
+                try:
+                    for idx, (start, end) in enumerate(intervals):
+                        pieces.append(os.path.join(TMP_DIR, f"{idx:02}_show_segment{VID_EXT}"))
+                        cmd = ["ffmpeg", "-i", _filename + VID_EXT, "-ss", start, "-to", end]
+                        cmd += ["-c", "copy", "-map", "0", "-v", "fatal", "-y", pieces[-1]]
 
-            except ValueError as exception:
-                _cleanup(TMP_EXT)
-                log.error(exception)
-            finally:
-                _cleanup(CHP_EXT)
+                        log.info(f'POSTPROCESS #4A: Cutting chapter {idx:02} "{cmd}"')
+                        proc = await asyncio.create_subprocess_exec(*cmd, stdin=DEVNULL, stdout=DEVNULL)
+
+                        await _check_process("#4A - Failed cutting commercials")
+
+                    cmd = ["ffmpeg", "-i", f"concat:{'|'.join(pieces)}", "-c", "copy", "-map", "0"]
+                    cmd += ["-metadata", 'service_provider="Movistar IPTV"']
+                    cmd += ["-metadata", 'service_name="%s"' % vod_info["channelName"]]
+                    cmd += ["-v", "fatal", "-y", "-f", "mpegts", _filename + TMP_EXT]
+
+                    log.info(f'POSTPROCESS #4B: Merging recording w/o commercials "{cmd}"')
+                    proc = await asyncio.create_subprocess_exec(*cmd, stdin=DEVNULL, stdout=DEVNULL)
+                    await _check_process("#4B - Failed merging recording w/o commercials")
+
+                    duration = await _get_duration(_filename + TMP_EXT)
+                    utime(mtime, _filename + TMP_EXT)
+
+                    _cleanup(CHP_EXT, VID_EXT)
+                    os.rename(_filename + TMP_EXT, _filename + VID_EXT)
+
+                except ValueError as exception:
+                    _cleanup(TMP_EXT)
+                    log.error(exception)
+                finally:
+                    remove(*pieces)
+
+            elif _args.mkv:
+                cmd = ["mkvmerge", "-q", "-o", _filename + TMP_EXT]
+                cmd += ["--chapters", _filename + CHP_EXT, _filename + VID_EXT]
+
+                log.info("POSTPROCESS #5 - COMSKIP - Merging mkv chapters")
+                proc = await asyncio.create_subprocess_exec(*cmd, stdin=DEVNULL, stdout=PIPE)
+
+                try:
+                    await _check_process("#5 - COMSKIP: Failed merging mkv chapters")
+
+                    _cleanup(VID_EXT)
+                    utime(mtime, _filename + TMP_EXT)
+                    os.rename(_filename + TMP_EXT, _filename + VID_EXT)
+
+                except ValueError as exception:
+                    _cleanup(TMP_EXT)
+                    log.error(exception)
+                finally:
+                    _cleanup(CHP_EXT)
 
         _cleanup(".log", ".logo.txt")
+
+    @_check_terminate
+    async def _step_5():
+        nonlocal archive_params, newest_ts
+
+        newest = sorted(glob_safe(f"{os.path.dirname(_filename)}/*{VID_EXT}"), key=os.path.getmtime)[-1]
+        newest_ts = os.path.getmtime(newest)
+
+        await _save_metadata(newest_ts)
+        resp = await _SESSION.put(archive_url, params=archive_params)
+        if resp.status != 200:
+            raise ValueError("Failed")
 
     await asyncio.sleep(0.1)  # Prioritize the main loop
 
     duration = metadata = newest_ts = proc = resp = None
     archive_params["recorded"] = record_time if record_time < _args.time - 30 else 0
 
-    lockfile = os.path.join(os.getenv("TMP", os.getenv("TMPDIR", "/tmp")), ".movistar_vod.lock")  # nosec B108
+    lockfile = os.path.join(TMP_DIR, ".movistar_vod.lock")
     pp_lock = FileLock(lockfile)
 
     try:
@@ -371,11 +467,11 @@ async def postprocess(archive_params, archive_url, mtime, record_time):
         await _step_1()  # Verify recording
         await _step_2()  # Check actual length
 
-        await asyncio.shield(_step_3())  # Archive recording
-
         if COMSKIP:
-            await _step_4()  # Comskip analysis
-            await _step_5()  # Merge chapters if recording to mkv
+            await _step_3()  # Comskip analysis
+            await _step_4()  # Cut/Merge chapters
+
+        await asyncio.shield(_step_5())  # Archive recording
 
         utime(mtime, *glob_safe(f"{_filename}.*"))
         utime(newest_ts, os.path.dirname(_filename))
@@ -494,7 +590,7 @@ async def record_stream(vod_info):
             return retcode
 
     log.info(msg)
-    return asyncio.create_task(postprocess(archive_params, archive_url, mtime, record_time))
+    return asyncio.create_task(postprocess(archive_params, archive_url, mtime, record_time, vod_info))
 
 
 async def rtsp(vod_info):
@@ -565,25 +661,10 @@ async def Vod(args=None, vod_client=None):  # noqa: N802
         _SESSION_CLOUD = vod_client
         _args = args
 
-    async def _get_info(_log=False):
-        params = {"action": "getRecordingData" if _args.cloud else "getCatchUpUrl"}
-        params.update({"extInfoID": _args.program, "channelID": _args.channel, "mode": 1})
-
-        msg = f"Could not get uri for [{_args.channel}] [{_args.program}]:"
-        try:
-            async with _SESSION_CLOUD.get(URL_MVTV, params=params) as r:
-                res = await r.json()
-            if res.get("resultData"):
-                return res["resultData"]
-            if _log:
-                log.error(f'{msg} "%s"' % res["resultText"])
-        except (ClientOSError, KeyError, ServerDisconnectedError, TypeError) as ex:
-            log.error(f'{msg} "{repr(ex)}"')
-
     # Get info about the requested program from Movistar. Attempt it twice.
-    vod_info = await _get_info()
+    vod_info = await get_vod_info()
     if not vod_info:
-        vod_info = await _get_info(_log=True)
+        vod_info = await get_vod_info(_log=True)
 
     try:
         if vod_info:
@@ -631,7 +712,8 @@ if __name__ == "__main__":
     parser.add_argument("--time", "-t", help="recording time in seconds", type=int)
 
     parser.add_argument("--cloud", help="the event is from a cloud recording", action="store_true")
-    parser.add_argument("--comskip", help="do comercials analysis", action="store_true")
+    parser.add_argument("--comskip", help="do comercials analysis, mark chapters", action="store_true")
+    parser.add_argument("--comskipcut", help="do comercials analysis, cut chapters", action="store_true")
     parser.add_argument("--debug", help="enable debug logs", action="store_true")
     parser.add_argument("--force", help="continue recording after error", action="store_true")
     parser.add_argument("--mkv", help="output recording in mkv container", action="store_true")
@@ -666,10 +748,11 @@ if __name__ == "__main__":
             sys.exit(1)
 
         CACHE_DIR = os.path.join(_conf["HOME"], ".xmltv/cache/programs")
-        COMSKIP = _args.comskip and _conf["COMSKIP"]
+        COMSKIP = (_args.comskip or _args.comskipcut) and _conf["COMSKIP"]
         COMSKIP_LOG = os.path.join(_conf["HOME"], "comskip.log") if COMSKIP else None
         NO_SUBS = _conf["NO_SUBS"]
         RECORDINGS = _conf["RECORDINGS"]
+        TMP_DIR = os.getenv("TMP", os.getenv("TMPDIR", "/tmp"))  # nosec B108
 
         CHP_EXT = ".mkvtoolnix.chapters" if _args.mkv else ".ffmeta"
         TMP_EXT = ".tmp"

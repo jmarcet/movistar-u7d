@@ -437,9 +437,12 @@ async def handle_prom_event(request, method):
 @app.get("/record/<channel_id:int>/<url>")
 async def handle_record_program(request, channel_id, url):
     cloud = request.args.get("cloud") == "1"
-    comskip = request.args.get("comskip") == "1"
+    comskip = int(request.args.get("comskip", "0"))
     mkv = request.args.get("mkv") == "1"
     vo = request.args.get("vo") == "1"
+
+    if comskip not in (0, 1, 2):
+        raise NotFound(f"Requested URL {request.raw_url.decode()} not found")
 
     try:
         channel, program_id, start, duration, offset = get_program_id(channel_id, url, cloud).values()
@@ -657,21 +660,33 @@ async def reap_vod_child(process, filename):
     log.debug(f"Reap VOD Child: [{process}]:[{retcode}] DONE")
 
 
-async def record_program(channel_id, pid, offset=0, time=0, cloud=False, comskip=False, mkv=False, vo=False):
+async def record_program(channel_id, pid, offset=0, time=0, cloud=False, comskip=0, mkv=False, vo=False):
     timestamp = get_epg(channel_id, pid, cloud)[1]
     filename = get_recording_name(channel_id, timestamp, cloud)
 
     ongoing = await ongoing_vods(filename=filename, _all=True)
     if ongoing:
-        if f"{channel_id} {pid} -b {timestamp} " in ongoing:
-            msg = f'Recording already ongoing: [{channel_id}] [{pid}] "{filename}"'
+        if f"{channel_id} {pid} -b {timestamp} " in ongoing or f"{channel_id} {pid} -b " not in ongoing:
+            msg = f'Recording already ongoing: [{channel_id}] [{pid}] [{timestamp}] -> "{filename}"'
+            if f"{channel_id} {pid} -b " not in ongoing:
+                msg = msg.replace("ongoing", "ongoing, REPEATED EVENT")
             log.warning(msg)
             return msg
 
-        log.warning(f'Event CHANGED => CANCELLING ongoing recording [{channel_id}] [{pid}] "{filename}"')
-        ongoing = await ongoing_vods(channel_id, pid, filename)
-        ongoing[0].terminate()
-        await asyncio.sleep(5)
+        r = re.search(f" {channel_id} {pid} -b " + r"(\d+) -p", ongoing)
+        prev_ts = int(r.groups()[0])
+        if timestamp < prev_ts:
+            log.warning(
+                "Event CHANGED => Cancelling ongoing recording: "
+                f'[{channel_id}] [{pid}] [{timestamp}] "{filename}"'
+            )
+            ongoing = await ongoing_vods(channel_id, pid, filename)
+            ongoing[0].terminate()
+            await asyncio.sleep(5)
+        elif timestamp > prev_ts:
+            msg = f'Event DELAYED => VOD will fix it: [{channel_id}] [{pid}] [{timestamp}] "{filename}"'
+            log.debug(msg)
+            return msg
 
     if _NETWORK_SATURATION:
         return await log_network_saturated()
@@ -683,7 +698,7 @@ async def record_program(channel_id, pid, offset=0, time=0, cloud=False, comskip
     cmd += ["-s", str(offset)] if offset else []
     cmd += ["-t", str(time)] if time else []
     cmd += ["--cloud"] if cloud else []
-    cmd += ["--comskip"] if comskip else []
+    cmd += ["--comskip"] if comskip == 1 else ["--comskipcut"] if comskip == 2 else []
     cmd += ["--mkv"] if mkv else []
     cmd += ["--vo"] if vo else []
 
@@ -838,7 +853,8 @@ async def timers_check(delay=0):
         duration, pid, title = [guide[channel_id][timestamp][t] for t in ["duration", "pid", "full_title"]]
 
         if filename in ongoing:
-            if f"{channel_id} {pid} -b {timestamp} " in await ongoing_vods(filename=filename, _all=True):
+            vod = await ongoing_vods(filename=filename, _all=True)
+            if f"{channel_id} {pid} -b {timestamp} " in vod or f"{channel_id} {pid} -b " not in vod:
                 return
 
         if not cloud and timestamp > _last_epg + 3600:
@@ -917,7 +933,7 @@ async def timers_check(delay=0):
             channel_name = _CHANNELS[channel_id]["name"]
 
             for timer_match in _timers["match"][str_channel_id]:
-                comskip = _timers.get("comskip", False)
+                comskip = 2 if _timers.get("comskipcut") else 1 if _timers.get("comskip") else 0
                 fixed_timer, keep, repeat = 0, False, False
                 lang = deflang
                 if " ## " in timer_match:
@@ -939,14 +955,17 @@ async def timers_check(delay=0):
                                 )
 
                         elif res == "comskip":
-                            comskip = True
+                            comskip = 1
+
+                        elif res == "comskipcut":
+                            comskip = 2
 
                         elif res.startswith("keep"):
                             keep = int(res.lstrip("keep").rstrip("d"))
                             keep = -keep if res.endswith("d") else keep
 
                         elif res == "nocomskip":
-                            comskip = False
+                            comskip = 0
 
                         elif res == "repeat":
                             repeat = True
