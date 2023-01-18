@@ -706,7 +706,7 @@ async def reindex_recordings():
         basename = nfo_file[:-13]
         if not any((os.path.exists(basename + ext) for ext in VID_EXTS)):
             log.error(f"No recording found: {basename=} {nfo_file=}")
-            [remove(file) for file in get_recording_files(basename)]
+            # remove(*get_recording_files(basename))
             continue
 
         try:
@@ -716,7 +716,7 @@ async def reindex_recordings():
             nfo = xmltodict.parse(xml)["metadata"]
         except Exception as ex:
             log.error(f"Cannot read {nfo_file=} => {repr(ex)}")
-            [remove(file) for file in get_recording_files(basename)]
+            # remove(*get_recording_files(basename))
             continue
 
         channel_id, duration, timestamp = map(int, (nfo["serviceUID"], nfo["duration"], nfo["beginTime"]))
@@ -774,8 +774,7 @@ async def reload_epg():
 
         except (FileNotFoundError, TypeError, ValueError) as ex:
             log.error(f"Failed to load Channels metadata {repr(ex)}")
-            if os.path.exists(epg_metadata):
-                os.remove(epg_metadata)
+            remove(epg_metadata)
             return await reload_epg()
 
         try:
@@ -790,8 +789,7 @@ async def reload_epg():
 
         except (FileNotFoundError, TypeError, ValueError) as ex:
             log.error(f"Failed to load EPG data {repr(ex)}")
-            if os.path.exists(epg_data):
-                os.remove(epg_data)
+            remove(epg_data)
             return await reload_epg()
 
         log.info(f"Channels & EPG Updated => {U7D_URL}/MovistarTV.m3u - {U7D_URL}/guide.xml.gz")
@@ -1001,8 +999,7 @@ async def update_cloud():
         _CLOUD = int_clouddata
 
     except (FileNotFoundError, TypeError, ValueError):
-        if os.path.exists(cloud_data):
-            os.remove(cloud_data)
+        remove(cloud_data)
 
     try:
         params = {"action": "recordingList", "mode": 0, "state": 2, "firstItem": 0, "numItems": 999}
@@ -1261,7 +1258,7 @@ async def upgrade_recordings():
 
         if not os.path.exists(nfo_file):
             log.error(f"Dropping recording. Could not find {nfo_file=}")
-            [remove(file) for file in get_recording_files(basename)]
+            remove(*get_recording_files(basename))
             continue
 
         mtime = int(os.path.getmtime(recording))
@@ -1296,7 +1293,7 @@ async def upgrade_recordings():
             covers += 1
         else:
             log.error(f'No cover found: "{basename}"')
-            [remove(file) for file in get_recording_files(basename)]
+            remove(*get_recording_files(basename))
             continue
 
         if _start != mtime:
@@ -1307,7 +1304,7 @@ async def upgrade_recordings():
             xml = xmltodict.unparse({"metadata": nfo}, pretty=True)
         except Exception as ex:
             log.error(f"Metadata malformed: {nfo_file=} => {repr(ex)}")
-            [remove(file) for file in get_recording_files(basename)]
+            remove(*get_recording_files(basename))
             continue
 
         async with aiofiles.open(nfo_file + ".tmp", "w", encoding="utf8") as f:
