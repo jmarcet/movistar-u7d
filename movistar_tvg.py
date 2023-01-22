@@ -349,7 +349,7 @@ class Cache:
     async def load_epg(self):
         data = self.__load("epg.json")
         now = datetime.now()
-        remote_cache_ts = int(now.replace(hour=0, minute=59, second=0).timestamp())
+        remote_cache_ts = int(now.replace(hour=0, minute=0, second=0).timestamp())
         if now.hour == 0 and now.minute < 59:
             remote_cache_ts -= 3600 * 24
         if not data or int(os.path.getmtime(os.path.join(cache_dir, "epg.json"))) < remote_cache_ts:
