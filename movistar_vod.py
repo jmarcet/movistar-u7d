@@ -420,7 +420,7 @@ async def record_stream(vod_info):
     log.propagate = False
 
     ongoing = await ongoing_vods(filename=_args.filename)
-    if ongoing and not U7D_PARENT or len(ongoing) > 1:
+    if len(ongoing) > 1:
         log.error("Recording already ongoing")
         return 1
 
