@@ -1503,3 +1503,6 @@ if __name__ == "__main__":
     except Timeout:
         log.critical("Cannot be run more than once!")
         sys.exit(1)
+    except ValueError as err:
+        log.critical(err)
+        sys.exit(1)

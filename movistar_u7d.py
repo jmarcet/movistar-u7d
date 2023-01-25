@@ -466,6 +466,13 @@ async def network_saturated():
     cutpoint = IPTV_BW_SOFT + (IPTV_BW_HARD - IPTV_BW_SOFT) / 2
 
     while True:
+        if not os.path.exists(iface_rx):
+            last = 0
+            log.error(f"{IPTV_IFACE} NOT ACCESSIBLE")
+            while not os.path.exists(iface_rx):
+                await asyncio.sleep(1)
+            log.info(f"{IPTV_IFACE} IS now ACCESSIBLE")
+
         async with aiofiles.open(iface_rx) as f:
             now, cur = time.time(), int((await f.read())[:-1])
 
@@ -606,4 +613,7 @@ if __name__ == "__main__":
         sys.exit(1)
     except Timeout:
         log.critical("Cannot be run more than once!")
+        sys.exit(1)
+    except ValueError as err:
+        log.critical(err)
         sys.exit(1)
