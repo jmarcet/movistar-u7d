@@ -30,8 +30,8 @@ from sanic.models.server_types import ConnInfo
 from sanic.server import HttpProtocol
 from sanic.touchup.meta import TouchUpMeta
 
-from mu7d import ATOM, CHUNK, EPG_URL, IPTV_DNS, MIME_M3U, MIME_WEBM, UA, URL_COVER, URL_LOGO, VID_EXTS, WIN32
-from mu7d import YEAR_SECONDS, find_free_port, get_iptv_ip, mu7d_config, ongoing_vods, _version
+from mu7d import ATOM, BUFF, CHUNK, EPG_URL, IPTV_DNS, MIME_M3U, MIME_WEBM, UA, URL_COVER, URL_LOGO, VID_EXTS
+from mu7d import WIN32, YEAR_SECONDS, find_free_port, get_iptv_ip, mu7d_config, ongoing_vods, _version
 from movistar_vod import Vod
 
 
@@ -236,7 +236,7 @@ async def handle_flussonic(request, url, channel_id=None, channel_name=None, clo
 
                     try:
                         while to_send > 0:
-                            content = await f.read(CHUNK)
+                            content = await f.read(BUFF)
                             await _response.send(content)
                             to_send -= len(content)
                     finally:
@@ -521,11 +521,11 @@ async def transcode(request, channel_id=None, port=None, event=None, vod=None, f
     _response = await request.respond(content_type=MIME_WEBM)
 
     try:
-        await _response.send(await proc.stdout.read(65536))
+        await _response.send(await proc.stdout.read(BUFF))
         prom = app.add_task(send_prom_event({**event, "lat": time.time() - event["id"]}))
 
         while True:
-            content = await proc.stdout.read(65536)
+            content = await proc.stdout.read(BUFF)
             if len(content) < 1:
                 break
             await _response.send(content)
@@ -545,7 +545,7 @@ class VodHttpProtocol(HttpProtocol, metaclass=TouchUpMeta):
         HTTP-protocol-specific new connection handler tuned for VOD.
         """
         try:
-            transport.set_write_buffer_limits(low=ATOM, high=CHUNK)
+            transport.set_write_buffer_limits(low=ATOM, high=BUFF)
             self.connections.add(self)
             self.transport = transport
             self._task = self.loop.create_task(self.connection_task())

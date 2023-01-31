@@ -33,6 +33,7 @@ EXT = ".exe" if getattr(sys, "frozen", False) else ".py"
 WIN32 = sys.platform == "win32"
 
 ATOM = 188
+BUFF = 65536
 CHUNK = 1316
 EPG_URL = "http://127.0.0.1:8889"
 IPTV_DNS = "172.26.23.3"
