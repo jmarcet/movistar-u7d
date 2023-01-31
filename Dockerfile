@@ -1,5 +1,5 @@
 ############## build stage ##############
-FROM python:3.11-alpine as buildstage
+FROM python:3.10-alpine as buildstage
 
 ARG TARGETARCH="amd64"
 
@@ -33,7 +33,7 @@ RUN \
     make DESTDIR=/tmp/comskip-build install
 
 ############## runtime stage ##############
-FROM python:3.11-alpine
+FROM python:3.10-alpine
 
 ARG TARGETARCH="amd64"
 
