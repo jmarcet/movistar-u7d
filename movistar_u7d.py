@@ -180,6 +180,7 @@ async def handle_channel(request, channel_id=None, channel_name=None):
 
         finally:
             prom.cancel()
+            await prom
             await _response.eof()
 
 
@@ -240,6 +241,7 @@ async def handle_flussonic(request, url, channel_id=None, channel_name=None, clo
                             to_send -= len(content)
                     finally:
                         prom.cancel()
+                        await prom
                         return await _response.eof()
 
             else:
@@ -272,6 +274,7 @@ async def handle_flussonic(request, url, channel_id=None, channel_name=None, clo
         finally:
             vod.cancel()
             prom.cancel()
+            await asyncio.wait([vod, prom], return_when=asyncio.ALL_COMPLETED)
             await _response.eof()
 
 
@@ -532,6 +535,7 @@ async def transcode(request, channel_id=None, port=None, event=None, vod=None, f
             vod.cancel()
         proc.kill()
         prom.cancel()
+        await asyncio.wait([vod, prom], return_when=asyncio.ALL_COMPLETED)
         await _response.eof()
 
 
