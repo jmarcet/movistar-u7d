@@ -425,8 +425,9 @@ class Cache:
                 _next = sorted_channel[i + 1]
                 _end = ts + local_epg[channel][ts]["duration"]
 
-                if _end > _next:
-                    local_epg[channel][ts]["duration"] = _next - ts
+                if _end >= _next:
+                    _end = _next - 1
+                    local_epg[channel][ts]["duration"] = _end - ts
 
         return local_epg
 
