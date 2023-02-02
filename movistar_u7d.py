@@ -235,7 +235,7 @@ async def handle_flussonic(request, url, channel_id=None, channel_name=None, clo
                     prom = app.add_task(send_prom_event(event))
 
                     try:
-                        while to_send > 0:
+                        while to_send >= CHUNK:
                             content = await f.read(BUFF)
                             await _response.send(content)
                             to_send -= len(content)
