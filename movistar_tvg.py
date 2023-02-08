@@ -1482,7 +1482,7 @@ if __name__ == "__main__":
     end_points_file = "movistar_tvg.endpoints"
 
     cinema_regex = re.compile(r"^(.+?) \(([^)]+)\) ?(:?\(?.+\)?)?$")
-    daily_regex = re.compile(r"^(.+?) - \d{8}$")
+    daily_regex = re.compile(r"^(.+?) - \d{8}(?:_\d{4})?$")
     series_regex = re.compile(r"^(.+) (S\d+E\d+(?: - .+)?)$")
 
     logging.basicConfig(

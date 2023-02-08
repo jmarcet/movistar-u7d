@@ -320,7 +320,8 @@ def get_recording_name(channel_id, timestamp, cloud=False):
 
     filename = os.path.join(path, get_safe_filename(guide[channel_id][timestamp]["full_title"]))
     if daily_program:
-        filename += f' - {datetime.fromtimestamp(timestamp).strftime("%Y%m%d")}'
+        _time = "%Y%m%d" + ("_%H%M" if guide[channel_id][timestamp]["genre"] == "0C" else "")
+        filename += f' - {datetime.fromtimestamp(timestamp).strftime(_time)}'
 
     return filename[len(RECORDINGS) + 1 :]
 
