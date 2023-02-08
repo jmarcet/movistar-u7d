@@ -298,7 +298,7 @@ async def postprocess(archive_params, archive_url, mtime, record_time, vod_info)
 
         duration = await _get_duration(_filename + TMP_EXT2)
 
-        bad = duration / _args.time < 0.95
+        bad = duration < _args.time
 
         archive_params["recorded"] = duration if bad else 0
         log_suffix = f" [{duration}s] / [{_args.time}s]"
@@ -459,7 +459,7 @@ async def postprocess(archive_params, archive_url, mtime, record_time, vod_info)
     pp_lock = FileLock(lockfile)
 
     try:
-        await _step_0()  # Verify if raw recording time is OK, w/ the desired time rounded by 30s
+        await _step_0()  # Verify if raw recording time is OK
 
         pp_lock.acquire(poll_interval=5)
         log.debug("POSTPROCESS STARTS")
@@ -496,12 +496,6 @@ async def record_stream(vod_info):
 
         _args.filename = f"{vod_info['channelName']} - {get_safe_filename(vod_info['name'])}"
 
-    if not _args.time:
-        _args.time = vod_info["duration"]
-    else:
-        _args.time = int(_args.time * 7 / 6) if _args.time > 900 else _args.time if _args.time > 60 else 60
-        _args.time = min(_args.time, vod_info["duration"])
-
     log_suffix = ": [%s] [%s] [%s]" % (vod_info["channelName"], _args.channel, _args.program)
     log_suffix += ' [%d] "%s"' % (vod_info["beginTime"] / 1000, _args.filename)
     log_suffix += " [FORCED]" if _args.force else ""
@@ -531,8 +525,14 @@ async def record_stream(vod_info):
     archive_url = f"{EPG_URL}/archive/{_args.channel}/{_args.program}"
     mtime = int(vod_info["beginTime"] / 1000 + _args.start)
 
+    if not _args.time:
+        _time = _args.time = vod_info["duration"]
+    else:
+        _time = int(_args.time * 7 / 6) if _args.time > 900 else _args.time if _args.time > 60 else 60
+        _time = min(_time, vod_info["duration"])
+
     cmd = ["ffmpeg", "-copyts", "-fifo_size", "5572", "-pkt_size", f"{CHUNK}"]
-    cmd += ["-timeout", "500000", "-t", f"{_args.time}", "-vsync", "passthrough"]
+    cmd += ["-timeout", "500000", "-t", f"{_time}", "-vsync", "passthrough"]
     cmd += ["-fflags", "+discardcorrupt"] if _args.force else ["-xerror"]
     cmd += ["-i", _local_url]
 
