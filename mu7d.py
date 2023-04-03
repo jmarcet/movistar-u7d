@@ -264,6 +264,11 @@ def mu7d_config():
     if "RECORDINGS_REINDEX" not in conf:
         conf["RECORDINGS_REINDEX"] = False
 
+    if "RECORDINGS_TMP" not in conf:
+        conf["RECORDINGS_TMP"] = None
+    else:
+        conf["RECORDINGS_TMP"] = conf["RECORDINGS_TMP"].rstrip("/").rstrip("\\")
+
     if "RECORDINGS_UPGRADE" not in conf:
         conf["RECORDINGS_UPGRADE"] = False
 
