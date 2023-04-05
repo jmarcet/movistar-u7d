@@ -367,7 +367,7 @@ async def handle_m3u_files(request, m3u_file):
     elif m3u in ("movistartvlocal", "local"):
         m3u_matched = CHANNELS_LOCAL
     elif m3u in ("grabaciones", "recordings"):
-        m3u_matched = RECORDINGS_M3U
+        m3u_matched = os.path.join(RECORDINGS, "Recordings.m3u")
     elif RECORDINGS_PER_CHANNEL:
         try:
             channel_id = get_channel_id(m3u)
@@ -594,7 +594,6 @@ if __name__ == "__main__":
     IPTV_IFACE = _conf["IPTV_IFACE"]
     NO_VERBOSE_LOGS = _conf["NO_VERBOSE_LOGS"]
     RECORDINGS = _conf["RECORDINGS"]
-    RECORDINGS_M3U = _conf["RECORDINGS_M3U"]
     RECORDINGS_PER_CHANNEL = _conf["RECORDINGS_PER_CHANNEL"]
     U7D_THREADS = _conf["U7D_THREADS"]
     U7D_URL = _conf["U7D_URL"]

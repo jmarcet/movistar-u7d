@@ -153,7 +153,6 @@ async def after_server_start(app, loop):
             _t_timers = app.add_task(timers_check(delay))
         elif not _t_timers:
             log.warning("Delaying timers_check until the EPG is updated...")
-        log.info(f"Manual timers check => {U7D_URL}/timers_check")
 
 
 @app.listener("before_server_stop")
@@ -754,7 +753,6 @@ async def reindex_recordings():
             _RECORDINGS = _recordings
 
         await update_recordings(True)
-        app.add_task(update_epg_local())
 
 
 async def reload_epg():
@@ -818,11 +816,10 @@ async def reload_epg():
             return await reload_epg()
 
         log.info(f"Channels & EPG Updated => {U7D_URL}/MovistarTV.m3u - {U7D_URL}/guide.xml.gz")
+        nr_epg = sum((len(_EPGDATA[channel]) for channel in _EPGDATA))
+        log.info(f"Total: {len(_EPGDATA)} Channels & {nr_epg} EPG entries")
 
         await update_cloud()
-        nr_epg = sum((len(_EPGDATA[channel]) for channel in _EPGDATA))
-
-        log.info(f"Total: {len(_EPGDATA)} Channels & {nr_epg} EPG entries")
 
 
 async def timers_check(delay=0):
@@ -1116,9 +1113,6 @@ async def update_cloud():
             await f.write(ujson.dumps({"data": _CLOUD}, ensure_ascii=False, indent=4, sort_keys=True))
 
     if updated or not os.path.exists(CHANNELS_CLOUD) or not os.path.exists(GUIDE_CLOUD):
-        if not os.path.exists(CHANNELS_CLOUD) or not os.path.exists(GUIDE_CLOUD):
-            log.warning("Missing Cloud Recordings data! Need to download it. Please be patient...")
-
         cmd = [f"movistar_tvg{EXT}", "--cloud_m3u", CHANNELS_CLOUD, "--cloud_recordings", GUIDE_CLOUD]
         async with tvgrab_lock:
             task = app.add_task(launch(cmd))
@@ -1126,6 +1120,8 @@ async def update_cloud():
         check_task(task)
 
     log.info(f"Cloud Recordings Updated => {U7D_URL}/MovistarTVCloud.m3u - {U7D_URL}/cloud.xml")
+    nr_epg = sum((len(_CLOUD[channel]) for channel in _CLOUD))
+    log.info(f"Total: {len(_CLOUD)} Channels & {nr_epg} EPG entries")
 
 
 async def update_epg(abort_on_error=False):
@@ -1170,6 +1166,10 @@ async def update_epg_local():
     async with tvgrab_lock:
         await launch(cmd)
 
+    log.info(f"Local Recordings Updated => {U7D_URL}/MovistarTVLocal.m3u - {U7D_URL}/local.xml")
+    nr_epg = sum((len(_RECORDINGS[channel]) for channel in _RECORDINGS))
+    log.info(f"Total: {len(_RECORDINGS)} Channels & {nr_epg} EPG entries")
+
 
 async def update_recordings(archive=False):
     def _dump_files(files, channel=False, latest=False):
@@ -1201,6 +1201,8 @@ async def update_recordings(archive=False):
                 await f.write(ujson.dumps(_RECORDINGS, ensure_ascii=False, indent=4, sort_keys=True))
             remove(recordings)
             os.rename(recordings + ".tmp", recordings)
+
+        await update_epg_local()
 
         while True:
             try:
@@ -1249,11 +1251,14 @@ async def update_recordings(archive=False):
                     if os.path.exists(os.path.join(subdir, "metadata")):
                         utime(newest, os.path.join(subdir, "metadata"))
 
+            if not RECORDINGS_M3U:
+                continue
+
             m3u = f"#EXTM3U name=\"{'Recordings' if _dir == RECORDINGS else _dir}\" dlna_extras=mpeg_ps_pal\n"
             if _dir == RECORDINGS:
                 m3u += _dump_files(reversed(files), latest=True)
                 m3u += _dump_files(sorted(files))
-                m3u_file = RECORDINGS_M3U
+                m3u_file = os.path.join(RECORDINGS, "Recordings.m3u")
             else:
                 m3u += _dump_files(files, channel=True)
                 m3u_file = os.path.join(os.path.join(RECORDINGS, _dir), f"{_dir}.m3u")
@@ -1270,10 +1275,7 @@ async def update_recordings(archive=False):
             updated_m3u = True
 
     if updated_m3u:
-        log.info(f"Local Recordings Updated => {U7D_URL}/Recordings.m3u")
-
-    if not isinstance(archive, bool) or (not os.path.exists(GUIDE_LOCAL) and len(_RECORDINGS)):
-        app.add_task(update_epg_local())
+        log.info(f"Local Recordings' M3U Updated => {U7D_URL}/Recordings.m3u")
 
 
 async def upgrade_recordings():

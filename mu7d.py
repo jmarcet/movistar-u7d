@@ -256,7 +256,9 @@ def mu7d_config():
         conf["RECORDINGS"] = conf["RECORDINGS_M3U"] = None
     else:
         conf["RECORDINGS"] = conf["RECORDINGS"].rstrip("/").rstrip("\\")
-        conf["RECORDINGS_M3U"] = os.path.join(conf["RECORDINGS"], "Recordings.m3u")
+
+    if "RECORDINGS_M3U" not in conf:
+        conf["RECORDINGS_M3U"] = True
 
     if "RECORDINGS_PER_CHANNEL" not in conf:
         conf["RECORDINGS_PER_CHANNEL"] = True

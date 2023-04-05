@@ -1342,12 +1342,6 @@ def create_args_parser():
     return parser
 
 
-def export_channels(m3u_file, cloud=None, local=None):
-    xmltv.write_m3u(m3u_file, cloud, local)
-    msg = f" de Grabaciones en {'la Nube' if cloud else 'Local'}" if cloud or local else ""
-    log.info(f"Lista de canales{msg} exportada: {m3u_file}")
-
-
 async def tvg_main():
     global VERBOSE, cache, config, deadline, epg, iptv, mtv, session, xmltv
 
@@ -1358,13 +1352,8 @@ async def tvg_main():
 
     if (args.cloud_m3u or args.cloud_recordings) and (args.local_m3u or args.local_recordings):
         return
-    if args.cloud_m3u or args.cloud_recordings or args.local_m3u or args.local_recordings:
+    if any((args.cloud_m3u, args.cloud_recordings, args.local_m3u, args.local_recordings)):
         VERBOSE = False
-        zone = "la Nube" if args.cloud_m3u or args.cloud_recordings else "Local"
-        if args.cloud_m3u or args.local_m3u:
-            log.info(f"Generando Lista de canales de Grabaciones en {zone}...")
-        if args.cloud_recordings or args.local_recordings:
-            log.info(f"Generando Guía XMLTV de Grabaciones en {zone}...")
     else:
         VERBOSE = True
         banner = f"Movistar U7D - TVG v{_version}"
@@ -1400,7 +1389,7 @@ async def tvg_main():
         xmltv = XMLTV(xdata)
 
         if args.m3u:
-            export_channels(args.m3u)
+            xmltv.write_m3u(args.m3u)
             if not args.guide:
                 return
 
@@ -1413,11 +1402,11 @@ async def tvg_main():
                 epg = cache.load_cloud_epg()
             else:
                 epg = cache.load_local_epg()
-            if not epg:
-                log.error(f"No existe caché de grabaciones en {zone}. Debe generarla con movistar_epg")
+            if (args.cloud_m3u or args.cloud_recordings) and not epg:
+                log.error("No existe caché de grabaciones en la Nube. Debe generarla con movistar_epg")
                 return
             if args.cloud_m3u or args.local_m3u:
-                export_channels(
+                xmltv.write_m3u(
                     args.cloud_m3u or args.local_m3u,
                     cloud=list(epg) if args.cloud_m3u else None,
                     local=list(epg) if args.local_m3u else None,
@@ -1434,15 +1423,14 @@ async def tvg_main():
                 dom.writexml(f, indent="    ", addindent="    ", newl="\n", encoding="UTF-8")
             with gzip.open(args.guide + ".gz", "wt", encoding="utf8") as f:
                 dom.writexml(f, indent="    ", addindent="    ", newl="\n", encoding="UTF-8")
-            msg = "EPG de %i canales y %i días descargada" % (len(epg), len(xdata["segments"]))
 
         elif args.cloud_recordings or args.local_recordings:
             with open(args.cloud_recordings or args.local_recordings, "w", encoding="utf8") as f:
                 dom.writexml(f, indent="    ", addindent="    ", newl="\n", encoding="UTF-8")
-            msg = f"EPG de Grabaciones en {zone} {'generada' if zone == 'Local' else 'descargada'}"
 
-        total_time = str(timedelta(seconds=round(time.time() - time_start)))
-        log.info(f"{msg} en {total_time}s")
+        if not any((args.cloud_recordings, args.local_recordings)):
+            _t = str(timedelta(seconds=round(time.time() - time_start)))
+            log.info(f"EPG de {len(epg)} canales y {len(xdata['segments'])} días descargada en {_t}s")
 
     finally:
         await session.close()
