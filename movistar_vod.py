@@ -332,33 +332,32 @@ async def postprocess(archive_params, archive_url, mtime, record_time, vod_info)
         log.info(msg)
 
         new_vod_info = await get_vod_info(_log=True)
-        if not new_vod_info:
-            return
-        vod_info = new_vod_info
+        if new_vod_info:
+            new_mtime = int(new_vod_info["beginTime"] / 1000 + _args.start)
+            if mtime != new_mtime:
+                msg = f"POSTPROCESS #2B: Event CHANGED beginTime={new_mtime - mtime:+}"
+                log.info(msg)
 
-        new_mtime = int(vod_info["beginTime"] / 1000 + _args.start)
-        if mtime != new_mtime:
-            msg = f"POSTPROCESS #2B: Event CHANGED beginTime={new_mtime - mtime:+}"
-            log.info(msg)
+                if new_mtime < mtime:
+                    raise ValueError(msg.lstrip("POSTPROCESS "))
 
-            if new_mtime < mtime:
-                raise ValueError(msg.lstrip("POSTPROCESS "))
+                shifted = str(timedelta(seconds=new_mtime - mtime))
 
-            shifted = str(timedelta(seconds=new_mtime - mtime))
+                cmd = ["ffmpeg", "-i", _tmpname + TMP_EXT2, "-ss", shifted, "-c", "copy", "-map", "0"]
+                cmd += ["-metadata", 'service_provider="Movistar IPTV"']
+                cmd += ["-metadata", 'service_name="%s"' % vod_info["channelName"]]
+                cmd += ["-v", "fatal", "-y", "-f", "matroska" if _args.mkv else "mpegts", _tmpname + TMP_EXT]
 
-            cmd = ["ffmpeg", "-i", _tmpname + TMP_EXT2, "-ss", shifted, "-c", "copy", "-map", "0"]
-            cmd += ["-metadata", 'service_provider="Movistar IPTV"']
-            cmd += ["-metadata", 'service_name="%s"' % vod_info["channelName"]]
-            cmd += ["-v", "fatal", "-y", "-f", "matroska" if _args.mkv else "mpegts", _tmpname + TMP_EXT]
+                log.info(f'POSTPROCESS #2B: Cutting first {new_mtime - mtime}s "{cmd}"')
+                proc = await asyncio.create_subprocess_exec(*cmd, stdin=DEVNULL, stdout=DEVNULL)
+                await _check_process(f"#2B: Failed cutting first {new_mtime - mtime}s")
 
-            log.info(f'POSTPROCESS #2B: Cutting first {new_mtime - mtime}s "{cmd}"')
-            proc = await asyncio.create_subprocess_exec(*cmd, stdin=DEVNULL, stdout=DEVNULL)
-            await _check_process(f"#2B: Failed cutting first {new_mtime - mtime}s")
+                _cleanup(TMP_EXT2)
+                os.rename(_tmpname + TMP_EXT, _tmpname + TMP_EXT2)
 
-            _cleanup(TMP_EXT2)
-            os.rename(_tmpname + TMP_EXT, _tmpname + TMP_EXT2)
-
-            mtime = new_mtime
+                mtime = new_mtime
+        else:
+            log.warning("Could not verify event has not shifted since recording started")
 
         _cleanup(CHP_EXT, NFO_EXT, VID_EXT, ".log", ".logo.txt", ".txt")
         utime(mtime, _tmpname + TMP_EXT2)
