@@ -355,7 +355,7 @@ async def handle_archive(request, channel_id, program_id, cloud=False):
 
     recorded = int(request.args.get("recorded", 0))
     if recorded:
-        if request.method == "OPTIONS" and recorded < 45:
+        if recorded < 45:
             log.error(f"Recording WRONG -> RETRY: {log_suffix}")
             return response.json({"status": "Recording WRONG"}, status=202)
 
@@ -367,10 +367,8 @@ async def handle_archive(request, channel_id, program_id, cloud=False):
             _RECORDINGS_INC[channel_id][program_id].append(recorded)
             _t = _RECORDINGS_INC[channel_id][program_id]
 
-            if request.method == "OPTIONS" and len(_t) > 3:
-                _RECORDINGS_INC[channel_id][program_id] = _t = _t[-3:]
-
-        log.error(f"Recording Incomplete -> RETRY: {log_suffix}: {_t}")
+        _forced = " FORCED" if len(_t) > 1 and sorted(_t)[-1] - sorted(_t)[-2] < 3 else ""
+        log.error(f"Recording Incomplete -> RETRY{_forced}: {log_suffix}: {_t}")
         return response.json({"status": "Recording Incomplete RETRY"}, status=202)
 
     if request.method == "OPTIONS":
@@ -398,8 +396,8 @@ async def handle_archive(request, channel_id, program_id, cloud=False):
             async with recordings_inc_lock:
                 if channel_id in _RECORDINGS_INC and program_id in _RECORDINGS_INC[channel_id]:
                     _t = _RECORDINGS_INC[channel_id][program_id]
-                    if (len(_t) == 2 and abs(_t[1] - _t[0]) < 3) or (len(_t) == 3 and abs(_t[2] - _t[1]) < 3):
-                        errors = f' with issues [{_t[0]}/{nfo["duration"]}]'
+                    if len(_t) > 1 and sorted(_t)[-1] - sorted(_t)[-2] < 3:
+                        errors = f' with issues [{sorted(_t)[-1]}/{nfo["duration"]}]'
                     del _RECORDINGS_INC[channel_id][program_id]
 
             app.add_task(update_recordings(channel_id))
@@ -717,7 +715,7 @@ async def record_program(channel_id, pid, offset=0, time=0, cloud=False, comskip
     async with recordings_inc_lock:
         if channel_id in _RECORDINGS_INC and pid in _RECORDINGS_INC[channel_id]:
             _t = _RECORDINGS_INC[channel_id][pid]
-            if (len(_t) == 2 and abs(_t[1] - _t[0]) < 3) or (len(_t) == 3 and abs(_t[2] - _t[1]) < 3):
+            if len(_t) > 1 and sorted(_t)[-1] - sorted(_t)[-2] < 3:
                 cmd += ["--force"]
 
     log.debug('Launching: "%s"' % " ".join(cmd))
