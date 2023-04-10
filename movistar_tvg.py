@@ -891,7 +891,7 @@ class MulticastIPTV:
                             log.info(f"{mc_grp}:{mc_port} -> XML descargado")
                         loop = False
                 except Exception as ex:
-                    log.error(f"Error al descargar los archivos XML: {repr(ex)}")
+                    log.debug(f"Error al descargar los archivos XML: {repr(ex)}")
         return _files
 
     def __merge_dicts(self, dict1, dict2, path=[]):
@@ -1031,7 +1031,6 @@ class MulticastIPTV:
         if datetime.now().hour < 2:
             self.__expire_epg(new_epg)
 
-        log.info("Comprobando si el EPG necesita arreglos...")
         fixed, new_gaps = self.__fix_epg(new_epg)
 
         if not cached_epg:
@@ -1041,7 +1040,6 @@ class MulticastIPTV:
         log.debug(f"Fecha de caducidad: [{time.ctime(deadline)}] [{deadline}]")
         expired = self.__expire_epg(cached_epg)
 
-        log.info("Comprobando si el EPG resultante necesita arreglos...")
         self.__merge_epg(cached_epg, expired, fixed, new_epg, new_gaps)
 
         cache.save_epg(cached_epg)
@@ -1279,8 +1277,6 @@ class XMLTV:
             f.write(content)
 
     async def generate_xml(self, parsed_epg, verbose, local=False):
-        if VERBOSE:
-            log.info("Generando la guía XMLTV...")
         root = Element(
             "tv",
             {
@@ -1297,8 +1293,6 @@ class XMLTV:
                 tag_dname.text = self.__channels[channel_id]["name"]
                 root.append(tag_channel)
 
-        if VERBOSE:
-            log.info("XML: Descargando info extendida")
         for channel_id in [
             cid
             for cid in sorted(services, key=lambda key: services[key])
