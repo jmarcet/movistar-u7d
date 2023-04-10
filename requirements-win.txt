@@ -1,12 +1,13 @@
 aiohttp
 asyncio
-asyncio-dgram
+asyncio_dgram
 defusedxml
 filelock
 sanic==22.6.2
 git+https://github.com/jmarcet/sanic-prometheus
 tomli
 ujson
+websockets==10.4
 wmi
 xmltodict
 # https://github.com/marcelotduarte/cx_Freeze#installation

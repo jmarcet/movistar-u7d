@@ -10,4 +10,5 @@ git+https://github.com/jmarcet/sanic-prometheus
 setproctitle
 tomli
 ujson
+websockets==10.4
 xmltodict
