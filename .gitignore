@@ -1,6 +1,7 @@
 *env/
 *.exe
 *.swp
+.ruff_cache
 .vscode
 __pycache__/
 archive/

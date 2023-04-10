@@ -264,7 +264,7 @@ min-public-methods = 2
 
 [tool.pylint.exceptions]
 # Exceptions that will emit a warning when caught.
-overgeneral-exceptions = ["BaseException", "Exception"]
+overgeneral-exceptions = ["builtins.BaseException", "builtins.Exception"]
 
 [tool.pylint.format]
 # Expected format of line ending, e.g. empty (any line ending), LF or CRLF.
@@ -414,7 +414,7 @@ ignore-imports = true
 ignore-signatures = true
 
 # Minimum lines number of a similarity.
-min-similarity-lines = 8
+min-similarity-lines = 22
 
 [tool.pylint.spelling]
 # Limits count of emitted suggestions for spelling mistakes.
