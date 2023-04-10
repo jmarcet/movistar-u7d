@@ -367,7 +367,7 @@ async def postprocess(archive_params, archive_url, mtime, record_time, vod_info)
     async def _step_3():
         nonlocal proc
 
-        cmd = ["comskip", f"--threads={COMSKIP}", "-d", "70", _tmpname + VID_EXT]
+        cmd = ["comskip"] + COMSKIP + ["--ts", _tmpname + VID_EXT]
 
         log.info("POSTPROCESS #3 - COMSKIP - Checking recording for commercials")
         async with aiofiles.open(COMSKIP_LOG, "ab") as f:

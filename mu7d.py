@@ -217,7 +217,7 @@ def mu7d_config():
     if "COMSKIP" not in conf or not which("comskip"):
         conf["COMSKIP"] = None
     else:
-        conf["COMSKIP"] = min(conf["COMSKIP"], os.cpu_count())
+        conf["COMSKIP"] = conf["COMSKIP"].split()
 
     if "DEBUG" not in conf:
         conf["DEBUG"] = False
