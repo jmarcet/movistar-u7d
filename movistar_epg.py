@@ -468,6 +468,10 @@ async def handle_record_program(request, channel_id, url):
             "start": start,
             "offset": offset,
             "time": record_time,
+            "cloud": cloud,
+            "comskip": comskip,
+            "mkv": mkv,
+            "vo": vo
         }
     )
 
