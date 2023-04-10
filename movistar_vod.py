@@ -400,6 +400,10 @@ async def postprocess(archive_params, archive_url, mtime, record_time, vod_info)
                 segments = list(
                     filter(lambda x: "Show Segment" in x, (" ".join(c.splitlines()).split("[CHAPTER]"))[1:])
                 )
+                if not segments:
+                    log.warning("POSTPROCESS #4: Could not find any Show Segment")
+                    return
+
                 for segment in segments:
                     r = re.match(r" TIMEBASE=[^ ]+ START=([^ ]+) END=([^ ]+) .+", segment)
                     start, end = map(lambda x: str(timedelta(seconds=int(x) / 100)), r.groups())
