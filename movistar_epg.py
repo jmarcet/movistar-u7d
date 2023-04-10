@@ -321,7 +321,7 @@ def get_recording_name(channel_id, timestamp, cloud=False):
     filename = os.path.join(path, get_safe_filename(guide[channel_id][timestamp]["full_title"]))
     if daily_program:
         _time = "%Y%m%d" + ("_%H%M" if guide[channel_id][timestamp]["genre"] == "0C" else "")
-        filename += f' - {datetime.fromtimestamp(timestamp).strftime(_time)}'
+        filename += f" - {datetime.fromtimestamp(timestamp).strftime(_time)}"
 
     return filename[len(RECORDINGS) + 1 :]
 
@@ -471,7 +471,7 @@ async def handle_record_program(request, channel_id, url):
             "cloud": cloud,
             "comskip": comskip,
             "mkv": mkv,
-            "vo": vo
+            "vo": vo,
         }
     )
 
@@ -952,7 +952,6 @@ async def timers_check(delay=0):
                     match_split = timer_match.split(" ## ")
                     timer_match = match_split[0]
                     for res in [res.lower().strip() for res in match_split[1:]]:
-
                         if res[0].isnumeric():
                             try:
                                 hour, minute = [int(t) for t in res.split(":")]
