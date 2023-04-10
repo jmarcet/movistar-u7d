@@ -252,7 +252,7 @@ def mu7d_config():
     if "NO_VERBOSE_LOGS" not in conf:
         conf["NO_VERBOSE_LOGS"] = False
 
-    if "RECORDINGS" not in conf or not which("ffmpeg") or not which("mkvmerge"):
+    if "RECORDINGS" not in conf or not all((which("ffmpeg"), which("ffprobe"), which("mkvmerge"))):
         conf["RECORDINGS"] = conf["RECORDINGS_M3U"] = None
     else:
         conf["RECORDINGS"] = conf["RECORDINGS"].rstrip("/").rstrip("\\")
