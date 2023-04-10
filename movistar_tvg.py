@@ -1492,7 +1492,7 @@ if __name__ == "__main__":
     )
 
     logging.getLogger("asyncio").setLevel(logging.DEBUG if _conf["DEBUG"] else logging.FATAL)
-    logging.getLogger("filelock").setLevel(logging.DEBUG if _conf["DEBUG"] else logging.FATAL)
+    logging.getLogger("filelock").setLevel(logging.FATAL)
 
     lockfile = os.path.join(os.getenv("TMP", os.getenv("TMPDIR", "/tmp")), ".movistar_tvg.lock")  # nosec B108
     try:

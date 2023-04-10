@@ -489,7 +489,7 @@ if __name__ == "__main__":
         level=logging.DEBUG if _conf["DEBUG"] else logging.INFO,
     )
     logging.getLogger("asyncio").setLevel(logging.DEBUG if _conf["DEBUG"] else logging.FATAL)
-    logging.getLogger("filelock").setLevel(logging.DEBUG if _conf["DEBUG"] else logging.FATAL)
+    logging.getLogger("filelock").setLevel(logging.FATAL)
 
     banner = f"Movistar U7D v{_version}"
     log.info("=" * len(banner))

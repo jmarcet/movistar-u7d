@@ -729,7 +729,7 @@ if __name__ == "__main__":
     )
 
     logging.getLogger("asyncio").setLevel(logging.DEBUG if _args.debug or _conf["DEBUG"] else logging.FATAL)
-    logging.getLogger("filelock").setLevel(logging.DEBUG if _args.debug or _conf["DEBUG"] else logging.FATAL)
+    logging.getLogger("filelock").setLevel(logging.FATAL)
 
     try:
         iptv = get_iptv_ip()
