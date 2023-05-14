@@ -534,10 +534,19 @@ class MovistarTV:
 
     async def get_epg_extended_info(self, channel_id, pid, ts):
         data = cache.load_epg_extended_info(pid)
-        if not data or int(data["beginTime"] / 1000) != ts:
+        mismatch = False
+        if not data or data["beginTime"] // 1000 != ts:
+            if data:
+                mismatch = True
             data = await self.__get_service_data(f"epgInfov2&productID={pid}&channelID={channel_id}&extra=1")
             if not data:
-                log.warning(f"Información extendida no encontrada: [{channel_id}] [{ts}] [{pid}]")
+                log.debug("Información extendida no encontrada: [%04d] [%d] [%d] " % (channel_id, pid, ts))
+                return
+            if mismatch and data["beginTime"] // 1000 != ts:
+                log.debug(
+                    "Event mismatch STILL BROKEN: [%4s] [%d] beginTime=[%+d]"
+                    % (str(channel_id), pid, data["beginTime"] // 1000 - ts)
+                )
                 return
             cache.save_epg_extended_info(data)
         return data
@@ -750,7 +759,11 @@ class MulticastIPTV:
     def __get_epg_data(self, mcast_grp, mcast_port):
         while True:
             xml = self.__get_xml_files(mcast_grp, mcast_port)
-            _msg = "[" + " ".join(sorted(xml)) + "] / [2_0 5_0 6_0]"
+            _msg = "["
+            _msg += "2_0 " if "2_0" in xml else "    "
+            _msg += "5_0 " if "5_0" in xml else "    "
+            _msg += "6_0" if "6_0" in xml else "   "
+            _msg += "] / [2_0 5_0 6_0]"
             if "2_0" in xml and "5_0" in xml and "6_0" in xml:
                 if VERBOSE:
                     log.info(f"Ficheros XML descargados: {_msg}")
@@ -945,8 +958,8 @@ class MulticastIPTV:
             fixed += _fixed
             gaps += _gaps
 
-        gap_msg = f" - Huecos = {str(timedelta(seconds=gaps))}s" if gaps else ""
-        log.info(f"Eventos: Arreglados = {fixed} - Caducados = {expired}{gap_msg}")
+        gap_msg = f" _ Huecos = [{str(timedelta(seconds=gaps))}s]"
+        log.info(f"Eventos en Caché: Arreglados = {fixed} _ Caducados = {expired}{gap_msg}")
 
     def __parse_bin_epg(self):
         merged_epg = {}
@@ -1051,9 +1064,7 @@ class MulticastIPTV:
             cache.save_epg(new_epg)
             return new_epg, False
 
-        log.debug(f"Fecha de caducidad: [{time.ctime(deadline)}] [{deadline}]")
         expired = self.__expire_epg(cached_epg)
-
         self.__merge_epg(cached_epg, expired, fixed, new_epg, new_gaps)
 
         cache.save_epg(cached_epg)
@@ -1445,6 +1456,7 @@ async def tvg_main():
         if not any((args.cloud_recordings, args.local_recordings)):
             _t = str(timedelta(seconds=round(time.time() - time_start)))
             log.info(f"EPG de {len(epg)} canales y {len(xdata['segments'])} días descargada en {_t}s")
+            log.info(f"Fecha de caducidad: [{time.ctime(deadline)}] [{deadline}]")
 
     finally:
         await session.close()
@@ -1483,7 +1495,7 @@ if __name__ == "__main__":
 
     logging.basicConfig(
         datefmt="[%Y-%m-%d %H:%M:%S]",
-        format="%(asctime)s [%(name)s] [%(levelname)s] %(message)s",
+        format="%(asctime)s [%(name)s] [%(levelname)7s] %(message)s",
         level=logging.DEBUG if _conf["DEBUG"] else logging.INFO,
     )
 

@@ -341,13 +341,7 @@ async def handle_archive(request, channel_id, program_id, cloud=False):
     if not RECORDINGS:
         return response.json({"status": "RECORDINGS not configured"}, 404)
 
-    log_suffix = '[%s] [%s] [%s] [%s] "%s"' % (
-        _CHANNELS[channel_id]["name"],
-        channel_id,
-        program_id,
-        timestamp,
-        filename,
-    )
+    log_suffix = f': [{channel_id:4}] [{program_id}] [{timestamp}] "{filename}"'
 
     if not timers_lock.locked() and (not _t_timers or _t_timers.done()):
         _t_timers = app.add_task(timers_check(delay=5))
@@ -355,7 +349,7 @@ async def handle_archive(request, channel_id, program_id, cloud=False):
     recorded = int(request.args.get("recorded", 0))
     if recorded:
         if recorded < 45:
-            log.error(f"Recording WRONG -> RETRY: {log_suffix}")
+            log.error("%-72s%s" % ("Recording WRONG", log_suffix))
             return response.json({"status": "Recording WRONG"}, status=202)
 
         async with recordings_inc_lock:
@@ -366,13 +360,14 @@ async def handle_archive(request, channel_id, program_id, cloud=False):
             _RECORDINGS_INC[channel_id][program_id].append(recorded)
             _t = _RECORDINGS_INC[channel_id][program_id]
 
-        _forced = " FORCED" if len(_t) > 1 and sorted(_t)[-1] - sorted(_t)[-2] < 3 else ""
-        log.error(f"Recording Incomplete -> RETRY{_forced}: {log_suffix}: {_t}")
-        return response.json({"status": "Recording Incomplete RETRY"}, status=202)
+        if len(_t) < 2 or sorted(_t)[-1] - sorted(_t)[-2] >= 3:
+            log.debug("%-20s%52s%s" % ("Recording INCOMPLETE", "[%5ss]" % str(_t[-1]), log_suffix))
+            return response.json({"status": "Recording INCOMPLETE"}, status=202)
 
     if request.method == "OPTIONS":
-        log.debug(f"Recording OK: {log_suffix}")
-        return response.json({"status": "Recording OK"}, status=200)
+        msg = f"Recording {'INCOMPLETE ' if recorded else ''}OK"
+        log.debug("%-72s%s" % (msg, log_suffix))
+        return response.json({"status": msg}, status=200)
 
     log.debug(f"Checking for {filename}")
     if does_recording_exist(filename):
@@ -394,18 +389,16 @@ async def handle_archive(request, channel_id, program_id, cloud=False):
         if not errors:
             async with recordings_inc_lock:
                 if channel_id in _RECORDINGS_INC and program_id in _RECORDINGS_INC[channel_id]:
-                    _t = _RECORDINGS_INC[channel_id][program_id]
-                    if len(_t) > 1 and sorted(_t)[-1] - sorted(_t)[-2] < 3:
-                        errors = f' with issues [{sorted(_t)[-1]}/{nfo["duration"]}]'
                     del _RECORDINGS_INC[channel_id][program_id]
 
             app.add_task(update_recordings(channel_id))
 
-            msg = f"Recording ARCHIVED{errors}: {log_suffix}"
+            msg = "%-72s%s" % ("Recording ARCHIVED" + errors, log_suffix)
+
             log.info(msg)
             return response.json({"status": msg}, ensure_ascii=False)
 
-    msg = f"Recording NOT ARCHIVED{errors}: {log_suffix}"
+    msg = "%-72s%s" % ("Recording NOT ARCHIVED" + errors, log_suffix)
     log.error(msg)
     return response.json({"status": msg}, ensure_ascii=False, status=203)
 
@@ -483,6 +476,8 @@ async def handle_reload_epg(request):
 async def handle_timers_check(request):
     global _t_timers
 
+    delay = int(request.args.get("delay", 0))
+
     if not RECORDINGS:
         return response.json({"status": "RECORDINGS not configured"}, 404)
 
@@ -492,7 +487,7 @@ async def handle_timers_check(request):
     if timers_lock.locked() or (_t_timers and not _t_timers.done()):
         raise ServiceUnavailable("Already processing timers")
 
-    _t_timers = app.add_task(timers_check())
+    _t_timers = app.add_task(timers_check(delay=delay))
 
     return response.json({"status": "Timers check queued"}, 200)
 
@@ -502,16 +497,13 @@ async def kill_vod():
     if not vods:
         return
 
-    try:
-        vod = vods[-1]
-        proc = vod.children()[0]
-    except IndexError:
-        await asyncio.sleep(1)
-        return await kill_vod()
-
-    ffmpeg = " ".join(proc.cmdline()).split(RECORDINGS)[1][1:-4]
-    log.warning(f'KILLING ffmpeg [{proc.pid}] "{ffmpeg}"')
-    vod.terminate()
+    proc = vods[-1]
+    proc.terminate()
+    r = re.search(r"_vod.+  ?(\d+) (\d+) -b (\d+) -p .+ -o (.+) -t .+$", " ".join(proc.cmdline()).strip())
+    if r and r.groups():
+        channel_id, pid, timestamp, filename = r.groups()
+        log_suffix = f': [{channel_id:4}] [{pid}] [{timestamp}] "{filename}"'
+    log.warning("%-72s%s" % ("Recording KILLED", log_suffix if r and r.groups() else f": [{proc.pid}]"))
 
 
 async def log_network_saturated(nr_procs=None, _wait=False):
@@ -601,9 +593,10 @@ async def prom_event(request, method):
     if local and method == "remove":
         return
 
-    msg = f'{request.json["msg"]} [{_event["channel"]}] [{request.json["channel_id"]}] '
+    pad = " " if request.json["channel_id"] < 1000 else ""
+    msg = f'{request.json["msg"]}{pad} [{request.json["channel_id"]:4}] '
     msg += f'[{_event["program_id"]}] ' if not local else ""
-    msg += f'[{_event["start"]}] "{_epg["full_title"]}" _ {offset}'
+    msg += f'[{_event["start"]}] [{_event["channel"]}] "{_epg["full_title"]}" _ {offset}'
 
     log.info(msg)
 
@@ -675,34 +668,34 @@ async def record_program(channel_id, pid, offset=0, time=0, cloud=False, comskip
 
     ongoing = await ongoing_vods(filename=filename, _all=True)
     if ongoing:
+        log_suffix = f': [{channel_id:4}] [{pid}] [{timestamp}] "{filename}"'
         if f"{channel_id} {pid} -b {timestamp} " in ongoing or f"{channel_id} {pid} -b " not in ongoing:
-            msg = f'Recording already ongoing: [{channel_id}] [{pid}] [{timestamp}] -> "{filename}"'
-            if f"{channel_id} {pid} -b " not in ongoing:
-                msg = msg.replace("ongoing", "ongoing, REPEATED EVENT")
+            if f"{channel_id} {pid} -b " in ongoing:
+                msg = "%-72s%s" % ("Recording ONGOING", log_suffix)
+            else:
+                msg = "%-72s%s" % ("Found REPEATED EVENT", log_suffix)
             log.warning(msg)
-            return msg
+            return re.sub(r"\s+:", ":", msg)
 
         r = re.search(f" {channel_id} {pid} -b " + r"(\d+) -p", ongoing)
         prev_ts = int(r.groups()[0])
+        begin_time = f"beginTime=[{timestamp - prev_ts:+}s]"
         if timestamp < prev_ts:
-            log.warning(
-                "Event CHANGED => Cancelling ongoing recording: "
-                f'[{channel_id}] [{pid}] [{timestamp}] "{filename}"'
-            )
+            log.warning("%-22s%50s%s" % ("Event CHANGED => KILL", begin_time, log_suffix))
             ongoing = await ongoing_vods(channel_id, pid, filename)
             ongoing[0].terminate()
             await asyncio.sleep(5)
         elif timestamp > prev_ts:
-            msg = f'Event DELAYED => VOD will fix it: [{channel_id}] [{pid}] [{timestamp}] "{filename}"'
+            msg = "%-22s%50s%s" % ("Event DELAYED", begin_time, log_suffix)
             log.debug(msg)
-            return msg
+            return re.sub(r"\s+:", ":", msg)
 
     if _NETWORK_SATURATION:
         return await log_network_saturated()
 
     port = find_free_port(_IPTV)
     cmd = [sys.executable] if EXT == ".py" else []
-    cmd += [f"movistar_vod{EXT}", str(channel_id), str(pid), "-b", str(timestamp), "-p", str(port), "-w"]
+    cmd += [f"movistar_vod{EXT}", f"{channel_id:4}", str(pid), "-b", str(timestamp), "-p", f"{port:5}", "-w"]
     cmd += ["-o", filename]
     cmd += ["-s", str(offset)] if offset else []
     cmd += ["-t", str(time)] if time else []
@@ -710,12 +703,6 @@ async def record_program(channel_id, pid, offset=0, time=0, cloud=False, comskip
     cmd += ["--comskip"] if comskip == 1 else ["--comskipcut"] if comskip == 2 else []
     cmd += ["--mkv"] if mkv else []
     cmd += ["--vo"] if vo else []
-
-    async with recordings_inc_lock:
-        if channel_id in _RECORDINGS_INC and pid in _RECORDINGS_INC[channel_id]:
-            _t = _RECORDINGS_INC[channel_id][pid]
-            if len(_t) > 1 and sorted(_t)[-1] - sorted(_t)[-2] < 3:
-                cmd += ["--force"]
 
     log.debug('Launching: "%s"' % " ".join(cmd))
     process = await asyncio.create_subprocess_exec(*cmd)
@@ -815,9 +802,9 @@ async def reload_epg():
             remove(epg_data)
             return await reload_epg()
 
-        log.info(f"Channels & EPG Updated => {U7D_URL}/MovistarTV.m3u - {U7D_URL}/guide.xml.gz")
+        log.info(f"Channels  &  EPG Updated => {U7D_URL}/MovistarTV.m3u      - {U7D_URL}/guide.xml.gz")
         nr_epg = sum((len(_EPGDATA[channel]) for channel in _EPGDATA))
-        log.info(f"Total: {len(_EPGDATA)} Channels & {nr_epg} EPG entries")
+        log.info(f"Total: {len(_EPGDATA):2} Channels & {nr_epg:5} EPG entries")
 
         await update_cloud()
 
@@ -844,8 +831,8 @@ async def timers_check(delay=0):
         return filter(lambda ts: channel_id not in recs or ts not in recs[channel_id], timestamps)
 
     async def _record(cloud=False):
-        nonlocal channel_id, channel_name, comskip, keep, kept, nr_procs
-        nonlocal ongoing, queued, recs, repeat, timer_match, timestamp, vo
+        nonlocal channel_id, comskip, keep, kept, nr_procs, ongoing
+        nonlocal queued, recs, repeat, timer_match, timestamp, vo
 
         filename = get_recording_name(channel_id, timestamp, cloud)
         program = get_program_name(filename)
@@ -869,8 +856,11 @@ async def timers_check(delay=0):
 
         if channel_id in recs:
             r = list(filter(lambda event: recs[channel_id][event]["filename"] == filename, recs[channel_id]))
-            if r and (not repeat or timestamp < r[0]):
-                return  # only repeat a recording when asked to and it's more recent than the archived
+            # only repeat a recording when title changed
+            if r and not len(filename) > len(recs[channel_id][r[0]]["filename"]):
+                # or asked to and new event is more recent than the archived
+                if not repeat or timestamp <= r[0]:
+                    return
 
         if cloud or re.search(_clean(timer_match), _clean(title), re.IGNORECASE):
             _time = 0 if cloud else duration
@@ -878,15 +868,14 @@ async def timers_check(delay=0):
             if timestamp + 30 > now:
                 next_timers.append((title, timestamp))
                 return
+            log_suffix = f': [{channel_id:4}] [{pid}] [{timestamp}] "{filename}"'
+            if 0 < _time < 300:
+                log.debug("%-22s%50s%s" % ("Skipping MATCH", f"Too short [{_time}s]", log_suffix))
+                return
             if await record_program(channel_id, pid, 0, _time, cloud, comskip, MKV_OUTPUT, vo):
                 return
 
-            log.info(
-                f"Found {'Cloud Recording' if cloud else 'MATCH'}"
-                f"{' [COMSKIP]' if comskip else ''}"
-                f"{' [VO]' if vo else ''}"
-                f': [{channel_name}] [{channel_id}] [{pid}] [{timestamp}] "{filename}"'
-            )
+            log.info("%-72s%s" % (f"Found {'Cloud ' if cloud else ''}EPG MATCH", log_suffix))
 
             queued.append((channel_id, timestamp))
             await asyncio.sleep(2.5 if not WIN32 else 4)
@@ -905,7 +894,7 @@ async def timers_check(delay=0):
             await epg_lock.acquire()
             epg_lock.release()
 
-        log.info("Processing timers")
+        log.debug("Processing timers")
         try:
             async with aiofiles.open(timers, encoding="utf8") as f:
                 try:
@@ -994,7 +983,7 @@ async def timers_check(delay=0):
                                 break
                     timestamps = found_ts
 
-                log.debug(f"Checking timer: [{channel_name}] [{channel_id}] [{_clean(timer_match)}]")
+                log.debug("Checking timer: [%s] [%d] [%s]" % (channel_name, channel_id, _clean(timer_match)))
                 for timestamp in _filter_recorded(timestamps):
                     if await _record():
                         return _exit()
@@ -1016,9 +1005,8 @@ async def update_cloud():
         async with aiofiles.open(cloud_data, encoding="utf8") as f:
             clouddata = ujson.loads(await f.read())["data"]
 
-        int_clouddata = {}
+        int_clouddata = defaultdict(dict)
         for channel in clouddata:
-            int_clouddata[int(channel)] = {}
             for timestamp in clouddata[channel]:
                 int_clouddata[int(channel)][int(timestamp)] = clouddata[channel][timestamp]
         _CLOUD = int_clouddata
@@ -1057,13 +1045,10 @@ async def update_cloud():
             "serie_id": data.get("seriesID"),
         }
 
-    new_cloud = {}
+    new_cloud = defaultdict(dict)
     for _event in cloud_recordings:
         channel_id = _event["serviceUID"]
         timestamp = int(_event["beginTime"] / 1000)
-
-        if channel_id not in new_cloud:
-            new_cloud[channel_id] = {}
 
         if timestamp not in new_cloud[channel_id]:
             if channel_id in _EPGDATA and timestamp in _EPGDATA[channel_id]:
@@ -1121,7 +1106,7 @@ async def update_cloud():
 
     log.info(f"Cloud Recordings Updated => {U7D_URL}/MovistarTVCloud.m3u - {U7D_URL}/cloud.xml")
     nr_epg = sum((len(_CLOUD[channel]) for channel in _CLOUD))
-    log.info(f"Total: {len(_CLOUD)} Channels & {nr_epg} EPG entries")
+    log.info(f"Total: {len(_CLOUD):2} Channels & {nr_epg:5} EPG entries")
 
 
 async def update_epg(abort_on_error=False):
@@ -1168,7 +1153,7 @@ async def update_epg_local():
 
     log.info(f"Local Recordings Updated => {U7D_URL}/MovistarTVLocal.m3u - {U7D_URL}/local.xml")
     nr_epg = sum((len(_RECORDINGS[channel]) for channel in _RECORDINGS))
-    log.info(f"Total: {len(_RECORDINGS)} Channels & {nr_epg} EPG entries")
+    log.info(f"Total: {len(_RECORDINGS):2} Channels & {nr_epg:5} EPG entries")
 
 
 async def update_recordings(archive=False):
@@ -1372,7 +1357,7 @@ if __name__ == "__main__":
 
     logging.basicConfig(
         datefmt="%Y-%m-%d %H:%M:%S",
-        format="[%(asctime)s] [%(name)s] [%(levelname)s] %(message)s",
+        format="[%(asctime)s] [%(name)s] [%(levelname)7s] %(message)s",
         level=logging.DEBUG if _conf["DEBUG"] else logging.INFO,
     )
 

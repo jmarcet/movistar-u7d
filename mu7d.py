@@ -252,7 +252,7 @@ def mu7d_config():
     if "NO_VERBOSE_LOGS" not in conf:
         conf["NO_VERBOSE_LOGS"] = False
 
-    if "RECORDINGS" not in conf or not all((which("ffmpeg"), which("ffprobe"), which("mkvmerge"))):
+    if "RECORDINGS" not in conf or not all((which("ffmpeg"), which("ffprobe"))):
         conf["RECORDINGS"] = conf["RECORDINGS_M3U"] = None
     else:
         conf["RECORDINGS"] = conf["RECORDINGS"].rstrip("/").rstrip("\\")
@@ -265,6 +265,16 @@ def mu7d_config():
 
     if "RECORDINGS_REINDEX" not in conf:
         conf["RECORDINGS_REINDEX"] = False
+
+    if "RECORDINGS_TRANSCODE_INPUT" not in conf:
+        conf["RECORDINGS_TRANSCODE_INPUT"] = []
+    else:
+        conf["RECORDINGS_TRANSCODE_INPUT"] = conf["RECORDINGS_TRANSCODE_INPUT"].split()
+
+    if "RECORDINGS_TRANSCODE_OUTPUT" not in conf:
+        conf["RECORDINGS_TRANSCODE_OUTPUT"] = "-c copy -c:a:0 libfdk_aac -c:a:1 libfdk_aac -b:a 128k"
+        conf["RECORDINGS_TRANSCODE_OUTPUT"] += f" -packetsize {CHUNK} -ts_packetsize {CHUNK} -seek2any 1"
+    conf["RECORDINGS_TRANSCODE_OUTPUT"] = conf["RECORDINGS_TRANSCODE_OUTPUT"].split()
 
     if "RECORDINGS_TMP" not in conf:
         conf["RECORDINGS_TMP"] = None
@@ -305,21 +315,17 @@ async def ongoing_vods(channel_id="", program_id="", filename="", _all=False, _f
     family = psutil.Process(int(parent)).children(recursive=True) if parent else psutil.process_iter()
 
     if _fast:  # For U7D we just want to know if there are recordings in place
-        return "ffmpeg" in str(family)
+        return "movistar_vod RE" in str(family)
 
-    regex = "(comskip|ffmpeg|mkvmerge|movistar_vod).*" if filename and not program_id else "movistar_vod.*"
-    regex += "(" if program_id and filename else ""
-    regex += f" {channel_id} {program_id}" if program_id else ""
-    regex += "|" if program_id and filename else ""
+    regex = "movistar_vod REC" if not _all and not WIN32 else "movistar_vod.*"
+    regex += "(" if filename and program_id else ""
+    regex += f" {channel_id:4} {program_id}" if program_id else ""
+    regex += "|" if filename and program_id else ""
     regex += " .+%s" % filename.replace("\\", "\\\\") if filename else ""
-    regex += ")" if program_id and filename else ""
+    regex += ")" if filename and program_id else ""
 
     vods = list(filter(None, [proc_grep(proc, regex) for proc in family]))
-    if not _all:
-        if filename and not program_id:
-            return vods
-        return [proc for proc in vods if "ffmpeg" in str(proc.children())]
-    return "|".join([" ".join(proc.cmdline()).strip() for proc in vods])
+    return vods if not _all else "|".join([" ".join(proc.cmdline()).strip() for proc in vods])
 
 
 def proc_grep(proc, regex):
@@ -492,7 +498,7 @@ if __name__ == "__main__":
 
     logging.basicConfig(
         datefmt="%Y-%m-%d %H:%M:%S",
-        format="[%(asctime)s] [%(name)s] [%(levelname)s] %(message)s",
+        format="[%(asctime)s] [%(name)s] [%(levelname)7s] %(message)s",
         level=logging.DEBUG if _conf["DEBUG"] else logging.INFO,
     )
     logging.getLogger("asyncio").setLevel(logging.DEBUG if _conf["DEBUG"] else logging.FATAL)

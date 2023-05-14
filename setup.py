@@ -1,4 +1,4 @@
-from cx_Freeze import Executable, setup
+from cx_Freeze import Executable, setup  # pylint: disable=import-error
 
 import sanic
 
@@ -7,7 +7,7 @@ from mu7d import _version
 
 build_exe_options = {
     "include_files": sanic.__path__
-    + ["comskip.ini", "mu7d.conf", "ffmpeg.exe", "mkvmerge.exe", "timers.conf"],
+    + ["comskip.ini", "mu7d.conf", "timers.conf", "ffmpeg.exe", "ffprobe.exe"],
     "excludes": ["test", "tkinter", "unittest"],
     "optimize": 2,
 }

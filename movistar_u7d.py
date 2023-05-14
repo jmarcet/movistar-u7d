@@ -78,7 +78,6 @@ async def before_server_start(app, loop):
 
     if IPTV_BW_SOFT:
         app.add_task(network_saturated())
-        log.info(f"BW: {IPTV_BW_SOFT}-{IPTV_BW_HARD} kbps / {IPTV_IFACE}")
 
     _IPTV = get_iptv_ip()
 
@@ -101,6 +100,9 @@ async def after_server_start(app, loop):
         log.info("-" * len(banner))
         log.info(banner)
         log.info("-" * len(banner))
+
+    if IPTV_BW_SOFT:
+        log.info(f"BW: {IPTV_BW_SOFT}-{IPTV_BW_HARD} kbps / {IPTV_IFACE}")
 
 
 @app.listener("before_server_stop")
@@ -140,7 +142,6 @@ async def handle_channel(request, channel_id=None, channel_name=None):
     try:
         name, mc_grp, mc_port = [_CHANNELS[channel_id][t] for t in ["name", "address", "port"]]
     except (AttributeError, KeyError):
-        log.error(f"{_raw_url} not found")
         raise NotFound(f"Requested URL {_raw_url} not found")
 
     if request.method == "HEAD":
@@ -215,7 +216,6 @@ async def handle_flussonic(request, url, channel_id=None, channel_name=None, clo
         async with _SESSION.get(f"{EPG_URL}/program_id/{channel_id}/{url}", params=params) as r:
             _, program_id, _, duration, offset = (await r.json()).values()
     except (AttributeError, KeyError, ValueError, ClientOSError, ServerDisconnectedError):
-        log.error(f"{_raw_url} not found {channel_id=} {url=} {cloud=} {local=}")
         raise NotFound(f"Requested URL {_raw_url} not found")
 
     if request.method == "HEAD":
@@ -247,7 +247,6 @@ async def handle_flussonic(request, url, channel_id=None, channel_name=None, clo
             else:
                 return await transcode(request, event=event, filename=program_id, offset=offset)
         else:
-            log.error(f"{_raw_url} not found {channel_id=} {url=} {cloud=} {local=}")
             raise NotFound(f"Requested URL {_raw_url} not found")
 
     if _NETWORK_SATURATED and not await ongoing_vods(_fast=True):
@@ -299,7 +298,7 @@ async def handle_flussonic_local(request, url, channel_id=None, channel_name=Non
 async def handle_guide(request):
     if not os.path.exists(GUIDE):
         raise NotFound(f"Requested URL {request.raw_url.decode()} not found")
-    log.info(f'[{request.ip}] {request.method} {request.url} => "{GUIDE}"')
+    log.info(f'[{request.ip}] {request.method} {request.url}{" " * 10} => "{GUIDE}"')
     return await response.file(GUIDE)
 
 
@@ -308,7 +307,7 @@ async def handle_guide(request):
 async def handle_guide_cloud(request):
     if not os.path.exists(GUIDE_CLOUD):
         raise NotFound(f"Requested URL {request.raw_url.decode()} not found")
-    log.info(f'[{request.ip}] {request.method} {request.url} => "{GUIDE_CLOUD}"')
+    log.info(f'[{request.ip}] {request.method} {request.url}{" " * 10} => "{GUIDE_CLOUD}"')
     return await response.file(GUIDE_CLOUD)
 
 
@@ -317,7 +316,7 @@ async def handle_guide_cloud(request):
 async def handle_guide_gz(request):
     if not os.path.exists(GUIDE + ".gz"):
         raise NotFound(f"Requested URL {request.raw_url.decode()} not found")
-    log.info(f'[{request.ip}] {request.method} {request.url} => "{GUIDE}.gz"')
+    log.info(f'[{request.ip}] {request.method} {request.url}{" " * 7} => "{GUIDE}.gz"')
     return await response.file(GUIDE + ".gz")
 
 
@@ -325,7 +324,7 @@ async def handle_guide_gz(request):
 async def handle_guide_local(request):
     if not os.path.exists(GUIDE_LOCAL):
         raise NotFound(f"Requested URL {request.raw_url.decode()} not found")
-    log.info(f'[{request.ip}] {request.method} {request.url} => "{GUIDE_LOCAL}"')
+    log.info(f'[{request.ip}] {request.method} {request.url}{" " * 10} => "{GUIDE_LOCAL}"')
     return await response.file(GUIDE_LOCAL)
 
 
@@ -359,15 +358,17 @@ async def handle_logos(request, cover=None, logo=None, path=None):
 
 @app.get(r"/<m3u_file:([A-Za-z1-9]+)\.m3u$>")
 async def handle_m3u_files(request, m3u_file):
-    m3u, m3u_matched = m3u_file.lower(), None
+    m3u, m3u_matched, pad = m3u_file.lower(), None, ""
     if m3u in ("movistartv", "canales", "channels"):
         m3u_matched = CHANNELS
+        pad = " " * 5
     elif m3u in ("movistartvcloud", "cloud", "nube"):
         m3u_matched = CHANNELS_CLOUD
     elif m3u in ("movistartvlocal", "local"):
         m3u_matched = CHANNELS_LOCAL
     elif m3u in ("grabaciones", "recordings"):
         m3u_matched = os.path.join(RECORDINGS, "Recordings.m3u")
+        pad = " " * 5
     elif RECORDINGS_PER_CHANNEL:
         try:
             channel_id = get_channel_id(m3u)
@@ -377,10 +378,9 @@ async def handle_m3u_files(request, m3u_file):
             pass
 
     if m3u_matched and os.path.exists(m3u_matched):
-        log.info(f'[{request.ip}] {request.method} {request.url} => "{m3u_matched}"')
+        log.info(f'[{request.ip}] {request.method} {request.url}{pad} => "{m3u_matched}"')
         return await response.file(m3u_matched, mime_type=MIME_M3U)
 
-    log.warning(f"[{request.ip}] {request.method}: {request.url} => Not Found")
     raise NotFound(f"Requested URL {request.raw_url.decode()} not found")
 
 
@@ -488,6 +488,7 @@ async def network_saturated():
 
 
 async def send_prom_event(event):
+    await asyncio.sleep(0.05)
     event["msg"] += f" [{event['lat']:.4f}s]" if event["lat"] else ""
 
     try:
@@ -506,16 +507,17 @@ async def send_prom_event(event):
 async def transcode(request, channel_id=None, port=None, event=None, vod=None, filename=None, offset=None):
     if filename:
         cmd = ["ffmpeg", "-ss", f"{offset}", "-i", filename, "-map", "0", "-c", "copy", "-dn"]
-        cmd += ["-f", "mpegts", "-mpegts_flags", "+system_b", "-vsync", "passthrough"]
+        cmd += ["-f", "mpegts"]
 
     else:
-        channel = 2 if request.args.get("vo") == "1" and channel_id not in (4990, 5029, 5104) else 1
-        cmd = ["ffmpeg", "-fifo_size", "5572", "-pkt_size", f"{CHUNK}", "-probesize", "131072"]
+        channel = 2 if request.args.get("vo") == "1" else 1
+        cmd = ["ffmpeg"]
+        cmd += ["-skip_initial_bytes", f"{CHUNK}"] if " HD" not in _CHANNELS[channel_id]["name"] else []
         cmd += ["-i", f"udp://@{_IPTV}:{port}"]
-        cmd += ["-map", "0:0", "-map", f"0:{channel}", "-c:v:0", "copy", "-c:a:0", "aac"]
-        cmd += ["-f", "matroska", "-live", "1", "-vsync", "passthrough"]
+        cmd += ["-map", "0:0", "-map", f"0:{channel}", "-c:v:0", "copy", "-c:a:0", "libfdk_aac"]
+        cmd += ["-b:a", "128k", "-f", "matroska", "-live", "1"]
 
-    cmd += ["-v", "error", "-"]
+    cmd += ["-v", "fatal", "-"]
 
     proc = await asyncio.create_subprocess_exec(*cmd, stdin=DEVNULL, stdout=PIPE)
     _response = await request.respond(content_type=MIME_WEBM)
@@ -570,7 +572,7 @@ if __name__ == "__main__":
 
     logging.basicConfig(
         datefmt="%Y-%m-%d %H:%M:%S",
-        format="[%(asctime)s] [%(name)s] [%(levelname)s] %(message)s",
+        format="[%(asctime)s] [%(name)s] [%(levelname)7s] %(message)s",
         level=logging.DEBUG if _conf["DEBUG"] else logging.INFO,
     )
 
