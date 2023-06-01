@@ -19,9 +19,9 @@ from contextlib import closing
 from datetime import datetime
 from filelock import FileLock, Timeout
 from glob import glob
+from html import unescape
 from shutil import which
 from time import sleep
-from xml.sax.saxutils import unescape  # nosec B406
 
 
 _version = "6.0alpha"

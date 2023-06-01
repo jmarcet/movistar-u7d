@@ -26,6 +26,7 @@ from collections import defaultdict
 from contextlib import closing
 from datetime import date, datetime, timedelta
 from filelock import FileLock, Timeout
+from html import unescape
 from queue import Queue
 from xml.dom import minidom  # nosec B408
 from xml.etree.ElementTree import Element, ElementTree, SubElement  # nosec B405
@@ -322,6 +323,7 @@ class Cache:
 
     @staticmethod
     def __save(cfile, data):
+        data = json.loads(unescape(json.dumps(data)))
         with open(os.path.join(cache_dir, cfile), "w", encoding="utf8") as f:
             try:
                 json.dump({"data": data}, f, ensure_ascii=False, indent=4, sort_keys=True)
@@ -449,7 +451,7 @@ class Cache:
         self.__save("epg.json", data)
 
     def save_epg_extended_info(self, data):
-        self.__programs[data["productID"]] = data
+        self.__programs[data["productID"]] = json.loads(unescape(json.dumps(data)))
         self.__save(os.path.join("programs", f'{data["productID"]}.json'), data)
 
     def save_epg_metadata(self, data):
@@ -593,7 +595,7 @@ class MulticastIPTV:
 
     def __decode_string(self, string):
         _t = ("".join(chr(char ^ 0x15) for char in string)).encode("latin1").decode("utf8")
-        return _t.replace("&quot;", "«", 1).replace("&quot;", "»", 1)
+        return unescape(_t)
 
     def __expire_epg(self, epg):
         expired = 0
