@@ -836,8 +836,8 @@ async def timers_check(delay=0):
             title, ts = sorted(next_timers, key=lambda x: x[1])[0]
             if not _t_timers_next or _t_timers_next.get_name() != f"{ts}":
                 log.info(f'Adding timers_check() @ {datetime.fromtimestamp(ts + 30)} "{title}"')
-                now = round(datetime.now().timestamp())
-                _t_timers_next = app.add_task(timers_check(delay=ts + 30 - now), name=f"{ts}")
+                delay = ts + 30 - datetime.now().timestamp()
+                _t_timers_next = app.add_task(timers_check(delay=delay), name=f"{ts}")
 
     def _filter_recorded(timestamps):
         nonlocal channel_id, recs
