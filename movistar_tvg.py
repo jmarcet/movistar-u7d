@@ -626,12 +626,13 @@ class MulticastIPTV:
             expired += len(_expired)
         return expired
 
-    def __find_gaps(self, epg, channel, sorted_channel, new_epg=None, new_gaps=None):
+    def __fix_edges(self, epg, channel, sorted_channel, new_epg=None, new_gaps=None):
         drop = defaultdict(list)
-        gaps = fixed = 0
+        fixed = gaps = 0
         is_new_epg = new_gaps is not None
-        name = "New EPG" if is_new_epg else "Cached EPG"
+        name = "New EPG   " if is_new_epg else "Cached EPG"
         now = int(datetime.now().timestamp())
+        chan = f"[{channel:4}] "
 
         for i in range(len(sorted_channel) - 1):
             ts = sorted_channel[i]
@@ -640,27 +641,31 @@ class MulticastIPTV:
             __ts, __end, __next = map(time.ctime, (ts, _end, _next))
 
             if _end < _next:
-                msg = f"[{channel}] {name} GAP [{ts}] FROM:[{__end}] [{_end}] - TO:[{__next}] [{_next}]"
+                msg = f"{chan}{name} GAP     ->  END:[{__end}] [{_end}] - TO:[{__next}] [{_next}]"
                 if is_new_epg:
                     log.debug(msg)
                     new_gaps[channel].append((_end, _next))
                 elif ts < now:
-                    gaps += _next - _end
-                    log.error(msg)
+                    if _next - ts < 1500:
+                        epg[channel][ts]["end"] = _next
+                        epg[channel][ts]["duration"] = _next - ts
+                        log.warning(msg.replace(" GAP    ", " EXTEND "))
+                        fixed += 1
+                    else:
+                        log.warning(msg)
+                        gaps += _next - _end
 
             elif _end > _next:
-                if (epg[channel][ts]["full_title"] == epg[channel][_next]["full_title"] or ts < now) and (
-                    new_epg and ts not in new_epg[channel] and _next - ts < 900
-                ):
-                    drop[channel].append(ts)
-                    gaps += _next - ts
-                    msg = f"[{channel}] {name} DROP -> GAP FROM:[{__ts}] [{ts}] - TO:[{__next}] [{_next}]"
-                else:
+                if ts < now:
                     epg[channel][ts]["end"] = _next
                     epg[channel][ts]["duration"] = _next - ts
-                    msg = f"[{channel}] {name} SHORTENED [{ts}] end=[{__end}] [{_end}] > [{__next}] [{_next}]"
-                log.debug(msg) if ts > now else log.warning(msg)
-                fixed += 1
+                    msg = f"{chan}{name} SHORTEN ->  END:[{__end}] [{_end}] - TO:[{__next}] [{_next}]"
+                    log.warning(msg)
+                    fixed += 1
+                else:
+                    drop[channel].append(ts)
+                    msg = f"{chan}{name} DROP    -> FROM:[{__ts}] [{ts}] - TO:[{__next}] [{_next}]"
+                    log.debug(msg)
 
         for channel_id in drop:
             for ts in drop[channel_id]:
@@ -673,7 +678,10 @@ class MulticastIPTV:
         new_gaps = defaultdict(list)
         for channel in sorted(epg):
             _new = sorted(epg[channel])
-            log.debug(f"[{channel}] New EPG FROM:[{time.ctime(_new[0])}] - TO:[{time.ctime(_new[-1])}]")
+            msg = f"[{channel:4}] New EPG            -> FROM:[{time.ctime(_new[0])}] [{_new[0]}] - "
+            msg += f"TO:[{time.ctime(_new[-1])}] [{_new[-1]}]"
+
+            log.debug(msg)
 
             for ts in sorted(epg[channel]):
                 _duration = epg[channel][ts]["duration"]
@@ -681,12 +689,13 @@ class MulticastIPTV:
 
                 if _duration != _end - ts:
                     epg[channel][ts]["duration"] = _end - ts
-                    log.warning(
-                        f"[{channel}] New EPG WRONG DURATION [{ts}] duration={_duration} -> {_end - ts}"
-                    )
+                    msg = f"New EPG    WRONG  -> FROM:[{time.ctime(ts)}] [{ts}] - "
+                    msg += f"TO:[{time.ctime(ts + _duration)}] [{ts + _duration}] > "
+                    msg += f"[{time.ctime(_end)}] [{_end}]"
+                    log.warning(msg)
                     fixed_diff += 1
 
-            fixed_over += self.__find_gaps(epg, channel, _new, new_gaps=new_gaps)[0]
+            fixed_over += self.__fix_edges(epg, channel, _new, new_gaps=new_gaps)[0]
 
         if fixed_diff or fixed_over:
             log.warning("El nuevo EPG contenía errores")
@@ -954,12 +963,13 @@ class MulticastIPTV:
         gaps = 0
         for channel in sorted(epg):
             sorted_channel = sorted(epg[channel])
-            _fixed, _gaps = self.__find_gaps(epg, channel, sorted_channel, new_epg=new_epg)
+            _fixed, _gaps = self.__fix_edges(epg, channel, sorted_channel, new_epg=new_epg)
             fixed += _fixed
             gaps += _gaps
 
-        gap_msg = f" _ Huecos = [{str(timedelta(seconds=gaps))}s]"
-        log.info(f"Eventos en Caché: Arreglados = {fixed} _ Caducados = {expired}{gap_msg}")
+        gaps_msg = f" _ Huecos = [{str(timedelta(seconds=gaps))}s]" if gaps else ""
+        msg = f"Eventos en Caché: Arreglados = {fixed} _ Caducados = {expired}{gaps_msg}"
+        log.info(msg)
 
     def __parse_bin_epg(self):
         merged_epg = {}
