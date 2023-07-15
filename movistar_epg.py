@@ -221,6 +221,9 @@ def get_path(filename, bare=False):
 
 
 def get_program_id(channel_id, url=None, cloud=False, local=False):
+    if channel_id not in _CHANNELS:
+        return
+
     if not url:
         start = int(time.time())
     elif len(url) == 10:

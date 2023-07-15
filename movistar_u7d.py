@@ -131,10 +131,12 @@ async def handle_channel(request, channel_id=None, channel_name=None):
     _start = time.time()
     _raw_url = request.raw_url.decode()
     _u7d_url = (U7D_URL + _raw_url) if not NO_VERBOSE_LOGS else ""
+
     if channel_name:
         channel_id = get_channel_id(channel_name)
-        if not channel_id:
-            raise NotFound(f"Requested URL {_raw_url} not found")
+
+    if channel_id not in _CHANNELS:
+        raise NotFound(f"Requested URL {_raw_url} not found")
 
     if " Chrome/" in request.headers.get("user-agent"):
         return await handle_flussonic(request, f"{int(datetime.now().timestamp())}.ts", channel_id)
@@ -197,8 +199,9 @@ async def handle_flussonic(request, url, channel_id=None, channel_name=None, clo
 
     if channel_name:
         channel_id = get_channel_id(channel_name)
-        if not channel_id:
-            raise NotFound(f"Requested URL {_raw_url} not found")
+
+    if channel_id not in _CHANNELS:
+        raise NotFound(f"Requested URL {_raw_url} not found")
 
     event = {
         "channel_id": channel_id,
