@@ -933,7 +933,7 @@ async def timers_check(delay=0):
 
             for timer_match in _timers["match"][str_channel_id]:
                 comskip = 2 if _timers.get("comskipcut") else 1 if _timers.get("comskip") else 0
-                fixed_timer, keep, repeat = 0, False, False
+                days = fixed_timer = keep = repeat = None
                 lang = deflang
                 if " ## " in timer_match:
                     match_split = timer_match.split(" ## ")
@@ -941,16 +941,20 @@ async def timers_check(delay=0):
                     for res in [res.lower().strip() for res in match_split[1:]]:
                         if res[0].isnumeric():
                             try:
-                                hour, minute = [int(t) for t in res.split(":")]
+                                hour, minute = map(int, res.split(":"))
                                 _ts = datetime.now().replace(hour=hour, minute=minute, second=0).timestamp()
                                 fixed_timer = int(_ts)
                                 log.debug(
-                                    f'[{channel_name}] "{timer_match}" {hour:02}:{minute:02} {fixed_timer}'
+                                    '[%s] "%s" %02d:%02d %d'
+                                    % (channel_name, timer_match, hour, minute, fixed_timer)
                                 )
                             except ValueError:
                                 log.warning(
                                     f'Failed to parse [{channel_name}] "{timer_match}" [{res}] correctly'
                                 )
+
+                        elif res[0] == "@":
+                            days = dict(map(lambda x: (x[0], x[1] == "x"), enumerate(res[1:8], start=1)))
 
                         elif res == "comskip":
                             comskip = 1
@@ -970,24 +974,29 @@ async def timers_check(delay=0):
 
                         else:
                             lang = res
-                vo = lang == "VO"
 
-                timestamps = [ts for ts in sorted(_EPGDATA[channel_id]) if ts <= _last_epg + 3600]
+                vo = lang == "VO"
+                tss = filter(lambda ts: ts <= _last_epg + 3600, sorted(_EPGDATA[channel_id]))
+
                 if fixed_timer:
                     # fixed timers are checked daily, so we want today's and all of last week
                     fixed_timestamps = [fixed_timer] if fixed_timer <= _last_epg + 3600 else []
                     fixed_timestamps += [fixed_timer - i * 24 * 3600 for i in range(1, 8)]
 
                     found_ts = []
-                    for ts in timestamps:
+                    for ts in tss:
                         for fixed_ts in fixed_timestamps:
                             if abs(ts - fixed_ts) <= 1500:
-                                found_ts.append(ts)
+                                if not days or days.get(datetime.fromtimestamp(ts).isoweekday()):
+                                    found_ts.append(ts)
                                 break
-                    timestamps = found_ts
+                    tss = found_ts
+
+                elif days:
+                    tss = filter(lambda ts: days.get(datetime.fromtimestamp(ts).isoweekday()), tss)
 
                 log.debug("Checking timer: [%s] [%d] [%s]" % (channel_name, channel_id, _clean(timer_match)))
-                for timestamp in _filter_recorded(timestamps):
+                for timestamp in _filter_recorded(tss):
                     if await _record():
                         return _exit()
 
