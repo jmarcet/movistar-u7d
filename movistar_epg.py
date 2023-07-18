@@ -328,6 +328,14 @@ def get_recording_name(channel_id, timestamp, cloud=False):
     return filename[len(RECORDINGS) + 1 :]
 
 
+def get_siblings(channel_id, filename):
+    return [
+        ts
+        for ts in sorted(_RECORDINGS[channel_id])
+        if os.path.split(_RECORDINGS[channel_id][ts]["filename"])[0] == os.path.split(filename)[0]
+    ]
+
+
 @app.route("/archive/<channel_id:int>/<program_id:int>", methods=["OPTIONS", "PUT"])
 async def handle_archive(request, channel_id, program_id, cloud=False):
     global _t_timers
@@ -621,11 +629,7 @@ def prune_expired(channel_id, filename):
     if program not in _KEEP[channel_id]:
         return
 
-    siblings = [
-        ts
-        for ts in sorted(_RECORDINGS[channel_id])
-        if os.path.split(_RECORDINGS[channel_id][ts]["filename"])[0] == os.path.split(filename)[0]
-    ]
+    siblings = get_siblings(channel_id, filename)
     if not siblings:
         return
 
@@ -842,6 +846,19 @@ async def timers_check(delay=0):
 
         if keep and re.search(_clean(timer_match), _clean(program), re.IGNORECASE):
             kept[channel_id][program] = keep
+            if keep < 0:
+                if (datetime.fromtimestamp(timestamp) - datetime.now()).days < keep:
+                    log.debug('Older than     %d days: SKIPPING [%d] "%s"' % (abs(keep), timestamp, filename))
+                    return
+            else:
+                current = list(filter(lambda x: program in x, (await ongoing_vods(_all=True)).split("|")))
+                if len(current) == keep:
+                    log.debug('Recording %02d programs: SKIPPING [%d] "%s"' % (keep, timestamp, filename))
+                    return
+                siblings = get_siblings(channel_id, filename)
+                if len(current) + len(siblings) == keep and timestamp < siblings[0]:
+                    log.debug('Recorded  %02d programs: SKIPPING [%d] "%s"' % (keep, timestamp, filename))
+                    return
 
         if (channel_id, timestamp) in queued:
             return
@@ -976,7 +993,7 @@ async def timers_check(delay=0):
                             lang = res
 
                 vo = lang == "VO"
-                tss = filter(lambda ts: ts <= _last_epg + 3600, sorted(_EPGDATA[channel_id]))
+                tss = filter(lambda ts: ts <= _last_epg + 3600, reversed(_EPGDATA[channel_id]))
 
                 if fixed_timer:
                     # fixed timers are checked daily, so we want today's and all of last week
