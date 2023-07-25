@@ -1,6 +1,7 @@
 aiohttp
 asyncio
 asyncio_dgram
+cx_Freeze
 defusedxml
 filelock
 sanic==22.6.2
@@ -10,6 +11,3 @@ ujson
 websockets==10.4
 wmi
 xmltodict
-# https://github.com/marcelotduarte/cx_Freeze#installation
-# pip install --pre --extra-index-url https://marcelotduarte.github.io/packages/ cx_Freeze
-cx_Freeze>=6.14.0.dev2
