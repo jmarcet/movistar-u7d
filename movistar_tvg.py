@@ -498,28 +498,25 @@ class MovistarTV:
             log.error("Servicio Web de Movistar TV caído: decargando guía básica")
             self.__web_service_down = True
             return
-        __attempts = 10
-        while __attempts > 0:
-            try:
-                headers = {}
-                if self.__cookie:
-                    for ck in self.__cookie.split("; "):
-                        if "=" in ck:
-                            headers["Cookie"] = self.__cookie
-                url = f"{ep}/appserver/mvtv.do?action={action}"
-                async with session.get(url, headers=headers) as response:
-                    if response.status == 200:
-                        content = (await response.json())["resultData"]
-                        new_cookie = response.headers.get("set-cookie")
-                        if new_cookie and not self.__cookie:
-                            self.__cookie = new_cookie
-                            cache.save_cookie(self.__cookie)
-                        elif new_cookie and new_cookie != self.__cookie:
-                            cache.save_cookie(new_cookie)
-                        return content
-            except Exception as ex:
-                __attempts -= 1
-                log.warning(f"Timeout: {ep}, reintentos: {__attempts} => {repr(ex)}")
+        try:
+            headers = {}
+            if self.__cookie:
+                for ck in self.__cookie.split("; "):
+                    if "=" in ck:
+                        headers["Cookie"] = self.__cookie
+            url = f"{ep}/appserver/mvtv.do?action={action}"
+            async with session.get(url, headers=headers) as response:
+                if response.status == 200:
+                    content = (await response.json())["resultData"]
+                    new_cookie = response.headers.get("set-cookie")
+                    if new_cookie and not self.__cookie:
+                        self.__cookie = new_cookie
+                        cache.save_cookie(self.__cookie)
+                    elif new_cookie and new_cookie != self.__cookie:
+                        cache.save_cookie(new_cookie)
+                    return content
+        except Exception as ex:
+            log.warning(f"Timeout: {ep} => {repr(ex)}")
 
     @staticmethod
     def __update_end_points(data):
