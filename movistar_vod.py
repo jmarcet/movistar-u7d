@@ -569,7 +569,7 @@ async def record_stream(vod_info):
 
     formatter = logging.Formatter(
         datefmt="%Y-%m-%d %H:%M:%S",
-        fmt=f"[%(asctime)s] [%(name)s] [%(levelname)7s] %(message)-72s{log_suffix}",
+        fmt=f"[%(asctime)s] [%(name)s] [%(levelname)8s] %(message)-72s{log_suffix}",
     )
     handler = logging.StreamHandler()
     handler.setFormatter(formatter)
@@ -788,7 +788,7 @@ if __name__ == "__main__":
 
     logging.basicConfig(
         datefmt="%Y-%m-%d %H:%M:%S",
-        format="[%(asctime)s] [%(name)s] [%(levelname)7s] %(message)s",
+        format="[%(asctime)s] [%(name)s] [%(levelname)8s] %(message)s",
         level=logging.DEBUG if _args.debug or _conf["DEBUG"] else logging.INFO,
     )
 

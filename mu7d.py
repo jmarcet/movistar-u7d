@@ -498,7 +498,7 @@ if __name__ == "__main__":
 
     logging.basicConfig(
         datefmt="%Y-%m-%d %H:%M:%S",
-        format="[%(asctime)s] [%(name)s] [%(levelname)7s] %(message)s",
+        format="[%(asctime)s] [%(name)s] [%(levelname)8s] %(message)s",
         level=logging.DEBUG if _conf["DEBUG"] else logging.INFO,
     )
     logging.getLogger("asyncio").setLevel(logging.DEBUG if _conf["DEBUG"] else logging.FATAL)
