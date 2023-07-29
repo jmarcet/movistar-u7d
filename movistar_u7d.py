@@ -138,7 +138,8 @@ async def handle_channel(request, channel_id=None, channel_name=None):
     if channel_id not in _CHANNELS:
         raise NotFound(f"Requested URL {_raw_url} not found")
 
-    if " Chrome/" in request.headers.get("user-agent"):
+    ua = request.headers.get("user-agent", "")
+    if " Chrome/" in ua:
         return await handle_flussonic(request, f"{int(datetime.now().timestamp())}.ts", channel_id)
 
     try:
@@ -162,7 +163,12 @@ async def handle_channel(request, channel_id=None, channel_name=None):
 
     with closing(await asyncio_dgram.from_socket(sock)) as stream:
         _response = await request.respond(content_type=MIME_WEBM)
-        await _response.send((await stream.recv())[0][28:])
+
+        # 1st packet on SDTV channels is bogus and breaks ffmpeg
+        if ua.startswith("Jellyfin") and " HD" not in name:
+            await stream.recv()
+        else:
+            await _response.send((await stream.recv())[0][28:])
 
         prom = app.add_task(
             send_prom_event(
@@ -260,13 +266,19 @@ async def handle_flussonic(request, url, channel_id=None, channel_name=None, clo
     args = VodArgs(channel_id, program_id, request.ip, client_port, offset, cloud)
     vod = app.add_task(Vod(args, request.app.ctx.vod_client))
 
-    if " Chrome/" in request.headers.get("user-agent"):
+    ua = request.headers.get("user-agent", "")
+    if " Chrome/" in ua:
         return await transcode(request, channel_id, client_port, event, vod)
 
     with closing(await asyncio_dgram.bind((_IPTV, client_port))) as stream:
         _response = await request.respond(content_type=MIME_WEBM)
 
-        await _response.send((await stream.recv())[0])
+        # 1st packet on SDTV channels is bogus and breaks ffmpeg
+        if ua.startswith("Jellyfin") and " HD" not in _CHANNELS[channel_id]["name"]:
+            await stream.recv()
+        else:
+            await _response.send((await stream.recv())[0])
+
         prom = app.add_task(send_prom_event({**event, "lat": time.time() - _start}))
 
         try:
