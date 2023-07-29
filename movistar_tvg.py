@@ -39,49 +39,44 @@ log = logging.getLogger("TVG")
 
 
 epg_channels = [
-    5066,
-    2543,
-    4455,
-    4919,
-    2524,
-    1825,
-    1826,
-    2526,
-    884,
-    4714,
-    3223,
-    844,
-    1221,
-    4063,
-    2544,
-    3063,
-    657,
-    663,
-    4716,
-    4715,
-    3185,
-    1616,
-    578,
-    4467,
-    5104,
-    743,
-    582,
-    3603,
-    3443,
-    5029,
-    3103,
-    4990,
-    4913,
-    4912,
-    747,
-    5106,
-    2275,
-    2273,
-    4299,
-    2271,
-    2269,
-    2743,
-    5087,
+    # 5066 # _ "La 1 HD"
+    4455,  # _ "La 2 HD"
+    2524,  # _ "Antena 3 HD"
+    1825,  # _ "Cuatro HD"
+    1826,  # _ "Tele 5 HD"
+    2526,  # _ "laSexta HD"
+    # 4913 # _ "TVG HD"
+    # 4912 # _ "TVG 2 HD"
+    1221,  # _ "Paramount Network"
+    844,  # __ "TRECE"
+    884,  # __ "Energy"
+    # 747 # __ "FDF"
+    4714,  # _ "Neox HD"
+    3223,  # _ "Atreseries HD"
+    4063,  # _ "GOL PLAY HD"
+    2544,  # _ "Teledeporte HD"
+    3063,  # _ "Real Madrid TV HD"
+    657,  # __ "DMAX"
+    3603,  # _ "DKISS"
+    663,  # __ "Divinity"
+    4716,  # _ "Nova HD"
+    4715,  # _ "MEGA HD"
+    3185,  # _ "BeMad HD"
+    3443,  # _ "Ten"
+    1616,  # _ "Disney Channel HD"
+    578,  # __ "Boing"
+    4467,  # _ "Clan TVE HD"
+    5106,  # _ "Canal 24 H. HD"
+    4990,  # _ "El Toro TV HD"
+    # 2275 # _ "Canal Sur Andalucía"
+    # 2273 # _ "TVG Europa"
+    # 4299 # _ "Canal Extremadura SAT"
+    # 2271 # _ "TV3CAT"
+    # 2269 # _ "ETB Basque."
+    # 2743 # _ "Aragón TV Int"
+    # 5087 # _ "Telemadrid INT HD"
+    5029,  # _ "8tv"
+    3103,  # _ "Movistar Plus+"
 ]
 
 demarcations = {
