@@ -441,6 +441,7 @@ async def handle_record_program(request, channel_id, url):
     cloud = request.args.get("cloud") == "1"
     comskip = int(request.args.get("comskip", "0"))
     mkv = request.args.get("mkv") == "1"
+    record_time = int(request.args.get("time", "0"))
     vo = request.args.get("vo") == "1"
 
     if comskip not in (0, 1, 2):
@@ -451,9 +452,7 @@ async def handle_record_program(request, channel_id, url):
     except AttributeError:
         raise NotFound(f"Requested URL {request.raw_url.decode()} not found")
 
-    if request.args.get("time"):
-        record_time = int(request.args.get("time"))
-    else:
+    if not record_time:
         record_time = duration - offset
 
     msg = await record_program(channel_id, program_id, offset, record_time, cloud, comskip, mkv, vo)
