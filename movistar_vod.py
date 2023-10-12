@@ -510,9 +510,10 @@ async def postprocess(archive_params, archive_url, mtime, record_time, vod_info)
         newest_ts = os.path.getmtime(newest)
 
         await _save_metadata()
-        resp = await _SESSION.put(archive_url, params=archive_params)
-        if resp.status != 200:
-            raise ValueError("Failed archiving recording")
+        if _args.index:
+            resp = await _SESSION.put(archive_url, params=archive_params)
+            if resp.status != 200:
+                raise ValueError("Failed archiving recording")
 
         utime(mtime, *glob_safe(f"{_filename}.*"))
         utime(newest_ts, os.path.dirname(_filename))
@@ -781,6 +782,7 @@ if __name__ == "__main__":
     parser.add_argument("--comskip", help="do comercials analysis, mark chapters", action="store_true")
     parser.add_argument("--comskipcut", help="do comercials analysis, cut chapters", action="store_true")
     parser.add_argument("--debug", help="enable debug logs", action="store_true")
+    parser.add_argument("--index", help="index recording in db", action="store_true")
     parser.add_argument("--mkv", help="output recording in mkv container", action="store_true")
     parser.add_argument("--vo", help="set 2nd language as main one", action="store_true")
     parser.add_argument("--write_to_file", "-w", help="record", action="store_true")

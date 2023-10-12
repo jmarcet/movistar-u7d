@@ -440,6 +440,7 @@ async def handle_prom_event(request, method):
 async def handle_record_program(request, channel_id, url):
     cloud = request.args.get("cloud") == "1"
     comskip = int(request.args.get("comskip", "0"))
+    index = request.args.get("index", "1") == "1"
     mkv = request.args.get("mkv") == "1"
     record_time = int(request.args.get("time", "0"))
     vo = request.args.get("vo") == "1"
@@ -455,7 +456,7 @@ async def handle_record_program(request, channel_id, url):
     if not record_time:
         record_time = duration - offset
 
-    msg = await record_program(channel_id, program_id, offset, record_time, cloud, comskip, mkv, vo)
+    msg = await record_program(channel_id, program_id, offset, record_time, cloud, comskip, index, mkv, vo)
     if msg:
         raise ServiceUnavailable(msg)
 
@@ -470,6 +471,7 @@ async def handle_record_program(request, channel_id, url):
             "time": record_time,
             "cloud": cloud,
             "comskip": comskip,
+            "index": index,
             "mkv": mkv,
             "vo": vo,
         }
@@ -668,7 +670,9 @@ async def reap_vod_child(process, filename):
     log.debug(f"Reap VOD Child: [{process}]:[{retcode}] DONE")
 
 
-async def record_program(channel_id, pid, offset=0, time=0, cloud=False, comskip=0, mkv=False, vo=False):
+async def record_program(
+    channel_id, pid, offset=0, time=0, cloud=False, comskip=0, index=True, mkv=False, vo=False
+):
     timestamp = get_epg(channel_id, pid, cloud)[1]
     filename = get_recording_name(channel_id, timestamp, cloud)
 
@@ -707,6 +711,7 @@ async def record_program(channel_id, pid, offset=0, time=0, cloud=False, comskip
     cmd += ["-t", str(time)] if time else []
     cmd += ["--cloud"] if cloud else []
     cmd += ["--comskip"] if comskip == 1 else ["--comskipcut"] if comskip == 2 else []
+    cmd += ["--index"] if index else []
     cmd += ["--mkv"] if mkv else []
     cmd += ["--vo"] if vo else []
 
@@ -891,7 +896,7 @@ async def timers_check(delay=0):
             if 0 < _time < 300:
                 log.debug("%-22s%50s%s" % ("Skipping MATCH", f"Too short [{_time}s]", log_suffix))
                 return
-            if await record_program(channel_id, pid, 0, _time, cloud, comskip, MKV_OUTPUT, vo):
+            if await record_program(channel_id, pid, 0, _time, cloud, comskip, True, MKV_OUTPUT, vo):
                 return
 
             log.info("%-72s%s" % (f"Found {'Cloud ' if cloud else ''}EPG MATCH", log_suffix))
