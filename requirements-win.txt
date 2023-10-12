@@ -1,9 +1,12 @@
+aiodns
+aiofiles
 aiohttp
 asyncio
 asyncio_dgram
 cx_Freeze
 defusedxml
 filelock
+psutil
 sanic==22.6.2
 git+https://github.com/jmarcet/sanic-prometheus
 tomli
