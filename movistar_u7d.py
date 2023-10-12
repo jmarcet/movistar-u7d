@@ -251,12 +251,11 @@ async def handle_flussonic(request, url, channel_id=None, channel_name=None, clo
                     finally:
                         prom.cancel()
                         await prom
-                        return await _response.eof()
+                        await _response.eof()
 
-            else:
-                return await transcode(request, event=event, filename=program_id, offset=offset)
-        else:
-            raise NotFound(f"Requested URL {_raw_url} not found")
+                return
+            return await transcode(request, event=event, filename=program_id, offset=offset)
+        raise NotFound(f"Requested URL {_raw_url} not found")
 
     if _NETWORK_SATURATED and not await ongoing_vods(_fast=True):
         log.warning(f"[{request.ip}] {_raw_url} -> Network Saturated")

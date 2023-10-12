@@ -697,19 +697,19 @@ async def rtsp(vod_info):
         client.close_connection()
         log.debug("RTSP loop ended")
 
-        if __name__ == "__main__" and _args.write_to_file:
-            if U7D_PARENT and not WIN32:
-                setproctitle(getproctitle().replace(" REC ", "     "))
+    if __name__ == "__main__" and _args.write_to_file:
+        if U7D_PARENT and not WIN32:
+            setproctitle(getproctitle().replace(" REC ", "     "))
 
-            if not rec_t.done():
-                await rec_t
+        if not rec_t.done():
+            await rec_t
 
-            if isinstance(rec_t.result(), asyncio.Task):
-                pp_t = rec_t.result()
-                await pp_t
-                return pp_t.result()
+        if isinstance(rec_t.result(), asyncio.Task):
+            pp_t = rec_t.result()
+            await pp_t
+            return pp_t.result()
 
-            return rec_t.result()
+        return rec_t.result()
 
 
 async def Vod(args=None, vod_client=None):  # noqa: N802
@@ -744,8 +744,9 @@ async def Vod(args=None, vod_client=None):  # noqa: N802
             if _args.write_to_file:
                 await _SESSION.close()
 
-                # Exitcode from the last recording subprocess, to discern when the proxy has to stop on WIN32
-                return rtsp_t.result() if vod_info else 1
+    if __name__ == "__main__" and _args.write_to_file:
+        # Exitcode from the last recording subprocess, to discern when the proxy has to stop on WIN32
+        return rtsp_t.result() if vod_info else 1
 
 
 if __name__ == "__main__":

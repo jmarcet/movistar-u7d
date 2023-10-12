@@ -373,12 +373,12 @@ class Cache:
                                 data = res["data"]
                                 break
                             if i < 4:
-                                log.warning(f"No ha habido suerte. Reintentando en 15s... [{i+2}/5]")
+                                log.warning(f"No ha habido suerte. Reintentando en 15s... [{i + 2} / 5]")
                                 await asyncio.sleep(15)
                     except Exception as ex:
                         if i < 4:
                             log.warning(
-                                f"No ha habido suerte. Reintentando en 15s... [{i+2}/5] => {repr(ex)}"
+                                f"No ha habido suerte. Reintentando en 15s... [{i + 2} / 5] => {repr(ex)}"
                             )
                             await asyncio.sleep(15)
             if not data:
@@ -1337,7 +1337,7 @@ class XMLTV:
                 self.__build_programme_tag(channel_id, program, parsed_epg[channel_id][program], tz_offset)
                 for program in sorted(parsed_epg[channel_id])
             ]
-            [root.append(program) for program in (await asyncio.gather(*_tasks)) if program]
+            [root.append(program) for program in (await asyncio.gather(*_tasks)) if program is not None]
         return ElementTree(root)
 
     def write_m3u(self, file_path, cloud=None, local=None):

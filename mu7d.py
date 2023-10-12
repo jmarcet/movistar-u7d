@@ -189,8 +189,8 @@ async def launch(cmd):
             proc.terminate()
         except ProcessLookupError:
             pass
-        finally:
-            return await proc.wait()
+
+        return await proc.wait()
 
 
 def mu7d_config():

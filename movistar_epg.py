@@ -1149,7 +1149,7 @@ async def update_epg(abort_on_error=False):
         if task.result():
             if i < 2:
                 await asyncio.sleep(3)
-                log.error(f"[{i+2}/3]...")
+                log.error(f"[{i + 2} / 3]...")
             elif abort_on_error or not _CHANNELS or not _EPGDATA:
                 app.add_task(cancel_app())
         else:
