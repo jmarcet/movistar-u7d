@@ -499,7 +499,7 @@ async def postprocess(archive_params, archive_url, mtime, record_time, vod_info)
 
         duration = await _get_duration(_tmpname + TMP_EXT)
         length = f"[{str(timedelta(seconds=duration))}s]"
-        if _args.time != duration:
+        if COMSKIP and _args.time != duration:
             cmrcls = f"{str(timedelta(seconds=_args.time - duration))}s]"
             length = f" [{str(timedelta(seconds=_args.time))}s - {cmrcls} = {length}"
 
