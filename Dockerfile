@@ -1,4 +1,4 @@
-FROM python:3.11-slim
+FROM python:3.12-slim
 
 ARG TARGETARCH="amd64"
 
@@ -107,7 +107,7 @@ RUN \
     && pip install bandit black httpie ipython pycodestyle pylint ruff \
     && pycodestyle -v *.py && pylint --rcfile pylint.toml -v *.py \
     && ruff check --config ruff.toml -v *.py \
-    && bandit -v *.py && black -l 113 -t py311 --diff -v *.py; \
+    && bandit -v *.py && black -l 113 -t py312 --diff -v *.py; \
   fi
 
 RUN apt-get clean autoclean -y \
