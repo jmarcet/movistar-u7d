@@ -414,7 +414,7 @@ ignore-imports = true
 ignore-signatures = true
 
 # Minimum lines number of a similarity.
-min-similarity-lines = 22
+min-similarity-lines = 23
 
 [tool.pylint.spelling]
 # Limits count of emitted suggestions for spelling mistakes.

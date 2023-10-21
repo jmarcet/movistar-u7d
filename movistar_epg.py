@@ -32,13 +32,14 @@ from mu7d import find_free_port, get_iptv_ip, get_local_info, get_safe_filename,
 from mu7d import glob_safe, launch, mu7d_config, ongoing_vods, remove, utime, _version
 
 
+Sanic.start_method = "fork"
 app = Sanic("movistar_epg")
 
 log = logging.getLogger("EPG")
 
 
 @app.listener("before_server_start")
-async def before_server_start(app, loop):
+async def before_server_start(app):
     global _IPTV, _SESSION_CLOUD, _last_epg
 
     app.config.FALLBACK_ERROR_FORMAT = "json"
@@ -141,7 +142,7 @@ async def before_server_start(app, loop):
 
 
 @app.listener("after_server_start")
-async def after_server_start(app, loop):
+async def after_server_start(app):
     if _last_epg and RECORDINGS:
         global _t_timers
 
@@ -156,8 +157,13 @@ async def after_server_start(app, loop):
 
 
 @app.listener("before_server_stop")
-def before_server_stop(app=None, loop=None):
-    [task.cancel() for task in asyncio.all_tasks()]
+async def before_server_stop(app=None):
+    for task in asyncio.all_tasks():
+        try:
+            task.cancel()
+            await task
+        except CancelledError:
+            pass
 
 
 async def alive():
@@ -1398,6 +1404,7 @@ if __name__ == "__main__":
     logging.getLogger("filelock").setLevel(logging.FATAL)
     logging.getLogger("sanic.error").setLevel(logging.FATAL)
     logging.getLogger("sanic.root").disabled = True
+    logging.getLogger("sanic.server").disabled = True
 
     if not os.getenv("U7D_PARENT"):
         log.critical("Must be run with mu7d")
@@ -1456,9 +1463,10 @@ if __name__ == "__main__":
                 access_log=False,
                 auto_reload=False,
                 debug=_conf["DEBUG"],
+                single_process=True,
                 workers=1,
             )
-    except (CancelledError, KeyboardInterrupt):
+    except (CancelledError, ConnectionResetError, KeyboardInterrupt):
         sys.exit(1)
     except Timeout:
         log.critical("Cannot be run more than once!")

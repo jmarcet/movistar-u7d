@@ -35,13 +35,14 @@ from mu7d import WIN32, YEAR_SECONDS, find_free_port, get_iptv_ip, mu7d_config, 
 from movistar_vod import Vod
 
 
+Sanic.start_method = "fork"
 app = Sanic("movistar_u7d")
 
 log = logging.getLogger("U7D")
 
 
 @app.listener("before_server_start")
-async def before_server_start(app, loop):
+async def before_server_start(app):
     global _CHANNELS, _IPTV, _SESSION, _SESSION_LOGOS
 
     app.config.FALLBACK_ERROR_FORMAT = "json"
@@ -83,7 +84,7 @@ async def before_server_start(app, loop):
 
 
 @app.listener("after_server_start")
-async def after_server_start(app, loop):
+async def after_server_start(app):
     app.ctx.vod_client = aiohttp.ClientSession(
         connector=aiohttp.TCPConnector(
             keepalive_timeout=YEAR_SECONDS,
@@ -106,7 +107,7 @@ async def after_server_start(app, loop):
 
 
 @app.listener("before_server_stop")
-async def before_server_stop(app, loop):
+async def before_server_stop(app):
     for task in asyncio.all_tasks():
         try:
             task.cancel()
@@ -124,9 +125,9 @@ def get_channel_id(channel_name):
     return res[0] if len(res) == 1 else None
 
 
-@app.route("/<channel_id:int>/live", methods=["GET", "HEAD"])
-@app.route("/<channel_id:int>/mpegts", methods=["GET", "HEAD"])
-@app.route(r"/<channel_name:([A-Za-z1-9]+)\.ts$>", methods=["GET", "HEAD"])
+@app.route("/<channel_id:int>/live", methods=["GET", "HEAD"], name="channel_live")
+@app.route("/<channel_id:int>/mpegts", methods=["GET", "HEAD"], name="channel_mpegts")
+@app.route(r"/<channel_name:([A-Za-z1-9]+)\.ts$>", methods=["GET", "HEAD"], name="channel_name")
 async def handle_channel(request, channel_id=None, channel_name=None):
     _start = time.time()
     _raw_url = request.raw_url.decode()
@@ -193,8 +194,8 @@ async def handle_channel(request, channel_id=None, channel_name=None):
             await _response.eof()
 
 
-@app.route("/<channel_id:int>/<url>", methods=["GET", "HEAD"])
-@app.route(r"/<channel_name:([A-Za-z1-9]+)>/<url>", methods=["GET", "HEAD"])
+@app.route("/<channel_id:int>/<url>", methods=["GET", "HEAD"], name="flussonic_id")
+@app.route(r"/<channel_name:([A-Za-z1-9]+)>/<url>", methods=["GET", "HEAD"], name="flussonic_name")
 async def handle_flussonic(request, url, channel_id=None, channel_name=None, cloud=False, local=False):
     _start = time.time()
     _raw_url = request.raw_url.decode()
@@ -291,24 +292,24 @@ async def handle_flussonic(request, url, channel_id=None, channel_name=None, clo
             await _response.eof()
 
 
-@app.route("/cloud/<channel_id:int>/<url>", methods=["GET", "HEAD"])
-@app.route(r"/cloud/<channel_name:([A-Za-z1-9]+)>/<url>", methods=["GET", "HEAD"])
+@app.route("/cloud/<channel_id:int>/<url>", methods=["GET", "HEAD"], name="flussonic_cloud_id")
+@app.route(r"/cloud/<channel_name:([A-Za-z1-9]+)>/<url>", methods=["GET", "HEAD"], name="flussonic_cloud_name")
 async def handle_flussonic_cloud(request, url, channel_id=None, channel_name=None):
     if url in ("live", "mpegts"):
         return await handle_channel(request, channel_id, channel_name)
     return await handle_flussonic(request, url, channel_id, channel_name, cloud=True)
 
 
-@app.route("/local/<channel_id:int>/<url>", methods=["GET", "HEAD"])
-@app.route(r"/local/<channel_name:([A-Za-z1-9]+)>/<url>", methods=["GET", "HEAD"])
+@app.route("/local/<channel_id:int>/<url>", methods=["GET", "HEAD"], name="flussonic_local_id")
+@app.route(r"/local/<channel_name:([A-Za-z1-9]+)>/<url>", methods=["GET", "HEAD"], name="flussonic_local_name")
 async def handle_flussonic_local(request, url, channel_id=None, channel_name=None):
     if url in ("live", "mpegts"):
         return await handle_channel(request, channel_id, channel_name)
     return await handle_flussonic(request, url, channel_id, channel_name, local=True)
 
 
-@app.get("/guia.xml")
-@app.get("/guide.xml")
+@app.get("/guia.xml", name="xml_guia")
+@app.get("/guide.xml", name="xml_guide")
 async def handle_guide(request):
     if not os.path.exists(GUIDE):
         raise NotFound(f"Requested URL {request.raw_url.decode()} not found")
@@ -316,8 +317,8 @@ async def handle_guide(request):
     return await response.file(GUIDE)
 
 
-@app.get("/cloud.xml")
-@app.get("/nube.xml")
+@app.get("/cloud.xml", name="xml_cloud")
+@app.get("/nube.xml", name="xml_nube")
 async def handle_guide_cloud(request):
     if not os.path.exists(GUIDE_CLOUD):
         raise NotFound(f"Requested URL {request.raw_url.decode()} not found")
@@ -325,8 +326,8 @@ async def handle_guide_cloud(request):
     return await response.file(GUIDE_CLOUD)
 
 
-@app.get("/guia.xml.gz")
-@app.get("/guide.xml.gz")
+@app.get("/guia.xml.gz", name="xmlz_guia")
+@app.get("/guide.xml.gz", name="xmlz_guide")
 async def handle_guide_gz(request):
     if not os.path.exists(GUIDE + ".gz"):
         raise NotFound(f"Requested URL {request.raw_url.decode()} not found")
@@ -334,7 +335,7 @@ async def handle_guide_gz(request):
     return await response.file(GUIDE + ".gz")
 
 
-@app.get("/local.xml")
+@app.get("/local.xml", name="xml_local")
 async def handle_guide_local(request):
     if not os.path.exists(GUIDE_LOCAL):
         raise NotFound(f"Requested URL {request.raw_url.decode()} not found")
@@ -342,9 +343,9 @@ async def handle_guide_local(request):
     return await response.file(GUIDE_LOCAL)
 
 
-@app.route("/Covers/<path:int>/<cover>", methods=["GET", "HEAD"])
-@app.route("/Logos/<logo>", methods=["GET", "HEAD"])
-async def handle_logos(request, cover=None, logo=None, path=None):
+@app.route("/Covers/<path:int>/<cover>", methods=["GET", "HEAD"], name="images_covers")
+@app.route("/Logos/<logo>", methods=["GET", "HEAD"], name="images_logos")
+async def handle_images(request, cover=None, logo=None, path=None):
     log.debug(f"[{request.ip}] {request.method} {request.url}")
     if logo and logo.split(".")[0].isdigit():
         orig_url = f"{URL_LOGO}/{logo}"
@@ -412,8 +413,8 @@ async def handle_prometheus(request):
         raise ServiceUnavailable("Not available")
 
 
-@app.get("/record/<channel_id:int>/<url>")
-@app.get(r"/record/<channel_name:([A-Za-z1-9]+)>/<url>")
+@app.get("/record/<channel_id:int>/<url>", name="record_program_id")
+@app.get(r"/record/<channel_name:([A-Za-z1-9]+)>/<url>", name="record_program_name")
 async def handle_record_program(request, url, channel_id=None, channel_name=None):
     if not url:
         log.warning("Cannot record live channels! Use wget for that.")
@@ -594,6 +595,7 @@ if __name__ == "__main__":
     logging.getLogger("filelock").setLevel(logging.FATAL)
     logging.getLogger("sanic.error").setLevel(logging.FATAL)
     logging.getLogger("sanic.root").disabled = True
+    logging.getLogger("sanic.server").disabled = True
 
     if not os.getenv("U7D_PARENT"):
         log.critical("Must be run with mu7d")
@@ -626,9 +628,10 @@ if __name__ == "__main__":
                 access_log=False,
                 auto_reload=False,
                 debug=_conf["DEBUG"],
+                single_process=U7D_THREADS == 1 or WIN32,
                 workers=U7D_THREADS if not WIN32 else 1,
             )
-    except (AttributeError, CancelledError, KeyboardInterrupt):
+    except (AttributeError, CancelledError, ConnectionResetError, KeyboardInterrupt):
         sys.exit(1)
     except Timeout:
         log.critical("Cannot be run more than once!")

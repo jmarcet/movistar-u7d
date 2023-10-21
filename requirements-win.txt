@@ -7,10 +7,9 @@ cx_Freeze
 defusedxml
 filelock
 psutil
-sanic==22.6.2
+sanic
 git+https://github.com/jmarcet/sanic-prometheus
 tomli
 ujson
-websockets==10.4
 wmi
 xmltodict
