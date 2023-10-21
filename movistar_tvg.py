@@ -738,9 +738,7 @@ class MulticastIPTV:
                     "name": i[2][0].text.encode("latin1").decode("utf8"),
                     "shortname": i[2][1].text.encode("latin1").decode("utf8"),
                     "genre": i[2][3][0].text.encode("latin1").decode("utf8"),
-                    "logo_uri": i[1].attrib["logoURI"]
-                    if "logoURI" in i[1].attrib
-                    else "MAY_1/imSer/4146.jpg",
+                    "logo_uri": i[1].attrib["logoURI"] if "logoURI" in i[1].attrib else "MAY_1/imSer/4146.jpg",
                 }
                 if i[2][4].tag == "{urn:dvb:ipisdns:2006}ReplacementService":
                     channel_list[channel_id]["replacement"] = int(i[2][4][0].attrib["ServiceName"])
@@ -1363,9 +1361,7 @@ def create_args_parser():
     parser.add_argument(
         "--local_m3u", help="Exporta canales con Grabaciones en Local, en formato m3u, a este fichero."
     )
-    parser.add_argument(
-        "--local_recordings", help="Exporta guía xmltv de Grabaciones en Local a este fichero."
-    )
+    parser.add_argument("--local_recordings", help="Exporta guía xmltv de Grabaciones en Local a este fichero.")
     return parser
 
 

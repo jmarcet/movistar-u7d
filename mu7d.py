@@ -138,11 +138,7 @@ def get_title_meta(title, serie_id=None):
     if x and x.groups():
         _x = x.groups()
         serie = (
-            _x[0].strip()
-            if _x[0]
-            else full_title.split(" - ")[0].strip()
-            if " - " in full_title
-            else full_title
+            _x[0].strip() if _x[0] else full_title.split(" - ")[0].strip() if " - " in full_title else full_title
         )
         season = int(_x[1]) if _x[1] else season
         episode = int(_x[2]) if _x[2] else episode
