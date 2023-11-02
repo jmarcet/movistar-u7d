@@ -71,7 +71,7 @@ class RtspClient:
 def _archive_recording():
     path = os.path.dirname(_filename)
     if not os.path.exists(path):
-        log.debug(f'Creating recording archival subdir "{path}"')
+        log.debug(f'Making dir "{path}"')
         os.makedirs(path)
 
     if not RECORDINGS_TMP:
@@ -175,7 +175,7 @@ async def get_vod_info(_log=False):
         log.error(f'{msg} "{repr(ex)}"')
 
 
-async def postprocess(archive_params, archive_url, mtime, record_time, vod_info):
+async def postprocess(archive_params, archive_url, mtime, vod_info):
     async def _check_process(msg=""):
         nonlocal proc
 
@@ -327,7 +327,7 @@ async def postprocess(archive_params, archive_url, mtime, record_time, vod_info)
         nonlocal archive_params, duration
 
         duration = await _get_duration(_tmpname + TMP_EXT)
-        bad = duration < _args.time - 5
+        bad = duration < _args.time * 0.99
 
         archive_params["recorded"] = duration if bad else 0
         log_suffix = f"[{str(timedelta(seconds=duration))}s = {str(duration):>5}s] / [{str(_args.time):>5}s]"
@@ -343,7 +343,7 @@ async def postprocess(archive_params, archive_url, mtime, record_time, vod_info)
     @_check_terminate
     async def _step_2():
         global COMSKIP
-        nonlocal mtime, proc, tags, vod_info
+        nonlocal mtime, proc, tags
 
         if not RECORDINGS_TRANSCODE_OUTPUT:
             log.info("POSTPROCESS #2  - Skipped. Transcoding disabled")
@@ -521,7 +521,6 @@ async def postprocess(archive_params, archive_url, mtime, record_time, vod_info)
     await asyncio.sleep(0.1)  # Prioritize the main loop
 
     duration = metadata = newest_ts = proc = None
-    archive_params["recorded"] = record_time if record_time < _args.time - 30 else 0
     tags = ["-metadata", 'service_name="%s"' % vod_info["channelName"]]
     tags += ["-metadata", 'service_provider="Movistar IPTV"']
     tags += ["-metadata:s:s:0", "language=esp", "-metadata:s:s:1", "language=und"]
@@ -588,7 +587,7 @@ async def record_stream(vod_info):
         _tmpname = os.path.join(RECORDINGS_TMP, _args.filename)
         path = os.path.dirname(_tmpname)
         if not os.path.exists(path):
-            log.debug(f'Creating temp recording subdir "{path}"')
+            log.debug(f'Making dir "{path}"')
             os.makedirs(path)
 
     archive_params = {"cloud": 1} if _args.cloud else {}
@@ -650,7 +649,7 @@ async def record_stream(vod_info):
                 _archive_recording()
             return 0
 
-    return asyncio.create_task(postprocess(archive_params, archive_url, mtime, record_time, vod_info))
+    return asyncio.create_task(postprocess(archive_params, archive_url, mtime, vod_info))
 
 
 async def rtsp(vod_info):
