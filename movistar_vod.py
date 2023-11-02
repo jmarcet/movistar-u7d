@@ -19,7 +19,7 @@ import ujson
 import urllib.parse
 import xmltodict
 
-from aiohttp.client_exceptions import ClientOSError, ServerDisconnectedError
+from aiohttp.client_exceptions import ClientConnectionError, ClientOSError, ServerDisconnectedError
 from aiohttp.resolver import AsyncResolver
 from asyncio.exceptions import CancelledError
 from asyncio.subprocess import DEVNULL as NULL, PIPE, STDOUT as OUT
@@ -136,7 +136,7 @@ async def _cleanup_recording(exception, start=0):
 
     try:
         await _SESSION.get(f"{EPG_URL}/timers_check?delay=5")
-    except (ClientOSError, ServerDisconnectedError):
+    except (ClientConnectionError, ClientOSError, ServerDisconnectedError):
         pass
 
 
@@ -171,7 +171,7 @@ async def get_vod_info(_log=False):
             return res["resultData"]
         if _log:
             log.error('%s "%s"' % (msg, res.get("resultText", "")))
-    except (ClientOSError, ServerDisconnectedError, TypeError) as ex:
+    except (ClientConnectionError, ClientOSError, ServerDisconnectedError, TypeError) as ex:
         log.error(f'{msg} "{repr(ex)}"')
 
 
@@ -547,8 +547,8 @@ async def postprocess(archive_params, archive_url, mtime, vod_info):
         log.debug("POSTPROCESS ENDED")
         return 0
 
-    except (CancelledError, ClientOSError, ServerDisconnectedError, ValueError) as exception:
-        await asyncio.shield(_cleanup_recording(exception))
+    except (CancelledError, ClientConnectionError, ClientOSError, ServerDisconnectedError, ValueError) as ex:
+        await asyncio.shield(_cleanup_recording(ex))
         return proc.returncode if proc and proc.returncode else 1
 
     finally:

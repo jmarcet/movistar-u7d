@@ -13,7 +13,7 @@ import time
 import ujson
 import urllib.parse
 
-from aiohttp.client_exceptions import ClientOSError, ServerDisconnectedError
+from aiohttp.client_exceptions import ClientConnectionError, ClientOSError, ServerDisconnectedError
 from aiohttp.resolver import AsyncResolver
 from asyncio.exceptions import CancelledError
 from asyncio.subprocess import DEVNULL, PIPE
@@ -73,7 +73,7 @@ async def before_server_start(app):
                     )
                     break
                 await asyncio.sleep(5)
-        except (ClientOSError, ServerDisconnectedError):
+        except (ClientConnectionError, ClientOSError, ServerDisconnectedError):
             log.debug("Waiting for EPG service...")
             await asyncio.sleep(1)
 
@@ -225,7 +225,7 @@ async def handle_flussonic(request, url, channel_id=None, channel_name=None, clo
         params = {"cloud": int(cloud), "local": int(local)}
         async with _SESSION.get(f"{EPG_URL}/program_id/{channel_id}/{url}", params=params) as r:
             _, program_id, _, duration, offset = (await r.json()).values()
-    except (AttributeError, KeyError, ValueError, ClientOSError, ServerDisconnectedError):
+    except (AttributeError, KeyError, ValueError, ClientConnectionError, ClientOSError, ServerDisconnectedError):
         raise NotFound(f"Requested URL {_raw_url} not found")
 
     if request.method == "HEAD":
@@ -366,7 +366,7 @@ async def handle_images(request, cover=None, logo=None, path=None):
                 return response.HTTPResponse(
                     body=logo_data, content_type="image/jpeg", headers=headers, status=200
                 )
-    except (ClientOSError, ServerDisconnectedError):
+    except (ClientConnectionError, ClientOSError, ServerDisconnectedError):
         pass
     raise NotFound(f"Requested URL {request.raw_url.decode()} not found")
 
@@ -409,7 +409,7 @@ async def handle_prometheus(request):
     try:
         async with _SESSION.get(f"{EPG_URL}/metrics") as r:
             return response.text((await r.read()).decode())
-    except (ClientOSError, ServerDisconnectedError):
+    except (ClientConnectionError, ClientOSError, ServerDisconnectedError):
         raise ServiceUnavailable("Not available")
 
 
@@ -429,7 +429,7 @@ async def handle_record_program(request, url, channel_id=None, channel_name=None
     try:
         async with _SESSION.get(f"{EPG_URL}/record/{channel_id}/{url}", params=request.args) as r:
             return response.json(await r.json())
-    except (ClientOSError, ServerDisconnectedError):
+    except (ClientConnectionError, ClientOSError, ServerDisconnectedError):
         raise ServiceUnavailable("Not available")
 
 
@@ -473,7 +473,7 @@ async def handle_timers_check(request):
     try:
         async with _SESSION.get(f"{EPG_URL}/timers_check") as r:
             return response.json(await r.json())
-    except (ClientOSError, ServerDisconnectedError):
+    except (ClientConnectionError, ClientOSError, ServerDisconnectedError):
         raise ServiceUnavailable("Not available")
 
 
@@ -515,7 +515,7 @@ async def send_prom_event(event):
             await _SESSION.post(
                 f"{EPG_URL}/prom_event/remove", json={**event, "offset": time.time() - event["id"]}
             )
-    except (ClientOSError, ServerDisconnectedError):
+    except (ClientConnectionError, ClientOSError, ServerDisconnectedError):
         pass
 
 

@@ -13,7 +13,7 @@ import tomli
 import urllib.parse
 import xmltodict
 
-from aiohttp.client_exceptions import ClientOSError, ServerDisconnectedError
+from aiohttp.client_exceptions import ClientConnectionError, ClientOSError, ServerDisconnectedError
 from asyncio.exceptions import CancelledError
 from contextlib import closing
 from datetime import datetime
@@ -385,7 +385,7 @@ async def u7d_main():
                 async with aiohttp.ClientSession() as session:
                     try:
                         await session.get(f"http://{_conf['LAN_IP']}:{_conf['U7D_PORT']}/terminate")
-                    except (ClientOSError, ServerDisconnectedError):
+                    except (ClientConnectionError, ClientOSError, ServerDisconnectedError):
                         u7d_t.cancel()
                 await u7d_t
             cleanup()
