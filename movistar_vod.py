@@ -795,7 +795,7 @@ if __name__ == "__main__":
         level=logging.DEBUG if _args.debug or _conf["DEBUG"] else logging.INFO,
     )
 
-    logging.getLogger("asyncio").setLevel(logging.DEBUG if _args.debug or _conf["DEBUG"] else logging.FATAL)
+    logging.getLogger("asyncio").setLevel(logging.FATAL)
     logging.getLogger("filelock").setLevel(logging.FATAL)
 
     try:
