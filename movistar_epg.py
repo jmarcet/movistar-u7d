@@ -213,7 +213,7 @@ def get_epg(channel_id, program_id, cloud=False):
     guide = _CLOUD if cloud else _EPGDATA
     if channel_id not in guide:
         log.error(f"{channel_id=} not found")
-        return
+        return None, None
 
     for timestamp in sorted(guide[channel_id]):
         _epg = guide[channel_id][timestamp]
@@ -348,9 +348,8 @@ async def handle_archive(request, channel_id, program_id, cloud=False):
 
     cloud = request.args.get("cloud") == "1" if request else cloud
 
-    try:
-        _epg, timestamp = get_epg(channel_id, program_id, cloud)
-    except TypeError:
+    _, timestamp = get_epg(channel_id, program_id, cloud)
+    if not timestamp:
         raise NotFound(f"Requested URL {request.raw_url.decode()} not found")
 
     filename = get_recording_name(channel_id, timestamp, cloud)
@@ -585,10 +584,12 @@ async def prom_event(request, method):
 
     _event = get_program_id(request.json["channel_id"], request.json.get("url"), cloud, local)
     if not local:
-        _epg = get_epg(request.json["channel_id"], _event["program_id"], cloud)[0]
+        _epg, _ = get_epg(request.json["channel_id"], _event["program_id"], cloud)
     else:
         path = _event["program_id"].removesuffix(VID_EXT)
         _epg = await get_local_info(request.json["channel_id"], _event["start"], path, extended=True)
+    if not _epg:
+        return
 
     if method == "add":
         offset = "[%d/%d]" % (_event["offset"], _event["duration"])
@@ -608,8 +609,8 @@ async def prom_event(request, method):
                 request.app.ctx.metrics["RQS_LATENCY"].remove(*_metric)
                 break
 
-    if local and method == "remove":
-        return
+        if local:
+            return
 
     pad = " " if request.json["channel_id"] < 1000 else ""
     msg = f'{request.json["msg"]}{pad} [{request.json["channel_id"]:4}] '
@@ -679,7 +680,10 @@ async def reap_vod_child(process, filename):
 async def record_program(
     channel_id, pid, offset=0, time=0, cloud=False, comskip=0, index=True, mkv=False, vo=False
 ):
-    timestamp = get_epg(channel_id, pid, cloud)[1]
+    _, timestamp = get_epg(channel_id, pid, cloud)
+    if not timestamp:
+        return "Event not found"
+
     filename = get_recording_name(channel_id, timestamp, cloud)
 
     ongoing = await ongoing_vods(filename=filename, _all=True)
@@ -1406,10 +1410,6 @@ if __name__ == "__main__":
     logging.getLogger("sanic.root").disabled = True
     logging.getLogger("sanic.server").disabled = True
 
-    if not os.getenv("U7D_PARENT"):
-        log.critical("Must be run with mu7d")
-        sys.exit(1)
-
     CHANNELS = _conf["CHANNELS"]
     CHANNELS_CLOUD = _conf["CHANNELS_CLOUD"]
     CHANNELS_LOCAL = _conf["CHANNELS_LOCAL"]
@@ -1427,7 +1427,11 @@ if __name__ == "__main__":
     U7D_URL = _conf["U7D_URL"]
     VID_EXT = ".mkv" if MKV_OUTPUT else ".ts"
 
-    U7D_PARENT = int(os.getenv("U7D_PARENT"))
+    U7D_PARENT = int(os.getenv("U7D_PARENT", "0"))
+
+    if not U7D_PARENT:
+        log.critical("Must be run with mu7d")
+        sys.exit(1)
 
     cloud_data = os.path.join(_conf["HOME"], ".xmltv/cache/cloud.json")
     config_data = os.path.join(_conf["HOME"], ".xmltv/cache/config.json")

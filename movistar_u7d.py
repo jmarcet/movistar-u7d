@@ -190,8 +190,7 @@ async def handle_channel(request, channel_id=None, channel_name=None):
 
         finally:
             prom.cancel()
-            await prom
-            await _response.eof()
+            await asyncio.wait([prom, _response.eof()], return_when=asyncio.ALL_COMPLETED)
 
 
 @app.route("/<channel_id:int>/<url>", methods=["GET", "HEAD"], name="flussonic_id")
@@ -251,11 +250,10 @@ async def handle_flussonic(request, url, channel_id=None, channel_name=None, clo
                             to_send -= len(content)
                     finally:
                         prom.cancel()
-                        await prom
-                        await _response.eof()
+                        await asyncio.wait([prom, _response.eof()], return_when=asyncio.ALL_COMPLETED)
 
                 return
-            return await transcode(request, event=event, filename=program_id, offset=offset)
+            return await transcode(request, event, filename=program_id, offset=offset)
         raise NotFound(f"Requested URL {_raw_url} not found")
 
     if _NETWORK_SATURATED and not await ongoing_vods(_fast=True):
@@ -268,7 +266,7 @@ async def handle_flussonic(request, url, channel_id=None, channel_name=None, clo
 
     ua = request.headers.get("user-agent", "")
     if " Chrome/" in ua:
-        return await transcode(request, channel_id, client_port, event, vod)
+        return await transcode(request, event, channel_id=channel_id, port=client_port, vod=vod)
 
     with closing(await asyncio_dgram.bind((_IPTV, client_port))) as stream:
         _response = await request.respond(content_type=MIME_WEBM)
@@ -288,8 +286,7 @@ async def handle_flussonic(request, url, channel_id=None, channel_name=None, clo
         finally:
             vod.cancel()
             prom.cancel()
-            await asyncio.wait([vod, prom], return_when=asyncio.ALL_COMPLETED)
-            await _response.eof()
+            await asyncio.wait([prom, vod, _response.eof()], return_when=asyncio.ALL_COMPLETED)
 
 
 @app.route("/cloud/<channel_id:int>/<url>", methods=["GET", "HEAD"], name="flussonic_cloud_id")
@@ -519,7 +516,7 @@ async def send_prom_event(event):
         pass
 
 
-async def transcode(request, channel_id=None, port=None, event=None, vod=None, filename=None, offset=None):
+async def transcode(request, event, channel_id=0, filename="", offset=0, port=0, vod=None):
     if filename:
         cmd = ["ffmpeg", "-ss", f"{offset}", "-i", filename, "-map", "0", "-c", "copy", "-dn"]
         cmd += ["-f", "mpegts"]
@@ -537,10 +534,10 @@ async def transcode(request, channel_id=None, port=None, event=None, vod=None, f
     proc = await asyncio.create_subprocess_exec(*cmd, stdin=DEVNULL, stdout=PIPE)
     _response = await request.respond(content_type=MIME_WEBM)
 
-    try:
-        await _response.send(await proc.stdout.read(BUFF))
-        prom = app.add_task(send_prom_event({**event, "lat": time.time() - event["id"]}))
+    await _response.send(await proc.stdout.read(BUFF))
+    prom = app.add_task(send_prom_event({**event, "lat": time.time() - event["id"]}))
 
+    try:
         while True:
             content = await proc.stdout.read(BUFF)
             if len(content) < 1:
@@ -552,8 +549,7 @@ async def transcode(request, channel_id=None, port=None, event=None, vod=None, f
             vod.cancel()
         proc.kill()
         prom.cancel()
-        await asyncio.wait([vod, prom], return_when=asyncio.ALL_COMPLETED)
-        await _response.eof()
+        await asyncio.wait([prom, _response.eof()] + ([vod] if vod else []), return_when=asyncio.ALL_COMPLETED)
 
 
 class VodHttpProtocol(HttpProtocol, metaclass=TouchUpMeta):
@@ -581,7 +577,6 @@ if __name__ == "__main__":
     _IPTV = _NETWORK_SATURATED = _SESSION = _SESSION_LOGOS = None
 
     _CHANNELS = {}
-    _CHILDREN = {}
 
     _conf = mu7d_config()
 
