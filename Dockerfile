@@ -85,10 +85,6 @@ ENV LC_ALL es_ES.UTF-8
 ENV LANG es_ES.UTF-8
 ENV LANGUAGE es_ES:UTF-8
 
-COPY requirements.txt .
-RUN pip install --upgrade pip \
- && pip install --no-cache-dir -r requirements.txt
-
 RUN apt-get install --no-install-recommends --no-install-suggests -y \
    bash \
    htop \
@@ -99,15 +95,14 @@ RUN apt-get install --no-install-recommends --no-install-suggests -y \
    netcat-openbsd \
    procps
 
-COPY . .
+COPY requirements.txt .
+RUN pip install --no-cache-dir --root-user-action ignore --upgrade pip \
+ && pip install --no-cache-dir --root-user-action ignore -r requirements.txt
 
 RUN \
   if [ "$TARGETARCH" = "amd64" ]; then \
     apt-get install --no-install-recommends --no-install-suggests -y wrk \
-    && pip install bandit black httpie ipython pycodestyle pylint ruff \
-    && pycodestyle -v *.py && pylint --rcfile pylint.toml -v *.py \
-    && ruff check --config ruff.toml -v *.py \
-    && bandit -v *.py && black -l 113 -t py312 --diff -v *.py; \
+    && pip install --no-cache-dir --root-user-action ignore bandit httpie ipython pycodestyle pylint ruff; \
   fi
 
 RUN apt-get clean autoclean -y \
@@ -117,5 +112,16 @@ RUN apt-get clean autoclean -y \
 
 RUN ln -s /usr/lib/jellyfin-ffmpeg/ff* /usr/bin/ \
  && ln -s /usr/lib/jellyfin-ffmpeg/lib/* /usr/lib/
+
+COPY . .
+
+RUN \
+  if [ "$TARGETARCH" = "amd64" ]; then \
+    bandit -v *.py \
+    && pycodestyle -v *.py \
+    && pylint --rcfile pylint.toml -v *.py \
+    && ruff check --config ruff.toml --diff --no-fix-only -v *.py \
+    && ruff format --config ruff.toml --diff -v *.py; \
+  fi
 
 CMD ["/app/mu7d.py"]

@@ -6,8 +6,7 @@ from mu7d import _version
 
 
 build_exe_options = {
-    "include_files": sanic.__path__
-    + ["comskip.ini", "mu7d.conf", "timers.conf", "ffmpeg.exe", "ffprobe.exe"],
+    "include_files": sanic.__path__ + ["comskip.ini", "mu7d.conf", "timers.conf", "ffmpeg.exe", "ffprobe.exe"],
     "excludes": ["test", "tkinter", "unittest"],
     "optimize": 2,
 }
