@@ -400,6 +400,7 @@ async def postprocess(archive_params, archive_url, mtime, vod_info):
 
     @_check_terminate
     async def _step_3():
+        global COMSKIP
         nonlocal proc
 
         cmd = ["comskip"] + COMSKIP + ["--ts", _tmpname + TMP_EXT]
@@ -415,6 +416,7 @@ async def postprocess(archive_params, archive_url, mtime, vod_info):
                     log.error(exception)
             end = time.time()
 
+        COMSKIP = None if proc.returncode else COMSKIP
         msg1 = f"POSTPROCESS #3  - COMSKIP - Commercials {'NOT found' if proc.returncode else 'found'}"
         msg2 = f"In [{str(timedelta(seconds=round(end - start)))}s]"
         msg = "%-50s%22s" % (msg1, msg2)
@@ -424,7 +426,7 @@ async def postprocess(archive_params, archive_url, mtime, vod_info):
     async def _step_4():
         nonlocal duration, mtime, proc, tags
 
-        if proc.returncode == 0 and os.path.exists(_tmpname + CHP_EXT):
+        if COMSKIP and os.path.exists(_tmpname + CHP_EXT):
             intervals = []
             pieces = []
 
