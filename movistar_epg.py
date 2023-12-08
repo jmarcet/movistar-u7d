@@ -88,10 +88,9 @@ async def before_server_start(app):
                 if first < oldest_epg:
                     oldest_epg = first
 
-            if _conf["RECORDINGS_UPGRADE"]:
-                await upgrade_recordings()
+            await upgrade_recordings()
 
-            if not _conf["RECORDINGS_REINDEX"]:
+            if not RECORDINGS_REINDEX:
                 _indexed = set()
                 try:
                     async with aiofiles.open(recordings, encoding="utf8") as f:
@@ -1308,6 +1307,9 @@ async def update_recordings(archive=False):
 
 
 async def upgrade_recordings():
+    if not RECORDINGS_UPGRADE:
+        return
+
     log.warning("UPGRADING RECORDINGS METADATA")
     covers = wrong = 0
 
@@ -1425,7 +1427,9 @@ if __name__ == "__main__":
     RECORDINGS = _conf["RECORDINGS"]
     RECORDINGS_M3U = _conf["RECORDINGS_M3U"]
     RECORDINGS_PER_CHANNEL = _conf["RECORDINGS_PER_CHANNEL"]
+    RECORDINGS_REINDEX = _conf["RECORDINGS_REINDEX"]
     RECORDINGS_THREADS = _conf["RECORDINGS_THREADS"]
+    RECORDINGS_UPGRADE = _conf["RECORDINGS_UPGRADE"]
     U7D_URL = _conf["U7D_URL"]
     VID_EXT = ".mkv" if MKV_OUTPUT else ".ts"
 
