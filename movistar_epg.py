@@ -89,6 +89,7 @@ async def before_server_start(app):
                     oldest_epg = first
 
             await upgrade_recordings()
+            upgraded_channels = await upgrade_channel_numbers()
 
             if not RECORDINGS_REINDEX:
                 _indexed = set()
@@ -107,6 +108,12 @@ async def before_server_start(app):
                             except KeyError:
                                 log.warning(f'Dropping old style "{recording}" from recordings.json')
                                 continue
+                            for old_ch, new_ch in upgraded_channels:
+                                if filename.startswith(old_ch):
+                                    msg = f'Updating recording index "{filename}" => '
+                                    msg += f'"{filename.replace(old_ch, new_ch)}"'
+                                    log.debug(msg)
+                                    filename = recording["filename"] = filename.replace(old_ch, new_ch)
                             if not does_recording_exist(filename):
                                 if timestamp > oldest_epg:
                                     log.warning(f'Archived recording "{filename}" not found on disk')
@@ -1304,6 +1311,86 @@ async def update_recordings(archive=False):
 
     if updated_m3u:
         log.info(f"Local Recordings' M3U Updated => {U7D_URL}/Recordings.m3u")
+
+
+async def upgrade_channel_numbers():
+    if not RECORDINGS_PER_CHANNEL:
+        return ()
+
+    dirs = os.listdir(RECORDINGS)
+    pairs = [r.groups() for r in [re.match(r"^(\d{3}). (.+)$", dir) for dir in dirs] if r]
+
+    stale = []
+    for nr, name in pairs:
+        _f = filter(lambda x: _CHANNELS[x]["name"] == name and _CHANNELS[x]["number"] != int(nr), _CHANNELS)
+        try:
+            channel_id = next(_f)
+            stale.append((int(channel_id), int(nr), _CHANNELS[channel_id]["number"], name))
+        except StopIteration:
+            pass
+
+    if not stale:
+        return ()
+
+    stale_pairs = []
+    log.warning("UPGRADING CHANNEL NUMBERS")
+    for channel_id, old_nr, new_nr, name in stale:
+        old_channel_name = f"{old_nr:03}. {name}"
+        new_channel_name = f"{new_nr:03}. {name}"
+        old_channel_path = os.path.join(RECORDINGS, old_channel_name)
+        new_channel_path = os.path.join(RECORDINGS, new_channel_name)
+
+        stale_pairs.append((old_channel_name, new_channel_name))
+
+        for nfo_file in sorted(glob(f"{old_channel_path}/**/*{NFO_EXT}", recursive=True)):
+            new_nfo_file = nfo_file.replace(old_channel_name, new_channel_name)
+            if os.path.exists(new_nfo_file):
+                log.warning(f'SKIPPING existing "{new_nfo_file[len(RECORDINGS) + 1 :]}"')
+                continue
+
+            async with aiofiles.open(nfo_file, encoding="utf-8") as f:
+                data = await f.read()
+
+            data = data.replace(f">{old_nr:03}. ", f">{new_nr:03}. ").replace(f">{old_nr}<", f">{new_nr}<")
+
+            async with aiofiles.open(nfo_file, "w", encoding="utf8") as f:
+                await f.write(data)
+
+            if not os.path.exists(new_channel_path):
+                continue
+
+            files = list(get_recording_files(nfo_file[:-13]))
+            old_files = [f for f in files if os.path.splitext(f)[-1] in (*VID_EXTS, ".jpg", ".nfo", ".png")]
+            new_files = [f.replace(old_channel_name, new_channel_name) for f in old_files]
+
+            old_dir = os.path.dirname(files[0])
+            new_dir = old_dir.replace(old_channel_name, new_channel_name)
+
+            if not os.path.exists(new_dir):
+                os.mkdir(new_dir)
+
+            if "/metadata/" in str(files):
+                meta_dir = os.path.join(new_dir, "metadata")
+                if not os.path.exists(meta_dir):
+                    os.mkdir(meta_dir)
+
+            for old_file, new_file in zip(old_files, new_files):
+                if os.path.exists(new_file):
+                    log.warning(f'SKIPPING existing "{new_file[len(RECORDINGS) + 1 :]}"')
+                else:
+                    os.rename(old_file, new_file)
+
+        if os.path.exists(new_channel_path):
+            stale_channel_name = f"OLD_{old_nr:03}_{name}"
+            stale_channel_path = os.path.join(RECORDINGS, stale_channel_name)
+
+            log.warning(f'RENAMING channel folder: "{old_channel_name}" => "{stale_channel_name}"')
+            os.rename(old_channel_path, stale_channel_path)
+        else:
+            log.warning(f'RENAMING channel folder: "{old_channel_name}" => "{new_channel_name}"')
+            os.rename(old_channel_path, new_channel_path)
+
+    return stale_pairs
 
 
 async def upgrade_recordings():
