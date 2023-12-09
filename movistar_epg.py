@@ -27,7 +27,8 @@ from sanic import Sanic, response
 from sanic_prometheus import monitor
 from sanic.exceptions import NotFound, ServiceUnavailable
 
-from mu7d import DROP_KEYS, EXT, IPTV_DNS, NFO_EXT, UA, UA_U7D, URL_MVTV, VID_EXTS, WIN32, YEAR_SECONDS
+from mu7d import DIV_ONE, DIV_TWO, DROP_KEYS, EXT, IPTV_DNS, NFO_EXT
+from mu7d import UA, UA_U7D, URL_MVTV, VID_EXTS, WIN32, YEAR_SECONDS
 from mu7d import find_free_port, get_iptv_ip, get_local_info, get_safe_filename, get_title_meta
 from mu7d import glob_safe, launch, mu7d_config, ongoing_vods, remove, utime, _version
 
@@ -371,7 +372,7 @@ async def handle_archive(request, channel_id, program_id, cloud=False):
     recorded = int(request.args.get("recorded", 0))
     if recorded:
         if recorded < 45:
-            log.error("%-72s%s" % ("Recording WRONG", log_suffix))
+            log.error(DIV_ONE % ("Recording WRONG", log_suffix))
             return response.json({"status": "Recording WRONG"}, status=202)
 
         async with recordings_inc_lock:
@@ -383,12 +384,12 @@ async def handle_archive(request, channel_id, program_id, cloud=False):
             _t = _RECORDINGS_INC[channel_id][program_id]
 
         if len(_t) < 2 or sorted(_t)[-1] - sorted(_t)[-2] >= 3:
-            log.debug("%-20s%52s%s" % ("Recording INCOMPLETE", "[%5ss]" % str(_t[-1]), log_suffix))
+            log.debug(DIV_TWO % ("Recording INCOMPLETE", "[%5ss]" % str(_t[-1]), log_suffix))
             return response.json({"status": "Recording INCOMPLETE"}, status=202)
 
     if request.method == "OPTIONS":
         msg = f"Recording {'INCOMPLETE ' if recorded else ''}OK"
-        log.debug("%-72s%s" % (msg, log_suffix))
+        log.debug(DIV_ONE % (msg, log_suffix))
         return response.json({"status": msg}, status=200)
 
     log.debug(f"Checking for {filename}")
@@ -415,12 +416,12 @@ async def handle_archive(request, channel_id, program_id, cloud=False):
 
             app.add_task(update_recordings(channel_id))
 
-            msg = "%-72s%s" % ("Recording ARCHIVED" + errors, log_suffix)
+            msg = DIV_ONE % ("Recording ARCHIVED" + errors, log_suffix)
 
             log.info(msg)
             return response.json({"status": msg}, ensure_ascii=False)
 
-    msg = "%-72s%s" % ("Recording NOT ARCHIVED" + errors, log_suffix)
+    msg = DIV_ONE % ("Recording NOT ARCHIVED" + errors, log_suffix)
     log.error(msg)
     return response.json({"status": msg}, ensure_ascii=False, status=203)
 
@@ -526,7 +527,7 @@ async def kill_vod():
     if r and r.groups():
         channel_id, pid, timestamp, filename = r.groups()
         log_suffix = f': [{channel_id:4}] [{pid}] [{timestamp}] "{filename}"'
-    log.warning("%-72s%s" % ("Recording KILLED", log_suffix if r and r.groups() else f": [{proc.pid}]"))
+    log.warning(DIV_ONE % ("Recording KILLED", log_suffix if r and r.groups() else f": [{proc.pid}]"))
 
 
 async def log_network_saturated(nr_procs=None, _wait=False):
@@ -618,9 +619,8 @@ async def prom_event(request, method):
         if local:
             return
 
-    pad = " " if request.json["channel_id"] < 1000 else ""
-    msg = f'{request.json["msg"]}{pad} [{request.json["channel_id"]:4}] '
-    msg += f'[{_event["program_id"]}] ' if not local else ""
+    msg = f'{request.json["msg"]} [{request.json["channel_id"]:4}] '
+    msg += f'[{_event["program_id"]}] ' if not local else "[00000000] "
     msg += f'[{_event["start"]}] [{_event["channel"]}] "{_epg["full_title"]}" _ {offset}'
 
     log.info(msg)
@@ -697,9 +697,9 @@ async def record_program(
         log_suffix = f': [{channel_id:4}] [{pid}] [{timestamp}] "{filename}"'
         if f"{channel_id} {pid} -b {timestamp} " in ongoing or f"{channel_id} {pid} -b " not in ongoing:
             if f"{channel_id} {pid} -b " in ongoing:
-                msg = "%-72s%s" % ("Recording ONGOING", log_suffix)
+                msg = DIV_ONE % ("Recording ONGOING", log_suffix)
             else:
-                msg = "%-72s%s" % ("Found REPEATED EVENT", log_suffix)
+                msg = DIV_ONE % ("Found REPEATED EVENT", log_suffix)
             log.warning(msg)
             return re.sub(r"\s+:", ":", msg)
 
@@ -707,12 +707,12 @@ async def record_program(
         prev_ts = int(r.groups()[0])
         begin_time = f"beginTime=[{timestamp - prev_ts:+}s]"
         if timestamp < prev_ts:
-            log.warning("%-22s%50s%s" % ("Event CHANGED => KILL", begin_time, log_suffix))
+            log.warning(DIV_TWO % ("Event CHANGED => KILL", begin_time, log_suffix))
             ongoing = await ongoing_vods(channel_id, pid, filename)
             ongoing[0].terminate()
             await asyncio.sleep(5)
         elif timestamp > prev_ts:
-            msg = "%-22s%50s%s" % ("Event DELAYED", begin_time, log_suffix)
+            msg = DIV_TWO % ("Event DELAYED", begin_time, log_suffix)
             log.debug(msg)
             return re.sub(r"\s+:", ":", msg)
 
@@ -910,12 +910,12 @@ async def timers_check(delay=0):
                 return
             log_suffix = f': [{channel_id:4}] [{pid}] [{timestamp}] "{filename}"'
             if 0 < _time < 300:
-                log.debug("%-22s%50s%s" % ("Skipping MATCH", f"Too short [{_time}s]", log_suffix))
+                log.debug(DIV_TWO % ("Skipping MATCH", f"Too short [{_time}s]", log_suffix))
                 return
             if await record_program(channel_id, pid, 0, _time, cloud, comskip, True, MKV_OUTPUT, vo):
                 return
 
-            log.info("%-72s%s" % (f"Found {'Cloud ' if cloud else ''}EPG MATCH", log_suffix))
+            log.info(DIV_ONE % (f"Found {'Cloud ' if cloud else ''}EPG MATCH", log_suffix))
 
             queued.append((channel_id, timestamp))
             await asyncio.sleep(2.5 if not WIN32 else 4)

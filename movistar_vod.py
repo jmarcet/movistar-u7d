@@ -27,9 +27,10 @@ from datetime import timedelta
 from filelock import FileLock
 from glob import glob
 
-from mu7d import BUFF, CHUNK, DROP_KEYS, EPG_URL, NFO_EXT, TERMINATE, UA, URL_COVER, URL_MVTV, YEAR_SECONDS
-from mu7d import IPTV_DNS, WIN32, find_free_port, get_iptv_ip, glob_safe, ongoing_vods, remove, utime
-from mu7d import mu7d_config, _version
+from mu7d import BUFF, CHUNK, DIV_LOG, DROP_KEYS, EPG_URL, IPTV_DNS, NFO_EXT
+from mu7d import TERMINATE, UA, URL_COVER, URL_MVTV, WIN32, YEAR_SECONDS
+from mu7d import find_free_port, get_iptv_ip, glob_safe, mu7d_config
+from mu7d import ongoing_vods, remove, utime, _version
 
 
 log = logging.getLogger("VOD")
@@ -109,10 +110,10 @@ def _cleanup(*exts, meta=False):
 
 async def _cleanup_recording(exception, start=0):
     msg = str(exception) if isinstance(exception, ValueError) else repr(exception)
-    msg = "Cancelled @" if isinstance(exception, CancelledError) else msg
-    log_suffix = " [%6ss] / [%5ss]" % ("~" + str(int(time.time() - start)), str(_args.time)) if start else ""
-    msg_len = 33 if log_suffix else 54
-    log.error("%-16s%56s" % ("Recording FAILED", re.sub(r"\s+", " ", msg)[:msg_len] + log_suffix))
+    msg = "Cancelled" if isinstance(exception, CancelledError) else msg
+    log_suffix = (" @ [%6ss] / [%5ss]" % ("~" + str(int(time.time() - start)), str(_args.time))) if start else ""
+    msg_len = 64 if log_suffix else 87
+    log.error("%-17s%87s" % ("Recording FAILED", re.sub(r"\s+", " ", msg)[:msg_len] + log_suffix))
 
     if RECORDINGS_TMP:
         _cleanup(TMP_EXT, TMP_EXT2)
@@ -332,7 +333,7 @@ async def postprocess(archive_params, archive_url, mtime, vod_info):
         log_suffix = f"[{str(timedelta(seconds=duration))}s = {str(duration):>5}s] / [{str(_args.time):>5}s]"
 
         msg = f"POSTPROCESS #1  - Recording is {'INCOMPLETE' if bad else 'COMPLETE'}"
-        msg = "%-42s%30s" % (msg, log_suffix)
+        msg = DIV_LOG % (msg, log_suffix)
 
         if bad:
             log.warning(msg)
@@ -356,7 +357,7 @@ async def postprocess(archive_params, archive_url, mtime, vod_info):
         else:
             new_mtime = new_vod_info["beginTime"] // 1000 + _args.start
             if mtime != new_mtime:
-                msg = "%-32s%40s" % ("POSTPROCESS #2  - Event CHANGED", f"beginTime=[{new_mtime - mtime:+}s]")
+                msg = DIV_LOG % ("POSTPROCESS #2  - Event CHANGED", f"beginTime=[{new_mtime - mtime:+}s]")
                 if new_mtime < mtime:
                     raise ValueError(msg)
                 log.info(msg)
@@ -383,7 +384,7 @@ async def postprocess(archive_params, archive_url, mtime, vod_info):
 
         msg = "POSTPROCESS #2  - Remuxing/Transcoding"
         if new_vod_info and mtime != new_mtime:
-            msg = "%-40s%32s" % (msg, f"Cutting first [{new_mtime - mtime}s]")
+            msg = DIV_LOG % (msg, f"Cutting first [{new_mtime - mtime}s]")
             mtime = new_mtime
 
         log.info(msg)
@@ -418,7 +419,7 @@ async def postprocess(archive_params, archive_url, mtime, vod_info):
         COMSKIP = None if proc.returncode else COMSKIP
         msg1 = f"POSTPROCESS #3  - COMSKIP - Commercials {'NOT found' if proc.returncode else 'found'}"
         msg2 = f"In [{str(timedelta(seconds=round(end - start)))}s]"
-        msg = "%-50s%22s" % (msg1, msg2)
+        msg = DIV_LOG % (msg1, msg2)
         log.warning(msg) if proc.returncode else log.info(msg)
 
     @_check_terminate
@@ -454,7 +455,8 @@ async def postprocess(archive_params, archive_url, mtime, vod_info):
                         cmd += ["-c", "copy", "-map", "0", *tags, "-v", "error", "-y", pieces[-1]]
 
                         ch = chr(idx + 64)
-                        log.info(f"POSTPROCESS #4{ch} - Cutting Chapter [{idx:02}] ({start} - {end})")
+                        msg1, msg2 = f"POSTPROCESS #4{ch} - Cutting Chapter [{idx:02}]", f"({start} - {end})"
+                        log.info(DIV_LOG % (msg1, msg2))
                         proc = await asyncio.create_subprocess_exec(*cmd, stdin=NULL, stdout=PIPE, stderr=OUT)
 
                         await _check_process(f"Failed Cutting Chapter [{idx:02}]")
@@ -504,7 +506,7 @@ async def postprocess(archive_params, archive_url, mtime, vod_info):
             cmrcls = f"{str(timedelta(seconds=_args.time - duration))}s]"
             length = f" [{str(timedelta(seconds=_args.time))}s - {cmrcls} = {length}"
 
-        log.info("%-37s%35s" % ("POSTPROCESS #5  - Archiving recording", length))
+        log.info(DIV_LOG % ("POSTPROCESS #5  - Archiving recording", length))
         _archive_recording()
 
         newest = sorted(glob_safe(f"{os.path.dirname(_filename)}/*{VID_EXT}"), key=os.path.getmtime)[-1]
@@ -570,7 +572,7 @@ async def record_stream(vod_info):
 
     formatter = logging.Formatter(
         datefmt="%Y-%m-%d %H:%M:%S",
-        fmt=f"[%(asctime)s] [%(name)s] [%(levelname)8s] %(message)-72s{log_suffix}",
+        fmt=f"[%(asctime)s] [%(name)s] [%(levelname)8s] %(message)-104s{log_suffix}",
     )
     handler = logging.StreamHandler()
     handler.setFormatter(formatter)
@@ -619,7 +621,7 @@ async def record_stream(vod_info):
         return buffer
 
     try:
-        log.info("%-22s%50s" % ("Recording STARTED", log_suffix))
+        log.info(DIV_LOG % ("Recording STARTED", log_suffix))
         start = time.time()
 
         if vod_info.get("isHdtv"):
@@ -646,7 +648,7 @@ async def record_stream(vod_info):
 
     await f.close()
     record_time = int(time.time() - start)
-    log.info("%-22s%50s" % ("Recording ENDED", "[%6ss] / [%5ss]" % (f"~{record_time}", f"{_args.time}")))
+    log.info(DIV_LOG % ("Recording ENDED", "[%6ss] / [%5ss]" % (f"~{record_time}", f"{_args.time}")))
 
     if not U7D_PARENT:
         if os.path.exists(_tmpname + TMP_EXT):
@@ -700,7 +702,7 @@ async def rtsp(vod_info):
         # Close the RTSP session, reducing bandwith
         await client.send_request("TEARDOWN", session)
         client.close_connection()
-        log.debug("RTSP loop ended")
+        log.debug("[%4s] [%d]: RTSP loop ended" % (str(_args.channel), _args.program))
 
     if __name__ == "__main__" and _args.write_to_file:
         if U7D_PARENT and not WIN32:

@@ -29,8 +29,9 @@ from sanic.models.server_types import ConnInfo
 from sanic.server import HttpProtocol
 from sanic.touchup.meta import TouchUpMeta
 
-from mu7d import ATOM, BUFF, CHUNK, EPG_URL, IPTV_DNS, MIME_M3U, MIME_WEBM, UA, URL_COVER, URL_LOGO, VID_EXTS
-from mu7d import WIN32, YEAR_SECONDS, find_free_port, get_iptv_ip, mu7d_config, ongoing_vods, _version
+from mu7d import ATOM, BUFF, CHUNK, EPG_URL, IPTV_DNS, MIME_M3U, MIME_WEBM
+from mu7d import UA, URL_COVER, URL_LOGO, VID_EXTS, WIN32, YEAR_SECONDS
+from mu7d import find_free_port, get_iptv_ip, mu7d_config, ongoing_vods, _version
 from movistar_vod import Vod
 
 
@@ -509,7 +510,7 @@ async def network_saturated():
 
 async def send_prom_event(event):
     await asyncio.sleep(0.05)
-    event["msg"] += f" [{event['lat']:.4f}s]" if event["lat"] else ""
+    event["msg"] = "%-95s%9s:" % (event["msg"], f"[{event['lat']:.4f}s]" if event["lat"] else "")
 
     try:
         try:

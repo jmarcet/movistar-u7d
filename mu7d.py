@@ -35,6 +35,9 @@ WIN32 = sys.platform == "win32"
 ATOM = 188
 BUFF = 65536
 CHUNK = 1316
+DIV_LOG = "%-64s%40s"
+DIV_ONE = "%-104s%s"
+DIV_TWO = DIV_LOG + "%s"
 EPG_URL = "http://127.0.0.1:8889"
 IPTV_DNS = "172.26.23.3"
 MIME_M3U = "audio/x-mpegurl"
