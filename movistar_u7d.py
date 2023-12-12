@@ -189,10 +189,11 @@ async def handle_channel(request, channel_id=None, channel_name=None):
             await _response.send((await stream.recv())[0][28:])
 
     finally:
+        stream.close()
         if prom:
             prom.cancel()
-        stream.close()
-        await asyncio.wait([_response.eof()] + ([prom] if prom else []), return_when=asyncio.ALL_COMPLETED)
+            await prom
+        await _response.eof()
 
 
 @app.route("/<channel_id:int>/<url>", methods=["GET", "HEAD"], name="flussonic_id")
@@ -252,7 +253,8 @@ async def handle_flussonic(request, url, channel_id=None, channel_name=None, clo
                             to_send -= len(content)
                     finally:
                         prom.cancel()
-                        await asyncio.wait([prom, _response.eof()], return_when=asyncio.ALL_COMPLETED)
+                        await prom
+                        await _response.eof()
 
                 return
             return await transcode(request, event, filename=program_id, offset=offset)
@@ -287,11 +289,12 @@ async def handle_flussonic(request, url, channel_id=None, channel_name=None, clo
             await _response.send((await stream.recv())[0])
 
     finally:
+        stream.close()
         vod.cancel()
         if prom:
             prom.cancel()
-        stream.close()
-        await asyncio.wait([vod, _response.eof()] + ([prom] if prom else []), return_when=asyncio.ALL_COMPLETED)
+            await prom
+        await _response.eof()
 
 
 @app.route("/cloud/<channel_id:int>/<url>", methods=["GET", "HEAD"], name="flussonic_cloud_id")
@@ -550,11 +553,13 @@ async def transcode(request, event, channel_id=0, filename="", offset=0, port=0,
             await _response.send(content)
 
     finally:
+        proc.kill()
         if vod:
             vod.cancel()
-        proc.kill()
         prom.cancel()
-        await asyncio.wait([prom, _response.eof()] + ([vod] if vod else []), return_when=asyncio.ALL_COMPLETED)
+        await prom
+        await proc.wait()
+        await _response.eof()
 
 
 class VodHttpProtocol(HttpProtocol, metaclass=TouchUpMeta):
