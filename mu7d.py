@@ -191,7 +191,7 @@ async def launch(cmd):
 
 def mu7d_config():
     confname = "mu7d.conf"
-    fileconf = ""
+    fileconf = os.path.join(os.path.dirname(__file__), confname)
 
     if not WIN32:
         if os.path.exists(os.path.join(os.getenv("HOME"), confname)):
