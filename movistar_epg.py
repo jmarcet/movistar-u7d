@@ -13,7 +13,6 @@ import ujson
 import unicodedata
 import urllib.parse
 import xmltodict
-import warnings
 
 from aiohttp.client_exceptions import ClientOSError, ServerDisconnectedError
 from aiohttp.resolver import AsyncResolver
@@ -1499,7 +1498,6 @@ if __name__ == "__main__":
     logging.getLogger("sanic.error").setLevel(logging.FATAL)
     logging.getLogger("sanic.root").disabled = True
     logging.getLogger("sanic.server").disabled = True
-    warnings.filterwarnings(action="ignore", category=DeprecationWarning, module="sanic")
 
     CHANNELS = _conf["CHANNELS"]
     CHANNELS_CLOUD = _conf["CHANNELS_CLOUD"]

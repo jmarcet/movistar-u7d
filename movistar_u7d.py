@@ -12,7 +12,6 @@ import sys
 import time
 import ujson
 import urllib.parse
-import warnings
 
 from aiohttp.client_exceptions import ClientConnectionError, ClientOSError, ServerDisconnectedError
 from aiohttp.resolver import AsyncResolver
@@ -592,8 +591,7 @@ if __name__ == "__main__":
     logging.getLogger("sanic.error").setLevel(logging.FATAL)
     logging.getLogger("sanic.root").disabled = True
     logging.getLogger("sanic.server").disabled = True
-    warnings.filterwarnings(action="ignore", category=DeprecationWarning, module="sanic")
-    warnings.filterwarnings(action="ignore", category=RuntimeWarning)
+    # warnings.filterwarnings(action="ignore", category=RuntimeWarning)
 
     if not os.getenv("U7D_PARENT"):
         log.critical("Must be run with mu7d")
