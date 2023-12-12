@@ -23,7 +23,6 @@ from aiohttp.client_exceptions import ClientConnectionError, ClientOSError, Serv
 from aiohttp.resolver import AsyncResolver
 from asyncio.exceptions import CancelledError
 from asyncio.subprocess import DEVNULL as NULL, PIPE, STDOUT as OUT
-from contextlib import closing
 from datetime import timedelta
 from filelock import FileLock
 from glob import glob
@@ -608,48 +607,51 @@ async def record_stream(vod_info):
     flags += "[VO] " if _args.vo else ""
     log_suffix = f"{flags}[{str(timedelta(seconds=_args.time)):>7}s = {_args.time:>5}s]"
 
-    with closing(await asyncio_dgram.bind((_IPTV, _args.client_port))) as stream:
-        buflen = BUFF // CHUNK
-        f = await aiofiles.open(_tmpname + TMP_EXT, "wb")
+    stream = await asyncio_dgram.bind((_IPTV, _args.client_port))
+    f = await aiofiles.open(_tmpname + TMP_EXT, "wb")
+    buflen = BUFF // CHUNK
 
-        async def _buffer():
-            buffer = b""
-            for _ in range(buflen):
-                buffer += (await stream.recv())[0]
-            return buffer
+    async def _buffer():
+        buffer = b""
+        for _ in range(buflen):
+            buffer += (await stream.recv())[0]
+        return buffer
 
-        try:
-            log.info("%-22s%50s" % ("Recording STARTED", log_suffix))
-            start = time.time()
+    try:
+        log.info("%-22s%50s" % ("Recording STARTED", log_suffix))
+        start = time.time()
 
-            if vod_info.get("isHdtv"):
-                await f.write((await asyncio.wait_for(stream.recv(), timeout=0.2))[0])
-            else:
-                # 1st packet on SDTV channels is bogus and breaks ffmpeg
-                await asyncio.wait_for(stream.recv(), timeout=0.2)
+        if vod_info.get("isHdtv"):
+            await f.write((await asyncio.wait_for(stream.recv(), timeout=0.2))[0])
+        else:
+            # 1st packet on SDTV channels is bogus and breaks ffmpeg
+            await asyncio.wait_for(stream.recv(), timeout=0.2)
 
-            while True:
-                await f.write(await asyncio.wait_for(_buffer(), timeout=1.0))
-                if time.time() - start >= _args.time:
-                    break
+        while True:
+            await f.write(await asyncio.wait_for(_buffer(), timeout=1.0))
+            if time.time() - start >= _args.time:
+                break
 
-        except (CancelledError, RuntimeError, asyncio_dgram.aio.TransportClosed):
-            await f.close()
-            await asyncio.shield(_cleanup_recording(CancelledError(), start))
-            return 1
-
-        except TimeoutError:
-            log.debug("TIMED OUT")
-
+    except (CancelledError, RuntimeError, asyncio_dgram.aio.TransportClosed):
         await f.close()
-        record_time = int(time.time() - start)
-        log.info("%-22s%50s" % ("Recording ENDED", "[%6ss] / [%5ss]" % (f"~{record_time}", f"{_args.time}")))
+        await asyncio.shield(_cleanup_recording(CancelledError(), start))
+        return 1
 
-        if not U7D_PARENT:
-            if os.path.exists(_tmpname + TMP_EXT):
-                _cleanup(VID_EXT)
-                _archive_recording()
-            return 0
+    except TimeoutError:
+        log.debug("TIMED OUT")
+
+    finally:
+        stream.close()
+
+    await f.close()
+    record_time = int(time.time() - start)
+    log.info("%-22s%50s" % ("Recording ENDED", "[%6ss] / [%5ss]" % (f"~{record_time}", f"{_args.time}")))
+
+    if not U7D_PARENT:
+        if os.path.exists(_tmpname + TMP_EXT):
+            _cleanup(VID_EXT)
+            _archive_recording()
+        return 0
 
     return asyncio.create_task(postprocess(archive_params, archive_url, mtime, vod_info))
 

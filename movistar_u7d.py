@@ -18,7 +18,6 @@ from aiohttp.resolver import AsyncResolver
 from asyncio.exceptions import CancelledError
 from asyncio.subprocess import DEVNULL, PIPE
 from collections import namedtuple
-from contextlib import closing
 from datetime import datetime
 from filelock import FileLock, Timeout
 from sanic import Sanic, response
@@ -162,9 +161,11 @@ async def handle_channel(request, channel_id=None, channel_name=None):
         socket.IPPROTO_IP, socket.IP_ADD_MEMBERSHIP, socket.inet_aton(mc_grp) + socket.inet_aton(_IPTV)
     )
 
-    with closing(await asyncio_dgram.from_socket(sock)) as stream:
-        _response = await request.respond(content_type=MIME_WEBM)
+    prom = None
+    stream = await asyncio_dgram.from_socket(sock)
+    _response = await request.respond(content_type=MIME_WEBM)
 
+    try:
         # 1st packet on SDTV channels is bogus and breaks ffmpeg
         if ua.startswith("Jellyfin") and " HD" not in name:
             await stream.recv()
@@ -184,13 +185,14 @@ async def handle_channel(request, channel_id=None, channel_name=None):
             )
         )
 
-        try:
-            while True:
-                await _response.send((await stream.recv())[0][28:])
+        while True:
+            await _response.send((await stream.recv())[0][28:])
 
-        finally:
+    finally:
+        if prom:
             prom.cancel()
-            await asyncio.wait([prom, _response.eof()], return_when=asyncio.ALL_COMPLETED)
+        stream.close()
+        await asyncio.wait([_response.eof()] + ([prom] if prom else []), return_when=asyncio.ALL_COMPLETED)
 
 
 @app.route("/<channel_id:int>/<url>", methods=["GET", "HEAD"], name="flussonic_id")
@@ -268,9 +270,11 @@ async def handle_flussonic(request, url, channel_id=None, channel_name=None, clo
     if " Chrome/" in ua:
         return await transcode(request, event, channel_id=channel_id, port=client_port, vod=vod)
 
-    with closing(await asyncio_dgram.bind((_IPTV, client_port))) as stream:
-        _response = await request.respond(content_type=MIME_WEBM)
+    prom = None
+    stream = await asyncio_dgram.bind((_IPTV, client_port))
+    _response = await request.respond(content_type=MIME_WEBM)
 
+    try:
         # 1st packet on SDTV channels is bogus and breaks ffmpeg
         if ua.startswith("Jellyfin") and " HD" not in _CHANNELS[channel_id]["name"]:
             await stream.recv()
@@ -279,14 +283,15 @@ async def handle_flussonic(request, url, channel_id=None, channel_name=None, clo
 
         prom = app.add_task(send_prom_event({**event, "lat": time.time() - _start}))
 
-        try:
-            while True:
-                await _response.send((await stream.recv())[0])
+        while True:
+            await _response.send((await stream.recv())[0])
 
-        finally:
-            vod.cancel()
+    finally:
+        vod.cancel()
+        if prom:
             prom.cancel()
-            await asyncio.wait([prom, vod, _response.eof()], return_when=asyncio.ALL_COMPLETED)
+        stream.close()
+        await asyncio.wait([vod, _response.eof()] + ([prom] if prom else []), return_when=asyncio.ALL_COMPLETED)
 
 
 @app.route("/cloud/<channel_id:int>/<url>", methods=["GET", "HEAD"], name="flussonic_cloud_id")
