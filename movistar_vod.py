@@ -586,10 +586,11 @@ async def record_stream(vod_info):
 
     if RECORDINGS_TMP:
         _tmpname = os.path.join(RECORDINGS_TMP, _args.filename)
-        path = os.path.dirname(_tmpname)
-        if not os.path.exists(path):
-            log.debug(f'Making dir "{path}"')
-            os.makedirs(path)
+
+    path = os.path.dirname(_tmpname)
+    if not os.path.exists(path):
+        log.debug(f'Making dir "{path}"')
+        os.makedirs(path)
 
     archive_params = {"cloud": 1} if _args.cloud else {}
     archive_url = f"{EPG_URL}/archive/{_args.channel}/{_args.program}"
