@@ -592,7 +592,6 @@ class MulticastIPTV:
     def __init__(self):
         self.__xml_data = {}
         self.__epg = None
-        self.__errors = 0
 
     def __clean_epg_channels(self, epg):
         services = {}
@@ -934,7 +933,7 @@ class MulticastIPTV:
                 dict1[key] = dict2[key]
         return dict1
 
-    def __merge_epg(self, epg, expired, new_fixed, new_epg, new_gaps):
+    def __merge_epg(self, epg, expired, fixed, new_epg, new_gaps):
         for channel in sorted(new_epg):
             if channel in epg:
                 cached_epg = {}
@@ -951,7 +950,7 @@ class MulticastIPTV:
             else:
                 epg[channel] = new_epg[channel]
 
-        fixed = gaps = 0
+        gaps = 0
         for channel in sorted(epg):
             sorted_channel = sorted(epg[channel])
             _fixed, _gaps = self.__fix_edges(epg, channel, sorted_channel, new_epg=new_epg)
@@ -959,15 +958,7 @@ class MulticastIPTV:
             gaps += _gaps
 
         gaps_msg = f" _ Huecos = [{str(timedelta(seconds=gaps))}s]" if gaps else ""
-        msg = f"Eventos en Caché: Arreglados = {new_fixed + fixed} _ Caducados = {expired}{gaps_msg}"
-
-        if any((fixed, gaps)):
-            self.__errors += 1
-            log.warning(msg)
-            return
-
-        self.__errors = 0
-
+        msg = f"Eventos en Caché: Arreglados = {fixed} _ Caducados = {expired}{gaps_msg}"
         log.info(msg)
 
     def __parse_bin_epg(self):
@@ -1067,20 +1058,16 @@ class MulticastIPTV:
         if datetime.now().hour < 2:
             self.__expire_epg(new_epg)
 
-        new_fixed, new_gaps = self.__fix_epg(new_epg)
+        fixed, new_gaps = self.__fix_epg(new_epg)
 
         if not cached_epg:
             cache.save_epg(new_epg)
             return new_epg, False
 
         expired = self.__expire_epg(cached_epg)
-        self.__merge_epg(cached_epg, expired, new_fixed, new_epg, new_gaps)
+        self.__merge_epg(cached_epg, expired, fixed, new_epg, new_gaps)
+
         cache.save_epg(cached_epg)
-
-        if self.__errors in (1, 2):
-            log.warning(f"Reintentando [{self.__errors}/2]...")
-            return await self.get_epg()
-
         return cached_epg, True
 
     def get_service_provider_data(self):
