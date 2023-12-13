@@ -1423,10 +1423,11 @@ async def tvg_main():
         elif args.cloud_m3u or args.cloud_recordings or args.local_m3u or args.local_recordings:
             if args.cloud_m3u or args.cloud_recordings:
                 epg = cache.load_cloud_epg()
+                if not epg:
+                    log.error("No existe caché de grabaciones en la Nube. Debe generarla con movistar_epg")
             else:
                 epg = cache.load_local_epg()
-            if (args.cloud_m3u or args.cloud_recordings) and not epg:
-                log.error("No existe caché de grabaciones en la Nube. Debe generarla con movistar_epg")
+            if not epg:
                 return
             if args.cloud_m3u or args.local_m3u:
                 xmltv.write_m3u(
