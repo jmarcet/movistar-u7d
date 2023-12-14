@@ -401,7 +401,7 @@ class Cache:
         update_time = int(now.replace(hour=0, minute=0, second=0).timestamp())
         log.debug(f"Fecha de actualización de epg_metadata: [{time.ctime(update_time)}] [{update_time}]")
         if int(os.path.getmtime(os.path.join(app_dir, "cache", "epg_metadata.json"))) < update_time:
-            log.debug("Actualizando metadatos de la EPG")
+            log.info("Actualizando metadatos de la EPG")
             return
 
         channels_data = defaultdict(dict)
