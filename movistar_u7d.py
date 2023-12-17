@@ -35,7 +35,6 @@ from mu7d import find_free_port, get_iptv_ip, mu7d_config, ongoing_vods, _versio
 from movistar_vod import Vod
 
 
-Sanic.start_method = "fork"
 app = Sanic("movistar_u7d")
 
 log = logging.getLogger("U7D")
@@ -601,8 +600,6 @@ if __name__ == "__main__":
     logging.getLogger("filelock").setLevel(logging.FATAL)
     logging.getLogger("sanic.error").setLevel(logging.FATAL)
     logging.getLogger("sanic.root").disabled = True
-    logging.getLogger("sanic.server").disabled = True
-    # warnings.filterwarnings(action="ignore", category=RuntimeWarning)
 
     if not os.getenv("U7D_PARENT"):
         log.critical("Must be run with mu7d")
@@ -635,10 +632,9 @@ if __name__ == "__main__":
                 access_log=False,
                 auto_reload=False,
                 debug=_conf["DEBUG"],
-                single_process=U7D_THREADS == 1 or WIN32,
                 workers=U7D_THREADS if not WIN32 else 1,
             )
-    except (AttributeError, CancelledError, ConnectionResetError, KeyboardInterrupt):
+    except (AttributeError, CancelledError, KeyboardInterrupt):
         sys.exit(1)
     except Timeout:
         log.critical("Cannot be run more than once!")

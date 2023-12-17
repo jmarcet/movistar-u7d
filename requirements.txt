@@ -7,7 +7,7 @@ defusedxml
 filelock
 netifaces
 psutil
-git+https://github.com/jmarcet/sanic
+git+https://github.com/jmarcet/sanic@22.6LTS
 git+https://github.com/jmarcet/sanic-prometheus
 setproctitle
 tomli

@@ -33,7 +33,6 @@ from mu7d import find_free_port, get_iptv_ip, get_local_info, get_safe_filename,
 from mu7d import glob_safe, launch, mu7d_config, ongoing_vods, remove, utime, _version
 
 
-Sanic.start_method = "fork"
 app = Sanic("movistar_epg")
 
 log = logging.getLogger("EPG")
@@ -198,7 +197,7 @@ def check_task(task):
 
 
 def cleanup_handler(signum, frame):
-    before_server_stop()
+    [task.cancel() for task in asyncio.all_tasks()]
     asyncio.get_event_loop().stop()
 
 
@@ -1497,7 +1496,6 @@ if __name__ == "__main__":
     logging.getLogger("filelock").setLevel(logging.FATAL)
     logging.getLogger("sanic.error").setLevel(logging.FATAL)
     logging.getLogger("sanic.root").disabled = True
-    logging.getLogger("sanic.server").disabled = True
 
     CHANNELS = _conf["CHANNELS"]
     CHANNELS_CLOUD = _conf["CHANNELS_CLOUD"]
@@ -1558,7 +1556,6 @@ if __name__ == "__main__":
                 access_log=False,
                 auto_reload=False,
                 debug=_conf["DEBUG"],
-                single_process=True,
                 workers=1,
             )
     except (CancelledError, ConnectionResetError, KeyboardInterrupt):
