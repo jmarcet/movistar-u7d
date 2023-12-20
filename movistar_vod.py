@@ -130,8 +130,10 @@ async def _cleanup_recording(exception, start=0):
         for _name in (_filename, _tmpname):
             path = os.path.dirname(_name)
             parent = os.path.split(path)[0]
+            log.debug("Removing path=%s" % path)
             remove(path)
             if parent not in (RECORDINGS, RECORDINGS_TMP):
+                log.debug("Removing parent=%s" % parent)
                 remove(parent)
 
     try:
@@ -516,7 +518,7 @@ async def postprocess(archive_params, archive_url, mtime, vod_info):
         if _args.index:
             resp = await _SESSION.put(archive_url, params=archive_params)
             if resp.status != 200:
-                raise ValueError("Failed archiving recording")
+                raise ValueError("Failed indexing recording")
 
         utime(mtime, *glob_safe(f"{_filename}.*"))
         utime(newest_ts, os.path.dirname(_filename))
