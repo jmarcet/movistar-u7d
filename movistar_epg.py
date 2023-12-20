@@ -516,6 +516,12 @@ async def handle_timers_check(request):
     return response.json({"status": "Timers check queued"}, 200)
 
 
+@app.get("/update_epg")
+async def handle_update_epg(request):
+    app.add_task(update_epg())
+    return response.json({"status": "EPG Update Queued"}, 200)
+
+
 async def kill_vod():
     vods = await ongoing_vods()
     if not vods:
