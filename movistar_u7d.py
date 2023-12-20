@@ -28,6 +28,7 @@ from sanic.log import error_logger
 from sanic.models.server_types import ConnInfo
 from sanic.server import HttpProtocol
 from sanic.touchup.meta import TouchUpMeta
+from warnings import filterwarnings
 
 from mu7d import ATOM, BUFF, CHUNK, EPG_URL, IPTV_DNS, MIME_M3U, MIME_WEBM
 from mu7d import UA, URL_COVER, URL_LOGO, VID_EXTS, WIN32, YEAR_SECONDS
@@ -600,6 +601,14 @@ if __name__ == "__main__":
     logging.getLogger("filelock").setLevel(logging.FATAL)
     logging.getLogger("sanic.error").setLevel(logging.FATAL)
     logging.getLogger("sanic.root").disabled = True
+
+    # Ths happens when u7d is killed while on before_server_start
+    filterwarnings(
+        action="ignore",
+        category=RuntimeWarning,
+        message=r"coroutine '\w+.create_server' was never awaited",
+        module="sys",
+    )
 
     if not os.getenv("U7D_PARENT"):
         log.critical("Must be run with mu7d")

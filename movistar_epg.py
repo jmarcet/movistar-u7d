@@ -26,6 +26,7 @@ from psutil import Process, boot_time
 from sanic import Sanic, response
 from sanic_prometheus import monitor
 from sanic.exceptions import NotFound, ServiceUnavailable
+from warnings import filterwarnings
 
 from mu7d import DIV_ONE, DIV_TWO, DROP_KEYS, EXT, IPTV_DNS, NFO_EXT
 from mu7d import UA, UA_U7D, URL_MVTV, VID_EXTS, WIN32, YEAR_SECONDS
@@ -1496,6 +1497,14 @@ if __name__ == "__main__":
     logging.getLogger("filelock").setLevel(logging.FATAL)
     logging.getLogger("sanic.error").setLevel(logging.FATAL)
     logging.getLogger("sanic.root").disabled = True
+
+    # Ths happens when epg is killed while on before_server_start
+    filterwarnings(
+        action="ignore",
+        category=RuntimeWarning,
+        message=r"coroutine '\w+.create_server' was never awaited",
+        module="sys",
+    )
 
     CHANNELS = _conf["CHANNELS"]
     CHANNELS_CLOUD = _conf["CHANNELS_CLOUD"]
