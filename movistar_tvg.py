@@ -392,7 +392,7 @@ class Cache:
                 epg[int(channel)] = {int(k): v for k, v in data[channel].items()}
             return epg
 
-    def load_epg_metadata(self):
+    def load_epg_metadata(self, refresh):
         metadata = self.__load("epg_metadata.json")
         if not metadata:
             return
@@ -400,8 +400,7 @@ class Cache:
         now = datetime.now()
         update_time = int(now.replace(hour=0, minute=0, second=0).timestamp())
         log.debug(f"Fecha de actualización de epg_metadata: [{time.ctime(update_time)}] [{update_time}]")
-        if int(os.path.getmtime(os.path.join(app_dir, "cache", "epg_metadata.json"))) < update_time:
-            log.info("Actualizando metadatos de la EPG")
+        if refresh and int(os.path.getmtime(os.path.join(app_dir, "cache", "epg_metadata.json"))) < update_time:
             return
 
         channels_data = defaultdict(dict)
@@ -1070,11 +1069,12 @@ class MulticastIPTV:
         cache.save_epg(cached_epg)
         return cached_epg, True
 
-    def get_service_provider_data(self):
-        data = cache.load_epg_metadata()
+    def get_service_provider_data(self, refresh):
+        data = cache.load_epg_metadata(refresh)
         if data:
             self.__xml_data = data
         else:
+            log.info("Actualizando metadatos de la EPG")
             connection = self.__get_service_provider_ip()
             self.__get_epg_data(connection["mcast_grp"], connection["mcast_port"])
         return self.__xml_data
@@ -1406,7 +1406,7 @@ async def tvg_main():
         # Busca el Proveedor de Servicios y descarga los archivos XML:
         # canales, paquetes y segments
         iptv = MulticastIPTV()
-        xdata = iptv.get_service_provider_data()
+        xdata = iptv.get_service_provider_data(refresh=bool(args.m3u or args.guide))
 
         # Crea el objeto XMLTV a partir de los datos descargados del Proveedor de Servicios
         xmltv = XMLTV(xdata)
