@@ -221,7 +221,7 @@ async def postprocess(archive_params, archive_url, mtime, vod_info):
         if "format" not in recording_data:
             return 0
 
-        return int(float(recording_data["format"]["duration"]))
+        return int(float(recording_data["format"].get("duration", 0)))
 
     async def _save_metadata(get_cover=False):
         nonlocal duration, metadata, newest_ts
