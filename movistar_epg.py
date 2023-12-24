@@ -25,7 +25,7 @@ from glob import glob
 from psutil import Process, boot_time
 from sanic import Sanic, response
 from sanic_prometheus import monitor
-from sanic.exceptions import NotFound, ServiceUnavailable
+from sanic.exceptions import Forbidden, NotFound
 from warnings import filterwarnings
 
 from mu7d import DIV_ONE, DIV_TWO, DROP_KEYS, EXT, IPTV_DNS, NFO_EXT
@@ -470,7 +470,7 @@ async def handle_record_program(request, channel_id, url):
 
     msg = await record_program(channel_id, program_id, offset, record_time, cloud, comskip, index, mkv, vo)
     if msg:
-        raise ServiceUnavailable(msg)
+        raise Forbidden(msg)
 
     return response.json(
         {
@@ -509,7 +509,7 @@ async def handle_timers_check(request):
         return response.json({"status": await log_network_saturated()}, 404)
 
     if timers_lock.locked() or (_t_timers and not _t_timers.done()):
-        raise ServiceUnavailable("Already processing timers")
+        raise Forbidden("Already processing timers")
 
     _t_timers = app.add_task(timers_check(delay=delay))
 
