@@ -32,7 +32,7 @@ from warnings import filterwarnings
 
 from mu7d import ATOM, BUFF, CHUNK, DATEFMT, EPG_URL, FMT, IPTV_DNS, MIME_M3U, MIME_WEBM
 from mu7d import UA, URL_COVER, URL_LOGO, VID_EXTS, WIN32, YEAR_SECONDS
-from mu7d import add_logfile, find_free_port, get_iptv_ip, mu7d_config, ongoing_vods, _version
+from mu7d import add_logfile, cleanup_handler, find_free_port, get_iptv_ip, mu7d_config, ongoing_vods, _version
 from movistar_vod import Vod
 
 
@@ -49,6 +49,28 @@ async def before_server_start(app):
     app.config.GRACEFUL_SHUTDOWN_TIMEOUT = 0
     app.config.REQUEST_TIMEOUT = 1
     # app.config.RESPONSE_TIMEOUT = 1
+
+    if WIN32:
+        import win32api  # pylint: disable=import-error
+        import win32con  # pylint: disable=import-error
+
+        global _loop
+
+        _loop = asyncio.get_running_loop()
+
+        def cancel_handler(event):
+            log.debug("cancel_handler(event=%d)" % event)
+            if _loop and event in (
+                win32con.CTRL_BREAK_EVENT,
+                win32con.CTRL_CLOSE_EVENT,
+                win32con.CTRL_LOGOFF_EVENT,
+                win32con.CTRL_SHUTDOWN_EVENT,
+            ):
+                _loop.stop()
+                while _loop.is_running():
+                    time.sleep(0.05)
+
+        win32api.SetConsoleCtrlHandler(cancel_handler, 1)
 
     _SESSION = aiohttp.ClientSession(
         connector=aiohttp.TCPConnector(keepalive_timeout=YEAR_SECONDS, limit_per_host=1),
@@ -108,12 +130,7 @@ async def after_server_start(app):
 
 @app.listener("before_server_stop")
 async def before_server_stop(app):
-    for task in asyncio.all_tasks():
-        try:
-            task.cancel()
-            await task
-        except CancelledError:
-            pass
+    cleanup_handler()
 
 
 def get_channel_id(channel_name):
@@ -465,15 +482,6 @@ async def handle_recording(request):
     raise NotFound(f"Requested URL {request.raw_url.decode()} not found")
 
 
-@app.get("/terminate")
-async def handle_terminate(request):
-    if WIN32:
-        log.debug("Terminating...")
-        app.stop()
-
-    return response.empty(404)
-
-
 @app.get("/timers_check")
 async def handle_timers_check(request):
     try:
@@ -585,7 +593,7 @@ if __name__ == "__main__":
 
         setproctitle("movistar_u7d")
 
-    _IPTV = _NETWORK_SATURATED = _SESSION = _SESSION_LOGOS = None
+    _IPTV = _NETWORK_SATURATED = _SESSION = _SESSION_LOGOS = _loop = None
 
     _CHANNELS = {}
 

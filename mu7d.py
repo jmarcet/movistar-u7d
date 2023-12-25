@@ -1,7 +1,6 @@
 #!/usr/bin/env python3
 
 import aiofiles
-import aiohttp
 import asyncio
 import logging
 import os
@@ -13,7 +12,6 @@ import tomli
 import urllib.parse
 import xmltodict
 
-from aiohttp.client_exceptions import ClientConnectionError, ClientOSError, ServerDisconnectedError
 from asyncio.exceptions import CancelledError
 from contextlib import closing
 from datetime import datetime
@@ -45,7 +43,6 @@ IPTV_DNS = "172.26.23.3"
 MIME_M3U = "audio/x-mpegurl"
 MIME_WEBM = "video/webm"
 NFO_EXT = "-movistar.nfo"
-TERMINATE = os.path.join(os.getenv("TMP"), ".mu7d.terminate") if WIN32 else None
 UA = "libcurl-agent/1.0 [IAL] WidgetManager Safari/538.1 CAP:803fd12a 1"
 UA_U7D = f"movistar-u7d v{_version} [{sys.platform}] [{EXT}]"
 URL_BASE = "http://html5-static.svc.imagenio.telefonica.net/appclientv/nux/incoming/epg"
@@ -73,6 +70,10 @@ def add_logfile(logger, logfile, loglevel):
     except FileNotFoundError:
         log.error(f"Cannot write logs to '{logfile}'")
         return
+
+
+def cleanup_handler(signum=None, frame=None):
+    [task.cancel() for task in asyncio.all_tasks()]
 
 
 def find_free_port(iface=""):
@@ -387,10 +388,6 @@ def utime(timestamp, *items):
 
 
 async def u7d_main():
-    if not WIN32:
-        signal.signal(signal.SIGCHLD, reaper)
-        [signal.signal(sig, cleanup_handler) for sig in (signal.SIGHUP, signal.SIGINT, signal.SIGTERM)]
-
     u7d_cmd = [f"movistar_u7d{EXT}"]
     epg_cmd = [f"movistar_epg{EXT}"]
 
@@ -401,19 +398,9 @@ async def u7d_main():
         try:
             done, _ = await asyncio.wait(asyncio.all_tasks(), return_when=asyncio.FIRST_COMPLETED)
         except CancelledError:
-            if not WIN32:
-                break
-
-        if WIN32:
-            if not u7d_t.done():
-                async with aiohttp.ClientSession() as session:
-                    try:
-                        await session.get(f"http://{_conf['LAN_IP']}:{_conf['U7D_PORT']}/terminate")
-                    except (ClientConnectionError, ClientOSError, ServerDisconnectedError):
-                        u7d_t.cancel()
+            if WIN32:
                 await u7d_t
-            cleanup()
-            sys.exit(1)
+            break
 
         u7d_t = asyncio.create_task(launch(u7d_cmd)) if u7d_t in done else u7d_t
         epg_t = asyncio.create_task(launch(epg_cmd)) if epg_t in done else epg_t
@@ -435,8 +422,8 @@ if __name__ == "__main__":
 
         setproctitle("mu7d")
 
-        def cleanup_handler(signum, frame):
-            [task.cancel() for task in asyncio.all_tasks()]
+        def cancel_handler(signum, frame):
+            cleanup_handler()
             signal.signal(signal.SIGTERM, signal.SIG_IGN)
             os.killpg(0, signal.SIGTERM)
             while True:
@@ -445,29 +432,8 @@ if __name__ == "__main__":
                 except Exception:
                     break
 
-    else:
-
-        def cleanup():
-            with open(TERMINATE, "wb") as f:
-                f.write(b"")
-            log.debug("cleanup WIN32")
-            vods = []
-            for proc in psutil.process_iter():
-                try:
-                    name = " ".join(proc.cmdline())
-                    if "movistar_vod" in name:
-                        vods.append(proc)
-                        children = proc.children()
-                        if children:
-                            children[0].terminate()
-                    elif "movistar_" in name:
-                        proc.terminate()
-                except (psutil.AccessDenied, psutil.NoSuchProcess):
-                    pass
-            if vods:
-                log.debug(f"Waiting for: {vods}")
-                [vod.wait() for vod in vods]
-            os.remove(TERMINATE)
+        signal.signal(signal.SIGCHLD, reaper)
+        [signal.signal(sig, cancel_handler) for sig in (signal.SIGHUP, signal.SIGINT, signal.SIGTERM)]
 
     def _check_iptv():
         iptv_iface_ip = _get_iptv_iface_ip()
@@ -528,11 +494,7 @@ if __name__ == "__main__":
     log.info(banner)
     log.info("=" * len(banner))
 
-    if WIN32:
-        if os.path.exists(TERMINATE):
-            os.remove(TERMINATE)
-
-    elif "UID" in _conf or "GID" in _conf:
+    if not WIN32 and any(("UID" in _conf, "GID" in _conf)):
         log.info("Dropping privileges...")
         if "GID" in _conf:
             try:

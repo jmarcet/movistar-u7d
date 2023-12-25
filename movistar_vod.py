@@ -13,6 +13,7 @@ import os
 import psutil
 import re
 import shutil
+import signal
 import sys
 import time
 import ujson
@@ -28,7 +29,7 @@ from filelock import FileLock
 from glob import glob
 
 from mu7d import BUFF, CHUNK, DATEFMT, DIV_LOG, DROP_KEYS, EPG_URL, FMT, IPTV_DNS
-from mu7d import NFO_EXT, TERMINATE, UA, URL_COVER, URL_MVTV, WIN32, YEAR_SECONDS
+from mu7d import NFO_EXT, UA, URL_COVER, URL_MVTV, WIN32, YEAR_SECONDS
 from mu7d import add_logfile, find_free_port, get_iptv_ip, glob_safe
 from mu7d import mu7d_config, ongoing_vods, remove, utime, _version
 
@@ -115,7 +116,7 @@ async def _cleanup_recording(exception, start=0):
 
     if any((os.path.exists(x) for x in (_tmpname + TMP_EXT, _tmpname + TMP_EXT2))):
         log.debug("_cleanup_recording: cleaning only TMP files")
-        _cleanup(TMP_EXT, TMP_EXT2, ".jpg", ".png")
+        _cleanup(TMP_EXT, TMP_EXT2, ".jpg", ".log", ".logo.txt", ".png", ".txt")
     else:
         log.debug("_cleanup_recording: cleaning everything")
         _cleanup(NFO_EXT, VID_EXT, meta=True)
@@ -191,17 +192,6 @@ async def postprocess(archive_params, archive_url, mtime, vod_info):
 
             if msg + stdout:
                 log.error(msg + stdout)
-
-    def _check_terminate(fn):
-        from functools import wraps
-
-        @wraps(fn)
-        async def wrapper(*args, **kwargs):
-            if WIN32 and os.path.exists(TERMINATE):
-                raise ValueError("Terminated")
-            return await fn(*args, **kwargs)
-
-        return wrapper
 
     async def _get_duration(recording):
         cmd = ["ffprobe", "-i", recording, "-show_entries", "format=duration", "-v", "quiet", "-of", "json"]
@@ -314,7 +304,6 @@ async def postprocess(archive_params, archive_url, mtime, vod_info):
         if resp.status != 200:
             raise ValueError("Too short, missing [%5ss]" % str(_args.time - archive_params["recorded"]))
 
-    @_check_terminate
     async def _step_1():
         nonlocal archive_params, duration
 
@@ -332,7 +321,6 @@ async def postprocess(archive_params, archive_url, mtime, vod_info):
         else:
             log.info(msg)
 
-    @_check_terminate
     async def _step_2():
         global COMSKIP
         nonlocal mtime, proc, tags
@@ -391,7 +379,6 @@ async def postprocess(archive_params, archive_url, mtime, vod_info):
             _cleanup(TMP_EXT)
             os.rename(_tmpname + TMP_EXT2, _tmpname + TMP_EXT)
 
-    @_check_terminate
     async def _step_3():
         global COMSKIP
         nonlocal proc
@@ -411,7 +398,6 @@ async def postprocess(archive_params, archive_url, mtime, vod_info):
         msg = DIV_LOG % (msg1, msg2)
         log.warning(msg) if proc.returncode else log.info(msg)
 
-    @_check_terminate
     async def _step_4():
         nonlocal duration, mtime, proc, tags
 
@@ -481,7 +467,6 @@ async def postprocess(archive_params, archive_url, mtime, vod_info):
             _cleanup(".log", ".logo.txt", ".txt")
             remove(*pieces)
 
-    @_check_terminate
     async def _step_5():
         nonlocal archive_params, duration, mtime, newest_ts
 
@@ -533,11 +518,9 @@ async def postprocess(archive_params, archive_url, mtime, vod_info):
         await asyncio.shield(_step_5())  # Archive recording
 
         log.debug("POSTPROCESS ENDED")
-        return 0
 
-    except (CancelledError, ClientConnectionError, ClientOSError, ServerDisconnectedError, ValueError):
+    except (CancelledError, ClientConnectionError, ClientOSError, ServerDisconnectedError, ValueError) as ex:
         await asyncio.shield(_cleanup_recording(ex))
-        return proc.returncode if proc and proc.returncode else 1
 
     finally:
         if pp_lock.is_locked:
@@ -565,7 +548,7 @@ async def record_stream(vod_info):
     ongoing = await ongoing_vods(filename=_args.filename)
     if len(ongoing) > 1:
         log.error("Recording already ongoing")
-        return 1
+        return
 
     if not _args.time:
         _args.time = vod_info["duration"]
@@ -623,7 +606,7 @@ async def record_stream(vod_info):
         if f:
             await f.close()
         await asyncio.shield(_cleanup_recording(CancelledError(), start))
-        return 1
+        return
 
     except TimeoutError:
         log.debug("TIMED OUT")
@@ -638,7 +621,7 @@ async def record_stream(vod_info):
 
     if not U7D_PARENT:
         _archive_recording()
-        return 0
+        return
 
     return asyncio.create_task(postprocess(archive_params, archive_url, mtime, vod_info))
 
@@ -658,7 +641,8 @@ async def rtsp(vod_info):
 
     # Start playing the VOD stream
     if not await client.send_request("PLAY", play):
-        return client.close_connection()
+        client.close_connection()
+        return
 
     try:
         if __name__ == "__main__":
@@ -695,19 +679,21 @@ async def rtsp(vod_info):
         if not rec_t.done():
             await rec_t
 
-        if isinstance(rec_t.result(), asyncio.Task):
-            pp_t = rec_t.result()
+        pp_t = rec_t.result()
+        if pp_t:
             await pp_t
-            return pp_t.result()
-
-        return rec_t.result()
 
 
 async def Vod(args=None, vod_client=None):  # noqa: N802
     if __name__ == "__main__":
         global _SESSION_CLOUD
 
+        if WIN32:
+            global _loop
+            _loop = asyncio.get_running_loop()
+
         await _open_sessions()
+
     else:
         global _SESSION_CLOUD, _args
 
@@ -735,14 +721,9 @@ async def Vod(args=None, vod_client=None):  # noqa: N802
             if _args.write_to_file:
                 await _SESSION.close()
 
-    if __name__ == "__main__" and _args.write_to_file:
-        # Exitcode from the last recording subprocess, to discern when the proxy has to stop on WIN32
-        return rtsp_t.result() if vod_info else 1
-
 
 if __name__ == "__main__":
     if not WIN32:
-        import signal
         from setproctitle import getproctitle, setproctitle
 
         setproctitle("movistar_vod     %s" % " ".join(sys.argv[1:]))
@@ -752,7 +733,34 @@ if __name__ == "__main__":
 
         [signal.signal(sig, cancel_handler) for sig in (signal.SIGHUP, signal.SIGINT, signal.SIGTERM)]
 
-    _SESSION = _SESSION_CLOUD = _filename = _tmpname = None
+    else:
+        import win32api  # pylint: disable=import-error
+        import win32con  # pylint: disable=import-error
+
+        def cancel_handler(event):
+            log.debug("cancel_handler(event=%d)" % event)
+            if _loop and event in (
+                win32con.CTRL_BREAK_EVENT,
+                win32con.CTRL_C_EVENT,
+                win32con.CTRL_CLOSE_EVENT,
+                win32con.CTRL_LOGOFF_EVENT,
+                win32con.CTRL_SHUTDOWN_EVENT,
+            ):
+                for child in psutil.Process().children():
+                    while child.is_running():
+                        log.debug("cancel_handler(event=%d): Killing '%s'" % (event, child.name()))
+                        child.kill()
+                        time.sleep(0.01)
+
+                time.sleep(0.05)
+                log.debug("Cancelling tasks")
+                while not all((task.done() for task in asyncio.all_tasks(_loop))):
+                    [task.cancel() for task in asyncio.all_tasks(_loop)]
+                    time.sleep(0.05)
+
+        win32api.SetConsoleCtrlHandler(cancel_handler, 1)
+
+    _SESSION = _SESSION_CLOUD = _filename = _loop = _tmpname = None
 
     _conf = mu7d_config()
 
@@ -820,12 +828,6 @@ if __name__ == "__main__":
     U7D_PARENT = os.getenv("U7D_PARENT")
 
     try:
-        result = asyncio.run(Vod())
-        if result is not None:
-            log.debug(f"Exiting {result}")
-            sys.exit(result)
+        asyncio.run(Vod())
     except (CancelledError, KeyboardInterrupt, RuntimeError):
-        log.debug("Exiting 1")
         sys.exit(1)
-
-    log.debug("Exiting 0")

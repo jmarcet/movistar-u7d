@@ -1474,6 +1474,24 @@ if __name__ == "__main__":
 
         setproctitle("movistar_tvg %s" % " ".join(sys.argv[1:]))
 
+    else:
+        import psutil
+        import win32api  # pylint: disable=import-error
+        import win32con  # pylint: disable=import-error
+
+        def cancel_handler(event):
+            log.debug("cancel_handler(event=%d)" % event)
+            if event in (
+                win32con.CTRL_BREAK_EVENT,
+                win32con.CTRL_C_EVENT,
+                win32con.CTRL_CLOSE_EVENT,
+                win32con.CTRL_LOGOFF_EVENT,
+                win32con.CTRL_SHUTDOWN_EVENT,
+            ):
+                psutil.Process().terminate()
+
+        win32api.SetConsoleCtrlHandler(cancel_handler, 1)
+
     time_start = time.time()
 
     _conf = mu7d_config()

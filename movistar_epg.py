@@ -6,6 +6,7 @@ import asyncio
 import logging
 import os
 import re
+import signal
 import sys
 import time
 import tomli
@@ -22,7 +23,7 @@ from collections import defaultdict
 from datetime import date, datetime, timedelta
 from filelock import FileLock, Timeout
 from glob import glob
-from psutil import Process, boot_time
+from psutil import boot_time
 from sanic import Sanic, response
 from sanic_prometheus import monitor
 from sanic.exceptions import Forbidden, NotFound
@@ -30,7 +31,7 @@ from warnings import filterwarnings
 
 from mu7d import DATEFMT, DIV_ONE, DIV_TWO, DROP_KEYS, EXT, FMT, IPTV_DNS
 from mu7d import NFO_EXT, UA, UA_U7D, URL_MVTV, VID_EXTS, WIN32, YEAR_SECONDS
-from mu7d import add_logfile, find_free_port, get_iptv_ip, get_local_info, get_safe_filename
+from mu7d import add_logfile, cleanup_handler, find_free_port, get_iptv_ip, get_local_info, get_safe_filename
 from mu7d import get_title_meta, glob_safe, launch, mu7d_config, ongoing_vods, remove, utime, _version
 
 
@@ -165,12 +166,7 @@ async def after_server_start(app):
 
 @app.listener("before_server_stop")
 async def before_server_stop(app=None):
-    for task in asyncio.all_tasks():
-        try:
-            task.cancel()
-            await task
-        except CancelledError:
-            pass
+    cleanup_handler()
 
 
 async def alive():
@@ -189,17 +185,6 @@ async def cancel_app():
         os.kill(U7D_PARENT, signal.SIGTERM)
     else:
         app.stop()
-
-
-def check_task(task):
-    if WIN32 and task.result() not in win32_normal_retcodes:
-        log.debug(f"Check task: [{task}]:[{task.result()}] Exiting!!!")
-        Process().terminate()
-
-
-def cleanup_handler(signum, frame):
-    [task.cancel() for task in asyncio.all_tasks()]
-    asyncio.get_event_loop().stop()
 
 
 def does_recording_exist(filename):
@@ -672,26 +657,6 @@ def prune_expired(channel_id, filename):
         [_drop(ts) for ts in siblings[0 : len(siblings) - _KEEP[channel_id][program] + 1]]
 
 
-async def reap_vod_child(process, filename):
-    retcode = await process.wait()
-
-    if WIN32 and retcode not in win32_normal_retcodes:
-        log.debug(f"Reap VOD Child: [{process}]:[{retcode}] Exiting!!!")
-        Process().terminate()
-
-    if retcode == -9 or WIN32 and retcode:
-        ongoing = await ongoing_vods(filename=filename)
-        if ongoing:
-            log.debug('Reap VOD Child: Killing child: "%s"' % " ".join(ongoing[0].cmdline()))
-            ongoing[0].terminate()
-
-    global _t_timers
-    if not timers_lock.locked() and (not _t_timers or _t_timers.done()):
-        _t_timers = app.add_task(timers_check(delay=5))
-
-    log.debug(f"Reap VOD Child: [{process}]:[{retcode}] DONE")
-
-
 async def record_program(
     channel_id, pid, offset=0, time=0, cloud=False, comskip=0, index=True, mkv=False, vo=False
 ):
@@ -741,8 +706,7 @@ async def record_program(
     cmd += ["--vo"] if vo else []
 
     log.debug('Launching: "%s"' % " ".join(cmd))
-    process = await asyncio.create_subprocess_exec(*cmd)
-    app.add_task(reap_vod_child(process, filename))
+    await asyncio.create_subprocess_exec(*cmd)
 
 
 async def reindex_recordings():
@@ -785,13 +749,14 @@ async def reload_epg():
         map(os.path.exists, (config_data, epg_data, epg_metadata, GUIDE, GUIDE + ".gz"))
     ):
         log.warning("Missing channel list! Need to download it. Please be patient...")
+
         cmd = [f"movistar_tvg{EXT}", "--m3u", CHANNELS]
         async with tvgrab_lock:
-            task = app.add_task(launch(cmd))
-            await task
-        check_task(task)
+            await launch(cmd)
+
         if not os.path.exists(CHANNELS):
             return app.add_task(cancel_app())
+
     elif not all(map(os.path.exists, (CHANNELS, config_data, epg_data, epg_metadata, GUIDE, GUIDE + ".gz"))):
         log.warning("Missing channels data! Need to download it. Please be patient...")
         return await update_epg()
@@ -1155,9 +1120,7 @@ async def update_cloud():
     if updated or not os.path.exists(CHANNELS_CLOUD) or not os.path.exists(GUIDE_CLOUD):
         cmd = [f"movistar_tvg{EXT}", "--cloud_m3u", CHANNELS_CLOUD, "--cloud_recordings", GUIDE_CLOUD]
         async with tvgrab_lock:
-            task = app.add_task(launch(cmd))
-            await task
-        check_task(task)
+            await launch(cmd)
 
     log.info(f"Cloud Recordings Updated => {U7D_URL}/MovistarTVCloud.m3u - {U7D_URL}/cloud.xml")
     nr_epg = sum((len(_CLOUD[channel]) for channel in _CLOUD))
@@ -1169,11 +1132,9 @@ async def update_epg(abort_on_error=False):
     cmd = [f"movistar_tvg{EXT}", "--m3u", CHANNELS, "--guide", GUIDE]
     for i in range(3):
         async with tvgrab_lock:
-            task = app.add_task(launch(cmd))
-            await task
-        check_task(task)
+            retcode = await launch(cmd)
 
-        if task.result():
+        if retcode:
             if i < 2:
                 await asyncio.sleep(3)
                 log.error(f"[{i + 2} / 3]...")
@@ -1474,7 +1435,6 @@ async def upgrade_recordings():
 
 if __name__ == "__main__":
     if not WIN32:
-        import signal
         from setproctitle import setproctitle
 
         setproctitle("movistar_epg")
@@ -1549,7 +1509,6 @@ if __name__ == "__main__":
     tvgrab_lock = asyncio.Lock()
 
     flussonic_regex = re.compile(r"\w*-?(\d{10})-?(\d+){0,1}\.?\w*")
-    win32_normal_retcodes = (0, 1, 2, 15, 137, 143)  # These are different to those from closing the console
 
     monitor(
         app,
