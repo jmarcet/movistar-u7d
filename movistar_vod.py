@@ -75,7 +75,7 @@ def _archive_recording():
         os.makedirs(path)
 
     if not RECORDINGS_TMP:
-        remove(_filename + VID_EXT)
+        _cleanup(VID_EXT)
         os.rename(_tmpname + TMP_EXT, _filename + VID_EXT)
 
     else:
@@ -89,7 +89,7 @@ def _archive_recording():
             remove(tmpcover)
 
         shutil.copy2(_tmpname + TMP_EXT, _filename + VID_EXT)
-        remove(_tmpname + TMP_EXT)
+        _cleanup(TMP_EXT)
 
         path = os.path.dirname(_tmpname)
         parent = os.path.split(path)[0]
@@ -100,8 +100,6 @@ def _archive_recording():
 
 def _cleanup(*exts, meta=False):
     for ext in exts:
-        if os.path.exists(_filename + ext):
-            remove(_filename + ext)
         if os.path.exists(_tmpname + ext):
             remove(_tmpname + ext)
         if meta:
@@ -115,10 +113,8 @@ async def _cleanup_recording(exception, start=0):
     msg_len = 64 if log_suffix else 87
     log.error("%-17s%87s" % ("Recording FAILED", re.sub(r"\s+", " ", msg)[:msg_len] + log_suffix))
 
-    if RECORDINGS_TMP:
-        _cleanup(TMP_EXT, TMP_EXT2)
-    elif os.path.exists(_tmpname + TMP_EXT):
-        log.debug("_cleanup_recording: cleaning only TMP file")
+    if any((os.path.exists(x) for x in (_tmpname + TMP_EXT, _tmpname + TMP_EXT2))):
+        log.debug("_cleanup_recording: cleaning only TMP files")
         _cleanup(TMP_EXT, TMP_EXT2, ".jpg", ".png")
     else:
         log.debug("_cleanup_recording: cleaning everything")
@@ -127,19 +123,18 @@ async def _cleanup_recording(exception, start=0):
     remove(*glob_safe(os.path.join(os.path.dirname(_tmpname), f"??_show_segment{VID_EXT}")))
 
     if U7D_PARENT:
-        for _name in (_filename, _tmpname):
-            path = os.path.dirname(_name)
-            parent = os.path.split(path)[0]
-            log.debug("Removing path=%s" % path)
-            remove(path)
-            if parent not in (RECORDINGS, RECORDINGS_TMP):
-                log.debug("Removing parent=%s" % parent)
-                remove(parent)
+        path = os.path.dirname(_tmpname)
+        parent = os.path.split(path)[0]
+        log.debug("Removing path=%s" % path)
+        remove(path)
+        if parent not in (RECORDINGS, RECORDINGS_TMP):
+            log.debug("Removing parent=%s" % parent)
+            remove(parent)
 
-    try:
-        await _SESSION.get(f"{EPG_URL}/timers_check?delay=5")
-    except (ClientConnectionError, ClientOSError, ServerDisconnectedError):
-        pass
+        try:
+            await _SESSION.get(f"{EPG_URL}/timers_check?delay=5")
+        except (ClientConnectionError, ClientOSError, ServerDisconnectedError):
+            pass
 
 
 async def _open_sessions():
@@ -493,10 +488,10 @@ async def postprocess(archive_params, archive_url, mtime, vod_info):
                 log.error(exception)
 
             finally:
-                if RECORDINGS_TMP or _args.comskipcut or _args.mkv:
-                    remove(_tmpname + CHP_EXT)
+                if _args.comskipcut or _args.mkv:
+                    _cleanup(CHP_EXT)
+                _cleanup(".log", ".logo.txt", ".txt")
                 remove(*pieces)
-        _cleanup(".log", ".logo.txt", ".txt")
 
     @_check_terminate
     async def _step_5():
@@ -653,9 +648,7 @@ async def record_stream(vod_info):
     log.info(DIV_LOG % ("Recording ENDED", "[%6ss] / [%5ss]" % (f"~{record_time}", f"{_args.time}")))
 
     if not U7D_PARENT:
-        if os.path.exists(_tmpname + TMP_EXT):
-            _cleanup(VID_EXT)
-            _archive_recording()
+        _archive_recording()
         return 0
 
     return asyncio.create_task(postprocess(archive_params, archive_url, mtime, vod_info))
