@@ -31,8 +31,8 @@ from queue import Queue
 from xml.dom import minidom  # nosec B408
 from xml.etree.ElementTree import Element, ElementTree, SubElement  # nosec B405
 
-from mu7d import IPTV_DNS, UA, UA_U7D, WIN32, YEAR_SECONDS
-from mu7d import get_iptv_ip, get_local_info, get_title_meta, mu7d_config, _version
+from mu7d import DATEFMT, FMT, IPTV_DNS, UA, UA_U7D, WIN32, YEAR_SECONDS
+from mu7d import add_logfile, get_iptv_ip, get_local_info, get_title_meta, mu7d_config, _version
 
 
 log = logging.getLogger("TVG")
@@ -1493,14 +1493,12 @@ if __name__ == "__main__":
     daily_regex = re.compile(r"^(.+?) - \d{8}(?:_\d{4})?$")
     series_regex = re.compile(r"^(.+) (S\d+E\d+(?: - .+)?)$")
 
-    logging.basicConfig(
-        datefmt="[%Y-%m-%d %H:%M:%S]",
-        format="%(asctime)s [%(name)s] [%(levelname)8s] %(message)s",
-        level=logging.DEBUG if _conf["DEBUG"] else logging.INFO,
-    )
-
     logging.getLogger("asyncio").setLevel(logging.FATAL)
     logging.getLogger("filelock").setLevel(logging.FATAL)
+
+    logging.basicConfig(datefmt=DATEFMT, format=FMT, level=_conf["DEBUG"] and logging.DEBUG or logging.INFO)
+    if _conf["LOG_TO_FILE"]:
+        add_logfile(log, _conf["LOG_TO_FILE"], _conf["DEBUG"] and logging.DEBUG or logging.INFO)
 
     lockfile = os.path.join(os.getenv("TMP", os.getenv("TMPDIR", "/tmp")), ".movistar_tvg.lock")  # nosec B108
     try:

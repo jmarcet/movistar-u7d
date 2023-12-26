@@ -35,10 +35,12 @@ WIN32 = sys.platform == "win32"
 ATOM = 188
 BUFF = 65536
 CHUNK = 1316
+DATEFMT = "%Y-%m-%d %H:%M:%S"
 DIV_LOG = "%-64s%40s"
 DIV_ONE = "%-104s%s"
 DIV_TWO = DIV_LOG + "%s"
 EPG_URL = "http://127.0.0.1:8889"
+FMT = "[%(asctime)s] [%(name)s] [%(levelname)8s] %(message)s"
 IPTV_DNS = "172.26.23.3"
 MIME_M3U = "audio/x-mpegurl"
 MIME_WEBM = "video/webm"
@@ -60,6 +62,17 @@ DROP_KEYS += ["opvr", "playcount", "recordingAllowed", "resume", "startOver", "w
 title_select_regex = re.compile(r".+ T\d+ .+")
 title_1_regex = re.compile(r"(.+(?!T\d)) +T(\d+)(?: *Ep?.? *(\d+))?[ -]*(.*)")
 title_2_regex = re.compile(r"(.+(?!T\d))(?: +T(\d+))? *Ep?.? *(\d+)[ -]*(.*)")
+
+
+def add_logfile(logger, logfile, loglevel):
+    try:
+        fh = logging.FileHandler(logfile)
+        fh.setFormatter(logging.Formatter(fmt=FMT, datefmt=DATEFMT))
+        fh.setLevel(loglevel)
+        logger.addHandler(fh)
+    except FileNotFoundError:
+        log.error(f"Cannot write logs to '{logfile}'")
+        return
 
 
 def find_free_port(iface=""):
@@ -241,6 +254,9 @@ def mu7d_config():
 
     if "LAN_IP" not in conf:
         conf["LAN_IP"] = get_lan_ip()
+
+    if "LOG_TO_FILE" not in conf:
+        conf["LOG_TO_FILE"] = False
 
     if "MKV_OUTPUT" not in conf:
         conf["MKV_OUTPUT"] = False
@@ -495,13 +511,12 @@ if __name__ == "__main__":
 
     _conf = mu7d_config()
 
-    logging.basicConfig(
-        datefmt="%Y-%m-%d %H:%M:%S",
-        format="[%(asctime)s] [%(name)s] [%(levelname)8s] %(message)s",
-        level=logging.DEBUG if _conf["DEBUG"] else logging.INFO,
-    )
     logging.getLogger("asyncio").setLevel(logging.FATAL)
     logging.getLogger("filelock").setLevel(logging.FATAL)
+
+    logging.basicConfig(datefmt=DATEFMT, format=FMT, level=_conf["DEBUG"] and logging.DEBUG or logging.INFO)
+    if _conf["LOG_TO_FILE"]:
+        add_logfile(log, _conf["LOG_TO_FILE"], _conf["DEBUG"] and logging.DEBUG or logging.INFO)
 
     banner = f"Movistar U7D v{_version}"
     log.info("=" * len(banner))

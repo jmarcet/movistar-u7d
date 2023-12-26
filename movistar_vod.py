@@ -27,10 +27,10 @@ from datetime import timedelta
 from filelock import FileLock
 from glob import glob
 
-from mu7d import BUFF, CHUNK, DIV_LOG, DROP_KEYS, EPG_URL, IPTV_DNS, NFO_EXT
-from mu7d import TERMINATE, UA, URL_COVER, URL_MVTV, WIN32, YEAR_SECONDS
-from mu7d import find_free_port, get_iptv_ip, glob_safe, mu7d_config
-from mu7d import ongoing_vods, remove, utime, _version
+from mu7d import BUFF, CHUNK, DATEFMT, DIV_LOG, DROP_KEYS, EPG_URL, FMT, IPTV_DNS
+from mu7d import NFO_EXT, TERMINATE, UA, URL_COVER, URL_MVTV, WIN32, YEAR_SECONDS
+from mu7d import add_logfile, find_free_port, get_iptv_ip, glob_safe
+from mu7d import mu7d_config, ongoing_vods, remove, utime, _version
 
 
 log = logging.getLogger("VOD")
@@ -567,14 +567,12 @@ async def record_stream(vod_info):
     log_suffix = f": [{_args.channel:4}] [{_args.program}] [{vod_info['beginTime'] // 1000}]"
     log_suffix += f' "{_args.filename}"'
 
-    formatter = logging.Formatter(
-        datefmt="%Y-%m-%d %H:%M:%S",
-        fmt=f"[%(asctime)s] [%(name)s] [%(levelname)8s] %(message)-104s{log_suffix}",
-    )
     handler = logging.StreamHandler()
-    handler.setFormatter(formatter)
     log.addHandler(handler)
     log.propagate = False
+    formatter = logging.Formatter(fmt=f"{FMT[:-1]}-104s{log_suffix}", datefmt=DATEFMT)
+    for handler in log.handlers:
+        handler.setFormatter(formatter)
 
     ongoing = await ongoing_vods(filename=_args.filename)
     if len(ongoing) > 1:
@@ -790,14 +788,14 @@ if __name__ == "__main__":
 
     _args = parser.parse_args()
 
-    logging.basicConfig(
-        datefmt="%Y-%m-%d %H:%M:%S",
-        format="[%(asctime)s] [%(name)s] [%(levelname)8s] %(message)s",
-        level=logging.DEBUG if _args.debug or _conf["DEBUG"] else logging.INFO,
-    )
+    _conf["DEBUG"] = _args.debug or _conf["DEBUG"]
 
     logging.getLogger("asyncio").setLevel(logging.FATAL)
     logging.getLogger("filelock").setLevel(logging.FATAL)
+
+    logging.basicConfig(datefmt=DATEFMT, format=FMT, level=_conf["DEBUG"] and logging.DEBUG or logging.INFO)
+    if _conf["LOG_TO_FILE"]:
+        add_logfile(log, _conf["LOG_TO_FILE"], _conf["DEBUG"] and logging.DEBUG or logging.INFO)
 
     try:
         _IPTV = get_iptv_ip()

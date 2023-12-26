@@ -30,9 +30,9 @@ from sanic.server import HttpProtocol
 from sanic.touchup.meta import TouchUpMeta
 from warnings import filterwarnings
 
-from mu7d import ATOM, BUFF, CHUNK, EPG_URL, IPTV_DNS, MIME_M3U, MIME_WEBM
+from mu7d import ATOM, BUFF, CHUNK, DATEFMT, EPG_URL, FMT, IPTV_DNS, MIME_M3U, MIME_WEBM
 from mu7d import UA, URL_COVER, URL_LOGO, VID_EXTS, WIN32, YEAR_SECONDS
-from mu7d import find_free_port, get_iptv_ip, mu7d_config, ongoing_vods, _version
+from mu7d import add_logfile, find_free_port, get_iptv_ip, mu7d_config, ongoing_vods, _version
 from movistar_vod import Vod
 
 
@@ -591,16 +591,14 @@ if __name__ == "__main__":
 
     _conf = mu7d_config()
 
-    logging.basicConfig(
-        datefmt="%Y-%m-%d %H:%M:%S",
-        format="[%(asctime)s] [%(name)s] [%(levelname)8s] %(message)s",
-        level=logging.DEBUG if _conf["DEBUG"] else logging.INFO,
-    )
-
     logging.getLogger("asyncio").setLevel(logging.FATAL)
     logging.getLogger("filelock").setLevel(logging.FATAL)
     logging.getLogger("sanic.error").setLevel(logging.FATAL)
     logging.getLogger("sanic.root").disabled = True
+
+    logging.basicConfig(datefmt=DATEFMT, format=FMT, level=_conf["DEBUG"] and logging.DEBUG or logging.INFO)
+    if _conf["LOG_TO_FILE"]:
+        add_logfile(log, _conf["LOG_TO_FILE"], _conf["DEBUG"] and logging.DEBUG or logging.INFO)
 
     # Ths happens when u7d is killed while on before_server_start
     filterwarnings(

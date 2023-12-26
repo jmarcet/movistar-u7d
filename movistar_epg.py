@@ -28,10 +28,10 @@ from sanic_prometheus import monitor
 from sanic.exceptions import Forbidden, NotFound
 from warnings import filterwarnings
 
-from mu7d import DIV_ONE, DIV_TWO, DROP_KEYS, EXT, IPTV_DNS, NFO_EXT
-from mu7d import UA, UA_U7D, URL_MVTV, VID_EXTS, WIN32, YEAR_SECONDS
-from mu7d import find_free_port, get_iptv_ip, get_local_info, get_safe_filename, get_title_meta
-from mu7d import glob_safe, launch, mu7d_config, ongoing_vods, remove, utime, _version
+from mu7d import DATEFMT, DIV_ONE, DIV_TWO, DROP_KEYS, EXT, FMT, IPTV_DNS
+from mu7d import NFO_EXT, UA, UA_U7D, URL_MVTV, VID_EXTS, WIN32, YEAR_SECONDS
+from mu7d import add_logfile, find_free_port, get_iptv_ip, get_local_info, get_safe_filename
+from mu7d import get_title_meta, glob_safe, launch, mu7d_config, ongoing_vods, remove, utime, _version
 
 
 app = Sanic("movistar_epg")
@@ -1493,16 +1493,14 @@ if __name__ == "__main__":
 
     _conf = mu7d_config()
 
-    logging.basicConfig(
-        datefmt="%Y-%m-%d %H:%M:%S",
-        format="[%(asctime)s] [%(name)s] [%(levelname)8s] %(message)s",
-        level=logging.DEBUG if _conf["DEBUG"] else logging.INFO,
-    )
-
     logging.getLogger("asyncio").setLevel(logging.FATAL)
     logging.getLogger("filelock").setLevel(logging.FATAL)
     logging.getLogger("sanic.error").setLevel(logging.FATAL)
     logging.getLogger("sanic.root").disabled = True
+
+    logging.basicConfig(datefmt=DATEFMT, format=FMT, level=_conf["DEBUG"] and logging.DEBUG or logging.INFO)
+    if _conf["LOG_TO_FILE"]:
+        add_logfile(log, _conf["LOG_TO_FILE"], _conf["DEBUG"] and logging.DEBUG or logging.INFO)
 
     # Ths happens when epg is killed while on before_server_start
     filterwarnings(
