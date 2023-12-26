@@ -290,11 +290,12 @@ class MulticastEPGFetcher(threading.Thread):
 
 
 class Cache:
-    def __init__(self):
+    def __init__(self, full=True):
         self.__programs = {}
         self.__end_points = None
-        self.__check_dirs()
-        self.__clean()
+        if full:
+            self.__check_dirs()
+            self.__clean()
 
     @staticmethod
     def __check_dirs():
@@ -1386,7 +1387,7 @@ async def tvg_main():
         log.debug(" ".join(sys.argv[1:]))
 
     # Crea la caché
-    cache = Cache()
+    cache = Cache(full=bool(args.m3u or args.guide))
     cached = False
 
     session = aiohttp.ClientSession(
