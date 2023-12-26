@@ -80,65 +80,65 @@ async def before_server_start(app):
 
             if not os.path.exists(RECORDINGS):
                 os.makedirs(RECORDINGS)
-                return
-
-            oldest_epg = 9999999999
-            for channel_id in _EPGDATA:
-                first = next(iter(_EPGDATA[channel_id]))
-                if first < oldest_epg:
-                    oldest_epg = first
-
-            await upgrade_recordings()
-            upgraded_channels = await upgrade_channel_numbers()
-
-            if not RECORDINGS_REINDEX:
-                _indexed = set()
-                try:
-                    async with aiofiles.open(recordings, encoding="utf8") as f:
-                        recordingsdata = ujson.loads(await f.read())
-                    int_recordings = {}
-                    for str_channel in recordingsdata:
-                        channel_id = int(str_channel)
-                        int_recordings[channel_id] = {}
-                        for str_timestamp in recordingsdata[str_channel]:
-                            timestamp = int(str_timestamp)
-                            recording = recordingsdata[str_channel][str_timestamp]
-                            try:
-                                filename = recording["filename"]
-                            except KeyError:
-                                log.warning(f'Dropping old style "{recording}" from recordings.json')
-                                continue
-                            for old_ch, new_ch in upgraded_channels:
-                                if filename.startswith(old_ch):
-                                    msg = f'Updating recording index "{filename}" => '
-                                    msg += f'"{filename.replace(old_ch, new_ch)}"'
-                                    log.debug(msg)
-                                    filename = recording["filename"] = filename.replace(old_ch, new_ch)
-                            if not does_recording_exist(filename):
-                                if timestamp > oldest_epg:
-                                    log.warning(f'Archived recording "{filename}" not found on disk')
-                                elif channel_id in _CLOUD and timestamp in _CLOUD[channel_id]:
-                                    log.warning(f'Archived Cloud Recording "{filename}" not found on disk')
-                                else:
-                                    continue
-                            else:
-                                _indexed.add(get_path(filename))
-                                utime(timestamp, *get_recording_files(filename))
-                            int_recordings[channel_id][timestamp] = recording
-                    _RECORDINGS = int_recordings
-                except (TypeError, ValueError) as ex:
-                    log.error(f'Failed to parse "recordings.json". It will be reset!!!: {repr(ex)}')
-                    remove(CHANNELS_LOCAL, GUIDE_LOCAL)
-                except FileNotFoundError:
-                    remove(CHANNELS_LOCAL, GUIDE_LOCAL)
-
-                for file in sorted(set(glob(f"{RECORDINGS}/**/*{VID_EXT}", recursive=True)) - _indexed):
-                    utime(os.path.getmtime(file), *get_recording_files(os.path.splitext(file)[0]))
-
-                await update_recordings(True)
 
             else:
-                await reindex_recordings()
+                oldest_epg = 9999999999
+                for channel_id in _EPGDATA:
+                    first = next(iter(_EPGDATA[channel_id]))
+                    if first < oldest_epg:
+                        oldest_epg = first
+
+                await upgrade_recordings()
+                upgraded_channels = await upgrade_channel_numbers()
+
+                if not RECORDINGS_REINDEX:
+                    _indexed = set()
+                    try:
+                        async with aiofiles.open(recordings, encoding="utf8") as f:
+                            recordingsdata = ujson.loads(await f.read())
+                        int_recordings = {}
+                        for str_channel in recordingsdata:
+                            channel_id = int(str_channel)
+                            int_recordings[channel_id] = {}
+                            for str_timestamp in recordingsdata[str_channel]:
+                                timestamp = int(str_timestamp)
+                                recording = recordingsdata[str_channel][str_timestamp]
+                                try:
+                                    filename = recording["filename"]
+                                except KeyError:
+                                    log.warning(f'Dropping old style "{recording}" from recordings.json')
+                                    continue
+                                for old_ch, new_ch in upgraded_channels:
+                                    if filename.startswith(old_ch):
+                                        msg = f'Updating recording index "{filename}" => '
+                                        msg += f'"{filename.replace(old_ch, new_ch)}"'
+                                        log.debug(msg)
+                                        filename = recording["filename"] = filename.replace(old_ch, new_ch)
+                                if not does_recording_exist(filename):
+                                    if timestamp > oldest_epg:
+                                        log.warning(f'Archived recording "{filename}" not found on disk')
+                                    elif channel_id in _CLOUD and timestamp in _CLOUD[channel_id]:
+                                        log.warning(f'Archived Cloud Recording "{filename}" not found on disk')
+                                    else:
+                                        continue
+                                else:
+                                    _indexed.add(get_path(filename))
+                                    utime(timestamp, *get_recording_files(filename))
+                                int_recordings[channel_id][timestamp] = recording
+                        _RECORDINGS = int_recordings
+                    except (TypeError, ValueError) as ex:
+                        log.error(f'Failed to parse "recordings.json". It will be reset!!!: {repr(ex)}')
+                        remove(CHANNELS_LOCAL, GUIDE_LOCAL)
+                    except FileNotFoundError:
+                        remove(CHANNELS_LOCAL, GUIDE_LOCAL)
+
+                    for file in sorted(set(glob(f"{RECORDINGS}/**/*{VID_EXT}", recursive=True)) - _indexed):
+                        utime(os.path.getmtime(file), *get_recording_files(os.path.splitext(file)[0]))
+
+                    await update_recordings(True)
+
+                else:
+                    await reindex_recordings()
 
         app.add_task(update_epg_cron())
 
