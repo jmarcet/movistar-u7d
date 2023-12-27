@@ -1242,7 +1242,7 @@ class XMLTV:
         _fresh = not os.path.exists(file_path)
         for channel_id in channels:
             if channel_id in self.__channels:
-                channel_name = self.__channels[channel_id]["name"]
+                channel_name = self.__channels[channel_id]["name"].strip(" *")
                 channel_tag = "Cloud" if cloud else "Local" if local else "U7D"
                 channel_tag += " - TDT Movistar.es"
                 channel_number = services[channel_id]
@@ -1317,7 +1317,7 @@ class XMLTV:
             if channel_id in self.__channels:
                 tag_channel = Element("channel", {"id": f"{channel_id}.movistar.tv"})
                 tag_dname = SubElement(tag_channel, "display-name")
-                tag_dname.text = self.__channels[channel_id]["name"]
+                tag_dname.text = self.__channels[channel_id]["name"].strip(" *")
                 root.append(tag_channel)
 
         for channel_id in [
@@ -1325,7 +1325,7 @@ class XMLTV:
             for cid in sorted(services, key=lambda key: services[key])
             if (cid in self.__channels or local) and cid in parsed_epg
         ]:
-            channel_name = self.__channels[channel_id]["name"]
+            channel_name = self.__channels[channel_id]["name"].strip(" *")
             if channel_id not in epg_channels and not local:
                 log.info(f'XML: Saltando canal encriptado "{channel_name}" {channel_id}')
                 continue

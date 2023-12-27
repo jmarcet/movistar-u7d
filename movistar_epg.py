@@ -810,6 +810,7 @@ async def reload_epg():
             for channel in [chan for chan in channels if chan in services]:
                 int_channels[int(channel)] = channels[channel]
                 int_channels[int(channel)]["id"] = int(channels[channel]["id"])
+                int_channels[int(channel)]["name"] = channels[channel]["name"].strip(" *")
                 int_channels[int(channel)]["number"] = int(services[channel])
                 if "replacement" in channels[channel]:
                     int_channels[int(channel)]["replacement"] = int(channels[channel]["replacement"])
