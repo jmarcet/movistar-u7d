@@ -1111,15 +1111,11 @@ class XMLTV:
         tag_programme = Element(
             "programme",
             {
-                "channel": f"{channel_id}.movistar.tv",
                 "start": f"{start} +0{tz_offset + dst_start}00",
                 "stop": f"{stop} +0{tz_offset + dst_stop}00",
+                "channel": f"{channel_id}.movistar.tv",
             },
         )
-
-        if year:
-            tag_date = SubElement(tag_programme, "date")
-            tag_date.text = year
 
         tag_title = SubElement(tag_programme, "title", lang["es"])
 
@@ -1202,6 +1198,10 @@ class XMLTV:
                 src = f"{u7d_url}/{'recording/?' if local else 'Covers/'}" + ext_info["cover"]
                 SubElement(tag_programme, "icon", {"src": src})
 
+        if year:
+            tag_date = SubElement(tag_programme, "date")
+            tag_date.text = year
+
         gens = self.__get_genre_and_subgenre(program["genre"]) if not local else program["gens"]
         keys = self.__get_key_and_subkey(program["genre"], config["genres"]) if not local else None
         tag_rating = SubElement(tag_programme, "rating", {"system": "pl"})
@@ -1226,7 +1226,7 @@ class XMLTV:
         m3u += "Cloud " if cloud else "Local " if local else ""
         m3u += 'MovistarTV" catchup="flussonic-ts" catchup-days="'
         m3u += '9999" ' if (cloud or local) else '8" '
-        m3u += f'dlna_extras=mpeg_ps_pal max-conn="12" refresh="1200" url-tvg="{u7d_url}/'
+        m3u += f'max-conn="12" refresh="1200" url-tvg="{u7d_url}/'
         m3u += "cloud.xml" if cloud else "local.xml" if local else "guide.xml.gz"
         m3u += '"\n'
         services = self.__get_client_channels()
@@ -1308,7 +1308,10 @@ class XMLTV:
             "tv",
             {
                 "date": datetime.now().strftime("%Y%m%d%H%M%S"),
-                "generator_info_url": "http://wiki.xmltv.org/index.php/XMLTVFormat",
+                "source-info-name": "Movistar IPTV Spain",
+                "source-info-url": "https://www.movistar.es/",
+                "generator-info-name": "Movistar U7D's movistar_tvg",
+                "generator-info-url": "https://github.com/jmarcet/movistar-u7d/",
             },
         )
         tz_offset = int(abs(time.timezone / 3600))
@@ -1318,6 +1321,8 @@ class XMLTV:
                 tag_channel = Element("channel", {"id": f"{channel_id}.movistar.tv"})
                 tag_dname = SubElement(tag_channel, "display-name")
                 tag_dname.text = self.__channels[channel_id]["name"].strip(" *")
+                logo = f"{u7d_url}/Logos/" + self.__channels[channel_id]["logo_uri"]
+                SubElement(tag_channel, "icon", {"src": logo})
                 root.append(tag_channel)
 
         for channel_id in [
