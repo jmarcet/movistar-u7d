@@ -22,6 +22,7 @@ import time
 import ujson as json
 
 from aiohttp.resolver import AsyncResolver
+from asyncio.exceptions import CancelledError
 from collections import defaultdict
 from contextlib import closing
 from datetime import date, datetime, timedelta
@@ -1505,7 +1506,7 @@ if __name__ == "__main__":
         with FileLock(lockfile, timeout=0):
             _iptv = get_iptv_ip()
             asyncio.run(tvg_main())
-    except KeyboardInterrupt:
+    except (CancelledError, KeyboardInterrupt):
         sys.exit(1)
     except Timeout:
         log.critical("Cannot be run more than once!")
