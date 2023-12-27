@@ -332,7 +332,10 @@ async def ongoing_vods(channel_id="", program_id="", filename="", _all=False, _f
     if _fast:  # For U7D we just want to know if there are recordings in place
         return "movistar_vod RE" in str(family)
 
-    regex = "movistar_vod REC" if not _all and not WIN32 else "movistar_vod.*"
+    if not WIN32:
+        regex = "^movistar_vod REC" if not _all else "^movistar_vod .*"
+    else:
+        regex = "^%smovistar_vod%s" % ((sys.executable.replace("\\", "\\\\") + " ") if EXT == ".py" else "", EXT)
     regex += "(" if filename and program_id else ""
     regex += f" {channel_id:4} {program_id}" if program_id else ""
     regex += "|" if filename and program_id else ""
@@ -345,7 +348,7 @@ async def ongoing_vods(channel_id="", program_id="", filename="", _all=False, _f
 
 def proc_grep(proc, regex):
     try:
-        return proc if re.search(regex, " ".join(proc.cmdline())) else None
+        return proc if re.match(regex, " ".join(proc.cmdline())) else None
     except (psutil.AccessDenied, psutil.NoSuchProcess, psutil.PermissionError):
         pass
 
