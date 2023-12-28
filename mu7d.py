@@ -229,6 +229,8 @@ def mu7d_config():
     if "COMSKIP" not in conf or not which("comskip"):
         conf["COMSKIP"] = None
     else:
+        if WIN32:
+            conf["COMSKIP"] += " --quiet"
         conf["COMSKIP"] = conf["COMSKIP"].split()
 
     if "DEBUG" not in conf:
