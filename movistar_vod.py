@@ -675,7 +675,7 @@ async def rtsp(vod_info):
                 # Start recording the VOD stream
                 rec_t = asyncio.create_task(record_stream(vod_info))
 
-                if U7D_PARENT and not WIN32:
+                if not WIN32:
                     setproctitle(getproctitle().replace("movistar_vod     ", "movistar_vod REC "))
             else:
                 log.info(f'The VOD stream can be accesed at: f"udp://@{_IPTV}:{_args.client_port}"')
