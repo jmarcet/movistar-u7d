@@ -509,7 +509,10 @@ async def handle_timers_check(request):
         return response.json({"status": await log_network_saturated()}, 404)
 
     if _t_timers and not _t_timers.done():
-        raise Forbidden("Already processing timers")
+        if delay:
+            _t_timers.cancel()
+        else:
+            raise Forbidden("Already processing timers")
 
     _t_timers = app.add_task(timers_check(delay=delay))
 
@@ -988,13 +991,10 @@ async def timers_check(delay=0):
                             _ts = datetime.now().replace(hour=hour, minute=minute, second=0).timestamp()
                             fixed_timer = int(_ts)
                             log.debug(
-                                '[%s] "%s" %02d:%02d %d'
-                                % (channel_name, timer_match, hour, minute, fixed_timer)
+                                '[%s] "%s" %02d:%02d %d' % (channel_name, timer_match, hour, minute, fixed_timer)
                             )
                         except ValueError:
-                            log.warning(
-                                f'Failed to parse [{channel_name}] "{timer_match}" [{res}] correctly'
-                            )
+                            log.warning(f'Failed to parse [{channel_name}] "{timer_match}" [{res}] correctly')
 
                     elif res[0] == "@":
                         days = dict(map(lambda x: (x[0], x[1] == "x"), enumerate(res[1:8], start=1)))

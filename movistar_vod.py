@@ -132,7 +132,7 @@ async def _cleanup_recording(exception, start=0):
             remove(parent)
 
         try:
-            await _SESSION.get(f"{EPG_URL}/timers_check?delay=5")
+            await _SESSION.get(f"{EPG_URL}/timers_check?delay=3")
         except (ClientConnectionError, ClientOSError, ServerDisconnectedError):
             pass
 
