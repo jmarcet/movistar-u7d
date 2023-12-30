@@ -366,7 +366,7 @@ async def handle_archive(request, channel_id, program_id, cloud=False):
 
     log_suffix = f': [{channel_id:4}] [{program_id}] [{timestamp}] "{filename}"'
 
-    if not timers_lock.locked() and (not _t_timers or _t_timers.done()):
+    if not _t_timers or _t_timers.done():
         _t_timers = app.add_task(timers_check(delay=5))
 
     recorded = int(request.args.get("recorded", 0))
@@ -508,7 +508,7 @@ async def handle_timers_check(request):
     if _NETWORK_SATURATION:
         return response.json({"status": await log_network_saturated()}, 404)
 
-    if timers_lock.locked() or (_t_timers and not _t_timers.done()):
+    if _t_timers and not _t_timers.done():
         raise Forbidden("Already processing timers")
 
     _t_timers = app.add_task(timers_check(delay=delay))
@@ -932,126 +932,125 @@ async def timers_check(delay=0):
                 await log_network_saturated(nr_procs)
                 return -1
 
-    async with timers_lock:
-        if not os.path.exists(timers):
-            log.debug("timers_check: no timers.conf found")
-            return
+    if not os.path.exists(timers):
+        log.debug("timers_check: no timers.conf found")
+        return
 
-        if epg_lock.locked():  # If EPG is being updated, wait until it is done
-            await epg_lock.acquire()
-            epg_lock.release()
+    if epg_lock.locked():  # If EPG is being updated, wait until it is done
+        await epg_lock.acquire()
+        epg_lock.release()
 
-        log.debug("Processing timers")
-        try:
-            async with aiofiles.open(timers, encoding="utf8") as f:
-                try:
-                    _timers = tomli.loads(await f.read())
-                except ValueError:
-                    _timers = ujson.loads(await f.read())
-        except (TypeError, ValueError) as ex:
-            log.error(f"Failed to parse timers.conf: {repr(ex)}")
-            return
+    log.debug("Processing timers")
+    try:
+        async with aiofiles.open(timers, encoding="utf8") as f:
+            try:
+                _timers = tomli.loads(await f.read())
+            except ValueError:
+                _timers = ujson.loads(await f.read())
+    except (TypeError, ValueError) as ex:
+        log.error(f"Failed to parse timers.conf: {repr(ex)}")
+        return
 
-        deflang = _timers.get("default_language", "")
-        sync_cloud = _timers.get("sync_cloud", False)
+    deflang = _timers.get("default_language", "")
+    sync_cloud = _timers.get("sync_cloud", False)
 
-        nr_procs = len(await ongoing_vods())
-        if _NETWORK_SATURATION or nr_procs >= RECORDINGS_THREADS:
-            await log_network_saturated(nr_procs)
-            return
+    nr_procs = len(await ongoing_vods())
+    if _NETWORK_SATURATION or nr_procs >= RECORDINGS_THREADS:
+        await log_network_saturated(nr_procs)
+        return
 
-        async with recordings_lock:
-            recs = _RECORDINGS.copy()
+    async with recordings_lock:
+        recs = _RECORDINGS.copy()
 
-        ongoing = await ongoing_vods(_all=True)  # we want to check against all ongoing vods, also in pp
-        log.debug(f"Ongoing VODs: [{ongoing}]")
+    ongoing = await ongoing_vods(_all=True)  # we want to check against all ongoing vods, also in pp
+    log.debug(f"Ongoing VODs: [{ongoing}]")
 
-        kept, next_timers, queued = defaultdict(dict), [], []
+    kept, next_timers, queued = defaultdict(dict), [], []
 
-        for str_channel_id in _timers.get("match", {}):
-            channel_id = int(str_channel_id)
-            if channel_id not in _EPGDATA:
-                log.warning(f"Channel [{channel_id}] not found in EPG")
-                continue
+    for str_channel_id in _timers.get("match", {}):
+        channel_id = int(str_channel_id)
+        if channel_id not in _EPGDATA:
+            log.warning(f"Channel [{channel_id}] not found in EPG")
+            continue
+        channel_name = _CHANNELS[channel_id]["name"]
+
+        for timer_match in _timers["match"][str_channel_id]:
+            comskip = 2 if _timers.get("comskipcut") else 1 if _timers.get("comskip") else 0
+            days = fixed_timer = keep = repeat = None
+            lang = deflang
+            if " ## " in timer_match:
+                match_split = timer_match.split(" ## ")
+                timer_match = match_split[0]
+                for res in [res.lower().strip() for res in match_split[1:]]:
+                    if res[0].isnumeric():
+                        try:
+                            hour, minute = map(int, res.split(":"))
+                            _ts = datetime.now().replace(hour=hour, minute=minute, second=0).timestamp()
+                            fixed_timer = int(_ts)
+                            log.debug(
+                                '[%s] "%s" %02d:%02d %d'
+                                % (channel_name, timer_match, hour, minute, fixed_timer)
+                            )
+                        except ValueError:
+                            log.warning(
+                                f'Failed to parse [{channel_name}] "{timer_match}" [{res}] correctly'
+                            )
+
+                    elif res[0] == "@":
+                        days = dict(map(lambda x: (x[0], x[1] == "x"), enumerate(res[1:8], start=1)))
+
+                    elif res == "comskip":
+                        comskip = 1
+
+                    elif res == "comskipcut":
+                        comskip = 2
+
+                    elif res.startswith("keep"):
+                        keep = int(res.lstrip("keep").rstrip("d"))
+                        keep = -keep if res.endswith("d") else keep
+
+                    elif res == "nocomskip":
+                        comskip = 0
+
+                    elif res == "repeat":
+                        repeat = True
+
+                    else:
+                        lang = res
+
+            vo = lang == "VO"
+            tss = filter(lambda ts: ts <= _last_epg + 3600, reversed(_EPGDATA[channel_id]))
+
+            if fixed_timer:
+                # fixed timers are checked daily, so we want today's and all of last week
+                fixed_timestamps = [fixed_timer] if fixed_timer <= _last_epg + 3600 else []
+                fixed_timestamps += [fixed_timer - i * 24 * 3600 for i in range(1, 8)]
+
+                found_ts = []
+                for ts in tss:
+                    for fixed_ts in fixed_timestamps:
+                        if abs(ts - fixed_ts) <= 1500:
+                            if not days or days.get(datetime.fromtimestamp(ts).isoweekday()):
+                                found_ts.append(ts)
+                            break
+                tss = found_ts
+
+            elif days:
+                tss = filter(lambda ts: days.get(datetime.fromtimestamp(ts).isoweekday()), tss)
+
+            log.debug("Checking timer: [%s] [%d] [%s]" % (channel_name, channel_id, _clean(timer_match)))
+            for timestamp in _filter_recorded(tss):
+                if await _record():
+                    return _exit()
+
+    if sync_cloud:
+        vo = _timers.get("sync_cloud_language", "") == "VO"
+        for channel_id in _CLOUD:
             channel_name = _CHANNELS[channel_id]["name"]
-
-            for timer_match in _timers["match"][str_channel_id]:
-                comskip = 2 if _timers.get("comskipcut") else 1 if _timers.get("comskip") else 0
-                days = fixed_timer = keep = repeat = None
-                lang = deflang
-                if " ## " in timer_match:
-                    match_split = timer_match.split(" ## ")
-                    timer_match = match_split[0]
-                    for res in [res.lower().strip() for res in match_split[1:]]:
-                        if res[0].isnumeric():
-                            try:
-                                hour, minute = map(int, res.split(":"))
-                                _ts = datetime.now().replace(hour=hour, minute=minute, second=0).timestamp()
-                                fixed_timer = int(_ts)
-                                log.debug(
-                                    '[%s] "%s" %02d:%02d %d'
-                                    % (channel_name, timer_match, hour, minute, fixed_timer)
-                                )
-                            except ValueError:
-                                log.warning(
-                                    f'Failed to parse [{channel_name}] "{timer_match}" [{res}] correctly'
-                                )
-
-                        elif res[0] == "@":
-                            days = dict(map(lambda x: (x[0], x[1] == "x"), enumerate(res[1:8], start=1)))
-
-                        elif res == "comskip":
-                            comskip = 1
-
-                        elif res == "comskipcut":
-                            comskip = 2
-
-                        elif res.startswith("keep"):
-                            keep = int(res.lstrip("keep").rstrip("d"))
-                            keep = -keep if res.endswith("d") else keep
-
-                        elif res == "nocomskip":
-                            comskip = 0
-
-                        elif res == "repeat":
-                            repeat = True
-
-                        else:
-                            lang = res
-
-                vo = lang == "VO"
-                tss = filter(lambda ts: ts <= _last_epg + 3600, reversed(_EPGDATA[channel_id]))
-
-                if fixed_timer:
-                    # fixed timers are checked daily, so we want today's and all of last week
-                    fixed_timestamps = [fixed_timer] if fixed_timer <= _last_epg + 3600 else []
-                    fixed_timestamps += [fixed_timer - i * 24 * 3600 for i in range(1, 8)]
-
-                    found_ts = []
-                    for ts in tss:
-                        for fixed_ts in fixed_timestamps:
-                            if abs(ts - fixed_ts) <= 1500:
-                                if not days or days.get(datetime.fromtimestamp(ts).isoweekday()):
-                                    found_ts.append(ts)
-                                break
-                    tss = found_ts
-
-                elif days:
-                    tss = filter(lambda ts: days.get(datetime.fromtimestamp(ts).isoweekday()), tss)
-
-                log.debug("Checking timer: [%s] [%d] [%s]" % (channel_name, channel_id, _clean(timer_match)))
-                for timestamp in _filter_recorded(tss):
-                    if await _record():
-                        return _exit()
-
-        if sync_cloud:
-            vo = _timers.get("sync_cloud_language", "") == "VO"
-            for channel_id in _CLOUD:
-                channel_name = _CHANNELS[channel_id]["name"]
-                for timestamp in _filter_recorded(sorted(_CLOUD[channel_id])):
-                    if await _record(cloud=True):
-                        return _exit()
-        _exit()
+            for timestamp in _filter_recorded(sorted(_CLOUD[channel_id])):
+                if await _record(cloud=True):
+                    return _exit()
+    _exit()
 
 
 async def update_cloud():
@@ -1183,7 +1182,7 @@ async def update_epg(abort_on_error=False):
         else:
             await reload_epg()
             _last_epg = int(datetime.now().replace(minute=0, second=0).timestamp())
-            if RECORDINGS and not timers_lock.locked() and (not _t_timers or _t_timers.done()):
+            if RECORDINGS and (not _t_timers or _t_timers.done()):
                 _t_timers = app.add_task(timers_check(delay=10))
             break
 
@@ -1547,7 +1546,6 @@ if __name__ == "__main__":
     network_bw_lock = asyncio.Lock()
     recordings_lock = asyncio.Lock()
     recordings_inc_lock = asyncio.Lock()
-    timers_lock = asyncio.Lock()
     tvgrab_lock = asyncio.Lock()
 
     flussonic_regex = re.compile(r"\w*-?(\d{10})-?(\d+){0,1}\.?\w*")
