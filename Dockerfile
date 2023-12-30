@@ -56,7 +56,6 @@ RUN git clone -b ${JELLYFIN_FFMPEG_BRANCH} https://github.com/jellyfin/jellyfin-
  && git clone -b ${COMSKIP_BRANCH} https://github.com/erikkaashoek/Comskip \
  && cd Comskip \
  && patch -p1 < ../comskip.patch \
- && patch -p1 < ../qsv.patch \
  && ./autogen.sh \
  && ./configure --prefix=/usr \
  && make \
