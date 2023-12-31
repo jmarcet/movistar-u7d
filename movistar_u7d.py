@@ -25,8 +25,7 @@ from sanic.exceptions import HeaderNotFound, NotFound, ServiceUnavailable
 from sanic.handlers import ContentRangeHandler
 from sanic.log import error_logger
 from sanic.models.server_types import ConnInfo
-from sanic.server import HttpProtocol
-from sanic.touchup.meta import TouchUpMeta
+from sanic.server.protocols.http_protocol import HttpProtocol
 from warnings import filterwarnings
 
 from mu7d import ATOM, BUFF, CHUNK, DATEFMT, EPG_URL, FMT, MIME_M3U, MIME_WEBM
@@ -564,10 +563,10 @@ async def transcode(request, event, channel_id=0, filename="", offset=0, port=0,
         await _response.eof()
 
 
-class VodHttpProtocol(HttpProtocol, metaclass=TouchUpMeta):
+class VodHttpProtocol(HttpProtocol):
     def connection_made(self, transport):
         """
-        HTTP-protocol-specific new connection handler tuned for VOD.
+        HTTP-protocol-specific new connection handler
         """
         try:
             transport.set_write_buffer_limits(low=ATOM, high=BUFF)
