@@ -571,7 +571,7 @@ async def record_stream(vod_info):
     stream = await asyncio_dgram.bind((_IPTV, _args.client_port))
 
     async def _buffer():
-        buffer = b""
+        buffer = bytearray()
         for _ in range(buflen):
             buffer += (await stream.recv())[0]
         return buffer
