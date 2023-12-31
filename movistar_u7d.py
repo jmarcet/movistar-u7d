@@ -14,7 +14,6 @@ import ujson
 import urllib.parse
 
 from aiohttp.client_exceptions import ClientConnectionError, ClientOSError, ServerDisconnectedError
-from aiohttp.resolver import AsyncResolver
 from asyncio.exceptions import CancelledError
 from asyncio.subprocess import DEVNULL, PIPE
 from collections import namedtuple
@@ -30,7 +29,7 @@ from sanic.server import HttpProtocol
 from sanic.touchup.meta import TouchUpMeta
 from warnings import filterwarnings
 
-from mu7d import ATOM, BUFF, CHUNK, DATEFMT, EPG_URL, FMT, IPTV_DNS, MIME_M3U, MIME_WEBM
+from mu7d import ATOM, BUFF, CHUNK, DATEFMT, EPG_URL, FMT, MIME_M3U, MIME_WEBM
 from mu7d import UA, URL_COVER, URL_LOGO, VID_EXTS, WIN32, YEAR_SECONDS
 from mu7d import add_logfile, cleanup_handler, find_free_port, get_iptv_ip, mu7d_config, ongoing_vods, _version
 from movistar_vod import Vod
@@ -77,10 +76,7 @@ async def before_server_start(app):
         json_serialize=ujson.dumps,
     )
     _SESSION_LOGOS = aiohttp.ClientSession(
-        connector=aiohttp.TCPConnector(
-            keepalive_timeout=YEAR_SECONDS,
-            resolver=AsyncResolver(nameservers=[IPTV_DNS]) if not WIN32 else None,
-        ),
+        connector=aiohttp.TCPConnector(keepalive_timeout=YEAR_SECONDS),
         headers={"User-Agent": UA},
         json_serialize=ujson.dumps,
     )
@@ -108,10 +104,7 @@ async def before_server_start(app):
 @app.listener("after_server_start")
 async def after_server_start(app):
     app.ctx.vod_client = aiohttp.ClientSession(
-        connector=aiohttp.TCPConnector(
-            keepalive_timeout=YEAR_SECONDS,
-            resolver=AsyncResolver(nameservers=[IPTV_DNS]) if not WIN32 else None,
-        ),
+        connector=aiohttp.TCPConnector(keepalive_timeout=YEAR_SECONDS),
         headers={"User-Agent": UA},
         json_serialize=ujson.dumps,
     )

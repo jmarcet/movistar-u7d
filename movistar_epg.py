@@ -16,7 +16,6 @@ import urllib.parse
 import xmltodict
 
 from aiohttp.client_exceptions import ClientOSError, ServerDisconnectedError
-from aiohttp.resolver import AsyncResolver
 from asyncio.exceptions import CancelledError
 from asyncio.subprocess import DEVNULL, PIPE
 from collections import defaultdict
@@ -29,7 +28,7 @@ from sanic_prometheus import monitor
 from sanic.exceptions import Forbidden, NotFound
 from warnings import filterwarnings
 
-from mu7d import DATEFMT, DIV_ONE, DIV_TWO, DROP_KEYS, EXT, FMT, IPTV_DNS
+from mu7d import DATEFMT, DIV_ONE, DIV_TWO, DROP_KEYS, EXT, FMT
 from mu7d import NFO_EXT, UA, UA_U7D, URL_MVTV, VID_EXTS, WIN32, YEAR_SECONDS
 from mu7d import add_logfile, cleanup_handler, find_free_port, get_iptv_ip, get_local_info, get_safe_filename
 from mu7d import get_title_meta, glob_safe, launch, mu7d_config, ongoing_vods, remove, utime, _version
@@ -62,10 +61,7 @@ async def before_server_start(app):
         log.info(f"Ignoring RECORDINGS_THREADS => BW: {IPTV_BW_SOFT}-{IPTV_BW_HARD} kbps / {IPTV_IFACE}")
 
     _SESSION_CLOUD = aiohttp.ClientSession(
-        connector=aiohttp.TCPConnector(
-            keepalive_timeout=YEAR_SECONDS,
-            resolver=AsyncResolver(nameservers=[IPTV_DNS]) if not WIN32 else None,
-        ),
+        connector=aiohttp.TCPConnector(keepalive_timeout=YEAR_SECONDS),
         headers={"User-Agent": UA},
         json_serialize=ujson.dumps,
     )
