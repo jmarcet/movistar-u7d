@@ -152,7 +152,7 @@ async def after_server_start(app):
 
         uptime = int(datetime.now().timestamp() - boot_time())
         if not _t_timers and int(datetime.now().replace(minute=0, second=0).timestamp()) <= _last_epg:
-            delay = max(10, 180 - uptime)
+            delay = max(5, 180 - uptime)
             if delay > 10:
                 log.info(f"Waiting {delay}s to check recording timers since the system just booted...")
             _t_timers = app.add_task(timers_check(delay))
@@ -348,7 +348,7 @@ async def handle_archive(request, channel_id, program_id, cloud=False):
     log_suffix = f': [{channel_id:4}] [{program_id}] [{timestamp}] "{filename}"'
 
     if not _t_timers or _t_timers.done():
-        _t_timers = app.add_task(timers_check(delay=5))
+        _t_timers = app.add_task(timers_check(delay=3))
 
     recorded = int(request.args.get("recorded", 0))
     if recorded:
@@ -1139,8 +1139,10 @@ async def update_epg(abort_on_error=False):
         else:
             await reload_epg()
             _last_epg = int(datetime.now().replace(minute=0, second=0).timestamp())
-            if RECORDINGS and (not _t_timers or _t_timers.done()):
-                _t_timers = app.add_task(timers_check(delay=10))
+            if RECORDINGS:
+                if _t_timers and not _t_timers.done():
+                    _t_timers.cancel()
+                _t_timers = app.add_task(timers_check(delay=3))
             break
 
 
