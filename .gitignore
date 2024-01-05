@@ -1,8 +1,12 @@
 *env/
+__pycache__/
+.ruff_cache/
+.vscode/
+archive/
+bin/
+build/
+lib/
+lib64
+pyvenv.cfg
 *.exe
 *.swp
-.ruff_cache
-.vscode
-__pycache__/
-archive/
-build/

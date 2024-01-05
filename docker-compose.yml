@@ -2,14 +2,26 @@ version: '2.4'
 
 services:
   movistar_u7d:
-    # build: .
-    image: registry.marcet.info/javier/movistar-u7d
+    # build:
+    #   context: .
+    #   args:
+    #     BUILD_TYPE: full
+    #     BUILDKIT_INLINE_CACHE: 1
+    #     DOCKER_BUILDKIT: 1
+    #     COMPOSE_DOCKER_CLI_BUILD: 1
+    # image: registry.marcet.info/javier/movistar-u7d:latest
+    # image: registry.marcet.info/javier/movistar-u7d:stable
+    # image: registry.marcet.info/javier/movistar-u7d:stable-slim
+    image: registry.marcet.info/javier/movistar-u7d:unstable
+    # image: registry.marcet.info/javier/movistar-u7d:unstable-slim
     container_name: movistar_u7d
     cap_add:
       - NET_ADMIN
       - NET_BROADCAST
       - SYS_ADMIN
       - SYS_NICE
+    dns: 172.26.23.3
+    dns_search: ""
     restart: on-failure
     network_mode: host
     volumes:

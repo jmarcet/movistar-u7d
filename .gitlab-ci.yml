@@ -1,24 +1,47 @@
-image: alpine:edge
-
-services:
-  - docker:dind
+default:
+  image: docker:latest
+  services:
+    - docker:dind
+  before_script:
+    - apk add --no-cache git
+    - docker run --privileged --rm tonistiigi/binfmt --install all
+    - docker buildx create --name mu7d
+    - docker buildx use mu7d
+    - docker login -u $CI_REGISTRY_USER -p $CI_REGISTRY_PASSWORD $CI_REGISTRY
 
 stages:
-  - build-docker
+  - build
 
 variables:
+  BUILDKIT_INLINE_CACHE: 1
+  DOCKER_DRIVER: btrfs
+  DOCKER_HOST: unix:///var/run/docker.sock
+  DOCKER_TLS_CERTDIR: ""
   REPOSITORY: $CI_REGISTRY/javier/movistar-u7d
 
-before_script:
-  - apk update && apk add docker docker-cli-buildx
-  - docker run --privileged --rm tonistiigi/binfmt --install all
-  - docker buildx create --name mybuilder
-  - docker buildx use mybuilder
-  - docker login -u $CI_REGISTRY_USER -p $CI_REGISTRY_PASSWORD $CI_REGISTRY
-
-build-docker:
-  stage: build-docker
-  only:
-   - master
+build-stable:
+  stage: build
+  rules:
+   - if: $CI_COMMIT_BRANCH == $CI_DEFAULT_BRANCH
+   - if: $CI_COMMIT_TAG
+     when: never
   script:
-    - docker buildx build --platform linux/amd64,linux/arm64,linux/arm/v7 --push --tag $REPOSITORY:latest --tag $REPOSITORY:`date +%Y%m%d%H%M%` .
+    - docker buildx build                             --platform linux/amd64,linux/arm64,linux/arm/v7 --provenance false --push --tag $REPOSITORY:stable-slim --tag $REPOSITORY:$CI_COMMIT_SHORT_SHA-stable-slim .
+    - docker buildx build --build-arg BUILD_TYPE=full --platform linux/amd64,linux/arm64,linux/arm/v7 --provenance false --push --tag $REPOSITORY:stable      --tag $REPOSITORY:$CI_COMMIT_SHORT_SHA-stable      .
+
+build-tag:
+  stage: build
+  rules:
+   - if: $CI_COMMIT_BRANCH == $CI_DEFAULT_BRANCH
+   - if: $CI_COMMIT_TAG
+  script:
+    - docker buildx build                             --platform linux/amd64,linux/arm64,linux/arm/v7 --provenance false --push --tag $REPOSITORY:stable-slim --tag $REPOSITORY:$CI_COMMIT_SHORT_SHA-stable-slim --tag $REPOSITORY:$CI_COMMIT_TAG-stable-slim .
+    - docker buildx build --build-arg BUILD_TYPE=full --platform linux/amd64,linux/arm64,linux/arm/v7 --provenance false --push --tag $REPOSITORY:stable      --tag $REPOSITORY:$CI_COMMIT_SHORT_SHA-stable      --tag $REPOSITORY:$CI_COMMIT_TAG-stable      .
+
+build-unstable:
+  stage: build
+  rules:
+   - if: $CI_COMMIT_BRANCH == "next"
+  script:
+    - docker buildx build                             --platform linux/amd64,linux/arm64,linux/arm/v7 --provenance false --push --tag $REPOSITORY:unstable-slim .
+    - docker buildx build --build-arg BUILD_TYPE=full --platform linux/amd64,linux/arm64,linux/arm/v7 --provenance false --push --tag $REPOSITORY:unstable      .

@@ -1,2 +1,11 @@
-.*
-*env/
+.dockerignore
+.git*/
+mpv/
+Changelog.md
+LICENSE
+README.md
+docker-compose.yml
+grafana-dashboard.json
+mu7d.service
+requirements-*.txt
+setup.py
