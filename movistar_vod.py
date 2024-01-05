@@ -86,6 +86,13 @@ def _archive_recording():
             tmpcover = covers[0]
             cover_ext = os.path.splitext(tmpcover)[1]
             shutil.copy2(tmpcover, _filename + cover_ext)
+            cached_cover = tmpcover.replace(RECORDINGS_TMP, os.path.join(RECORDINGS_TMP, "covers"))
+            dirname = os.path.dirname(cached_cover)
+            if not os.path.exists(dirname):
+                log.debug('Making dir "%s"' % dirname)
+                os.makedirs(dirname)
+            log.debug('Saving cover cache "%s"' % cached_cover)
+            shutil.copy2(tmpcover, cached_cover)
             remove(tmpcover)
 
         shutil.copy2(_tmpname + TMP_EXT, _filename + VID_EXT)

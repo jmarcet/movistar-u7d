@@ -6,6 +6,7 @@ import asyncio
 import logging
 import os
 import re
+import shutil
 import signal
 import sys
 import time
@@ -134,6 +135,10 @@ async def before_server_start(app):
 
                     await update_recordings(True)
 
+                    if RECORDINGS_TMP and _RECORDINGS:
+                        if not os.path.exists(os.path.join(RECORDINGS_TMP, "covers")):
+                            await create_covers_cache()
+
                 else:
                     await reindex_recordings()
 
@@ -181,6 +186,32 @@ async def cancel_app():
         os.kill(U7D_PARENT, signal.SIGTERM)
     else:
         app.stop()
+
+
+async def create_covers_cache():
+    covers = set()
+    paths = set()
+    covers_path = os.path.join(RECORDINGS_TMP, "covers")
+    rootdir = "[0-9][0-9][0-9]. */**" if RECORDINGS_PER_CHANNEL else "**"
+    nfos = sorted(glob(f"{RECORDINGS}/{rootdir}/*{NFO_EXT}", recursive=True))
+
+    for nfo in nfos:
+        cover = nfo.replace(NFO_EXT, ".jpg")
+        if os.path.exists(cover):
+            cached_cover = cover.replace(RECORDINGS, covers_path)
+            path = os.path.dirname(cached_cover)
+            parent = os.path.split(path)[0]
+
+            covers.add((cover, cached_cover))
+            for x in (x for x in (path, parent) if x != covers_path):
+                paths.add(x)
+
+    os.makedirs(covers_path)
+    for path in sorted(paths):
+        os.makedirs(path)
+
+    for cover, cached_cover in sorted(covers, key=lambda x: os.path.getmtime(x[0])):
+        shutil.copy2(cover, cached_cover)
 
 
 def does_recording_exist(filename):
@@ -1482,6 +1513,7 @@ if __name__ == "__main__":
     RECORDINGS_PER_CHANNEL = _conf["RECORDINGS_PER_CHANNEL"]
     RECORDINGS_REINDEX = _conf["RECORDINGS_REINDEX"]
     RECORDINGS_THREADS = _conf["RECORDINGS_THREADS"]
+    RECORDINGS_TMP = _conf["RECORDINGS_TMP"]
     RECORDINGS_UPGRADE = _conf["RECORDINGS_UPGRADE"]
     U7D_URL = _conf["U7D_URL"]
     VID_EXT = ".mkv" if MKV_OUTPUT else ".ts"

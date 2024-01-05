@@ -454,13 +454,22 @@ async def handle_recording(request):
         raise NotFound(f"Requested URL {request.raw_url.decode()} not found")
 
     _path = urllib.parse.unquote(request.raw_url.decode().split("/recording/")[1])
+    ext = os.path.splitext(_path[1:])[1]
+
+    if RECORDINGS_TMP and ext in (".jpg", ".png"):
+        cached_cover = os.path.join(RECORDINGS_TMP, "covers", _path[1:])
+        if os.path.exists(cached_cover):
+            if request.method == "HEAD":
+                return response.HTTPResponse(status=200)
+
+            return await response.file(cached_cover)
+
     file = os.path.join(RECORDINGS, _path[1:])
     if os.path.exists(file):
         if request.method == "HEAD":
             return response.HTTPResponse(status=200)
 
-        ext = os.path.splitext(file)[1]
-        if ext == ".jpg":
+        if ext in (".jpg", ".png"):
             return await response.file(file)
 
         if ext in VID_EXTS:
@@ -624,6 +633,7 @@ if __name__ == "__main__":
     NO_VERBOSE_LOGS = _conf["NO_VERBOSE_LOGS"]
     RECORDINGS = _conf["RECORDINGS"]
     RECORDINGS_PER_CHANNEL = _conf["RECORDINGS_PER_CHANNEL"]
+    RECORDINGS_TMP = _conf["RECORDINGS_TMP"]
     U7D_THREADS = _conf["U7D_THREADS"]
     U7D_URL = _conf["U7D_URL"]
 
