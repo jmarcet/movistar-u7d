@@ -373,7 +373,7 @@ async def handle_archive(request, channel_id, program_id, cloud=False):
         log.debug(DIV_ONE % (msg, log_suffix))
         return response.json({"status": msg}, status=200)
 
-    log.debug(f"Checking for {filename}")
+    log.debug('Checking for "%s"' % filename)
     if does_recording_exist(filename):
         errors = ""
         async with recordings_lock:
@@ -927,7 +927,7 @@ async def timers_check(delay=0):
         recs = _RECORDINGS.copy()
 
     ongoing = await ongoing_vods(_all=True)  # we want to check against all ongoing vods, also in pp
-    log.debug(f"Ongoing VODs: [{ongoing}]")
+    log.debug("Ongoing VODs: [%s]" % str(ongoing))
 
     kept, next_timers, queued = defaultdict(dict), [], []
 
@@ -1228,7 +1228,7 @@ async def update_recordings(archive=False):
 
         updated_m3u = False
         for _dir in [RECORDINGS] + topdirs:
-            log.debug(f'Looking for recordings in "{_dir}"')
+            log.debug('Looking for recordings in "%s"' % _dir)
             files = (
                 _files
                 if _dir == RECORDINGS
@@ -1409,7 +1409,6 @@ async def upgrade_recordings():
             continue
 
         if _start != mtime:
-            log.debug(f"{recording=}\n{_start=} {mtime=} {duration=} {_end=}")
             wrong += 1
 
         try:

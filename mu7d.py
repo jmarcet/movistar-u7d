@@ -197,7 +197,7 @@ async def launch(cmd):
     try:
         return await proc.wait()
     except CancelledError:
-        log.debug(f"Cancelled: {cmd}")
+        log.debug('Cancelled: "%s"' % cmd)
         try:
             proc.terminate()
         except ProcessLookupError:

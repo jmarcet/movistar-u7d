@@ -361,7 +361,7 @@ async def handle_guide_local(request):
 @app.route("/Covers/<path:int>/<cover>", methods=["GET", "HEAD"], name="images_covers")
 @app.route("/Logos/<logo>", methods=["GET", "HEAD"], name="images_logos")
 async def handle_images(request, cover=None, logo=None, path=None):
-    log.debug(f"[{request.ip}] {request.method} {request.url}")
+    log.debug("[%s] %s %s" % (request.ip, request.method, request.url))
     if logo and logo.split(".")[0].isdigit():
         orig_url = f"{URL_LOGO}/{logo}"
     elif path and cover and cover.split(".")[0].isdigit():

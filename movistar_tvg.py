@@ -400,7 +400,7 @@ class Cache:
 
         now = datetime.now()
         update_time = int(now.replace(hour=0, minute=0, second=0).timestamp())
-        log.debug(f"Fecha de actualización de epg_metadata: [{time.ctime(update_time)}] [{update_time}]")
+        log.debug("Fecha de actualización de epg_metadata: [%s] [%d]" % (time.ctime(update_time), update_time))
         if refresh and int(os.path.getmtime(os.path.join(app_dir, "cache", "epg_metadata.json"))) < update_time:
             return
 
@@ -778,7 +778,7 @@ class MulticastIPTV:
                 log.info("Descargando índices")
             self.__xml_data["segments"] = self.__get_segments(xml["6_0"])
         except Exception as ex:
-            log.debug(f"{repr(ex)}")
+            log.debug("%s" % repr(ex))
             log.warning("Error descargando datos de la EPG. Reintentando...")
             return self.__get_epg_data(mcast_grp, mcast_port)
         cache.save_epg_metadata(self.__xml_data)
@@ -802,7 +802,7 @@ class MulticastIPTV:
                         service_id = service[0].attrib["ServiceName"]
                         package_list[package_name]["services"][service_id] = service[1].text
             except (AttributeError, IndexError, KeyError):
-                log.debug(f"El paquete {package_name} no tiene la estructura correcta")
+                log.debug("El paquete %s no tiene la estructura correcta" % package_name)
         if VERBOSE:
             log.info(f"Paquetes: {len(package_list)}")
         return package_list
@@ -843,7 +843,7 @@ class MulticastIPTV:
                     segment_id = segment.attrib["ID"]
                     segment_list[source]["Segments"][segment_id] = segment.attrib["Version"]
             except KeyError:
-                log.debug(f"El segmento {source} no tiene la estructura correcta")
+                log.debug("El segmento %s no tiene la estructura correcta" % source)
         if VERBOSE:
             log.info("Días de EPG: %i" % len(segment_list))
         return segment_list
@@ -917,7 +917,7 @@ class MulticastIPTV:
                             log.info(f"{mc_grp}:{mc_port} -> XML descargado")
                         loop = False
                 except Exception as ex:
-                    log.debug(f"Error al descargar los archivos XML: {repr(ex)}")
+                    log.debug("Error al descargar los archivos XML: %s" % repr(ex))
         return _files
 
     def __merge_dicts(self, dict1, dict2, path=[]):
@@ -1051,7 +1051,7 @@ class MulticastIPTV:
             new_epg = self.__clean_epg_channels(self.__get_sane_epg(self.__parse_bin_epg()))
             log.info(f"Conservando {len(new_epg)} canales en abierto")
         except Exception as ex:
-            log.debug(f"{repr(ex)}")
+            log.debug("%s" % repr(ex))
             log.warning("Error descargando la EPG. Reintentando...")
             return await self.get_epg()
 
@@ -1389,7 +1389,7 @@ async def tvg_main():
         log.info("-" * len(banner))
         log.info(banner)
         log.info("-" * len(banner))
-        log.debug(" ".join(sys.argv[1:]))
+        log.debug("%s" % " ".join(sys.argv[1:]))
 
     # Crea la caché
     cache = Cache(full=bool(args.m3u or args.guide))

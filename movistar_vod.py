@@ -51,8 +51,8 @@ class RtspClient:
         self.writer.write(req.encode())
         resp = (await self.reader.read(4096)).decode().splitlines()
 
-        # log.debug(f"[{self.cseq}]: Req = [{'|'.join(req.splitlines())}]")
-        # log.debug(f"[{self.cseq}]: Resp = [{'|'.join(resp)}]")
+        # log.debug("[%d]: Req  = [%s]" % (self.cseq, "|".join(resp)))
+        # log.debug("[%d]: Resp = [%s]" % (self.cseq, "|".join(resp)))
 
         self.cseq += 1
 
@@ -71,7 +71,7 @@ class RtspClient:
 def _archive_recording():
     path = os.path.dirname(_filename)
     if not os.path.exists(path):
-        log.debug(f'Making dir "{path}"')
+        log.debug('Making dir "%s"' % path)
         os.makedirs(path)
 
     if not RECORDINGS_TMP:
@@ -226,13 +226,13 @@ async def postprocess(archive_params, archive_url, mtime, vod_info):
                 return None, None
 
             cover = metadata["cover"]
-            log.debug(f'Getting cover "{cover}"')
+            log.debug('Getting cover "%s"' % cover)
             async with _SESSION_CLOUD.get(f"{URL_COVER}/{cover}") as resp:
                 if resp.status == 200:
-                    log.debug(f'Got cover "{cover}"')
+                    log.debug('Got cover "%s"' % cover)
                     img_ext = os.path.splitext(cover)[1]
                     img_name, archival_img_name = _tmpname + img_ext, _filename + img_ext
-                    log.debug(f'Saving cover "{cover}"')
+                    log.debug('Saving cover "%s"' % cover)
                     async with aiofiles.open(img_name, "wb") as f:
                         await f.write(await resp.read())
                     utime(mtime, img_name)
@@ -247,7 +247,7 @@ async def postprocess(archive_params, archive_url, mtime, vod_info):
         if not metadata:
             return
 
-        log.debug(f"{metadata=}")
+        log.debug('metadata="%s"' % metadata)
         # Save all the available metadata
         if "covers" in metadata:
             covers = {}
@@ -258,16 +258,16 @@ async def postprocess(archive_params, archive_url, mtime, vod_info):
 
             for img in metadata["covers"]:
                 cover = metadata["covers"][img]
-                log.debug(f'Getting covers "{img}"')
+                log.debug('Getting cover "%s"' % img)
                 async with _SESSION_CLOUD.get(cover) as resp:
                     if resp.status != 200:
-                        log.debug(f'Failed to get cover "{img}" => {resp}')
+                        log.debug('Failed to get cover "%s" => %s' % (img, str(resp)))
                         continue
-                    log.debug(f'Got cover "{img}"')
+                    log.debug('Got cover "%s"' % img)
                     img_ext = os.path.splitext(cover)[1]
                     img_rel = f"{os.path.basename(_filename)}-{img}" + img_ext
                     img_name = os.path.join(metadata_dir, img_rel)
-                    log.debug(f'Saving cover "{img}"')
+                    log.debug('Saving cover "%s"' % img)
                     async with aiofiles.open(img_name, "wb") as f:
                         await f.write(await resp.read())
                     utime(mtime, img_name)
@@ -287,11 +287,11 @@ async def postprocess(archive_params, archive_url, mtime, vod_info):
 
         xml = xmltodict.unparse({"metadata": metadata}, pretty=True)
         async with aiofiles.open(_filename + NFO_EXT, "w", encoding="utf8") as f:
-            log.debug("Metadata writing xml")
+            log.debug("Writing XML Metadata")
             await f.write(xml)
 
         utime(mtime, _filename + NFO_EXT)
-        log.debug("Metadata saved")
+        log.debug("XML Metadata saved")
 
     async def _step_0():
         nonlocal archive_params
@@ -580,7 +580,7 @@ async def record_stream(vod_info):
     path = os.path.dirname(_tmpname)
     try:
         if not os.path.exists(path):
-            log.debug(f'Making dir "{path}"')
+            log.debug('Making dir "%s"' % path)
             os.makedirs(path)
 
         f = await aiofiles.open(_tmpname + TMP_EXT, "wb")
