@@ -227,6 +227,12 @@ def mu7d_config():
     if "HOME" not in conf:
         conf["HOME"] = os.getenv("HOME", os.getenv("USERPROFILE"))
 
+    if "UID" not in conf:
+        conf["UID"] = 65534
+
+    if "GID" not in conf:
+        conf["GID"] = 65534
+
     if "COMSKIP" not in conf or not which("comskip"):
         conf["COMSKIP"] = None
     else:
@@ -239,8 +245,8 @@ def mu7d_config():
 
     if "EXTRA_CHANNELS" not in conf:
         conf["EXTRA_CHANNELS"] = []
-    else:
-        conf["EXTRA_CHANNELS"] = list(map(int, conf["EXTRA_CHANNELS"].split(" ")))
+    elif any((not isinstance(x, int) for x in conf["EXTRA_CHANNELS"])):
+        conf["EXTRA_CHANNELS"] = []
 
     if "IPTV_IFACE" not in conf or WIN32:
         conf["IPTV_IFACE"] = conf["IPTV_BW_SOFT"] = conf["IPTV_BW_HARD"] = None
@@ -259,7 +265,7 @@ def mu7d_config():
         conf["LAN_IP"] = get_lan_ip()
 
     if "LOG_TO_FILE" not in conf:
-        conf["LOG_TO_FILE"] = False
+        conf["LOG_TO_FILE"] = os.path.join(conf["HOME"], "mu7d.log")
 
     if "MKV_OUTPUT" not in conf:
         conf["MKV_OUTPUT"] = False
