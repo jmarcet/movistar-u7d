@@ -1,12 +1,15 @@
 from cx_Freeze import Executable, setup  # pylint: disable=import-error
+from glob import glob
 
 import sanic
 
 from mu7d import _version
 
 
+ffmpeg = ["ffmpeg.exe", "ffprobe.exe"] + glob("*.dll")
+
 build_exe_options = {
-    "include_files": sanic.__path__ + ["comskip.ini", "mu7d.conf", "timers.conf", "ffmpeg.exe", "ffprobe.exe"],
+    "include_files": sanic.__path__ + ["comskip.ini", "mu7d.conf", "timers.conf"] + ffmpeg,
     "excludes": ["test", "tkinter", "unittest"],
     "optimize": 2,
 }
