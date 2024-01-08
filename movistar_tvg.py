@@ -1095,7 +1095,6 @@ class XMLTV:
             filename = os.path.join(_conf["RECORDINGS"], program["filename"])
             ext_info = await get_local_info(channel_id, ts, filename, extended=True)
             if not ext_info:
-                log.error(f"Metadatos no encontrados: {program=}")
                 return
             # Use the corrected duration to avoid overlaps
             ext_info["end"] = ts + program["duration"]
