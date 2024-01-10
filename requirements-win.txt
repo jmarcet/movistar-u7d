@@ -2,7 +2,7 @@ aiofiles
 aiohttp
 asyncio
 asyncio_dgram
-cx_Freeze
+cx_Freeze>=6.16.0.dev9
 defusedxml
 filelock
 psutil
