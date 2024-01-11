@@ -539,7 +539,7 @@ class MovistarTV:
                     "Event mismatch STILL BROKEN: [%4s] [%d] beginTime=[%+d]"
                     % (str(channel_id), pid, data["beginTime"] // 1000 - ts)
                 )
-                return
+                return data
             cache.save_epg_extended_info(data)
         return data
 
