@@ -25,7 +25,6 @@ from asyncio.exceptions import CancelledError
 from asyncio.subprocess import DEVNULL as NULL, PIPE, STDOUT as OUT
 from datetime import timedelta
 from filelock import FileLock
-from glob import glob
 
 from mu7d import BUFF, CHUNK, DATEFMT, DIV_LOG, DROP_KEYS, EPG_URL, FMT
 from mu7d import NFO_EXT, UA, URL_COVER, URL_MVTV, WIN32, YEAR_SECONDS
@@ -81,7 +80,7 @@ def _archive_recording():
     else:
         remove(_filename + VID_EXT, _filename + ".jpg", _filename + ".png")
 
-        covers = [x for x in glob(f"{_tmpname}.*") if x.endswith((".jpg", ".png"))]
+        covers = [x for x in glob_safe(f"{_tmpname}.*") if x.endswith((".jpg", ".png"))]
         if covers:
             tmpcover = covers[0]
             cover_ext = os.path.splitext(tmpcover)[1]
