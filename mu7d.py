@@ -57,8 +57,8 @@ DROP_KEYS = ["5S_signLanguage", "hasDolby", "isHdr", "isPromotional", "isuserfav
 DROP_KEYS += ["opvr", "playcount", "recordingAllowed", "resume", "startOver", "watched", "wishListEnabled"]
 
 title_select_regex = re.compile(r".+ T\d+ .+")
-title_1_regex = re.compile(r"(.+(?!T\d)) +T(\d+)(?: *Ep?.? *(\d+))?[ -]*(.*)")
-title_2_regex = re.compile(r"(.+(?!T\d))(?: +T(\d+))? *Ep?.? *(\d+)[ -]*(.*)")
+title_1_regex = re.compile(r"(.+(?!T\d)) +T(\d+)(?: *Ep[isode.]+ (\d+))?[ -]*(.*)")
+title_2_regex = re.compile(r"(.+(?!T\d))(?: +T(\d+))? *(?:[Ee]p[isode.]+|[Cc]ap[iítulo.]*) ?(\d+)[ .-]*(.*)")
 
 
 def add_logfile(logger, logfile, loglevel):
@@ -108,18 +108,23 @@ async def get_local_info(channel, timestamp, path, extended=False):
             nfo = xmltodict.parse(await f.read())["metadata"]
         nfo.update({k: int(v) for k, v in nfo.items() if k in ("beginTime", "duration", "endTime")})
         if extended:
+            _match = re.search(r"^(.+) (?:S\d+E\d+|Ep[isode.]+ \d+)", nfo["name"])
+            if _match:
+                is_serie = True
+                serie = _match.groups()[0]
+            else:
+                is_serie = bool(nfo.get("seriesID") or nfo.get("episodeName"))
+                serie = nfo.get("seriesName", "")
             nfo.update(
                 {
                     "start": nfo["beginTime"],
                     "end": nfo["endTime"],
-                    "full_title": nfo.get("name"),
+                    "full_title": nfo["name"],
                     "age_rating": int(nfo.get("ageRatingID")),
                     "description": nfo.get("description") or nfo.get("synopsis") or "",
-                    "episode_title": nfo.get("episodeName", ""),
                     "gens": {"genre": nfo.get("genre", ""), "sub-genre": nfo.get("labelGenre", "")},
-                    "genre": nfo.get("productType"),
-                    "is_serie": "seriesID" in nfo,
-                    "serie": nfo.get("seriesName", ""),
+                    "is_serie": is_serie,
+                    "serie": serie,
                     "serie_id": int(nfo.get("seriesID", 0)),
                     "year": nfo.get("productionDate", ""),
                 }
@@ -135,14 +140,12 @@ def get_safe_filename(filename):
     return "".join(c for c in filename if c.isalnum() or c in keepcharacters).rstrip()
 
 
-def get_title_meta(title, serie_id=None):
+def get_title_meta(title, serie_id, service_id, genre):
     try:
-        _t = unescape(title).replace("\n", " ").replace("\r", " ")
+        _t = unescape(title).replace("\n", " ").replace("\r", " ").strip()
     except TypeError:
-        _t = title.replace("\n", " ").replace("\r", " ")
-    full_title = _t.replace(" / ", ": ").replace("/", "")
-    if re.search(r"\)\w", full_title):
-        full_title = full_title.replace("(", "").replace(")", "")
+        _t = title.replace("\n", " ").replace("\r", " ").strip()
+    full_title = re.sub(r"(\d+)/(\d+)", r"\1\2", _t)
 
     if title_select_regex.match(full_title):
         x = title_1_regex.search(full_title)
@@ -152,30 +155,43 @@ def get_title_meta(title, serie_id=None):
     is_serie = False
     season = episode = 0
     serie = episode_title = ""
+
     if x and x.groups():
         _x = x.groups()
-        serie = (
-            _x[0].strip() if _x[0] else full_title.split(" - ")[0].strip() if " - " in full_title else full_title
-        )
+        serie = _x[0] if _x[0] else full_title.split(" - ")[0] if " - " in full_title else full_title
         season = int(_x[1]) if _x[1] else season
         episode = int(_x[2]) if _x[2] else episode
-        episode_title = _x[3].strip() if _x[3] else episode_title
-        if episode_title and "-" in episode_title:
-            episode_title = episode_title.replace("- ", "-").replace(" -", "-").replace("-", " - ")
+        episode_title = _x[3] if _x[3] else episode_title
+
         is_serie = bool(serie and episode)
-        if ": " in serie and episode and not episode_title:
-            episode_title = serie.split(":")[1].strip()
-            serie = serie.split(":")[0].strip()
+        serie, episode_title = [x.strip(":-/ ") for x in (serie, episode_title)]
+
         if serie and season and episode:
             full_title = "%s S%02dE%02d" % (serie, season, episode)
             if episode_title:
                 full_title += f" - {episode_title}"
+
     elif serie_id:
         is_serie = True
         if " - " in full_title:
             serie, episode_title = full_title.split(" - ", 1)
         else:
             serie = full_title
+
+    # Boing (578) & MEGA (2863); Movies (genre[0] == "1")
+    if all((service_id in (578, 2863), ": " in full_title, not episode_title, genre[0] != "1")):
+        _match = re.match(r"^([^/]+): ([^a-z].+)", full_title)
+        if _match:
+            is_serie = True
+            serie, episode_title = [x.strip(":-/ ") for x in _match.groups()]
+            if season and episode:
+                episode_title = re.sub(r" S\d+E\d+$", "", episode_title)
+                full_title = "%s S%02dE%02d - %s" % (serie, season, episode, episode_title)
+            else:
+                full_title = "%s - %s" % (serie, episode_title)
+
+    for item in (episode_title, full_title, serie):
+        item = re.sub(r"\s+", " ", item)
 
     return {
         "full_title": full_title,

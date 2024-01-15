@@ -966,32 +966,33 @@ class MulticastIPTV:
         for epg_day in self.__epg:
             programs = {}
             for ch_id in epg_day:
-                if epg_day[ch_id] and "replacement" not in epg_day[ch_id]:
+                if epg_day[ch_id]:
                     head = self.__parse_bin_epg_header(epg_day[ch_id])
-                    programs[head["service_id"]] = self.__parse_bin_epg_body(head["data"])
+                    programs[head["service_id"]] = self.__parse_bin_epg_body(head["data"], head["service_id"])
             self.__merge_dicts(merged_epg, programs)
         log.info(f"Canales con EPG: {len(merged_epg)}")
         cache.save_epg(merged_epg)
         return merged_epg
 
-    def __parse_bin_epg_body(self, data):
+    def __parse_bin_epg_body(self, data, service_id):
         epg_dt = data[:-4]
         programs = {}
         while epg_dt:
             start = struct.unpack(">I", epg_dt[4:8])[0]
             duration = struct.unpack(">H", epg_dt[8:10])[0]
             title_end = struct.unpack("B", epg_dt[31:32])[0] + 32
+            genre = "{:02X}".format(struct.unpack("B", epg_dt[20:21])[0])
             episode = struct.unpack("B", epg_dt[title_end + 8 : title_end + 9])[0]
             season = struct.unpack("B", epg_dt[title_end + 11 : title_end + 12])[0]
             full_title = self.__decode_string(epg_dt[32:title_end])
             serie_id = struct.unpack(">H", epg_dt[title_end + 5 : title_end + 7])[0]
-            meta_data = get_title_meta(full_title, serie_id)
+            meta_data = get_title_meta(full_title, serie_id, service_id, genre)
             programs[start] = {
                 "pid": struct.unpack(">I", epg_dt[:4])[0],
                 "start": start,
                 "duration": duration,
                 "end": start + duration,
-                "genre": "{:02X}".format(struct.unpack("B", epg_dt[20:21])[0]),
+                "genre": genre,
                 "age_rating": struct.unpack("B", epg_dt[24:25])[0],
                 "full_title": meta_data["full_title"],
                 "serie_id": serie_id,
@@ -1116,39 +1117,20 @@ class XMLTV:
         )
 
         tag_title = SubElement(tag_programme, "title", lang["es"])
+        tag_desc = tag_stitle = None
 
         _match = False
-        if ext_info and ext_info["theme"] == "Cine" or program["genre"].startswith("1"):
-            is_serie = False
-        elif ext_info and "seriesName" in ext_info and "serie" in program and ": " in ext_info["seriesName"]:
-            _match = series_regex.match(program["full_title"])
-            is_serie = True
-            if "episode_title" in program:
-                del program["episode_title"]
-            program["serie"] = ext_info["seriesName"]
-        else:
-            _match = series_regex.match(program["full_title"])
-            is_serie = _match or program["is_serie"] or ": " in program["full_title"]
+        is_serie, title = program["is_serie"], program["full_title"]
+
         if is_serie:
-            title, subtitle = _match.groups() if _match else (program["full_title"], None)
-            stitle = program.get("episode_title", "")
-            stitle = "" if stitle.startswith("Episod") else stitle
+            title = program["serie"]
+            subtitle = program["full_title"].split(title, 1)[-1].strip("- ")
 
-            if not subtitle and not stitle:
-                if ": " in program["full_title"]:
-                    title, subtitle = program["full_title"].split(": ", 1)
-                elif program["season"] is not None and program["episode"]:
-                    subtitle = f'S{program["season"]:02}E{program["episode"]:02}'
-                elif program["episode"]:
-                    subtitle = f'Ep. {program["episode"]}'
-            elif "episode" in program and str(program["episode"]) not in stitle:
-                stitle = f'Ep. {program["episode"]} - {stitle}'
+            if subtitle and subtitle not in title:
+                tag_stitle = SubElement(tag_programme, "sub-title", lang["es"])
+                tag_stitle.text = subtitle
 
-            tag_title.text = title or program["serie"] or program["full_title"]
-            tag_stitle = SubElement(tag_programme, "sub-title", lang["es"])
-            tag_stitle.text = subtitle or stitle
-        else:
-            tag_title.text = program["full_title"]
+        tag_title.text = title
 
         if local:
             _match = daily_regex.match(tag_title.text)
@@ -1156,41 +1138,59 @@ class XMLTV:
                 tag_title.text = _match.groups()[0]
 
         if ext_info:
-            tag_desc = SubElement(tag_programme, "desc", lang["es"])
-            tag_desc.text = ""
+
+            def _clean(string):
+                return re.sub(r"[^\w]", "", string.lower())
+
             orig_title = ext_info.get("originalTitle", "")
-            orig_title = "" if "Episod" in orig_title or orig_title == "Cine" else orig_title
-            _clean_title = program["full_title"].lower().replace("(", "").replace(")", "")
+            orig_title = "" if orig_title.lower().lstrip().startswith("episod") else orig_title
 
             if orig_title:
-                if ext_info["theme"] in ("Cine", "Documentales") and not is_serie:
+                _clean_origt = _clean(orig_title)
+
+                if is_serie:
+                    if tag_stitle is not None and " - " in tag_stitle.text:
+                        se, _stitle = tag_stitle.text.split(" - ", 1)
+                        if _clean_origt.startswith(_clean(_stitle)):
+                            tag_stitle.text = f"{se} - {orig_title}"
+                else:
+                    if ext_info["theme"] in ("Cine", "Documentales") and " (" in program["full_title"]:
+                        _match = re.match(r"([^()]+) \((.+)\)", program["full_title"])
+                        if _match and orig_title == _match.groups()[1]:
+                            tag_title.text = _match.groups()[0]
+
+                if ext_info["theme"] == "Cine":
                     tag_stitle = SubElement(tag_programme, "sub-title", lang["es"])
                     tag_stitle.text = f"«{orig_title}»"
 
-                    _match = cinema_regex.match(program["full_title"])
-                    if _match and orig_title and orig_title in _match.groups():
-                        tag_title.text = " ".join([x for x in _match.groups() if x and x != orig_title])
+                elif ext_info["theme"] not in ("Deportes", "Música", "Programas"):
+                    if _clean_origt != _clean(tag_title.text):
+                        if tag_stitle is None or (_clean_origt not in _clean(tag_stitle.text)):
+                            tag_desc = SubElement(tag_programme, "desc", lang["es"])
+                            tag_desc.text = f"«{orig_title}»"
 
-                elif orig_title.lower() not in _clean_title and _clean_title not in orig_title.lower():
-                    tag_desc.text += f"«{orig_title}»"
+            if tag_desc is None:
+                tag_desc = SubElement(tag_programme, "desc", lang["es"])
+                tag_desc.text = ""
 
-            if any((key in ext_info for key in ("mainActors", "producer", "producers", "directors"))):
-                tag_desc.text += (" " if tag_desc.text else "") + (f"Año: {year}. " if year else "")
-                for key in ("mainActors", "producer", "producers", "directors"):
-                    if key in ext_info:
-                        field = ext_info[key]
-                        if key != "producer":
-                            if isinstance(field, list):
-                                field = [item.strip() for item in field]
+            if ext_info["theme"] == "Cine":
+                if any((key in ext_info for key in ("directors", "mainActors", "producer", "producers"))):
+                    tag_desc.text += (" " if tag_desc.text else "") + (f"Año: {year}. " if year else "")
+                    for key in ("directors", "mainActors", "producer", "producers"):
+                        if key in ext_info:
+                            field = ext_info[key]
+                            if key != "producer":
+                                if isinstance(field, list):
+                                    field = [item.strip() for item in field]
+                                else:
+                                    field = [list(field.values())[0]] if isinstance(field, dict) else [field]
+                                    field = field[0] if isinstance(field[0], list) else field
                             else:
-                                field = [list(field.values())[0]] if isinstance(field, dict) else [field]
-                                field = field[0] if isinstance(field[0], list) else field
-                        else:
-                            field = field.split(", ")
-                        tag_desc.text += ", ".join(field) + ". "
-                tag_desc.text += "\n"
+                                field = field.split(", ")
+                            tag_desc.text += ", ".join(field) + ". "
+                    tag_desc.text = tag_desc.text.rstrip()
 
-            tag_desc.text += ("\n" if tag_desc.text else "") + ext_info["description"]
+            tag_desc.text += ("\n\n" if tag_desc.text else "") + ext_info["description"]
 
             if ext_info["cover"]:
                 src = f"{u7d_url}/{'recording/?' if local else 'Covers/'}" + ext_info["cover"]
@@ -1508,9 +1508,7 @@ if __name__ == "__main__":
     cookie_file = "movistar_tvg.cookie"
     end_points_file = "movistar_tvg.endpoints"
 
-    cinema_regex = re.compile(r"^(.+?) \(([^)]+)\) ?(:?\(?.+\)?)?$")
     daily_regex = re.compile(r"^(.+?) - \d{8}(?:_\d{4})?$")
-    series_regex = re.compile(r"^(.+) (S\d+E\d+(?: - .+)?)$")
 
     logging.getLogger("asyncio").setLevel(logging.FATAL)
     logging.getLogger("filelock").setLevel(logging.FATAL)

@@ -1119,7 +1119,8 @@ async def update_cloud():
                 if not data:  # There can be events with no data sometimes
                     continue
 
-                meta = get_title_meta(data["name"], data.get("seriesID"))
+                service_id = _CHANNELS[channel_id].get("replacement", channel_id)
+                meta = get_title_meta(data["name"], data.get("seriesID"), service_id, data["theme"])
                 new_cloud[channel_id][timestamp] = _fill_cloud_event()
                 if meta["episode_title"]:
                     new_cloud[channel_id][timestamp]["episode_title"] = meta["episode_title"]
