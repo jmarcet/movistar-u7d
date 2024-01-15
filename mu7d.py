@@ -56,6 +56,7 @@ YEAR_SECONDS = 365 * 24 * 60 * 60
 DROP_KEYS = ["5S_signLanguage", "hasDolby", "isHdr", "isPromotional", "isuserfavorite", "lockdata", "logos"]
 DROP_KEYS += ["opvr", "playcount", "recordingAllowed", "resume", "startOver", "watched", "wishListEnabled"]
 
+episode_regex = re.compile(r"^.*(?:Ep[isode.]+) (\d+)$")
 title_select_regex = re.compile(r".+ T\d+ .+")
 title_1_regex = re.compile(r"(.+(?!T\d)) +T(\d+)(?: *Ep[isode.]+ (\d+))?[ -]*(.*)")
 title_2_regex = re.compile(r"(.+(?!T\d))(?: +T(\d+))? *(?:[Ee]p[isode.]+|[Cc]ap[iítulo.]*) ?(\d+)[ .-]*(.*)")
@@ -108,13 +109,17 @@ async def get_local_info(channel, timestamp, path, extended=False):
             nfo = xmltodict.parse(await f.read())["metadata"]
         nfo.update({k: int(v) for k, v in nfo.items() if k in ("beginTime", "duration", "endTime")})
         if extended:
-            _match = re.search(r"^(.+) (?:S\d+E\d+|Ep[isode.]+ \d+)", nfo["name"])
+            _match = re.search(r"^(.+) (?:S(\d+)E(\d+)|Ep[isode.]+ (\d+))", nfo["name"])
             if _match:
                 is_serie = True
                 serie = _match.groups()[0]
+                season = int(_match.groups()[1] or nfo.get("season", 0))
+                episode = int(_match.groups()[2] or _match.groups()[3] or nfo.get("episode", 0))
             else:
                 is_serie = bool(nfo.get("seriesID") or nfo.get("episodeName"))
                 serie = nfo.get("seriesName", "")
+                season = int(nfo.get("season", 0))
+                episode = int(nfo.get("episode", 0))
             nfo.update(
                 {
                     "start": nfo["beginTime"],
@@ -125,6 +130,8 @@ async def get_local_info(channel, timestamp, path, extended=False):
                     "gens": {"genre": nfo.get("genre", ""), "sub-genre": nfo.get("labelGenre", "")},
                     "is_serie": is_serie,
                     "serie": serie,
+                    "season": season,
+                    "episode": episode,
                     "serie_id": int(nfo.get("seriesID", 0)),
                     "year": nfo.get("productionDate", ""),
                 }
@@ -165,11 +172,16 @@ def get_title_meta(title, serie_id, service_id, genre):
 
         is_serie = bool(serie and episode)
         serie, episode_title = [x.strip(":-/ ") for x in (serie, episode_title)]
+        if serie.lower() == episode_title.lower():
+            episode_title = ""
 
-        if serie and season and episode:
+        if all((serie, season, episode)):
             full_title = "%s S%02dE%02d" % (serie, season, episode)
             if episode_title:
-                full_title += f" - {episode_title}"
+                if episode_regex.match(episode_title):
+                    episode_title = ""
+                else:
+                    full_title += f" - {episode_title}"
 
     elif serie_id:
         is_serie = True
@@ -188,6 +200,10 @@ def get_title_meta(title, serie_id, service_id, genre):
                 episode_title = re.sub(r" S\d+E\d+$", "", episode_title)
                 full_title = "%s S%02dE%02d - %s" % (serie, season, episode, episode_title)
             else:
+                if not episode:
+                    _match = episode_regex.match(episode_title)
+                    if _match:
+                        episode = int(_match.groups()[0])
                 full_title = "%s - %s" % (serie, episode_title)
 
     for item in (episode_title, full_title, serie):

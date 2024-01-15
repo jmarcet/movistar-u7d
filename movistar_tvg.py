@@ -1173,6 +1173,10 @@ class XMLTV:
                 tag_desc = SubElement(tag_programme, "desc", lang["es"])
                 tag_desc.text = ""
 
+            if is_serie and program["episode"]:
+                tag_epnum = SubElement(tag_programme, "episode-num", {"system": "xmltv_ns"})
+                tag_epnum.text = "%d.%d." % (max(0, program["season"] - 1), max(0, program["episode"] - 1))
+
             if ext_info["theme"] == "Cine":
                 if any((key in ext_info for key in ("directors", "mainActors", "producer", "producers"))):
                     tag_desc.text += (" " if tag_desc.text else "") + (f"Año: {year}. " if year else "")
