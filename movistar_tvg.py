@@ -38,6 +38,34 @@ from mu7d import add_logfile, get_iptv_ip, get_local_info, get_title_meta, mu7d_
 log = logging.getLogger("TVG")
 
 
+demarcations = {
+    "Andalucia": 15,
+    "Aragon": 34,
+    "Asturias": 13,
+    "Cantabria": 29,
+    "Catalunya": 1,
+    "Castilla la Mancha": 38,
+    "Castilla y Leon": 4,
+    "Comunidad Valenciana": 6,
+    "Extremadura": 32,
+    "Galicia": 24,
+    "Islas Baleares": 10,
+    "Islas Canarias": 37,
+    "La Rioja": 31,
+    "Madrid": 19,
+    "Murcia": 12,
+    "Navarra": 35,
+    "Pais Vasco": 36,
+}
+
+end_points = {
+    "epNoCach1": "http://www-60.svc.imagenio.telefonica.net:2001",
+    "epNoCach2": "http://nc2.svc.imagenio.telefonica.net:2001",
+    "epNoCach4": "http://nc4.svc.imagenio.telefonica.net:2001",
+    "epNoCach5": "http://nc5.svc.imagenio.telefonica.net:2001",
+    "epNoCach6": "http://nc6.svc.imagenio.telefonica.net:2001",
+}
+
 epg_channels = [
     # 5066 # _ "La 1 HD"
     4455,  # _ "La 2 HD"
@@ -78,34 +106,6 @@ epg_channels = [
     5029,  # _ "8tv"
     3103,  # _ "Movistar Plus+"
 ]
-
-demarcations = {
-    "Andalucia": 15,
-    "Aragon": 34,
-    "Asturias": 13,
-    "Cantabria": 29,
-    "Catalunya": 1,
-    "Castilla la Mancha": 38,
-    "Castilla y Leon": 4,
-    "Comunidad Valenciana": 6,
-    "Extremadura": 32,
-    "Galicia": 24,
-    "Islas Baleares": 10,
-    "Islas Canarias": 37,
-    "La Rioja": 31,
-    "Madrid": 19,
-    "Murcia": 12,
-    "Navarra": 35,
-    "Pais Vasco": 36,
-}
-
-end_points = {
-    "epNoCach1": "http://www-60.svc.imagenio.telefonica.net:2001",
-    "epNoCach2": "http://nc2.svc.imagenio.telefonica.net:2001",
-    "epNoCach4": "http://nc4.svc.imagenio.telefonica.net:2001",
-    "epNoCach5": "http://nc5.svc.imagenio.telefonica.net:2001",
-    "epNoCach6": "http://nc6.svc.imagenio.telefonica.net:2001",
-}
 
 genre_map = {
     "0": {
