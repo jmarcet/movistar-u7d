@@ -127,7 +127,6 @@ async def get_local_info(channel, timestamp, path, extended=False):
                     "full_title": nfo["name"],
                     "age_rating": int(nfo.get("ageRatingID")),
                     "description": nfo.get("description") or nfo.get("synopsis") or "",
-                    "gens": {"genre": nfo.get("genre", ""), "sub-genre": nfo.get("labelGenre", "")},
                     "is_serie": is_serie,
                     "serie": serie,
                     "season": season,

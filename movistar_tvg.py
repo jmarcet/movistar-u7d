@@ -107,169 +107,27 @@ epg_channels = [
     3103,  # _ "Movistar Plus+"
 ]
 
-genre_map = {
-    "0": {
-        "0": "Arts / Culture (without music)",
-        "1": "Popular culture / Traditional arts",
-        "2": "Popular culture / Traditional arts",
-        "3": "Arts magazines / Culture magazines",
-        "4": "Fine arts",
-        "5": "Fashion",
-        "6": "Broadcasting / Press",
-        "7": "Performing arts",
-        "8": "Performing arts",
-        "9": "Arts magazines / Culture magazines",
-        "A": "New media",
-        "B": "Popular culture / Traditional arts",
-        "C": "Film / Cinema",
-        "D": "Arts magazines / Culture magazines",
-        "E": "Performing arts",
-        "F": "Experimental film / Video",
-    },
-    "1": {
-        "0": "Movie / Drama",
-        "1": "Adventure / Western / War",
-        "2": "Romance",
-        "3": "Soap / Melodrama / Folkloric",
-        "4": "Serious / Classical / Religious / Historical movie / Drama",
-        "5": "Science fiction / Fantasy / Horror",
-        "6": "Detective / Thriller",
-        "7": "Comedy",
-        "8": "Serious / Classical / Religious / Historical movie / Drama",
-        "9": "Movie / drama",
-        "A": "Adventure / Western / War",
-        "B": "Movie / drama",
-        "C": "Adult movie / Drama",
-        "D": "Science fiction / Fantasy / Horror",
-        "E": "Adult movie / Drama",
-        "F": "Science fiction / Fantasy / Horror",
-    },
-    "2": {
-        "0": "Social / Political issues / Economics",
-        "1": "Magazines / Reports / Documentary",
-        "2": "Economics / Social advisory",
-        "3": "Social / Political issues / Economics",
-        "4": "Social / Political issues / Economics",
-        "5": "Social / Political issues / Economics",
-        "6": "Social / Political issues / Economics",
-        "7": "Social / Political issues / Economics",
-        "8": "Social / Political issues / Economics",
-        "9": "Social / Political issues / Economics",
-        "A": "Social / Political issues / Economics",
-        "B": "Social / Political issues / Economics",
-        "C": "Social / Political issues / Economics",
-        "D": "Social / Political issues / Economics",
-        "E": "Social / Political issues / Economics",
-        "F": "Social / Political issues / Economics",
-    },
-    "4": {
-        "0": "Sports",
-        "1": "Motor sport",
-        "2": "Team sports (excluding football)",
-        "3": "Water sport",
-        "4": "Team sports (excluding football)",
-        "5": "Team sports (excluding football)",
-        "6": "Martial sports",
-        "7": "Football / Soccer",
-        "8": "Water sport",
-        "9": "Team sports (excluding football)",
-        "A": "Athletics",
-        "B": "Sports",
-        "C": "Motor sport",
-        "D": "Sports",
-        "E": "Sports",
-        "F": "Tennis / Squash",
-    },
-    "5": {
-        "0": "Children's / Youth programs",
-        "1": "Entertainment programs for 10 to 16",
-        "2": "Pre-school children's programs",
-        "3": "Entertainment programs for 6 to 14",
-        "4": "Children's / Youth programs",
-        "5": "Informational / Educational / School programs",
-        "6": "Entertainment programs for 6 to 14",
-        "7": "Children's / Youth programs",
-        "8": "Children's / Youth programs",
-        "9": "Children's / Youth programs",
-        "A": "Children's / Youth programs",
-        "B": "Children's / Youth programs",
-        "C": "Children's / Youth programs",
-        "D": "Children's / Youth programs",
-        "E": "Children's / Youth programs",
-        "F": "Children's / Youth programs",
-    },
-    "6": {
-        "0": "Music / Ballet / Dance",
-        "1": "Musical / Opera",
-        "2": "Serious music / Classical music",
-        "3": "Rock / Pop",
-        "4": "Music / Ballet / Dance",
-        "5": "Music / Ballet / Dance",
-        "6": "Music / Ballet / Dance",
-        "7": "Musical / Opera",
-        "8": "Ballet",
-        "9": "Jazz",
-        "A": "Music / Ballet / Dance",
-        "B": "Rock / Pop",
-        "C": "Music / Ballet / Dance",
-        "D": "Music / Ballet / Dance",
-        "E": "Music / Ballet / Dance",
-        "F": "Music / Ballet / Dance",
-    },
-    "7": {
-        "0": "Show / Game show",
-        "1": "Variety show",
-        "2": "Variety show",
-        "3": "Variety show",
-        "4": "Talk show",
-        "5": "Variety show",
-        "6": "Variety show",
-        "7": "Variety show",
-        "8": "Variety show",
-        "9": "Variety show",
-        "A": "Variety show",
-        "B": "Show / Game show",
-        "C": "Talk show",
-        "D": "Show / Game show",
-        "E": "Show / Game show",
-        "F": "Show / Game show",
-    },
-    "8": {
-        "0": "Education / Science / Factual topics",
-        "1": "Further education",
-        "2": "Social / Spiritual sciences",
-        "3": "Medicine / Physiology / Psychology",
-        "4": "Social / Spiritual sciences",
-        "5": "Technology / Natural sciences",
-        "6": "Social / Spiritual sciences",
-        "7": "Education / Science / Factual topics",
-        "8": "Further education",
-        "9": "Nature / Animals / Environment",
-        "A": "Foreign countries / Expeditions",
-        "B": "Further education",
-        "C": "Social / Spiritual sciences",
-        "D": "Further education",
-        "E": "Education / Science / Factual topics",
-        "F": "Education / Science / Factual topics",
-    },
-    "9": {
-        "0": "Movie / Drama",
-        "1": "Adult movie / Drama",
-        "2": "Adult movie / Drama",
-        "3": "Adult movie / Drama",
-        "4": "Adult movie / Drama",
-        "5": "Adult movie / Drama",
-        "6": "Adult movie / Drama",
-        "7": "Adult movie / Drama",
-        "8": "Adult movie / Drama",
-        "9": "Adult movie / Drama",
-        "A": "Adult movie / Drama",
-        "B": "Adult movie / Drama",
-        "C": "Adult movie / Drama",
-        "D": "Adult movie / Drama",
-        "E": "Adult movie / Drama",
-        "F": "Adult movie / Drama",
-    },
+# genre_map = {
+#     "0": "Arts / Culture",
+#     "1": "Movie / Drama",
+#     "2": "Social / Political issues / Economics",
+#     "4": "Sports",
+#     "5": "Children's / Youth programs",
+#     "6": "Music / Ballet / Dance",
+#     "7": "Show / Game show",
+#     "8": "Education / Science / Factual topics",
+#     "9": "Adult movie",
+# }
+
+theme_map = {
+    "Cine": "Movie",
+    "Deportes": "Sports",
+    "Documentales": "Documentary",
+    "Infantil": "Children's",
+    "Música": "Music",
+    "Otros": "Other",
+    "Programas": "Show",
+    "Series": "Series",
 }
 
 
@@ -1204,22 +1062,23 @@ class XMLTV:
             tag_date = SubElement(tag_programme, "date")
             tag_date.text = year
 
-        gens = self.__get_genre_and_subgenre(program["genre"]) if not local else program["gens"]
-        keys = self.__get_key_and_subkey(program["genre"], config["genres"]) if not local else None
         tag_rating = SubElement(tag_programme, "rating", {"system": "pl"})
         tag_value = SubElement(tag_rating, "value")
         tag_value.text = age_rating[program["age_rating"]]
-        tag_category = SubElement(tag_programme, "category", lang["en"])
-        tag_category.text = gens["genre"]
-        if gens["sub-genre"]:
-            tag_subcategory = SubElement(tag_programme, "category", {"lang": "en"})
-            tag_subcategory.text = gens["sub-genre"]
-        if keys:
-            tag_keyword = SubElement(tag_programme, "keyword")
-            tag_keyword.text = keys["key"]
-            if keys["sub-key"]:
-                tag_subkeyword = SubElement(tag_programme, "keyword")
-                tag_subkeyword.text = keys["sub-key"]
+
+        if ext_info:
+            if ext_info.get("labelGenre"):
+                tag_genrelabel = SubElement(tag_programme, "category", lang["es"])
+                tag_genrelabel.text = ext_info["labelGenre"]
+            if ext_info.get("genre") and ext_info["genre"] != ext_info.get("labelGenre", ""):
+                tag_genre = SubElement(tag_programme, "category", lang["es"])
+                tag_genre.text = ext_info["genre"]
+            if ext_info.get("theme"):
+                if ext_info["theme"] not in (ext_info.get("genre", ""), ext_info.get("labelGenre", "")):
+                    tag_theme = SubElement(tag_programme, "category", lang["es"])
+                    tag_theme.text = ext_info["theme"]
+                tag_category = SubElement(tag_programme, "category", lang["en"])
+                tag_category.text = theme_map[ext_info["theme"]]
 
         return tag_programme
 
@@ -1271,34 +1130,6 @@ class XMLTV:
             if package in self.__packages:
                 services.update(self.__packages[package]["services"])
         return {int(k): int(v) for k, v in services.items()}
-
-    @staticmethod
-    def __get_genre_and_subgenre(code):
-        return {
-            "genre": genre_map[code[0]]["0"],
-            "sub-genre": None if code[1] == "0" else genre_map[code[0]][code[1]],
-        }
-
-    @staticmethod
-    def __get_key_and_subkey(code, genres):
-        if not genres:
-            return
-        genre = next(
-            genre
-            for genre in genres
-            if genre["id"].upper() == (code[0] if code[0] == "0" else ("%s%s" % (code[0], "0")).upper())
-        )
-        subgenre = (
-            None
-            if code[1] == "0"
-            else next(
-                subgenre
-                for subgenre in genre["subgenres"]
-                if subgenre["id"].upper()
-                == (code[1].upper() if code[0] == "0" else ("%s%s" % (code[0], code[1])).upper())
-            )
-        )
-        return {"key": genre["name"], "sub-key": subgenre["name"] if subgenre else None}
 
     @staticmethod
     def __write_to_disk(file_path, content):
