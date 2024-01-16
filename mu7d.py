@@ -12,6 +12,7 @@ import tomli
 import urllib.parse
 import xmltodict
 
+from aiohttp.client_exceptions import ClientConnectionError, ClientOSError, ServerDisconnectedError
 from asyncio.exceptions import CancelledError
 from contextlib import closing
 from datetime import datetime
@@ -216,6 +217,21 @@ def get_title_meta(title, serie_id, service_id, genre):
         "episode_title": episode_title,
         "is_serie": is_serie,
     }
+
+
+async def get_vod_info(session, channel, cloud, program):
+    params = {"action": "getRecordingData" if cloud else "getCatchUpUrl"}
+    params.update({"extInfoID": program, "channelID": channel, "mode": 1})
+
+    msg = f"Could not get uri for [{channel:4}] [{program}]:"
+    try:
+        async with session.get(URL_MVTV, params=params) as r:
+            res = await r.json()
+        if res.get("resultData"):
+            return res["resultData"]
+        log.error(f"{msg} {res}")
+    except (ClientConnectionError, ClientOSError, ServerDisconnectedError, TypeError) as ex:
+        log.error(f"{msg} {repr(ex)}")
 
 
 def glob_safe(string, recursive=False):

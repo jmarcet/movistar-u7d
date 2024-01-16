@@ -28,7 +28,7 @@ from filelock import FileLock
 
 from mu7d import BUFF, CHUNK, DATEFMT, DIV_LOG, DROP_KEYS, EPG_URL, FMT
 from mu7d import NFO_EXT, UA, URL_COVER, URL_MVTV, WIN32, YEAR_SECONDS
-from mu7d import add_logfile, find_free_port, get_iptv_ip, glob_safe
+from mu7d import add_logfile, find_free_port, get_iptv_ip, get_vod_info, glob_safe
 from mu7d import mu7d_config, ongoing_vods, remove, utime, _version
 
 
@@ -157,22 +157,6 @@ async def _open_sessions():
             connector=aiohttp.TCPConnector(keepalive_timeout=YEAR_SECONDS),
             json_serialize=ujson.dumps,
         )
-
-
-async def get_vod_info(_log=False):
-    params = {"action": "getRecordingData" if _args.cloud else "getCatchUpUrl"}
-    params.update({"extInfoID": _args.program, "channelID": _args.channel, "mode": 1})
-
-    msg = f"Could not get uri for [{_args.channel:4}] [{_args.program}]:"
-    try:
-        async with _SESSION_CLOUD.get(URL_MVTV, params=params) as r:
-            res = await r.json()
-        if res.get("resultData"):
-            return res["resultData"]
-        if _log:
-            log.error('%s "%s"' % (msg, res.get("resultText", "")))
-    except (ClientConnectionError, ClientOSError, ServerDisconnectedError, TypeError) as ex:
-        log.error(f'{msg} "{repr(ex)}"')
 
 
 async def postprocess(archive_params, archive_url, mtime, vod_info):
@@ -333,7 +317,7 @@ async def postprocess(archive_params, archive_url, mtime, vod_info):
 
         cmd = ["ffmpeg"] + RECORDINGS_TRANSCODE_INPUT + ["-i", _tmpname + TMP_EXT]
 
-        new_vod_info = await get_vod_info(_log=True)
+        new_vod_info = await get_vod_info(_SESSION_CLOUD, _args.channel, _args.cloud, _args.program)
         if not new_vod_info:
             log.warning("POSTPROCESS #2  - Could not verify event has not shifted")
         else:
@@ -686,7 +670,7 @@ async def rtsp(vod_info):
             await pp_t
 
 
-async def Vod(args=None, vod_client=None):  # noqa: N802
+async def Vod(args=None, vod_client=None, vod_info=None):
     if __name__ == "__main__":
         global _SESSION_CLOUD
 
@@ -705,10 +689,8 @@ async def Vod(args=None, vod_client=None):  # noqa: N802
         _SESSION_CLOUD = vod_client
         _args = args
 
-    # Get info about the requested program from Movistar. Attempt it twice.
-    vod_info = await get_vod_info()
     if not vod_info:
-        vod_info = await get_vod_info(_log=True)
+        vod_info = await get_vod_info(_SESSION_CLOUD, _args.channel, _args.cloud, _args.program)
 
     try:
         if vod_info:
