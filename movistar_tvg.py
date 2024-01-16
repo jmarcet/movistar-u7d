@@ -963,7 +963,6 @@ class XMLTV:
         dst_stop = time.localtime(program["end"]).tm_isdst
         start = datetime.fromtimestamp(program["start"]).strftime("%Y%m%d%H%M%S")
         stop = datetime.fromtimestamp(program["end"]).strftime("%Y%m%d%H%M%S")
-        year = program["year"] or ext_info.get("productionDate", "") if ext_info else ""
 
         tag_programme = Element(
             "programme",
@@ -1000,6 +999,8 @@ class XMLTV:
             def _clean(string):
                 return re.sub(r"[^\w]", "", string.lower())
 
+            desc = ""
+            year = program["year"]
             orig_title = ext_info.get("originalTitle", "")
             orig_title = "" if orig_title.lower().lstrip().startswith("episod") else orig_title
 
@@ -1024,49 +1025,32 @@ class XMLTV:
                 elif ext_info["theme"] not in ("Deportes", "Música", "Programas"):
                     if _clean_origt != _clean(tag_title.text):
                         if tag_stitle is None or (_clean_origt not in _clean(tag_stitle.text)):
-                            tag_desc = SubElement(tag_programme, "desc", lang["es"])
-                            tag_desc.text = f"«{orig_title}»"
+                            desc = f"«{orig_title}»"
 
-            if tag_desc is None:
+            if ext_info.get("description", "").strip():
+                _desc = re.sub(r"\s*\n", r"\n\n", re.sub(r",\s*\n", ", ", ext_info["description"].strip()))
                 tag_desc = SubElement(tag_programme, "desc", lang["es"])
-                tag_desc.text = ""
+                tag_desc.text = f"{desc}\n\n" if desc else ""
+                tag_desc.text += _desc
 
-            if is_serie and program["episode"]:
-                tag_epnum = SubElement(tag_programme, "episode-num", {"system": "xmltv_ns"})
-                tag_epnum.text = "%d.%d." % (max(0, program["season"] - 1), max(0, program["episode"] - 1))
+            if any((key in ext_info for key in ("directors", "mainActors", "producer"))):
+                tag_credits = SubElement(tag_programme, "credits")
+                for key in ("directors", "mainActors", "producer"):
+                    if key in ext_info:
+                        field = ext_info[key]
+                        if isinstance(field, str):
+                            field = field.split(", ")
+                        elif isinstance(field, dict):  # -movistar.nfo (lists in xml)
+                            field = list(field.values())[0]
+                        key = key.lower()
+                        for credit in field:
+                            tag_credit = SubElement(tag_credits, re.sub(r"(?:main)?([^s]+)s?$", r"\1", key))
+                            tag_credit.text = credit.strip()
 
-            if ext_info["theme"] == "Cine":
-                if any((key in ext_info for key in ("directors", "mainActors", "producer", "producers"))):
-                    tag_desc.text += (" " if tag_desc.text else "") + (f"Año: {year}. " if year else "")
-                    for key in ("directors", "mainActors", "producer", "producers"):
-                        if key in ext_info:
-                            field = ext_info[key]
-                            if key != "producer":
-                                if isinstance(field, list):
-                                    field = [item.strip() for item in field]
-                                else:
-                                    field = [list(field.values())[0]] if isinstance(field, dict) else [field]
-                                    field = field[0] if isinstance(field[0], list) else field
-                            else:
-                                field = field.split(", ")
-                            tag_desc.text += ", ".join(field) + ". "
-                    tag_desc.text = tag_desc.text.rstrip()
+            if year:
+                tag_date = SubElement(tag_programme, "date")
+                tag_date.text = year
 
-            tag_desc.text += ("\n\n" if tag_desc.text else "") + ext_info["description"]
-
-            if ext_info["cover"]:
-                src = f"{u7d_url}/{'recording/?' if local else 'Covers/'}" + ext_info["cover"]
-                SubElement(tag_programme, "icon", {"src": src})
-
-        if year:
-            tag_date = SubElement(tag_programme, "date")
-            tag_date.text = year
-
-        tag_rating = SubElement(tag_programme, "rating", {"system": "pl"})
-        tag_value = SubElement(tag_rating, "value")
-        tag_value.text = age_rating[program["age_rating"]]
-
-        if ext_info:
             if ext_info.get("labelGenre"):
                 tag_genrelabel = SubElement(tag_programme, "category", lang["es"])
                 tag_genrelabel.text = ext_info["labelGenre"]
@@ -1077,8 +1061,21 @@ class XMLTV:
                 if ext_info["theme"] not in (ext_info.get("genre", ""), ext_info.get("labelGenre", "")):
                     tag_theme = SubElement(tag_programme, "category", lang["es"])
                     tag_theme.text = ext_info["theme"]
-                tag_category = SubElement(tag_programme, "category", lang["en"])
-                tag_category.text = theme_map[ext_info["theme"]]
+                if ext_info["theme"] in theme_map:
+                    tag_category = SubElement(tag_programme, "category", lang["en"])
+                    tag_category.text = theme_map[ext_info["theme"]]
+
+            if ext_info["cover"]:
+                src = f"{u7d_url}/{'recording/?' if local else 'Covers/'}" + ext_info["cover"]
+                SubElement(tag_programme, "icon", {"src": src})
+
+            if is_serie and program["episode"]:
+                tag_epnum = SubElement(tag_programme, "episode-num", {"system": "xmltv_ns"})
+                tag_epnum.text = "%d.%d." % (max(0, program["season"] - 1), max(0, program["episode"] - 1))
+
+        tag_rating = SubElement(tag_programme, "rating", {"system": "pl"})
+        tag_value = SubElement(tag_rating, "value")
+        tag_value.text = age_rating[program["age_rating"]]
 
         return tag_programme
 
@@ -1150,7 +1147,7 @@ class XMLTV:
         tz_offset = int(abs(time.timezone / 3600))
         services = self.__get_client_channels()
         for channel_id in sorted(services, key=lambda key: services[key]):
-            if channel_id in self.__channels:
+            if channel_id in self.__channels and parsed_epg.get(channel_id):
                 tag_channel = Element("channel", {"id": f"{channel_id}.movistar.tv"})
                 tag_dname = SubElement(tag_channel, "display-name")
                 tag_dname.text = self.__channels[channel_id]["name"].strip(" *")
