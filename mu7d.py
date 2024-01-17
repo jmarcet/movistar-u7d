@@ -142,9 +142,8 @@ async def get_local_info(channel, timestamp, path, extended=False):
 
 
 def get_safe_filename(filename):
-    filename = filename.replace(":", ",").replace("...", "…").replace("(", "[").replace(")", "]")
-    keepcharacters = (" ", ",", ".", "_", "-", "¡", "!", "[", "]")
-    return "".join(c for c in filename if c.isalnum() or c in keepcharacters).rstrip()
+    filename = filename.translate(str.maketrans("/:()", "_;[]"))
+    return "".join(c for c in filename if c.isalnum() or c in " ,.;_-[]@#$%€").rstrip()
 
 
 def get_title_meta(title, serie_id, service_id, genre):
