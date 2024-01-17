@@ -133,7 +133,6 @@ async def get_local_info(channel, timestamp, path, extended=False):
                     "season": season,
                     "episode": episode,
                     "serie_id": int(nfo.get("seriesID", 0)),
-                    "year": nfo.get("productionDate", ""),
                 }
             )
         return nfo

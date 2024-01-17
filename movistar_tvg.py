@@ -382,23 +382,38 @@ class MovistarTV:
             if eps[ep] not in self.__end_points_down:
                 return eps[ep]
 
-    async def get_epg_extended_info(self, channel_id, pid, ts):
+    async def get_epg_extended_info(self, channel_id, program):
+        def _fill_data(data):
+            pairs = [("episode", "episode"), ("episode_title", "episodeName"), ("full_title", "name")]
+            pairs += [("season", "season"), ("serie", "seriesName"), ("year", "productionDate")]
+            if data and any((program.get(t[0]) and program.get(t[0], "") != data.get(t[1], "") for t in pairs)):
+                for src, dst in pairs:
+                    if program.get(src) and program.get(src, "") != data.get(dst, ""):
+                        log.debug(f'Storing {src}="{program.get(src, "")}" AS {dst}="{data.get(dst, "")}"')
+                        data[dst] = program[src]
+                cache.save_epg_extended_info(data)
+                return True
+
+        pid, ts = program["pid"], program["start"]
         data = cache.load_epg_extended_info(pid)
-        mismatch = False
+        _fill_data(data)
+
         if not data or data["beginTime"] // 1000 != ts:
-            if data:
-                mismatch = True
-            data = await self.__get_service_data(f"epgInfov2&productID={pid}&channelID={channel_id}&extra=1")
-            if not data:
+            _data = await self.__get_service_data(f"epgInfov2&productID={pid}&channelID={channel_id}&extra=1")
+            if not _data:
+                if data:
+                    return data
                 log.debug("Información extendida no encontrada: [%04d] [%d] [%d] " % (channel_id, pid, ts))
                 return
-            if mismatch and data["beginTime"] // 1000 != ts:
+            if _data["beginTime"] // 1000 != ts and data and data["beginTime"] // 1000 != ts:
                 log.debug(
                     "Event mismatch STILL BROKEN: [%4s] [%d] beginTime=[%+d]"
-                    % (str(channel_id), pid, data["beginTime"] // 1000 - ts)
+                    % (str(channel_id), pid, _data["beginTime"] // 1000 - ts)
                 )
-                return data
-            cache.save_epg_extended_info(data)
+            if not _fill_data(_data):
+                cache.save_epg_extended_info(_data)
+            return _data
+
         return data
 
     def get_first_end_point(self):
@@ -949,7 +964,7 @@ class XMLTV:
         local = "filename" in program
 
         if not local:
-            ext_info = await mtv.get_epg_extended_info(channel_id, program["pid"], program["start"])
+            ext_info = await mtv.get_epg_extended_info(channel_id, program)
         else:
             filename = os.path.join(_conf["RECORDINGS"], program["filename"])
             ext_info = await get_local_info(channel_id, ts, filename, extended=True)
@@ -997,10 +1012,10 @@ class XMLTV:
         if ext_info:
 
             def _clean(string):
-                return re.sub(r"[^\w]", "", string.lower())
+                return re.sub(r"[^a-z0-9]", "", string.lower())
 
             desc = ""
-            year = program["year"]
+            year = ext_info.get("productionDate")
             orig_title = ext_info.get("originalTitle", "")
             orig_title = "" if orig_title.lower().lstrip().startswith("episod") else orig_title
 
@@ -1026,6 +1041,16 @@ class XMLTV:
                     if _clean_origt != _clean(tag_title.text):
                         if tag_stitle is None or (_clean_origt not in _clean(tag_stitle.text)):
                             desc = f"«{orig_title}»"
+
+            if all((local, tag_stitle is not None, ext_info.get("episodeName"))):
+                if _clean(ext_info["episodeName"]) in _clean(tag_stitle.text):
+                    if not tag_stitle.text.endswith(ext_info["episodeName"]):
+                        if len(ext_info["episodeName"]) >= len(tag_stitle.text):
+                            _match = series_regex.match(tag_stitle.text)
+                            if _match:
+                                tag_stitle.text = _match.groups()[0] + " - " + ext_info["episodeName"]
+                            else:
+                                tag_stitle.text = ext_info["episodeName"]
 
             if ext_info.get("description", "").strip():
                 _desc = re.sub(r"\s*\n", r"\n\n", re.sub(r",\s*\n", ", ", ext_info["description"].strip()))
@@ -1341,6 +1366,7 @@ if __name__ == "__main__":
     end_points_file = "movistar_tvg.endpoints"
 
     daily_regex = re.compile(r"^(.+?) - \d{8}(?:_\d{4})?$")
+    series_regex = re.compile(r"^(S\d+E\d+|Ep[isode]*\.)(?:.*)")
 
     logging.getLogger("asyncio").setLevel(logging.FATAL)
     logging.getLogger("filelock").setLevel(logging.FATAL)
