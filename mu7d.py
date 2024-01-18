@@ -288,6 +288,11 @@ def mu7d_config():
     if "DEBUG" not in conf:
         conf["DEBUG"] = False
 
+    if "DROP_CHANNELS" not in conf:
+        conf["DROP_CHANNELS"] = []
+    elif any((not isinstance(x, int) for x in conf["DROP_CHANNELS"])):
+        conf["DROP_CHANNELS"] = []
+
     if "EXTRA_CHANNELS" not in conf:
         conf["EXTRA_CHANNELS"] = []
     elif any((not isinstance(x, int) for x in conf["EXTRA_CHANNELS"])):

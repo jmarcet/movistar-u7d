@@ -66,7 +66,7 @@ end_points = {
     "epNoCach6": "http://nc6.svc.imagenio.telefonica.net:2001",
 }
 
-epg_channels = [
+epg_channels = {
     # 5066 # _ "La 1 HD"
     4455,  # _ "La 2 HD"
     2524,  # _ "Antena 3 HD"
@@ -105,7 +105,7 @@ epg_channels = [
     # 5087 # _ "Telemadrid INT HD"
     5029,  # _ "8tv"
     3103,  # _ "Movistar Plus+"
-]
+}
 
 # genre_map = {
 #     "0": "Arts / Culture",
@@ -475,7 +475,7 @@ class MulticastIPTV:
         subscribed = [int(k) for k in services]
 
         clean_epg = {}
-        for channel in set(epg) & set(epg_channels) & set(subscribed):
+        for channel in epg_channels & set(epg) & set(subscribed):
             clean_epg[channel] = epg[channel]
         return clean_epg
 
@@ -1133,7 +1133,7 @@ class XMLTV:
                     channel_number = 999
                 channel_logo = f"{u7d_url}/Logos/" + self.__channels[channel_id]["logo_uri"]
                 if channel_id not in epg_channels and not local:
-                    msg = f'M3U: Saltando canal encriptado "{channel_name}" {channel_id}'
+                    msg = f'M3U: Saltando canal "{channel_name}" {channel_id}'
                     log.info(msg) if _fresh else log.debug(msg)
                     continue
                 m3u += f'#EXTINF:-1 ch-number="{channel_number}" audio-track="2" '
@@ -1353,7 +1353,8 @@ if __name__ == "__main__":
 
     app_dir = os.path.join(_conf["HOME"], ".xmltv")
     cache_dir = os.path.join(app_dir, "cache")
-    epg_channels += _conf["EXTRA_CHANNELS"]
+    epg_channels -= set(_conf["DROP_CHANNELS"])
+    epg_channels |= set(_conf["EXTRA_CHANNELS"])
     lan_ip = _conf["LAN_IP"]
     u7d_url = _conf["U7D_URL"]
 
