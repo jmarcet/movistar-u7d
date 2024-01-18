@@ -48,6 +48,7 @@
   - `RECORDINGS_TMP`: para realizar las grabaciones y el postprocesado en almacenamiento rápido (SDD, NVME), copiándose al final a `RECORDINGS` que puede ser almacenamiento lento (HDD).
   - `RECORDINGS_TRANSCODE_INPUT` & `RECORDINGS_TRANSCODE_OUTPUT`: permiten controlar el transcoding de (entrada y salida de) las grabaciones.
   - `RECORDINGS_UPGRADE`: actualiza los ficheros de metadatos de las grabaciones `-movistar.nfo`. Es necesario activarlo una vez para indexar correctamente grabaciones hechas con versiones anteriores a la v6.
+  - ~~`TVG_THREADS`~~: opción eliminada. La EPG se descargará siempre con 8 hilos de ejecución.
 
 - Nuevas opciones globales en `timers.conf`:
   - `comskip`: detectar anuncios y grabar capítulos en fichero `.ffmeta`.

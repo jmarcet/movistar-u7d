@@ -577,7 +577,7 @@ class MulticastIPTV:
 
     def __get_bin_epg(self):
         queue, exc_queue = Queue(), Queue()
-        threads = tvg_threads
+        threads = 8
         self.__epg = [{} for r in range(len(self.__xml_data["segments"]))]
         log.info(f"Multithread: {threads} descargas simultáneas")
         for _ in range(threads):
@@ -1355,7 +1355,6 @@ if __name__ == "__main__":
     cache_dir = os.path.join(app_dir, "cache")
     epg_channels += _conf["EXTRA_CHANNELS"]
     lan_ip = _conf["LAN_IP"]
-    tvg_threads = _conf["TVG_THREADS"]
     u7d_url = _conf["U7D_URL"]
 
     age_rating = ["0", "0", "0", "7", "12", "16", "17", "18"]
