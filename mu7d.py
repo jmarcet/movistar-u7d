@@ -358,10 +358,6 @@ def mu7d_config():
     elif "RECORDINGS_THREADS" not in conf:
         conf["RECORDINGS_THREADS"] = 4
 
-    if "TVG_THREADS" not in conf:
-        conf["TVG_THREADS"] = os.cpu_count()
-    conf["TVG_THREADS"] = min(8, conf["TVG_THREADS"])
-
     if "U7D_PORT" not in conf:
         conf["U7D_PORT"] = 8888
 
