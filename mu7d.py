@@ -110,7 +110,7 @@ async def get_local_info(channel, timestamp, path, extended=False):
             nfo = xmltodict.parse(await f.read())["metadata"]
         nfo.update({k: int(v) for k, v in nfo.items() if k in ("beginTime", "duration", "endTime")})
         if extended:
-            _match = re.search(r"^(.+) (?:S(\d+)E(\d+)|Ep[isode.]+ (\d+))", nfo["name"])
+            _match = re.search(r"^(.+) (?:S(\d+)E(\d+)|Ep[isode.]+ (\d+))", nfo.get("originalName", nfo["name"]))
             if _match:
                 is_serie = True
                 serie = _match.groups()[0]
@@ -125,7 +125,7 @@ async def get_local_info(channel, timestamp, path, extended=False):
                 {
                     "start": nfo["beginTime"],
                     "end": nfo["endTime"],
-                    "full_title": nfo["name"],
+                    "full_title": nfo.get("originalName", nfo["name"]),
                     "age_rating": int(nfo.get("ageRatingID")),
                     "description": nfo.get("description") or nfo.get("synopsis") or "",
                     "is_serie": is_serie,
