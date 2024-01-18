@@ -44,6 +44,7 @@
   - ~~`MP4_OUTPUT`~~: opción eliminada. Por defecto las grabaciones se realizan en formato `.ts`, el único en el que los subtítulos funcionan correctamente con cualquier reproductor.
   - `MKV_OUTPUT`: para hacer las grabaciones en formato `.mkv`. No es deseable de querer usar la nueva `MovistarTVLocal.m3u`/`local.xml`.
   - `RECORDINGS_M3U`: activada por defecto, para controlar si generar listas `m3u` de grabaciones. Con `Jellyfin` es recomendable desactivarla, o se quejará de que no puede localizar las grabaciones.
+  - ~~`RECORDINGS_PER_CHANNEL`~~: opción eliminada. Las grabaciones siempre se hacen organizadas en una carpeta por canal.
   - `RECORDINGS_REINDEX`: regenerar índice de grabaciones, `recordings.json`, a partir de los metadatos guardados con las grabaciones, `-movistar.nfo`. Pensado para ser usado de forma controlada y a continuación ser desactivado.
   - `RECORDINGS_TMP`: para realizar las grabaciones y el postprocesado en almacenamiento rápido (SDD, NVME), copiándose al final a `RECORDINGS` que puede ser almacenamiento lento (HDD).
   - `RECORDINGS_TRANSCODE_INPUT` & `RECORDINGS_TRANSCODE_OUTPUT`: permiten controlar el transcoding de (entrada y salida de) las grabaciones.

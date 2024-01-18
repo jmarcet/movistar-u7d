@@ -329,9 +329,6 @@ def mu7d_config():
     if "RECORDINGS_M3U" not in conf:
         conf["RECORDINGS_M3U"] = True
 
-    if "RECORDINGS_PER_CHANNEL" not in conf:
-        conf["RECORDINGS_PER_CHANNEL"] = True
-
     if "RECORDINGS_REINDEX" not in conf:
         conf["RECORDINGS_REINDEX"] = False
 

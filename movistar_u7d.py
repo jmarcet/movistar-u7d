@@ -404,7 +404,7 @@ async def handle_m3u_files(request, m3u_file):
     elif m3u in ("grabaciones", "recordings"):
         m3u_matched = os.path.join(RECORDINGS, "Recordings.m3u")
         pad = " " * 5
-    elif RECORDINGS_PER_CHANNEL:
+    else:
         try:
             channel_id = get_channel_id(m3u)
             channel_tag = "%03d. %s" % (_CHANNELS[channel_id]["number"], _CHANNELS[channel_id]["name"])
@@ -637,7 +637,6 @@ if __name__ == "__main__":
     IPTV_IFACE = _conf["IPTV_IFACE"]
     NO_VERBOSE_LOGS = _conf["NO_VERBOSE_LOGS"]
     RECORDINGS = _conf["RECORDINGS"]
-    RECORDINGS_PER_CHANNEL = _conf["RECORDINGS_PER_CHANNEL"]
     RECORDINGS_TMP = _conf["RECORDINGS_TMP"]
     U7D_THREADS = _conf["U7D_THREADS"]
     U7D_URL = _conf["U7D_URL"]

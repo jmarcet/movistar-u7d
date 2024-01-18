@@ -192,7 +192,7 @@ async def create_covers_cache():
     covers = set()
     paths = set()
     covers_path = os.path.join(RECORDINGS_TMP, "covers")
-    rootdir = "[0-9][0-9][0-9]. */**" if RECORDINGS_PER_CHANNEL else "**"
+    rootdir = "[0-9][0-9][0-9]. */**"
     nfos = sorted(glob(f"{RECORDINGS}/{rootdir}/*{NFO_EXT}", recursive=True))
 
     for nfo in nfos:
@@ -335,10 +335,7 @@ def get_recording_name(channel_id, timestamp, cloud=False):
         "genre"
     ].startswith("0")
 
-    if RECORDINGS_PER_CHANNEL:
-        path = os.path.join(RECORDINGS, get_channel_dir(channel_id))
-    else:
-        path = RECORDINGS
+    path = os.path.join(RECORDINGS, get_channel_dir(channel_id))
     if guide[channel_id][timestamp]["serie"]:
         path = os.path.join(path, get_safe_filename(guide[channel_id][timestamp]["serie"]))
     elif daily_program:
@@ -1244,19 +1241,16 @@ async def update_recordings(archive=False):
             except FileNotFoundError:
                 await asyncio.sleep(1)
 
-        if RECORDINGS_PER_CHANNEL:
-            if not isinstance(archive, bool):
-                topdirs = [get_channel_dir(archive)]
-            else:
-                topdirs = sorted(
-                    [
-                        _dir
-                        for _dir in os.listdir(RECORDINGS)
-                        if re.match(r"^[0-9]+\. ", _dir) and os.path.isdir(os.path.join(RECORDINGS, _dir))
-                    ]
-                )
+        if not isinstance(archive, bool):
+            topdirs = [get_channel_dir(archive)]
         else:
-            topdirs = []
+            topdirs = sorted(
+                [
+                    _dir
+                    for _dir in os.listdir(RECORDINGS)
+                    if re.match(r"^[0-9]+\. ", _dir) and os.path.isdir(os.path.join(RECORDINGS, _dir))
+                ]
+            )
 
         updated_m3u = False
         for _dir in [RECORDINGS] + topdirs:
@@ -1300,7 +1294,7 @@ async def update_recordings(archive=False):
             newest = int(os.path.getmtime(files[-1]))
             utime(newest, *(m3u_file, os.path.join(RECORDINGS, _dir)))
 
-            if RECORDINGS_PER_CHANNEL and topdirs:
+            if topdirs:
                 log.info(f"Wrote m3u [{m3u_file[len(RECORDINGS) + 1 :]}]")
 
             updated_m3u = True
@@ -1310,9 +1304,6 @@ async def update_recordings(archive=False):
 
 
 async def upgrade_channel_numbers():
-    if not RECORDINGS_PER_CHANNEL:
-        return ()
-
     dirs = os.listdir(RECORDINGS)
     pairs = [r.groups() for r in [re.match(r"^(\d{3}). (.+)$", dir) for dir in dirs] if r]
 
@@ -1511,7 +1502,6 @@ if __name__ == "__main__":
     MKV_OUTPUT = _conf["MKV_OUTPUT"]
     RECORDINGS = _conf["RECORDINGS"]
     RECORDINGS_M3U = _conf["RECORDINGS_M3U"]
-    RECORDINGS_PER_CHANNEL = _conf["RECORDINGS_PER_CHANNEL"]
     RECORDINGS_REINDEX = _conf["RECORDINGS_REINDEX"]
     RECORDINGS_THREADS = _conf["RECORDINGS_THREADS"]
     RECORDINGS_TMP = _conf["RECORDINGS_TMP"]
