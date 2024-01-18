@@ -28,8 +28,8 @@ from filelock import FileLock
 
 from mu7d import BUFF, CHUNK, DATEFMT, DIV_LOG, DROP_KEYS, EPG_URL, FMT
 from mu7d import NFO_EXT, UA, URL_COVER, URL_MVTV, WIN32, YEAR_SECONDS
-from mu7d import add_logfile, find_free_port, get_iptv_ip, get_vod_info, glob_safe
-from mu7d import mu7d_config, ongoing_vods, remove, utime, _version
+from mu7d import add_logfile, find_free_port, get_iptv_ip, get_title_meta, get_vod_info
+from mu7d import glob_safe, mu7d_config, ongoing_vods, remove, utime, _version
 
 
 log = logging.getLogger("VOD")
@@ -275,7 +275,13 @@ async def postprocess(archive_params, archive_url, mtime, vod_info):
         metadata.update({"expDate": int(metadata["expDate"] / 1000)})
         metadata.update({"name": os.path.basename(_args.filename)})
 
-        xml = xmltodict.unparse({"metadata": metadata}, pretty=True)
+        _meta = get_title_meta(
+            vod_info["name"], vod_info.get("seriesID"), metadata.get("nominalServiceUID"), vod_info["theme"]
+        )
+        if _meta["full_title"] != metadata["name"]:
+            metadata["originalName"] = _meta["full_title"]
+
+        xml = xmltodict.unparse({"metadata": dict(sorted(metadata.items()))}, pretty=True)
         async with aiofiles.open(_filename + NFO_EXT, "w", encoding="utf8") as f:
             log.debug("Writing XML Metadata")
             await f.write(xml)
