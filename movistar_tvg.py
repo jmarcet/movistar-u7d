@@ -199,14 +199,6 @@ class Cache:
             return epg
 
     @staticmethod
-    def load_epg_cloud():
-        data = Cache.load("cloud.json")
-        cloud_epg = defaultdict(dict)
-        for channel in data:
-            cloud_epg[int(channel)] = {int(k): v for k, v in data[channel].items()}
-        return cloud_epg
-
-    @staticmethod
     def load_epg_extended_info(pid):
         return Cache.load(os.path.join("programs", f"{pid}.json"))
 
@@ -277,6 +269,10 @@ class Cache:
     @staticmethod
     def save_epg(data):
         Cache.save("epg.json", data)
+
+    @staticmethod
+    def save_epg_cloud(data):
+        Cache.save("cloud.json", data)
 
     @staticmethod
     def save_epg_metadata(data):
@@ -448,6 +444,24 @@ class MulticastIPTV:
         enabled = set(_channels) & EPG_CHANNELS
         self.__ch_ids = [int(k) for k in services]
         self.__sv_ids = [_channels[int(k)].get("replacement", int(k)) for k in services if int(k) in enabled]
+
+    @staticmethod
+    def __fill_cloud_event(data, meta, pid, timestamp, year):
+        return {
+            "age_rating": data.get("ageRatingID"),
+            "duration": data["duration"],
+            "end": data["endTime"] // 1000,
+            "episode": meta["episode"] or data.get("episode"),
+            "full_title": meta["full_title"],
+            "genre": data["theme"],
+            "is_serie": meta["is_serie"],
+            "pid": pid,
+            "season": meta["season"] or data.get("season"),
+            "start": timestamp,
+            "year": year,
+            "serie": meta["serie"] or data.get("seriesName"),
+            "serie_id": data.get("seriesID"),
+        }
 
     @staticmethod
     def __fix_epg(epg):
@@ -816,6 +830,42 @@ class MulticastIPTV:
 
         Cache.save_epg(cached_epg)
         return cached_epg, True
+
+    async def get_epg_cloud(self):
+        data = await MovistarTV.get_service_data("recordingList&mode=0&state=2&firstItem=0&numItems=999")
+        if not data or not data.get("result"):
+            log.info("No existen grabaciones en la Nube")
+            return
+        cloud_recordings = data["result"]
+
+        _channels = self.__xml_data["channels"]
+
+        epg = defaultdict(dict)
+        for program in cloud_recordings:
+            channel_id = program["serviceUID"]
+            if channel_id not in EPG_CHANNELS:
+                log.warning(f"[{channel_id:4}] tiene grabaciones en la Nube pero no está activado")
+                continue
+
+            pid = program["productID"]
+            timestamp = program["beginTime"] // 1000
+
+            data = await MovistarTV.get_service_data(f"epgInfov2&productID={pid}&channelID={channel_id}")
+            year = data.get("productionDate")
+
+            data = await MovistarTV.get_service_data(f"getRecordingData&extInfoID={pid}&channelID={channel_id}")
+            if not data:  # There can be events with no data sometimes
+                continue
+
+            service_id = _channels[channel_id].get("replacement", channel_id)
+            meta = get_title_meta(data["name"], data.get("seriesID"), service_id, data["theme"])
+
+            epg[channel_id][timestamp] = self.__fill_cloud_event(data, meta, pid, timestamp, year)
+            if meta["episode_title"]:
+                epg[channel_id][timestamp]["episode_title"] = meta["episode_title"]
+
+        Cache.save_epg_cloud(epg)
+        return epg
 
     def get_epg_day(self, mcast_grp, mcast_port, source):
         log.info(f'Descargando XML {source.split(".")[0]} -> {mcast_grp}:{mcast_port}')
@@ -1235,9 +1285,7 @@ async def tvg_main():
 
         elif args.cloud_m3u or args.cloud_recordings or args.local_m3u or args.local_recordings:
             if args.cloud_m3u or args.cloud_recordings:
-                epg = Cache.load_epg_cloud()
-                if not epg:
-                    log.error("No existe caché de grabaciones en la Nube. Debe generarla con movistar_epg")
+                epg = await _MIPTV.get_epg_cloud()
             else:
                 epg = Cache.load_epg_local()
             if not epg:
