@@ -16,7 +16,6 @@ import unicodedata
 import urllib.parse
 import xmltodict
 
-from aiohttp.client_exceptions import ClientOSError, ServerDisconnectedError
 from asyncio.exceptions import CancelledError
 from asyncio.subprocess import DEVNULL, PIPE
 from collections import defaultdict
@@ -30,9 +29,9 @@ from sanic.exceptions import Forbidden, NotFound
 from warnings import filterwarnings
 
 from mu7d import DATEFMT, DIV_ONE, DIV_TWO, DROP_KEYS, EXT, FMT
-from mu7d import NFO_EXT, UA, UA_U7D, URL_MVTV, VID_EXTS, WIN32, YEAR_SECONDS
+from mu7d import NFO_EXT, UA_U7D, VID_EXTS, WIN32, YEAR_SECONDS
 from mu7d import add_logfile, cleanup_handler, find_free_port, get_iptv_ip, get_local_info, get_safe_filename
-from mu7d import get_title_meta, glob_safe, launch, mu7d_config, ongoing_vods, remove, utime, _version
+from mu7d import glob_safe, launch, mu7d_config, ongoing_vods, remove, utime, _version
 
 
 app = Sanic("movistar_epg")
@@ -42,7 +41,7 @@ log = logging.getLogger("EPG")
 
 @app.listener("before_server_start")
 async def before_server_start(app):
-    global _IPTV, _SESSION_CLOUD, _last_epg
+    global _IPTV, _last_epg
 
     app.config.FALLBACK_ERROR_FORMAT = "json"
     app.config.KEEP_ALIVE_TIMEOUT = YEAR_SECONDS
@@ -60,12 +59,6 @@ async def before_server_start(app):
     if IPTV_BW_SOFT:
         app.add_task(network_saturation())
         log.info(f"Ignoring RECORDINGS_THREADS => BW: {IPTV_BW_SOFT}-{IPTV_BW_HARD} kbps / {IPTV_IFACE}")
-
-    _SESSION_CLOUD = aiohttp.ClientSession(
-        connector=aiohttp.TCPConnector(keepalive_timeout=YEAR_SECONDS),
-        headers={"User-Agent": UA},
-        json_serialize=ujson.dumps,
-    )
 
     await reload_epg()
 
@@ -1045,107 +1038,21 @@ async def timers_check(delay=0):
 async def update_cloud():
     global _CLOUD
 
+    cmd = [f"movistar_tvg{EXT}", "--cloud_m3u", CHANNELS_CLOUD, "--cloud_recordings", GUIDE_CLOUD]
+    async with tvgrab_lock:
+        await launch(cmd)
+
     try:
         async with aiofiles.open(cloud_data, encoding="utf8") as f:
             clouddata = ujson.loads(await f.read())["data"]
-
-        int_clouddata = defaultdict(dict)
-        for channel in clouddata:
-            for timestamp in clouddata[channel]:
-                int_clouddata[int(channel)][int(timestamp)] = clouddata[channel][timestamp]
-        _CLOUD = int_clouddata
-
     except (FileNotFoundError, TypeError, ValueError):
-        remove(cloud_data)
+        return await update_cloud()
 
-    try:
-        params = {"action": "recordingList", "mode": 0, "state": 2, "firstItem": 0, "numItems": 999}
-        async with _SESSION_CLOUD.get(URL_MVTV, params=params) as r:
-            cloud_recordings = (await r.json())["resultData"]["result"]
+    cloud_epg = defaultdict(dict)
+    for channel in clouddata:
+        cloud_epg[int(channel)] = {int(k): v for k, v in clouddata[channel].items()}
 
-    except (ClientOSError, KeyError, ServerDisconnectedError):
-        cloud_recordings = None
-
-    if not cloud_recordings:
-        log.info("No cloud recordings found")
-        return
-
-    def _fill_cloud_event():
-        nonlocal data, meta, pid, timestamp, year
-
-        return {
-            "age_rating": data["ageRatingID"],
-            "duration": data["duration"],
-            "end": int(str(data["endTime"])[:-3]),
-            "episode": meta["episode"] or data.get("episode"),
-            "full_title": meta["full_title"],
-            "genre": data["theme"],
-            "is_serie": meta["is_serie"],
-            "pid": pid,
-            "season": meta["season"] or data.get("season"),
-            "start": int(timestamp),
-            "year": year,
-            "serie": meta["serie"] or data.get("seriesName"),
-            "serie_id": data.get("seriesID"),
-        }
-
-    new_cloud = defaultdict(dict)
-    for _event in cloud_recordings:
-        channel_id = _event["serviceUID"]
-        timestamp = int(_event["beginTime"] / 1000)
-
-        if timestamp not in new_cloud[channel_id]:
-            if channel_id in _EPGDATA and timestamp in _EPGDATA[channel_id]:
-                new_cloud[channel_id][timestamp] = _EPGDATA[channel_id][timestamp]
-
-            elif channel_id in _CLOUD and timestamp in _CLOUD[channel_id]:
-                new_cloud[channel_id][timestamp] = _CLOUD[channel_id][timestamp]
-
-            else:
-                pid = _event["productID"]
-
-                params = {"action": "epgInfov2", "productID": pid, "channelID": channel_id}
-                async with _SESSION_CLOUD.get(URL_MVTV, params=params) as r:
-                    _data = (await r.json())["resultData"]
-                    year = _data.get("productionDate")
-
-                params = {"action": "getRecordingData", "extInfoID": pid, "channelID": channel_id, "mode": 1}
-                async with _SESSION_CLOUD.get(URL_MVTV, params=params) as r:
-                    data = (await r.json())["resultData"]
-
-                if not data:  # There can be events with no data sometimes
-                    continue
-
-                service_id = _CHANNELS[channel_id].get("replacement", channel_id)
-                meta = get_title_meta(data["name"], data.get("seriesID"), service_id, data["theme"])
-                new_cloud[channel_id][timestamp] = _fill_cloud_event()
-                if meta["episode_title"]:
-                    new_cloud[channel_id][timestamp]["episode_title"] = meta["episode_title"]
-
-    updated = False
-    if new_cloud and (not _CLOUD or set(new_cloud) != set(_CLOUD)):
-        updated = True
-    else:
-        for channel_id in new_cloud:
-            if set(new_cloud[channel_id]) != set(_CLOUD[channel_id]):
-                updated = True
-                break
-
-    for channel_id in new_cloud:
-        if channel_id not in _EPGDATA:
-            _EPGDATA[channel_id] = {}
-        for timestamp in list(set(new_cloud[channel_id]) - set(_EPGDATA[channel_id])):
-            _EPGDATA[channel_id][timestamp] = new_cloud[channel_id][timestamp]
-
-    if updated:
-        _CLOUD = new_cloud
-        async with aiofiles.open(cloud_data, "w", encoding="utf8") as f:
-            await f.write(ujson.dumps({"data": _CLOUD}, ensure_ascii=False, indent=4, sort_keys=True))
-
-    if updated or not os.path.exists(CHANNELS_CLOUD) or not os.path.exists(GUIDE_CLOUD):
-        cmd = [f"movistar_tvg{EXT}", "--cloud_m3u", CHANNELS_CLOUD, "--cloud_recordings", GUIDE_CLOUD]
-        async with tvgrab_lock:
-            await launch(cmd)
+    _CLOUD = cloud_epg
 
     log.info(f"Cloud Recordings Updated => {U7D_URL}/MovistarTVCloud.m3u - {U7D_URL}/cloud.xml")
     nr_epg = sum((len(_CLOUD[channel]) for channel in _CLOUD))
@@ -1459,7 +1366,7 @@ if __name__ == "__main__":
 
         setproctitle("movistar_epg")
 
-    _IPTV = _SESSION_CLOUD = None
+    _IPTV = None
     _NETWORK_SATURATION = 0
 
     _CHANNELS = {}
