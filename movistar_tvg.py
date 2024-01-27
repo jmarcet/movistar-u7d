@@ -945,7 +945,7 @@ class XmlTV:
                 tag_stitle = SubElement(tag_programme, "sub-title", LANG["es"])
                 tag_stitle.text = subtitle
 
-        tag_title.text = title
+        tag_title.text = title.rstrip(":.")
 
         if local:
             _match = daily_regex.match(tag_title.text)
