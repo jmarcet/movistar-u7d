@@ -243,6 +243,7 @@ def get_title_meta(title, serie_id, service_id, genre):
 
         is_serie = bool(serie and episode)
         serie, episode_title = [x.strip(":-/ ") for x in (serie, episode_title)]
+        serie = re.sub(r"([^,.])[,.]$", r"\1", serie)
         if serie.lower() == episode_title.lower():
             episode_title = ""
 
@@ -267,6 +268,7 @@ def get_title_meta(title, serie_id, service_id, genre):
         if _match:
             is_serie = True
             serie, episode_title = [x.strip(":-/ ") for x in _match.groups()]
+            serie = re.sub(r"([^,.])[,.]$", r"\1", serie)
             if season and episode:
                 episode_title = re.sub(r" S\d+E\d+$", "", episode_title)
                 full_title = "%s S%02dE%02d - %s" % (serie, season, episode, episode_title)
