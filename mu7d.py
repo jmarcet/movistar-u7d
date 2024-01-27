@@ -69,6 +69,47 @@ END_POINTS = {
 
 END_POINTS_FILE = "mu7d.endpoints"
 
+EPG_CHANNELS = {
+    # 5066 # _ "La 1 HD"
+    4455,  # _ "La 2 HD"
+    2524,  # _ "Antena 3 HD"
+    1825,  # _ "Cuatro HD"
+    1826,  # _ "Tele 5 HD"
+    2526,  # _ "laSexta HD"
+    # 4913 # _ "TVG HD"
+    # 4912 # _ "TVG 2 HD"
+    1221,  # _ "Paramount Network"
+    844,  # __ "TRECE"
+    884,  # __ "Energy"
+    # 747 # __ "FDF"
+    4714,  # _ "Neox HD"
+    3223,  # _ "Atreseries HD"
+    4063,  # _ "GOL PLAY HD"
+    2544,  # _ "Teledeporte HD"
+    3063,  # _ "Real Madrid TV HD"
+    657,  # __ "DMAX"
+    3603,  # _ "DKISS"
+    663,  # __ "Divinity"
+    4716,  # _ "Nova HD"
+    4715,  # _ "MEGA HD"
+    3185,  # _ "BeMad HD"
+    3443,  # _ "Ten"
+    1616,  # _ "Disney Channel HD"
+    578,  # __ "Boing"
+    4467,  # _ "Clan TVE HD"
+    5106,  # _ "Canal 24 H. HD"
+    4990,  # _ "El Toro TV HD"
+    # 2275 # _ "Canal Sur Andalucía"
+    # 2273 # _ "TVG Europa"
+    # 4299 # _ "Canal Extremadura SAT"
+    # 2271 # _ "TV3CAT"
+    # 2269 # _ "ETB Basque."
+    # 2743 # _ "Aragón TV Int"
+    # 5087 # _ "Telemadrid INT HD"
+    5029,  # _ "8tv"
+    3103,  # _ "Movistar Plus+"
+}
+
 episode_regex = re.compile(r"^.*(?:Ep[isode.]+) (\d+)$")
 title_select_regex = re.compile(r".+ T\d+ .+")
 title_1_regex = re.compile(r"(.+(?!T\d)) +T(\d+)(?: *Ep[isode.]+ (\d+))?[ -]*(.*)")
@@ -320,15 +361,10 @@ def mu7d_config():
     if "DEBUG" not in conf:
         conf["DEBUG"] = False
 
-    if "DROP_CHANNELS" not in conf:
-        conf["DROP_CHANNELS"] = []
-    elif any((not isinstance(x, int) for x in conf["DROP_CHANNELS"])):
-        conf["DROP_CHANNELS"] = []
-
-    if "EXTRA_CHANNELS" not in conf:
-        conf["EXTRA_CHANNELS"] = []
-    elif any((not isinstance(x, int) for x in conf["EXTRA_CHANNELS"])):
-        conf["EXTRA_CHANNELS"] = []
+    if "EPG_CHANNELS" not in conf:
+        conf["EPG_CHANNELS"] = EPG_CHANNELS
+    else:
+        conf["EPG_CHANNELS"] = set(conf["EPG_CHANNELS"])
 
     if "IPTV_IFACE" not in conf or WIN32:
         conf["IPTV_IFACE"] = conf["IPTV_BW_SOFT"] = conf["IPTV_BW_HARD"] = None
