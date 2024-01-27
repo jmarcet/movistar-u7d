@@ -27,9 +27,9 @@ from datetime import timedelta
 from filelock import FileLock
 
 from mu7d import BUFF, CHUNK, DATEFMT, DIV_LOG, DROP_KEYS, EPG_URL, FMT
-from mu7d import NFO_EXT, UA, URL_COVER, URL_MVTV, WIN32, YEAR_SECONDS
-from mu7d import add_logfile, find_free_port, get_iptv_ip, get_title_meta, get_vod_info
-from mu7d import glob_safe, mu7d_config, ongoing_vods, remove, utime, _version
+from mu7d import NFO_EXT, UA, URL_COVER, WIN32, YEAR_SECONDS
+from mu7d import add_logfile, find_free_port, get_end_point, get_iptv_ip, get_title_meta
+from mu7d import get_vod_info, glob_safe, mu7d_config, ongoing_vods, remove, utime, _version
 
 
 log = logging.getLogger("VOD")
@@ -204,7 +204,7 @@ async def postprocess(archive_params, archive_url, mtime, vod_info):
                     log.debug("Getting extended info")
 
                     params = {"action": "epgInfov2", "productID": _args.program, "channelID": _args.channel}
-                    async with _SESSION_CLOUD.get(URL_MVTV, params=params) as resp:
+                    async with _SESSION_CLOUD.get(_END_POINT, params=params) as resp:
                         metadata = (await resp.json())["resultData"]
 
                     data = ujson.dumps({"data": metadata}, ensure_ascii=False, indent=4, sort_keys=True)
@@ -323,7 +323,7 @@ async def postprocess(archive_params, archive_url, mtime, vod_info):
 
         cmd = ["ffmpeg"] + RECORDINGS_TRANSCODE_INPUT + ["-i", _tmpname + TMP_EXT]
 
-        new_vod_info = await get_vod_info(_SESSION_CLOUD, _args.channel, _args.cloud, _args.program)
+        new_vod_info = await get_vod_info(_SESSION_CLOUD, _END_POINT, _args.channel, _args.cloud, _args.program)
         if not new_vod_info:
             log.warning("POSTPROCESS #2  - Could not verify event has not shifted")
         else:
@@ -678,11 +678,13 @@ async def rtsp(vod_info):
 
 async def Vod(args=None, vod_client=None, vod_info=None):
     if __name__ == "__main__":
-        global _SESSION_CLOUD
+        global _END_POINT, _SESSION_CLOUD
 
         if WIN32:
             global _loop
             _loop = asyncio.get_running_loop()
+
+        _END_POINT = await get_end_point(_conf)
 
         await _open_sessions()
 
@@ -696,7 +698,7 @@ async def Vod(args=None, vod_client=None, vod_info=None):
         _args = args
 
     if not vod_info:
-        vod_info = await get_vod_info(_SESSION_CLOUD, _args.channel, _args.cloud, _args.program)
+        vod_info = await get_vod_info(_SESSION_CLOUD, _END_POINT, _args.channel, _args.cloud, _args.program)
 
     try:
         if vod_info:
@@ -750,7 +752,7 @@ if __name__ == "__main__":
 
         win32api.SetConsoleCtrlHandler(cancel_handler, 1)
 
-    _SESSION = _SESSION_CLOUD = _filename = _loop = _tmpname = None
+    _END_POINT = _IPTV = _SESSION = _SESSION_CLOUD = _filename = _loop = _tmpname = None
 
     _conf = mu7d_config()
 

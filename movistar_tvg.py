@@ -12,7 +12,6 @@ import glob
 import gzip
 import logging
 import os
-import random
 import re
 import socket
 import struct
@@ -32,8 +31,8 @@ from queue import Queue
 from xml.dom import minidom  # nosec B408
 from xml.etree.ElementTree import Element, ElementTree, SubElement  # nosec B405
 
-from mu7d import DATEFMT, FMT, UA, UA_U7D, WIN32, YEAR_SECONDS
-from mu7d import add_logfile, get_iptv_ip, get_local_info, get_title_meta, mu7d_config, _version
+from mu7d import DATEFMT, END_POINTS_FILE, FMT, UA, UA_U7D, WIN32, YEAR_SECONDS
+from mu7d import add_logfile, get_end_point, get_iptv_ip, get_local_info, get_title_meta, mu7d_config, _version
 
 
 log = logging.getLogger("TVG")
@@ -57,14 +56,6 @@ DEMARCATIONS = {
     "12": "Murcia",
     "35": "Navarra",
     "36": "Pais Vasco",
-}
-
-END_POINTS = {
-    "epNoCach1": "http://www-60.svc.imagenio.telefonica.net:2001",
-    "epNoCach2": "http://nc2.svc.imagenio.telefonica.net:2001",
-    "epNoCach4": "http://nc4.svc.imagenio.telefonica.net:2001",
-    "epNoCach5": "http://nc5.svc.imagenio.telefonica.net:2001",
-    "epNoCach6": "http://nc6.svc.imagenio.telefonica.net:2001",
 }
 
 EPG_CHANNELS = {
@@ -157,10 +148,6 @@ class Cache:
     @staticmethod
     def load_config():
         return Cache.load("config.json")
-
-    @staticmethod
-    def load_end_points():
-        return Cache.load(END_POINTS_FILE) or END_POINTS
 
     @staticmethod
     async def load_epg():
@@ -289,16 +276,6 @@ class Cache:
 
 class MovistarTV:
     @staticmethod
-    def get_end_point():
-        return random.choice(list(MovistarTV.get_end_points().values()))  # nosec B311
-
-    @staticmethod
-    def get_end_points():
-        if _CONFIG and _CONFIG.get("end_points"):
-            return _CONFIG["end_points"]
-        return Cache.load_end_points()
-
-    @staticmethod
     async def get_epg_extended_info(channel_id, program):
         def _fill_data(data):
             pairs = [("episode", "episode"), ("episode_title", "episodeName"), ("full_title", "name")]
@@ -367,7 +344,6 @@ class MovistarTV:
             "tvPackages": client["tvPackages"],
             "demarcation": client["demarcation"],
             "tvWholesaler": client["tvWholesaler"],
-            "end_points": MovistarTV.update_end_points(platform["endPoints"]),
             "mcast_grp": dvb_entry_point[0],
             "mcast_port": int(dvb_entry_point[1]),
             "tvChannelLogoPath": "%s%s" % (uri, params["tvChannelLogoPath"]),
@@ -377,13 +353,13 @@ class MovistarTV:
             "genres": await MovistarTV.get_genres(client["tvWholesaler"]),
         }
         Cache.save_config(conf)
+        MovistarTV.update_end_points(platform["endPoints"])
         return conf
 
     @staticmethod
     async def get_service_data(action):
-        ep = MovistarTV.get_end_point()
         try:
-            async with _SESSION.get(f"{ep}/appserver/mvtv.do?action={action}") as response:
+            async with _SESSION.get(f"{_END_POINT}?action={action}") as response:
                 if response.status == 200:
                     return (await response.json())["resultData"]
         except (ClientConnectionError, ClientOSError, ServerDisconnectedError):
@@ -1235,7 +1211,7 @@ def create_args_parser():
 
 
 async def tvg_main():
-    global _CONFIG, _DEADLINE, _MIPTV, _SESSION, _VERBOSE, _XMLTV
+    global _CONFIG, _END_POINT, _DEADLINE, _MIPTV, _SESSION, _VERBOSE, _XMLTV
 
     _DEADLINE = int(datetime.combine(date.today() - timedelta(days=7), datetime.min.time()).timestamp())
 
@@ -1265,6 +1241,7 @@ async def tvg_main():
 
     try:
         # Descarga la configuración del servicio Web de MovistarTV
+        _END_POINT = await get_end_point(_conf)
         _CONFIG = await MovistarTV.get_service_config()
 
         # Busca el Proveedor de Servicios y descarga los archivos XML: canales, paquetes y segmentos
@@ -1352,7 +1329,7 @@ if __name__ == "__main__":
 
     DEBUG = _conf["DEBUG"]
 
-    _CONFIG = _DEADLINE = _IPTV = _MIPTV = _SESSION = _VERBOSE = _XMLTV = None
+    _CONFIG = _DEADLINE = _END_POINT = _IPTV = _MIPTV = _SESSION = _VERBOSE = _XMLTV = None
 
     CACHE_DIR = os.path.join(_conf["HOME"], ".xmltv", "cache")
     EPG_CHANNELS -= set(_conf["DROP_CHANNELS"])
@@ -1361,8 +1338,6 @@ if __name__ == "__main__":
 
     AGE_RATING = ["0", "0", "0", "7", "12", "16", "17", "18"]
     LANG = {"es": {"lang": "es"}, "en": {"lang": "en"}}
-
-    END_POINTS_FILE = "movistar_tvg.endpoints"
 
     daily_regex = re.compile(r"^(.+?) - \d{8}(?:_\d{4})?$")
     series_regex = re.compile(r"^(S\d+E\d+|Ep[isode]*\.)(?:.*)")
