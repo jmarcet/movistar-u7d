@@ -58,47 +58,6 @@ DEMARCATIONS = {
     "36": "Pais Vasco",
 }
 
-EPG_CHANNELS = {
-    # 5066 # _ "La 1 HD"
-    4455,  # _ "La 2 HD"
-    2524,  # _ "Antena 3 HD"
-    1825,  # _ "Cuatro HD"
-    1826,  # _ "Tele 5 HD"
-    2526,  # _ "laSexta HD"
-    # 4913 # _ "TVG HD"
-    # 4912 # _ "TVG 2 HD"
-    1221,  # _ "Paramount Network"
-    844,  # __ "TRECE"
-    884,  # __ "Energy"
-    # 747 # __ "FDF"
-    4714,  # _ "Neox HD"
-    3223,  # _ "Atreseries HD"
-    4063,  # _ "GOL PLAY HD"
-    2544,  # _ "Teledeporte HD"
-    3063,  # _ "Real Madrid TV HD"
-    657,  # __ "DMAX"
-    3603,  # _ "DKISS"
-    663,  # __ "Divinity"
-    4716,  # _ "Nova HD"
-    4715,  # _ "MEGA HD"
-    3185,  # _ "BeMad HD"
-    3443,  # _ "Ten"
-    1616,  # _ "Disney Channel HD"
-    578,  # __ "Boing"
-    4467,  # _ "Clan TVE HD"
-    5106,  # _ "Canal 24 H. HD"
-    4990,  # _ "El Toro TV HD"
-    # 2275 # _ "Canal Sur Andalucía"
-    # 2273 # _ "TVG Europa"
-    # 4299 # _ "Canal Extremadura SAT"
-    # 2271 # _ "TV3CAT"
-    # 2269 # _ "ETB Basque."
-    # 2743 # _ "Aragón TV Int"
-    # 5087 # _ "Telemadrid INT HD"
-    5029,  # _ "8tv"
-    3103,  # _ "Movistar Plus+"
-}
-
 THEME_MAP = {
     "Cine": "Movie",
     "Deportes": "Sports",
@@ -1332,8 +1291,7 @@ if __name__ == "__main__":
     _CONFIG = _DEADLINE = _END_POINT = _IPTV = _MIPTV = _SESSION = _VERBOSE = _XMLTV = None
 
     CACHE_DIR = os.path.join(_conf["HOME"], ".xmltv", "cache")
-    EPG_CHANNELS -= set(_conf["DROP_CHANNELS"])
-    EPG_CHANNELS |= set(_conf["EXTRA_CHANNELS"])
+    EPG_CHANNELS = _conf["EPG_CHANNELS"]
     U7D_URL = _conf["U7D_URL"]
 
     AGE_RATING = ["0", "0", "0", "7", "12", "16", "17", "18"]

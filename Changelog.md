@@ -40,7 +40,8 @@
 
 - Opciones de configuración nuevas o modificadas:
   - `COMSKIP`: estableciéndola se activa el `comskip` y permite controlar los argumentos usados para lanzarlo.
-  - `DROP_CHANNELS`: nueva opción para bloquear canales indeseados de la EPG y listas de canales.
+  - `EPG_CHANNELS`: nueva opción para establecer la lista de canales a los que queremos acceder.
+  - ~~`EXTRA_CHANNELS`~~: opción eliminada, en favor de la anterior.
   - `LOG_TO_FILE`: para escribir los logs en un fichero.
   - ~~`MP4_OUTPUT`~~: opción eliminada. Por defecto las grabaciones se realizan en formato `.ts`, el único en el que los subtítulos funcionan correctamente con cualquier reproductor.
   - `MKV_OUTPUT`: para hacer las grabaciones en formato `.mkv`. No es deseable de querer usar la nueva `MovistarTVLocal.m3u`/`local.xml`.
