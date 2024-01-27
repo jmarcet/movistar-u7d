@@ -28,7 +28,7 @@ from filelock import FileLock
 
 from mu7d import BUFF, CHUNK, DATEFMT, DIV_LOG, DROP_KEYS, EPG_URL, FMT
 from mu7d import NFO_EXT, UA, URL_COVER, WIN32, YEAR_SECONDS
-from mu7d import add_logfile, find_free_port, get_end_point, get_iptv_ip, get_title_meta
+from mu7d import add_logfile, find_free_port, get_end_point, get_iptv_ip, get_safe_filename, get_title_meta
 from mu7d import get_vod_info, glob_safe, mu7d_config, ongoing_vods, remove, utime, _version
 
 
@@ -308,10 +308,7 @@ async def postprocess(archive_params, archive_url, mtime, vod_info):
         msg = f"POSTPROCESS #1  - Recording is {'INCOMPLETE' if bad else 'COMPLETE'}"
         msg = DIV_LOG % (msg, log_suffix)
 
-        if bad:
-            log.warning(msg)
-        else:
-            log.info(msg)
+        log.warning(msg) if bad else log.info(msg)
 
     async def _step_2():
         global COMSKIP
@@ -523,8 +520,6 @@ async def record_stream(vod_info):
     global _filename, _tmpname
 
     if not _args.filename:
-        from mu7d import get_safe_filename
-
         _args.filename = f"{vod_info['channelName']} - {get_safe_filename(vod_info['name'])}"
 
     log_suffix = f": [{_args.channel:4}] [{_args.program}] [{vod_info['beginTime'] // 1000}]"
