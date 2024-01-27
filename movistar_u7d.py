@@ -30,8 +30,8 @@ from warnings import filterwarnings
 
 from mu7d import ATOM, BUFF, CHUNK, DATEFMT, EPG_URL, FMT, MIME_M3U, MIME_WEBM
 from mu7d import UA, URL_COVER, URL_LOGO, VID_EXTS, WIN32, YEAR_SECONDS
-from mu7d import add_logfile, cleanup_handler, find_free_port, get_iptv_ip
-from mu7d import get_vod_info, mu7d_config, ongoing_vods, _version
+from mu7d import add_logfile, cleanup_handler, find_free_port, get_end_point
+from mu7d import get_iptv_ip, get_vod_info, mu7d_config, ongoing_vods, _version
 from movistar_vod import Vod
 
 
@@ -103,6 +103,7 @@ async def before_server_start(app):
 
 @app.listener("after_server_start")
 async def after_server_start(app):
+    app.ctx.ep = await get_end_point(_conf)
     app.ctx.vod_client = aiohttp.ClientSession(
         connector=aiohttp.TCPConnector(keepalive_timeout=YEAR_SECONDS),
         headers={"User-Agent": UA},
@@ -276,7 +277,7 @@ async def handle_flussonic(request, url, channel_id=None, channel_name=None, clo
         raise ServiceUnavailable("Network Saturated")
 
     client_port = find_free_port(_IPTV)
-    vod_info = await get_vod_info(request.app.ctx.vod_client, channel_id, cloud, program_id)
+    vod_info = await get_vod_info(request.app.ctx.vod_client, request.app.ctx.ep, channel_id, cloud, program_id)
     if not vod_info:
         raise NotFound(f"Requested URL {_raw_url} not found")
 

@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
 
+import aiohttp
 import aiofiles
 import asyncio
 import logging
@@ -9,6 +10,7 @@ import re
 import socket
 import sys
 import tomli
+import ujson
 import urllib.parse
 import xmltodict
 
@@ -49,13 +51,23 @@ UA_U7D = f"movistar-u7d v{_version} [{sys.platform}] [{EXT}]"
 URL_BASE = "http://html5-static.svc.imagenio.telefonica.net/appclientv/nux/incoming/epg"
 URL_COVER = f"{URL_BASE}/covers/programmeImages/portrait/290x429"
 URL_LOGO = f"{URL_BASE}/channelLogo"
-URL_MVTV = "http://portalnc.imagenio.telefonica.net:2001/appserver/mvtv.do"
 VID_EXTS = (".avi", ".mkv", ".mp4", ".mpeg", ".mpg", ".ts")
 VID_EXTS_KEEP = (*VID_EXTS, ".tmp", ".tmp2")
 YEAR_SECONDS = 365 * 24 * 60 * 60
 
 DROP_KEYS = ["5S_signLanguage", "hasDolby", "isHdr", "isPromotional", "isuserfavorite", "lockdata", "logos"]
 DROP_KEYS += ["opvr", "playcount", "recordingAllowed", "resume", "startOver", "watched", "wishListEnabled"]
+
+END_POINTS = {
+    "epNoCach1": "http://portalnc.imagenio.telefonica.net:2001",
+    "epNoCach7": "http://asiptvnc.imagenio.telefonica.net:2070",
+    "epNoCach8": "http://reg360.imagenio.telefonica.net:2070",
+    "epNoCach9": "https://auraiptv.imagenio.telefonica.net",
+    "epNoCach10": "https://oauth4p.imagenio.telefonica.net",
+    "epNoCach11": "http://asfenc.imagenio.telefonica.net:2001",
+}
+
+END_POINTS_FILE = "mu7d.endpoints"
 
 episode_regex = re.compile(r"^.*(?:Ep[isode.]+) (\d+)$")
 title_select_regex = re.compile(r".+ T\d+ .+")
@@ -83,6 +95,26 @@ def find_free_port(iface=""):
         s.bind((iface, 0))
         s.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
         return s.getsockname()[1]
+
+
+async def get_end_point(conf):
+    ep_path = os.path.join(conf["HOME"], ".xmltv", "cache", END_POINTS_FILE)
+    if os.path.exists(ep_path):
+        async with aiofiles.open(ep_path) as f:
+            end_points = ujson.loads(await f.read())["data"]
+        end_points = dict(sorted(end_points.items(), key=lambda x: int(re.sub(r"[A-Za-z]+", "", x[0]))))
+    else:
+        end_points = END_POINTS
+
+    for end_point in list(dict.fromkeys(end_points.values())):
+        async with aiohttp.ClientSession(headers={"User-Agent": UA}) as session:
+            try:
+                async with session.get(end_point):
+                    return end_point + "/appserver/mvtv.do"
+            except (ClientConnectionError, ClientOSError, ServerDisconnectedError):
+                pass
+            finally:
+                await session.close()
 
 
 def get_iptv_ip():
@@ -217,13 +249,13 @@ def get_title_meta(title, serie_id, service_id, genre):
     }
 
 
-async def get_vod_info(session, channel, cloud, program):
+async def get_vod_info(session, endpoint, channel, cloud, program):
     params = {"action": "getRecordingData" if cloud else "getCatchUpUrl"}
     params.update({"extInfoID": program, "channelID": channel, "mode": 1})
 
     msg = f"Could not get uri for [{channel:4}] [{program}]:"
     try:
-        async with session.get(URL_MVTV, params=params) as r:
+        async with session.get(endpoint, params=params) as r:
             res = await r.json()
         if res.get("resultData"):
             return res["resultData"]
