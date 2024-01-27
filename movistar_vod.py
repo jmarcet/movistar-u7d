@@ -323,11 +323,11 @@ async def postprocess(archive_params, archive_url, mtime, vod_info):
 
         cmd = ["ffmpeg"] + RECORDINGS_TRANSCODE_INPUT + ["-i", _tmpname + TMP_EXT]
 
-        new_vod_info = await get_vod_info(_SESSION_CLOUD, _END_POINT, _args.channel, _args.cloud, _args.program)
-        if not new_vod_info:
+        _info = await get_vod_info(_SESSION_CLOUD, _END_POINT, _args.channel, _args.cloud, _args.program, log)
+        if not _info:
             log.warning("POSTPROCESS #2  - Could not verify event has not shifted")
         else:
-            new_mtime = new_vod_info["beginTime"] // 1000 + _args.start
+            new_mtime = _info["beginTime"] // 1000 + _args.start
             if mtime != new_mtime:
                 msg = DIV_LOG % ("POSTPROCESS #2  - Event CHANGED", f"beginTime=[{new_mtime - mtime:+}s]")
                 if new_mtime < mtime:
@@ -355,7 +355,7 @@ async def postprocess(archive_params, archive_url, mtime, vod_info):
         cmd += [*tags, "-v", "error", "-y", "-f", "matroska" if _args.mkv else "mpegts", _tmpname + TMP_EXT2]
 
         msg = "POSTPROCESS #2  - Remuxing/Transcoding"
-        if new_vod_info and mtime != new_mtime:
+        if _info and mtime != new_mtime:
             msg = DIV_LOG % (msg, f"Cutting first [{new_mtime - mtime}s]")
             mtime = new_mtime
 
@@ -698,7 +698,7 @@ async def Vod(args=None, vod_client=None, vod_info=None):
         _args = args
 
     if not vod_info:
-        vod_info = await get_vod_info(_SESSION_CLOUD, _END_POINT, _args.channel, _args.cloud, _args.program)
+        vod_info = await get_vod_info(_SESSION_CLOUD, _END_POINT, _args.channel, _args.cloud, _args.program, log)
 
     try:
         if vod_info:

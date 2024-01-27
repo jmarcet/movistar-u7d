@@ -405,7 +405,7 @@ async def handle_archive(request, channel_id, program_id, cloud=False):
             if channel_id in _KEEP:
                 prune_expired(channel_id, filename)
 
-            nfo = await get_local_info(channel_id, timestamp, get_path(filename, bare=True))
+            nfo = await get_local_info(channel_id, timestamp, get_path(filename, bare=True), log)
             if timestamp == nfo["beginTime"]:
                 _RECORDINGS[channel_id][timestamp] = {"duration": nfo["duration"], "filename": filename}
             else:
@@ -605,7 +605,7 @@ async def prom_event(request, method):
         _epg, _ = get_epg(request.json["channel_id"], _event["program_id"], cloud)
     else:
         path = _event["program_id"].removesuffix(VID_EXT)
-        _epg = await get_local_info(request.json["channel_id"], _event["start"], path, extended=True)
+        _epg = await get_local_info(request.json["channel_id"], _event["start"], path, log, extended=True)
     if not _epg:
         return
 
@@ -634,7 +634,7 @@ async def prom_event(request, method):
     msg += f'[{_event["program_id"]}] ' if not local else "[00000000] "
     msg += f'[{_event["start"]}] [{_event["channel"]}] "{_epg["full_title"]}" _ {offset}'
 
-    log.info(msg)
+    logging.getLogger("U7D").info(msg)
 
 
 def prune_duplicates(channel_id, filename):

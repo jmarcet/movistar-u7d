@@ -277,12 +277,12 @@ async def handle_flussonic(request, url, channel_id=None, channel_name=None, clo
         raise ServiceUnavailable("Network Saturated")
 
     client_port = find_free_port(_IPTV)
-    vod_info = await get_vod_info(request.app.ctx.vod_client, request.app.ctx.ep, channel_id, cloud, program_id)
-    if not vod_info:
+    info = await get_vod_info(request.app.ctx.vod_client, request.app.ctx.ep, channel_id, cloud, program_id, log)
+    if not info:
         raise NotFound(f"Requested URL {_raw_url} not found")
 
     args = VodArgs(channel_id, program_id, request.ip, client_port, offset, cloud)
-    vod = app.add_task(Vod(args, request.app.ctx.vod_client, vod_info))
+    vod = app.add_task(Vod(args, request.app.ctx.vod_client, info))
 
     ua = request.headers.get("user-agent", "")
     if " Chrome/" in ua:

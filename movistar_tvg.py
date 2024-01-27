@@ -952,7 +952,7 @@ class XmlTV:
             ext_info = await MovistarTV.get_epg_extended_info(channel_id, program)
         else:
             filename = os.path.join(_conf["RECORDINGS"], program["filename"])
-            ext_info = await get_local_info(channel_id, ts, filename, extended=True)
+            ext_info = await get_local_info(channel_id, ts, filename, log, extended=True)
             if not ext_info:
                 return
             ext_info["end"] = ts + program["duration"]  # Use the corrected duration to avoid overlaps

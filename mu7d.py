@@ -133,7 +133,7 @@ def get_lan_ip():
         return s.getsockname()[0]
 
 
-async def get_local_info(channel, timestamp, path, extended=False):
+async def get_local_info(channel, timestamp, path, _log, extended=False):
     try:
         nfo_file = path + NFO_EXT
         if not os.path.exists(nfo_file):
@@ -169,7 +169,7 @@ async def get_local_info(channel, timestamp, path, extended=False):
             )
         return nfo
     except Exception as ex:
-        log.error(f'Cannot get extended local metadata: [{channel}] [{timestamp}] "{path=}" => {repr(ex)}')
+        _log.error(f'Cannot get extended local metadata: [{channel}] [{timestamp}] "{path=}" => {repr(ex)}')
 
 
 def get_safe_filename(filename):
@@ -249,7 +249,7 @@ def get_title_meta(title, serie_id, service_id, genre):
     }
 
 
-async def get_vod_info(session, endpoint, channel, cloud, program):
+async def get_vod_info(session, endpoint, channel, cloud, program, _log):
     params = {"action": "getRecordingData" if cloud else "getCatchUpUrl"}
     params.update({"extInfoID": program, "channelID": channel, "mode": 1})
 
@@ -259,9 +259,9 @@ async def get_vod_info(session, endpoint, channel, cloud, program):
             res = await r.json()
         if res.get("resultData"):
             return res["resultData"]
-        log.error(f"{msg} {res}")
+        _log.error(f"{msg} {res}")
     except (ClientConnectionError, ClientOSError, ServerDisconnectedError, TypeError) as ex:
-        log.error(f"{msg} {repr(ex)}")
+        _log.error(f"{msg} {repr(ex)}")
 
 
 def glob_safe(string, recursive=False):
