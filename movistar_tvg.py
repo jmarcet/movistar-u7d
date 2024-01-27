@@ -250,7 +250,6 @@ class Cache:
 
     @staticmethod
     def save_end_points(data):
-        log.info(f"Nuevos End Points: {sorted(data.keys())}")
         Cache.save(END_POINTS_FILE, data)
 
     @staticmethod
@@ -317,12 +316,13 @@ class MovistarTV:
 
     @staticmethod
     async def get_service_config():
-        cfg = Cache.load_config()
-        if cfg:
-            if _VERBOSE:
-                log.info(f'Demarcación: {DEMARCATIONS.get(str(cfg["demarcation"]), cfg["demarcation"])}')
-                log.info(f'Paquete contratado: {cfg["tvPackages"]}')
-            return cfg
+        if datetime.now().hour > 0:
+            cfg = Cache.load_config()
+            if cfg:
+                if _VERBOSE:
+                    log.info(f'Demarcación: {DEMARCATIONS.get(str(cfg["demarcation"]), cfg["demarcation"])}')
+                    log.info(f'Paquete contratado: {cfg["tvPackages"]}')
+                return cfg
 
         log.info("Descargando configuración del cliente, parámetros de configuración y perfil del servicio")
         client, params, platform = await asyncio.gather(
