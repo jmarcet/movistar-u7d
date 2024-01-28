@@ -785,7 +785,7 @@ if __name__ == "__main__":
 
     try:
         _IPTV = get_iptv_ip()
-    except Exception:
+    except ValueError:
         log.critical("Unable to connect to Movistar DNS")
         sys.exit(1)
 
