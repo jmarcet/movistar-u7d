@@ -175,15 +175,9 @@ class Cache:
         return local_epg
 
     @staticmethod
-    def load_epg_metadata(refresh):
+    def load_epg_metadata():
         metadata = Cache.load("epg_metadata.json")
         if not metadata:
-            return
-
-        now = datetime.now()
-        update_time = int(now.replace(hour=0, minute=0, second=0).timestamp())
-        log.debug("Fecha de actualización de epg_metadata: [%s] [%d]" % (time.ctime(update_time), update_time))
-        if refresh and int(os.path.getmtime(os.path.join(CACHE_DIR, "epg_metadata.json"))) < update_time:
             return
 
         channels_data = defaultdict(dict)
@@ -270,20 +264,18 @@ class MovistarTV:
 
     @staticmethod
     async def get_genres(tv_wholesaler):
-        log.info("Descargando mapa de géneros")
         return await MovistarTV.get_service_data(f"getEpgSubGenres&tvWholesaler={tv_wholesaler}")
 
     @staticmethod
-    async def get_service_config():
-        if datetime.now().hour > 0:
+    async def get_service_config(refresh):
+        if not refresh or datetime.now().hour > 0:
             cfg = Cache.load_config()
             if cfg:
-                if _VERBOSE:
+                if refresh:
                     log.info(f'Demarcación: {DEMARCATIONS.get(str(cfg["demarcation"]), cfg["demarcation"])}')
                     log.info(f'Paquete contratado: {cfg["tvPackages"]}')
                 return cfg
 
-        log.info("Descargando configuración del cliente, parámetros de configuración y perfil del servicio")
         client, params, platform = await asyncio.gather(
             MovistarTV.get_service_data("getClientProfile"),
             MovistarTV.get_service_data("getConfigurationParams"),
@@ -293,9 +285,8 @@ class MovistarTV:
         if not all((client, params, platform)):
             raise ValueError("IPTV de Movistar no detectado")
 
-        if _VERBOSE:
-            log.info(f'Demarcación: {DEMARCATIONS.get(str(client["demarcation"]), client["demarcation"])}')
-            log.info(f'Paquete contratado: {client["tvPackages"]}')
+        log.info(f'Demarcación: {DEMARCATIONS.get(str(client["demarcation"]), client["demarcation"])}')
+        log.info(f'Paquete contratado: {client["tvPackages"]}')
 
         dvb_entry_point = platform["dvbConfig"]["dvbipiEntryPoint"].split(":")
         uri = platform[list(filter(lambda f: re.search("base.*uri", f, re.IGNORECASE), platform.keys()))[0]]
@@ -476,15 +467,14 @@ class MulticastIPTV:
                 }
                 if i[2][4].tag == "{urn:dvb:ipisdns:2006}ReplacementService":
                     channel_list[channel_id]["replacement"] = int(i[2][4][0].attrib["ServiceName"])
-            except (AttributeError, KeyError, IndexError, TypeError, UnicodeError):
+            except (AttributeError, IndexError, KeyError, TypeError, UnicodeError):
                 pass
-
-        if _VERBOSE:
-            log.info("Canales: %i" % len(channel_list))
 
         return channel_list
 
     def __get_epg_data(self, mcast_grp, mcast_port):
+        log.info("Actualizando metadatos de la EPG. Descargando canales, paquetes y segmentos...")
+
         while True:
             xml = self.get_xml_files(mcast_grp, mcast_port)
             _msg = "Ficheros XML: ["
@@ -497,14 +487,12 @@ class MulticastIPTV:
                 break
             log.warning(f"{_msg} => Incompletos. Reintentando...")
 
-        if _VERBOSE:
-            log.info("Descargando canales y paquetes")
-
         self.__xml_data["channels"] = self.__get_channels(xml["2_0"])
         self.__xml_data["packages"] = self.__get_packages(xml["5_0"])
-        if _VERBOSE:
-            log.info("Descargando índices")
         self.__xml_data["segments"] = self.__get_segments(xml["6_0"])
+
+        stats = tuple(len(self.__xml_data[x]) for x in ("segments", "channels", "packages"))
+        log.info("Días de EPG: %i _ Canales: %i _ Paquetes: %i" % stats)
 
         Cache.save_epg_metadata(self.__xml_data)
 
@@ -529,9 +517,6 @@ class MulticastIPTV:
             except (AttributeError, IndexError, KeyError, TypeError):
                 pass
 
-        if _VERBOSE:
-            log.info(f"Paquetes: {len(package_list)}")
-
         return package_list
 
     @staticmethod
@@ -555,30 +540,28 @@ class MulticastIPTV:
             except (AttributeError, IndexError, KeyError, TypeError):
                 pass
 
-        if _VERBOSE:
-            log.info("Días de EPG: %i" % len(segment_list))
-
         return segment_list
 
     @staticmethod
     def __get_service_provider_ip():
-        if _VERBOSE:
-            _demarcation = MulticastIPTV.get_demarcation_name()
-            log.info("Buscando el Proveedor de Servicios de %s" % _demarcation)
+        if datetime.now().hour > 0:
+            data = Cache.load_service_provider_data()
+            if data:
+                return data
 
-        data = Cache.load_service_provider_data()
-        if not data:
-            xml = MulticastIPTV.get_xml_files(_CONFIG["mcast_grp"], _CONFIG["mcast_port"])["1_0"]
-            result = re.findall(
-                f'DEM_{_CONFIG["demarcation"]}' + r'\..*?Address="(.*?)".*?\s*Port="(.*?)".*?',
-                xml,
-                re.DOTALL,
-            )[0]
-            data = {"mcast_grp": result[0], "mcast_port": result[1]}
-            Cache.save_service_provider_data(data)
+        _demarcation = MulticastIPTV.get_demarcation_name()
+        log.info("Buscando el Proveedor de Servicios de %s..." % _demarcation)
 
-        if _VERBOSE:
-            log.info("Proveedor de Servicios de %s: %s" % (_demarcation, data["mcast_grp"]))
+        xml = MulticastIPTV.get_xml_files(_CONFIG["mcast_grp"], _CONFIG["mcast_port"])["1_0"]
+        result = re.findall(
+            f'DEM_{_CONFIG["demarcation"]}' + r'\..*?Address="(.*?)".*?\s*Port="(.*?)".*?',
+            xml,
+            re.DOTALL,
+        )[0]
+        data = {"mcast_grp": result[0], "mcast_port": result[1]}
+        Cache.save_service_provider_data(data)
+
+        log.info("Proveedor de Servicios de %s: %s" % (_demarcation, data["mcast_grp"]))
 
         return data
 
@@ -758,13 +741,13 @@ class MulticastIPTV:
 
         if not cached_epg:
             Cache.save_epg(new_epg)
-            return new_epg, False
+            return new_epg
 
         expired = self.__expire_epg(cached_epg)
         self.__merge_epg(cached_epg, expired, fixed, new_epg, new_gaps)
 
         Cache.save_epg(cached_epg)
-        return cached_epg, True
+        return cached_epg
 
     async def get_epg_cloud(self):
         data = await MovistarTV.get_service_data("recordingList&mode=0&state=2&firstItem=0&numItems=999")
@@ -807,13 +790,14 @@ class MulticastIPTV:
         self.__epg[int(source.split("_")[1]) - 1] = self.get_xml_files(mcast_grp, mcast_port)
 
     def get_service_provider_data(self, refresh):
-        data = Cache.load_epg_metadata(refresh)
-        if data:
-            self.__xml_data = data
-        else:
-            log.info("Actualizando metadatos de la EPG")
-            connection = self.__get_service_provider_ip()
-            self.__get_epg_data(connection["mcast_grp"], connection["mcast_port"])
+        if not refresh:
+            data = Cache.load_epg_metadata()
+            if data:
+                self.__xml_data = data
+                return data
+
+        connection = self.__get_service_provider_ip()
+        self.__get_epg_data(connection["mcast_grp"], connection["mcast_port"])
         return self.__xml_data
 
     @staticmethod
@@ -1059,7 +1043,7 @@ class XmlTV:
         with codecs.open(file_path, "w", "UTF-8") as f:
             f.write(content)
 
-    async def generate_xml(self, parsed_epg, verbose, local=False):
+    async def generate_xml(self, parsed_epg, local=False):
         root = Element(
             "tv",
             {
@@ -1086,10 +1070,6 @@ class XmlTV:
             for cid in sorted(services, key=lambda key: services[key])
             if any((cid in self.__channels, local)) and cid in parsed_epg
         ]:
-            channel_name = self.__channels[channel_id]["name"].strip(" *")
-            if verbose and _VERBOSE:
-                log.info(f'XML: "{channel_name}"')
-
             _tasks = [
                 self.__build_programme_tag(channel_id, program, parsed_epg[channel_id][program], tz_offset)
                 for program in sorted(parsed_epg[channel_id])
@@ -1170,7 +1150,7 @@ def create_args_parser():
 
 
 async def tvg_main():
-    global _CONFIG, _END_POINT, _DEADLINE, _MIPTV, _SESSION, _VERBOSE, _XMLTV
+    global _CONFIG, _END_POINT, _DEADLINE, _MIPTV, _SESSION, _XMLTV
 
     _DEADLINE = int(datetime.combine(date.today() - timedelta(days=7), datetime.min.time()).timestamp())
 
@@ -1180,16 +1160,15 @@ async def tvg_main():
     if (args.cloud_m3u or args.cloud_recordings) and (args.local_m3u or args.local_recordings):
         return
     if any((args.cloud_m3u, args.cloud_recordings, args.local_m3u, args.local_recordings)):
-        _VERBOSE = False
+        refresh = False
     else:
-        _VERBOSE = True
+        refresh = True
         banner = f"Movistar U7D - TVG v{_version}"
         log.info("-" * len(banner))
         log.info(banner)
         log.info("-" * len(banner))
         log.debug("%s" % " ".join(sys.argv[1:]))
 
-    cached = False
     Cache(full=bool(args.m3u or args.guide))  # Inicializa la caché
 
     _SESSION = aiohttp.ClientSession(
@@ -1201,11 +1180,11 @@ async def tvg_main():
     try:
         # Descarga la configuración del servicio Web de MovistarTV
         _END_POINT = await get_end_point(_conf)
-        _CONFIG = await MovistarTV.get_service_config()
+        _CONFIG = await MovistarTV.get_service_config(refresh)
 
         # Busca el Proveedor de Servicios y descarga los archivos XML: canales, paquetes y segmentos
         _MIPTV = MulticastIPTV()
-        xdata = _MIPTV.get_service_provider_data(refresh=bool(args.m3u or args.guide))
+        xdata = _MIPTV.get_service_provider_data(refresh)
 
         # Crea el objeto XMLTV a partir de los datos descargados del Proveedor de Servicios
         _XMLTV = XmlTV(xdata)
@@ -1217,7 +1196,7 @@ async def tvg_main():
 
         # Descarga los segments de cada EPG_X_BIN.imagenio.es y devuelve la guía decodificada
         if args.guide:
-            epg, cached = await _MIPTV.get_epg()
+            epg = await _MIPTV.get_epg()
 
         elif args.cloud_m3u or args.cloud_recordings or args.local_m3u or args.local_recordings:
             if args.cloud_m3u or args.cloud_recordings:
@@ -1236,7 +1215,7 @@ async def tvg_main():
                 return
 
         # Genera el árbol XMLTV de los paquetes contratados
-        epg_x = await _XMLTV.generate_xml(epg, not cached, args.local_m3u or args.local_recordings)
+        epg_x = await _XMLTV.generate_xml(epg, bool(args.local_m3u or args.local_recordings))
         dom = minidom.parseString(ElTr.tostring(epg_x.getroot()))  # nosec B318
 
         if args.guide:
@@ -1288,7 +1267,7 @@ if __name__ == "__main__":
 
     DEBUG = _conf["DEBUG"]
 
-    _CONFIG = _DEADLINE = _END_POINT = _IPTV = _MIPTV = _SESSION = _VERBOSE = _XMLTV = None
+    _CONFIG = _DEADLINE = _END_POINT = _IPTV = _MIPTV = _SESSION = _XMLTV = None
 
     CACHE_DIR = os.path.join(_conf["HOME"], ".xmltv", "cache")
     EPG_CHANNELS = _conf["EPG_CHANNELS"]
