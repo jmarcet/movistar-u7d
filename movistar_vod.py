@@ -85,13 +85,6 @@ def _archive_recording():
             tmpcover = covers[0]
             cover_ext = os.path.splitext(tmpcover)[1]
             shutil.copy2(tmpcover, _filename + cover_ext)
-            cached_cover = tmpcover.replace(RECORDINGS_TMP, os.path.join(RECORDINGS_TMP, "covers"))
-            dirname = os.path.dirname(cached_cover)
-            if not os.path.exists(dirname):
-                log.debug('Making dir "%s"' % dirname)
-                os.makedirs(dirname)
-            log.debug('Saving cover cache "%s"' % cached_cover)
-            shutil.copy2(tmpcover, cached_cover)
             remove(tmpcover)
 
         shutil.copy2(_tmpname + TMP_EXT, _filename + VID_EXT)
@@ -189,8 +182,23 @@ async def postprocess(archive_params, archive_url, mtime, vod_info):
 
         return int(float(recording_data["format"].get("duration", 0)))
 
+    def _save_cover_cache(metadata):
+        if metadata.get("covers", {}).get("fanart"):
+            cover = os.path.join(RECORDINGS, metadata["covers"]["fanart"])
+        else:
+            cover = os.path.join(RECORDINGS, metadata["cover"])
+
+        if os.path.exists(cover):
+            cached_cover = cover.replace(RECORDINGS, os.path.join(RECORDINGS_TMP, "covers"))
+            dirname = os.path.dirname(cached_cover)
+            if not os.path.exists(dirname):
+                log.debug('Making dir "%s"' % dirname)
+                os.makedirs(dirname)
+            log.debug('Saving cover cache "%s"' % cached_cover)
+            shutil.copy2(cover, cached_cover)
+
     async def _save_metadata(get_cover=False):
-        nonlocal duration, metadata, newest_ts
+        nonlocal duration, metadata
 
         # Only the main cover, to embed in the video file
         if get_cover:
@@ -216,30 +224,35 @@ async def postprocess(archive_params, archive_url, mtime, vod_info):
                 return None, None
 
             cover = metadata["cover"]
+            img_ext = os.path.splitext(cover)[1]
+            img_name, archival_img_name = _tmpname + img_ext, _filename + img_ext
+            metadata["cover"] = archival_img_name[len(RECORDINGS) + 1 :]
             log.debug('Getting cover "%s"' % cover)
-            async with _SESSION_CLOUD.get(f"{URL_COVER}/{cover}") as resp:
-                if resp.status == 200:
-                    log.debug('Got cover "%s"' % cover)
-                    img_ext = os.path.splitext(cover)[1]
-                    img_name, archival_img_name = _tmpname + img_ext, _filename + img_ext
-                    log.debug('Saving cover "%s"' % cover)
-                    async with aiofiles.open(img_name, "wb") as f:
-                        await f.write(await resp.read())
-                    utime(mtime, img_name)
-                    metadata["cover"] = archival_img_name[len(RECORDINGS) + 1 :]
-                else:
-                    log.warning(f'Failed to get cover "{cover}" => {resp}')
-                    return None, None
+            for x in range(2):
+                async with _SESSION_CLOUD.get(f"{URL_COVER}/{cover}") as resp:
+                    if resp.status == 200:
+                        img_data = await resp.read()
+                        if img_data:
+                            log.debug('Got cover "%s"' % cover)
+                            async with aiofiles.open(img_name, "wb") as f:
+                                await f.write(await resp.read())
+                            utime(mtime, img_name)
+                            img_mime = "image/png" if img_ext == ".png" else "image/jpeg"
+                            return img_mime, img_name
 
-            img_mime = "image/png" if img_ext == ".png" else "image/jpeg"
-            return img_mime, img_name
+                log.warning('Failed to get cover "%s" => %s' % (cover, str(resp).splitlines()[0]))
+                if x == 0:
+                    await asyncio.sleep(2)
+
+            return None, None
 
         if not metadata:
             return
 
-        log.debug('metadata="%s"' % metadata)
         # Save all the available metadata
-        if "covers" in metadata:
+        log.debug('metadata="%s"' % metadata)
+
+        if metadata.get("covers"):
             covers = {}
             metadata_dir = os.path.join(os.path.dirname(_filename), "metadata")
 
@@ -248,27 +261,37 @@ async def postprocess(archive_params, archive_url, mtime, vod_info):
 
             for img in metadata["covers"]:
                 cover = metadata["covers"][img]
+                img_ext = os.path.splitext(cover)[1]
+                img_rel = f"{os.path.basename(_filename)}-{img}" + img_ext
+                img_name = os.path.join(metadata_dir, img_rel)
                 log.debug('Getting cover "%s"' % img)
-                async with _SESSION_CLOUD.get(cover) as resp:
-                    if resp.status != 200:
-                        log.debug('Failed to get cover "%s" => %s' % (img, str(resp)))
-                        continue
-                    log.debug('Got cover "%s"' % img)
-                    img_ext = os.path.splitext(cover)[1]
-                    img_rel = f"{os.path.basename(_filename)}-{img}" + img_ext
-                    img_name = os.path.join(metadata_dir, img_rel)
-                    log.debug('Saving cover "%s"' % img)
-                    async with aiofiles.open(img_name, "wb") as f:
-                        await f.write(await resp.read())
-                    utime(mtime, img_name)
-                    covers[img] = os.path.join("metadata", img_rel)
+                for x in range(1 if img == "brand" else 2):  # "brand" covers seem to never be available
+                    async with _SESSION_CLOUD.get(cover) as resp:
+                        if resp.status == 200:
+                            img_data = await resp.read()
+                            if img_data:
+                                log.debug('Got cover "%s"' % img)
+                                async with aiofiles.open(img_name, "wb") as f:
+                                    await f.write(img_data)
+                                covers[img] = img_name[len(RECORDINGS) + 1 :]
+                                utime(mtime, img_name)
+                                break
+
+                    msg = 'Failed to get cover "%s" => %s' % (img, str(resp).splitlines()[0])
+                    log.warning(msg) if img == "fanart" else log.debug(msg)
+                    if not any((x, img == "brand")):
+                        await asyncio.sleep(2)
 
             if covers:
                 metadata["covers"] = covers
-                utime(newest_ts, metadata_dir)
             else:
                 del metadata["covers"]
                 remove(metadata_dir)
+        else:
+            log.debug("No extended covers in metadata")
+
+        if RECORDINGS_TMP:
+            _save_cover_cache(metadata)
 
         metadata = {k: v for k, v in metadata.items() if k not in DROP_KEYS}
         metadata.update({"beginTime": mtime, "duration": duration, "endTime": mtime + duration})
@@ -457,32 +480,32 @@ async def postprocess(archive_params, archive_url, mtime, vod_info):
             remove(*pieces)
 
     async def _step_5():
-        nonlocal archive_params, duration, mtime, newest_ts
+        nonlocal archive_params, duration, mtime
 
         duration = await _get_duration(_tmpname + TMP_EXT)
         length = f"[{str(timedelta(seconds=duration))}s]"
         if COMSKIP and _args.time != duration:
             cmrcls = f"{str(timedelta(seconds=_args.time - duration))}s]"
             length = f" [{str(timedelta(seconds=_args.time))}s - {cmrcls} = {length}"
-
         log.info(DIV_LOG % ("POSTPROCESS #5  - Archiving recording", length))
+
         _archive_recording()
+
+        await _save_metadata()
 
         newest = sorted(glob_safe(f"{os.path.dirname(_filename)}/*{VID_EXT}"), key=os.path.getmtime)[-1]
         newest_ts = os.path.getmtime(newest)
+        utime(mtime, *glob_safe(f"{_filename}.*"))
+        utime(newest_ts, os.path.join(os.path.dirname(_filename), "metadata"), os.path.dirname(_filename))
 
-        await _save_metadata()
         if _args.index:
             resp = await _SESSION.put(archive_url, params=archive_params)
             if resp.status != 200:
                 raise ValueError("Failed indexing recording")
 
-        utime(mtime, *glob_safe(f"{_filename}.*"))
-        utime(newest_ts, os.path.dirname(_filename))
-
     await asyncio.sleep(0.1)  # Prioritize the main loop
 
-    duration = metadata = newest_ts = proc = None
+    duration = metadata = proc = None
     tags = ["-metadata", 'service_name="%s"' % vod_info["channelName"]]
     tags += ["-metadata", 'service_provider="Movistar IPTV"']
     tags += ["-metadata:s:s:0", "language=esp", "-metadata:s:s:1", "language=und"]

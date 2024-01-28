@@ -1017,9 +1017,13 @@ class XmlTV:
                     tag_category = SubElement(tag_programme, "category", LANG["en"])
                     tag_category.text = THEME_MAP[ext_info["theme"]]
 
-            if ext_info["cover"]:
-                src = f"{U7D_URL}/{'recording/?' if local else 'Covers/'}" + ext_info["cover"]
-                SubElement(tag_programme, "icon", {"src": src})
+            src = f"{U7D_URL}/{'recording/?' if local else 'Covers/'}" + ext_info["cover"]
+            if ext_info.get("covers", {}).get("fanart"):
+                if not local:
+                    src = f"{src}?fanart=" + os.path.basename(ext_info["covers"]["fanart"])
+                else:
+                    src = f"{U7D_URL}/recording/?" + ext_info["covers"]["fanart"]
+            SubElement(tag_programme, "icon", {"src": src})
 
             if is_serie and program["episode"]:
                 tag_epnum = SubElement(tag_programme, "episode-num", {"system": "xmltv_ns"})

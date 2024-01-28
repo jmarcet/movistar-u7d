@@ -191,14 +191,22 @@ async def create_covers_cache():
 
     for nfo in nfos:
         cover = nfo.replace(NFO_EXT, ".jpg")
-        if os.path.exists(cover):
-            cached_cover = cover.replace(RECORDINGS, covers_path)
-            path = os.path.dirname(cached_cover)
-            parent = os.path.split(path)[0]
+        fanart = os.path.join(
+            os.path.dirname(cover), "metadata", os.path.basename(cover).replace(".jpg", "-fanart.jpg")
+        )
 
-            covers.add((cover, cached_cover))
-            for x in (x for x in (path, parent) if x != covers_path):
-                paths.add(x)
+        if os.path.exists(fanart):
+            cover = fanart
+        elif not os.path.exists(cover):
+            continue
+
+        cached_cover = cover.replace(RECORDINGS, covers_path)
+        path = os.path.dirname(cached_cover)
+        parent = os.path.split(path)[0]
+
+        covers.add((cover, cached_cover))
+        for x in (x for x in (path, parent) if x != covers_path):
+            paths.add(x)
 
     os.makedirs(covers_path)
     for path in sorted(paths):
@@ -1290,17 +1298,12 @@ async def upgrade_recordings():
     if not RECORDINGS_UPGRADE:
         return
 
-    log.warning("UPGRADING RECORDINGS METADATA")
+    log.info(f"UPGRADING RECORDINGS METADATA: {RECORDINGS_UPGRADE}")
     covers = wrong = 0
 
-    for recording in sorted(glob(f"{RECORDINGS}/**/*{VID_EXT}", recursive=True)):
-        basename = os.path.splitext(recording)[0]
-        nfo_file = basename + NFO_EXT
-
-        if not os.path.exists(nfo_file):
-            log.error(f"Dropping recording. Could not find {nfo_file=}")
-            remove(*get_recording_files(basename))
-            continue
+    for nfo_file in sorted(glob(f"{RECORDINGS}/**/*{NFO_EXT}", recursive=True)):
+        basename = nfo_file.split(NFO_EXT)[0]
+        recording = basename + VID_EXT
 
         mtime = int(os.path.getmtime(recording))
 
@@ -1309,54 +1312,72 @@ async def upgrade_recordings():
 
         xml = "\n".join([line for line in xml.splitlines() if "5S_signLanguage" not in line])
 
-        cmd = ["ffprobe", "-i", recording, "-show_entries", "format=duration"]
-        cmd += ["-v", "quiet", "-of", "json"]
-        proc = await asyncio.create_subprocess_exec(*cmd, stdin=DEVNULL, stdout=PIPE, stderr=DEVNULL)
-        recording_data = ujson.loads((await proc.communicate())[0].decode())
-        duration = round(float(recording_data["format"]["duration"]))
-
         try:
             nfo = xmltodict.parse(xml)["metadata"]
         except Exception as ex:
             log.error(f"Metadata malformed: {nfo_file=} => {repr(ex)}")
-            raise
-
-        _start, _end, _exp = [nfo[x] for x in ("beginTime", "endTime", "expDate")]
-        _start, _end, _exp = [int(int(x) / 1000) if len(x) == 13 else int(x) for x in (_start, _end, _exp)]
-
-        nfo.update({"beginTime": mtime, "duration": duration, "endTime": mtime + duration, "expDate": _exp})
-        nfo.update({"name": os.path.basename(basename)})
-
-        [nfo.pop(key) for key in DROP_KEYS if key in nfo]
-
-        if os.path.exists(basename + ".jpg"):
-            nfo.update({"cover": basename[len(RECORDINGS) + 1 :] + ".jpg"})
-            covers += 1
-        else:
-            log.error(f'No cover found: "{basename}"')
-            remove(*get_recording_files(basename))
             continue
 
-        if _start != mtime:
-            wrong += 1
+        if abs(RECORDINGS_UPGRADE) == 2:
+            cmd = ["ffprobe", "-i", recording, "-show_entries", "format=duration"]
+            cmd += ["-v", "quiet", "-of", "json"]
+            proc = await asyncio.create_subprocess_exec(*cmd, stdin=DEVNULL, stdout=PIPE, stderr=DEVNULL)
+            recording_data = ujson.loads((await proc.communicate())[0].decode())
+            duration = round(float(recording_data["format"]["duration"]))
+
+            _start, _end, _exp = [nfo[x] for x in ("beginTime", "endTime", "expDate")]
+            _start, _end, _exp = [int(int(x) / 1000) if len(x) == 13 else int(x) for x in (_start, _end, _exp)]
+
+            nfo.update({"beginTime": mtime, "duration": duration, "endTime": mtime + duration, "expDate": _exp})
+
+            if _start != mtime:
+                wrong += 1
+
+        [nfo.pop(key) for key in set(nfo) & set(DROP_KEYS)]
+
+        nfo["name"] = os.path.basename(basename)
+
+        if not nfo.get("cover", "") == basename[len(RECORDINGS) + 1 :] + ".jpg":
+            nfo["cover"] = basename[len(RECORDINGS) + 1 :] + ".jpg"
+            covers += 1
+        if not os.path.exists(basename + ".jpg"):
+            log.warning('Cover not found: "%s"' % basename[len(RECORDINGS) + 1 :] + ".jpg")
+
+        drop_covers, new_covers = [], {}
+        if nfo.get("covers"):
+            for cover in nfo["covers"]:
+                if not nfo["covers"][cover].startswith("metadata"):
+                    continue
+                covers += 1
+                cover_path = os.path.join(os.path.dirname(basename), nfo["covers"][cover])
+                if not os.path.exists(cover_path):
+                    log.warning('Cover not found: "%s"' % cover_path[len(RECORDINGS) + 1 :])
+                    drop_covers.append(cover)
+                    continue
+                new_covers[cover] = cover_path[len(RECORDINGS) + 1 :]
+        elif "covers" in nfo:
+            nfo.pop("covers")
+
+        if new_covers:
+            nfo["covers"] = new_covers
+        elif drop_covers:
+            [nfo["covers"].pop(cover) for cover in drop_covers]
 
         try:
             xml = xmltodict.unparse({"metadata": nfo}, pretty=True)
         except Exception as ex:
             log.error(f"Metadata malformed: {nfo_file=} => {repr(ex)}")
-            remove(*get_recording_files(basename))
             continue
 
-        async with aiofiles.open(nfo_file + ".tmp", "w", encoding="utf8") as f:
-            await f.write(xml)
+        if RECORDINGS_UPGRADE > 0:
+            async with aiofiles.open(nfo_file + ".tmp", "w", encoding="utf8") as f:
+                await f.write(xml)
 
-        remove(nfo_file)
-        os.rename(nfo_file + ".tmp", nfo_file)
-        utime(mtime, nfo_file)
+            remove(nfo_file)
+            os.rename(nfo_file + ".tmp", nfo_file)
+            utime(mtime, nfo_file)
 
     log.info(f"Updated #{covers} covers & Fixed #{wrong} timestamps")
-
-    await update_recordings(True)
 
 
 if __name__ == "__main__":

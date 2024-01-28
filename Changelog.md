@@ -8,6 +8,8 @@
   - Las imágenes de docker están disponibles para `amd64, `arm64` y `arm`, con nuevas etiquetas `stable` y `unstable` y nuevas versiones `slim`, `stable-slim` y `unstable-slim`, sin `ffmpeg`/`ffprobe`/`comskip` y mucho más pequeñas.
   - Para Windows el `comskip` se debe [descargar](https://www.kaashoek.com/files/) por separado y copiarlo o bien junto a `mu7d` o bien en una ruta que esté en el `PATH`, es decir, que con escribir `comskip` en un `CMD`/`PowerShell` lo encuentre y ejecute.
 
+- Fanart como imagen de los programas cuando está disponible, en formato panorámico y con mucha mejor calidad.
+
 - Sistema de mantenimiento de la caché de la EPG reescrito. Ya no debería haber huecos ni errores.
 
 - Actualizaciones de la EPG mucho más rápidas.
