@@ -735,7 +735,6 @@ async def reindex_recordings():
         basename = nfo_file[:-13]
         if not any((os.path.exists(basename + ext) for ext in VID_EXTS)):
             log.error(f"No recording found: {basename=} {nfo_file=}")
-            # remove(*get_recording_files(basename))
             continue
 
         try:
@@ -745,7 +744,6 @@ async def reindex_recordings():
             nfo = xmltodict.parse(xml)["metadata"]
         except Exception as ex:
             log.error(f"Cannot read {nfo_file=} => {repr(ex)}")
-            # remove(*get_recording_files(basename))
             continue
 
         channel_id, duration, timestamp = map(int, (nfo["serviceUID"], nfo["duration"], nfo["beginTime"]))
