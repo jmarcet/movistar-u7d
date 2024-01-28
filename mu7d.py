@@ -50,6 +50,7 @@ UA = "libcurl-agent/1.0 [IAL] WidgetManager Safari/538.1 CAP:803fd12a 1"
 UA_U7D = f"movistar-u7d v{_version} [{sys.platform}] [{EXT}]"
 URL_BASE = "http://html5-static.svc.imagenio.telefonica.net/appclientv/nux/incoming/epg"
 URL_COVER = f"{URL_BASE}/covers/programmeImages/portrait/290x429"
+URL_FANART = "http://recortes.svc.imagenio.telefonica.net/recorte/n/bigtv_fanart"
 URL_LOGO = f"{URL_BASE}/channelLogo"
 VID_EXTS = (".avi", ".mkv", ".mp4", ".mpeg", ".mpg", ".ts")
 VID_EXTS_KEEP = (*VID_EXTS, ".tmp", ".tmp2")
@@ -422,8 +423,8 @@ def mu7d_config():
     else:
         conf["RECORDINGS_TMP"] = conf["RECORDINGS_TMP"].rstrip("/").rstrip("\\")
 
-    if "RECORDINGS_UPGRADE" not in conf:
-        conf["RECORDINGS_UPGRADE"] = False
+    if "RECORDINGS_UPGRADE" not in conf or conf["RECORDINGS_UPGRADE"] not in (-2, -1, 0, 1, 2):
+        conf["RECORDINGS_UPGRADE"] = 0
 
     if not WIN32 and conf["IPTV_BW_SOFT"]:
         conf["RECORDINGS_THREADS"] = 9999

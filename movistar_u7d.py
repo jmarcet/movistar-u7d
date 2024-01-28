@@ -29,7 +29,7 @@ from sanic.server.protocols.http_protocol import HttpProtocol
 from warnings import filterwarnings
 
 from mu7d import ATOM, BUFF, CHUNK, DATEFMT, EPG_URL, FMT, MIME_M3U, MIME_WEBM
-from mu7d import UA, URL_COVER, URL_LOGO, VID_EXTS, WIN32, YEAR_SECONDS
+from mu7d import UA, URL_COVER, URL_FANART, URL_LOGO, VID_EXTS, WIN32, YEAR_SECONDS
 from mu7d import add_logfile, cleanup_handler, find_free_port, get_end_point
 from mu7d import get_iptv_ip, get_vod_info, mu7d_config, ongoing_vods, _version
 from movistar_vod import Vod
@@ -368,27 +368,33 @@ async def handle_guide_local(request):
 @app.route("/Logos/<logo>", methods=["GET", "HEAD"], name="images_logos")
 async def handle_images(request, cover=None, logo=None, path=None):
     log.debug("[%s] %s %s" % (request.ip, request.method, request.url))
-    if logo and logo.split(".")[0].isdigit():
-        orig_url = f"{URL_LOGO}/{logo}"
-    elif path and cover and cover.split(".")[0].isdigit():
-        orig_url = f"{URL_COVER}/{path}/{cover}"
+    if path and cover:
+        urls = [f'{URL_FANART}/{request.args.get("fanart")}'] if "?fanart=" in request.url else []
+        urls += [f"{URL_COVER}/{path}/{cover}"]
+    elif logo:
+        urls = [f"{URL_LOGO}/{logo}"]
     else:
         raise NotFound(f"Requested URL {request.raw_url.decode()} not found")
 
     if request.method == "HEAD":
         return response.HTTPResponse(content_type="image/jpeg", status=200)
 
-    try:
-        async with _SESSION_LOGOS.get(orig_url) as r:
-            if r.status == 200:
-                logo_data = await r.read()
-                headers = {}
-                headers.setdefault("Content-Disposition", f'attachment; filename="{logo}"')
-                return response.HTTPResponse(
-                    body=logo_data, content_type="image/jpeg", headers=headers, status=200
-                )
-    except (ClientConnectionError, ClientOSError, ServerDisconnectedError):
-        pass
+    for url in urls:
+        try:
+            async with _SESSION_LOGOS.get(url) as r:
+                if r.status == 200:
+                    logo_data = await r.read()
+                    if logo_data:
+                        return response.HTTPResponse(
+                            body=logo_data,
+                            content_type="image/jpeg" if not url.endswith(".png") else "image/png",
+                            headers={"Content-Disposition": f'attachment; filename="{os.path.basename(url)}"'},
+                        )
+                    log.warning("Got empty image => %s" % str(r).splitlines()[0])
+                else:
+                    log.warning("Could not get image => %s" % str(r).splitlines()[0])
+        except (ClientConnectionError, ClientOSError, ServerDisconnectedError) as ex:
+            log.warning("Could not get image => %s" % str(ex))
     raise NotFound(f"Requested URL {request.raw_url.decode()} not found")
 
 
