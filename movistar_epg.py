@@ -16,6 +16,7 @@ import unicodedata
 import urllib.parse
 import xmltodict
 
+from aiohttp.client_exceptions import ClientConnectionError, ClientOSError, ServerDisconnectedError
 from asyncio.exceptions import CancelledError
 from asyncio.subprocess import DEVNULL, PIPE
 from collections import defaultdict
@@ -169,7 +170,7 @@ async def alive():
             try:
                 await session.get("https://openwrt.marcet.info/u7d/alive")
                 break
-            except Exception:
+            except (ClientConnectionError, ClientOSError, ServerDisconnectedError):
                 await asyncio.sleep(6)
 
 
