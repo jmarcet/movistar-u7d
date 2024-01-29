@@ -388,13 +388,13 @@ def mu7d_config():
     if "LOG_TO_FILE" not in conf:
         conf["LOG_TO_FILE"] = os.path.join(conf["HOME"], "mu7d.log")
 
-    if "MKV_OUTPUT" not in conf:
+    if "MKV_OUTPUT" not in conf or not isinstance(conf["MKV_OUTPUT"], bool):
         conf["MKV_OUTPUT"] = False
 
-    if "NO_SUBS" not in conf:
+    if "NO_SUBS" not in conf or not isinstance(conf["NO_SUBS"], bool):
         conf["NO_SUBS"] = False
 
-    if "NO_VERBOSE_LOGS" not in conf:
+    if "NO_VERBOSE_LOGS" not in conf or not isinstance(conf["NO_VERBOSE_LOGS"], bool):
         conf["NO_VERBOSE_LOGS"] = False
 
     if "RECORDINGS" not in conf or not all((which("ffmpeg"), which("ffprobe"))):
@@ -402,10 +402,10 @@ def mu7d_config():
     else:
         conf["RECORDINGS"] = conf["RECORDINGS"].rstrip("/").rstrip("\\")
 
-    if "RECORDINGS_M3U" not in conf:
+    if "RECORDINGS_M3U" not in conf or not isinstance(conf["RECORDINGS_M3U"], bool):
         conf["RECORDINGS_M3U"] = True
 
-    if "RECORDINGS_REINDEX" not in conf:
+    if "RECORDINGS_REINDEX" not in conf or not isinstance(conf["RECORDINGS_REINDEX"], bool):
         conf["RECORDINGS_REINDEX"] = False
 
     if "RECORDINGS_TRANSCODE_INPUT" not in conf:
@@ -428,13 +428,13 @@ def mu7d_config():
 
     if not WIN32 and conf["IPTV_BW_SOFT"]:
         conf["RECORDINGS_THREADS"] = 9999
-    elif "RECORDINGS_THREADS" not in conf:
+    elif "RECORDINGS_THREADS" not in conf or not isinstance(conf["RECORDINGS_THREADS"], int):
         conf["RECORDINGS_THREADS"] = 4
 
-    if "U7D_PORT" not in conf:
+    if "U7D_PORT" not in conf or not isinstance(conf["U7D_PORT"], int):
         conf["U7D_PORT"] = 8888
 
-    if "U7D_THREADS" not in conf:
+    if "U7D_THREADS" not in conf or not isinstance(conf["U7D_THREADS"], int):
         conf["U7D_THREADS"] = 1
 
     conf["CHANNELS"] = os.path.join(conf["HOME"], "MovistarTV.m3u")
