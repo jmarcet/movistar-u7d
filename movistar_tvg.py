@@ -1025,10 +1025,6 @@ class XmlTV:
                     src = f"{U7D_URL}/recording/?" + ext_info["covers"]["fanart"]
             SubElement(tag_programme, "icon", {"src": src})
 
-            if is_serie and program["episode"]:
-                tag_epnum = SubElement(tag_programme, "episode-num", {"system": "xmltv_ns"})
-                tag_epnum.text = "%d.%d." % (max(0, program["season"] - 1), max(0, program["episode"] - 1))
-
         tag_rating = SubElement(tag_programme, "rating", {"system": "pl"})
         tag_value = SubElement(tag_rating, "value")
         tag_value.text = AGE_RATING[program["age_rating"]]
