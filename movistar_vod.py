@@ -331,7 +331,9 @@ async def postprocess(archive_params, archive_url, mtime, vod_info):
         msg = f"POSTPROCESS #1  - Recording is {'INCOMPLETE' if bad else 'COMPLETE'}"
         msg = DIV_LOG % (msg, log_suffix)
 
-        log.warning(msg) if bad else log.info(msg)
+        if bad:
+            raise ValueError(msg)
+        log.info(msg)
 
     async def _step_2():
         global COMSKIP
