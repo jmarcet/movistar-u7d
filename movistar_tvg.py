@@ -31,7 +31,7 @@ from queue import Queue
 from xml.dom import minidom  # nosec B408
 from xml.etree.ElementTree import Element, ElementTree, SubElement  # nosec B405
 
-from mu7d import DATEFMT, END_POINTS_FILE, FMT, UA, UA_U7D, WIN32, YEAR_SECONDS
+from mu7d import DATEFMT, END_POINTS_FILE, FMT, UA, UA_U7D, WIN32, YEAR_SECONDS, IPTVNetworkError
 from mu7d import add_logfile, get_end_point, get_iptv_ip, get_local_info, get_title_meta, mu7d_config, _version
 
 
@@ -283,7 +283,7 @@ class MovistarTV:
         )
 
         if not all((client, params, platform)):
-            raise ValueError("IPTV de Movistar no detectado")
+            raise IPTVNetworkError("IPTV de Movistar no detectado")
 
         log.info(f'Demarcación: {DEMARCATIONS.get(str(client["demarcation"]), client["demarcation"])}')
         log.info(f'Paquete contratado: {client["tvPackages"]}')
@@ -833,7 +833,7 @@ class MulticastIPTV:
                     log.error(msg)
                     failed += 1
                     if failed == 3:
-                        raise ValueError(msg)
+                        raise IPTVNetworkError(msg)
             # Loop until firstfile
             while loop:
                 try:
@@ -861,10 +861,8 @@ class MulticastIPTV:
             if key in dict1:
                 if isinstance(dict1[key], dict) and isinstance(dict2[key], dict):
                     MulticastIPTV.merge_dicts(dict1[key], dict2[key], path + [str(key)])
-                elif dict1[key] == dict2[key]:
-                    pass
-                else:
-                    raise ValueError("Conflicto en %s" % ".".join(path + [str(key)]))
+                elif dict1[key] != dict2[key]:
+                    raise IPTVNetworkError("Conflicto en %s" % ".".join(path + [str(key)]))
             else:
                 dict1[key] = dict2[key]
         return dict1
@@ -1293,9 +1291,9 @@ if __name__ == "__main__":
             asyncio.run(tvg_main())
     except (CancelledError, KeyboardInterrupt):
         sys.exit(1)
+    except IPTVNetworkError as err:
+        log.critical(err)
+        sys.exit(1)
     except Timeout:
         log.critical("Cannot be run more than once!")
-        sys.exit(1)
-    except ValueError as err:
-        log.critical(err)
         sys.exit(1)

@@ -29,8 +29,8 @@ from sanic_prometheus import monitor
 from sanic.exceptions import Forbidden, NotFound
 from warnings import filterwarnings
 
-from mu7d import DATEFMT, DIV_ONE, DIV_TWO, DROP_KEYS, EXT, FMT
-from mu7d import NFO_EXT, UA_U7D, VID_EXTS, WIN32, YEAR_SECONDS
+from mu7d import DATEFMT, DIV_ONE, DIV_TWO, DROP_KEYS, EXT, FMT, NFO_EXT
+from mu7d import UA_U7D, VID_EXTS, WIN32, YEAR_SECONDS, IPTVNetworkError
 from mu7d import add_logfile, cleanup_handler, find_free_port, get_iptv_ip, get_local_info, get_safe_filename
 from mu7d import glob_safe, launch, mu7d_config, ongoing_vods, remove, utime, _version
 
@@ -1478,9 +1478,9 @@ if __name__ == "__main__":
             )
     except (CancelledError, ConnectionResetError, KeyboardInterrupt):
         sys.exit(1)
+    except IPTVNetworkError as err:
+        log.critical(err)
+        sys.exit(1)
     except Timeout:
         log.critical("Cannot be run more than once!")
-        sys.exit(1)
-    except ValueError as err:
-        log.critical(err)
         sys.exit(1)
