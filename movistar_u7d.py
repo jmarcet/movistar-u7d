@@ -28,8 +28,8 @@ from sanic.models.server_types import ConnInfo
 from sanic.server.protocols.http_protocol import HttpProtocol
 from warnings import filterwarnings
 
-from mu7d import ATOM, BUFF, CHUNK, DATEFMT, EPG_URL, FMT, MIME_M3U, MIME_WEBM
-from mu7d import UA, URL_COVER, URL_FANART, URL_LOGO, VID_EXTS, WIN32, YEAR_SECONDS
+from mu7d import ATOM, BUFF, CHUNK, DATEFMT, EPG_URL, FMT, MIME_M3U, MIME_WEBM, UA
+from mu7d import URL_COVER, URL_FANART, URL_LOGO, VID_EXTS, WIN32, YEAR_SECONDS, IPTVNetworkError
 from mu7d import add_logfile, cleanup_handler, find_free_port, get_end_point
 from mu7d import get_iptv_ip, get_vod_info, mu7d_config, ongoing_vods, _version
 from movistar_vod import Vod
@@ -664,9 +664,9 @@ if __name__ == "__main__":
             )
     except (AttributeError, CancelledError, KeyboardInterrupt):
         sys.exit(1)
+    except IPTVNetworkError as err:
+        log.critical(err)
+        sys.exit(1)
     except Timeout:
         log.critical("Cannot be run more than once!")
-        sys.exit(1)
-    except ValueError as err:
-        log.critical(err)
         sys.exit(1)

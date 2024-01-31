@@ -27,12 +27,16 @@ from datetime import timedelta
 from filelock import FileLock
 
 from mu7d import BUFF, CHUNK, DATEFMT, DIV_LOG, DROP_KEYS, EPG_URL, FMT
-from mu7d import NFO_EXT, UA, URL_COVER, WIN32, YEAR_SECONDS
+from mu7d import NFO_EXT, UA, URL_COVER, WIN32, YEAR_SECONDS, IPTVNetworkError
 from mu7d import add_logfile, find_free_port, get_end_point, get_iptv_ip, get_safe_filename, get_title_meta
 from mu7d import get_vod_info, glob_safe, mu7d_config, ongoing_vods, remove, utime, _version
 
 
 log = logging.getLogger("VOD")
+
+
+class RecordingError(Exception):
+    """Local recording error"""
 
 
 class RtspClient:
@@ -106,7 +110,7 @@ def _cleanup(*exts, meta=False):
 
 
 async def _cleanup_recording(exception, start=0):
-    msg = str(exception) if isinstance(exception, ValueError) else repr(exception)
+    msg = str(exception) if isinstance(exception, RecordingError) else repr(exception)
     msg = "Cancelled" if isinstance(exception, CancelledError) else msg
     log_suffix = (" @ [%6ss] / [%5ss]" % ("~" + str(int(time.time() - start)), str(_args.time))) if start else ""
     msg_len = 64 if log_suffix else 87
@@ -167,7 +171,7 @@ async def postprocess(archive_params, archive_url, mtime, vod_info):
             stdout = ': "%s"' % stdout.decode().replace("\n", " ").strip() if stdout else ""
 
             if any((not WIN32 and proc.returncode == -9, WIN32 and proc.returncode == 15)):
-                raise ValueError(msg + stdout)
+                raise RecordingError(msg + stdout)
 
             if msg + stdout:
                 log.error(msg + stdout)
@@ -317,7 +321,7 @@ async def postprocess(archive_params, archive_url, mtime, vod_info):
 
         resp = await _SESSION.options(archive_url, params=archive_params)  # signal recording ended
         if resp.status != 200:
-            raise ValueError("Too short, missing [%5ss]" % str(_args.time - archive_params["recorded"]))
+            raise RecordingError("Too short, missing [%5ss]" % str(_args.time - archive_params["recorded"]))
 
     async def _step_1():
         nonlocal archive_params, duration
@@ -332,7 +336,7 @@ async def postprocess(archive_params, archive_url, mtime, vod_info):
         msg = DIV_LOG % (msg, log_suffix)
 
         if bad:
-            raise ValueError(msg)
+            raise RecordingError(msg)
         log.info(msg)
 
     async def _step_2():
@@ -353,7 +357,7 @@ async def postprocess(archive_params, archive_url, mtime, vod_info):
             if mtime != new_mtime:
                 msg = DIV_LOG % ("POSTPROCESS #2  - Event CHANGED", f"beginTime=[{new_mtime - mtime:+}s]")
                 if new_mtime < mtime:
-                    raise ValueError(msg)
+                    raise RecordingError(msg)
                 log.info(msg)
 
                 cmd += ["-ss", str(timedelta(seconds=new_mtime - mtime))]
@@ -503,7 +507,7 @@ async def postprocess(archive_params, archive_url, mtime, vod_info):
         if _args.index:
             resp = await _SESSION.put(archive_url, params=archive_params)
             if resp.status != 200:
-                raise ValueError("Failed indexing recording")
+                raise RecordingError("Failed indexing recording")
 
     await asyncio.sleep(0.1)  # Prioritize the main loop
 
@@ -533,7 +537,7 @@ async def postprocess(archive_params, archive_url, mtime, vod_info):
 
         log.debug("POSTPROCESS ENDED")
 
-    except (CancelledError, ClientConnectionError, ClientOSError, ServerDisconnectedError, ValueError) as ex:
+    except (CancelledError, ClientConnectionError, ClientOSError, RecordingError, ServerDisconnectedError) as ex:
         await asyncio.shield(_cleanup_recording(ex))
 
     finally:
@@ -810,8 +814,8 @@ if __name__ == "__main__":
 
     try:
         _IPTV = get_iptv_ip()
-    except ValueError:
-        log.critical("Unable to connect to Movistar DNS")
+    except IPTVNetworkError as err:
+        log.critical(err)
         sys.exit(1)
 
     if not _args.client_port:

@@ -117,6 +117,14 @@ title_1_regex = re.compile(r"(.+(?!T\d)) +T(\d+)(?: *Ep[isode.]+ (\d+))?[ -]*(.*
 title_2_regex = re.compile(r"(.+(?!T\d))(?: +T(\d+))? *(?:[Ee]p[isode.]+|[Cc]ap[iítulo.]*) ?(\d+)[ .-]*(.*)")
 
 
+class IPTVNetworkError(Exception):
+    """Connectivity with Movistar IPTV network error"""
+
+
+class LocalNetworkError(Exception):
+    """Local network error"""
+
+
 def add_logfile(logger, logfile, loglevel):
     try:
         fh = logging.FileHandler(logfile)
@@ -166,7 +174,7 @@ def get_iptv_ip():
             s.connect((IPTV_DNS, 53))
             return s.getsockname()[0]
         except OSError:
-            raise ValueError("Imposible conectar con DNS de Movistar IPTV")
+            raise IPTVNetworkError("Imposible conectar con DNS de Movistar IPTV")
 
 
 def get_lan_ip():
@@ -565,9 +573,9 @@ if __name__ == "__main__":
                     log.info(f"IPTV address: {iptv_ip}")
                     break
                 log.info("IPTV address: waiting for interface to be routed...")
-            except ValueError as ex:
+            except IPTVNetworkError as err:
                 if uptime < 180:
-                    log.info(ex)
+                    log.info(err)
                 else:
                     raise
             sleep(5)
@@ -576,11 +584,11 @@ if __name__ == "__main__":
         epg_uri = urllib.parse.urlparse(EPG_URL)
         with closing(socket.socket(socket.AF_INET, socket.SOCK_STREAM)) as s:
             if s.connect_ex((epg_uri.hostname, epg_uri.port)) == 0:
-                raise ValueError(f"El puerto {epg_uri.netloc} está ocupado")
+                raise LocalNetworkError(f"El puerto {epg_uri.netloc} está ocupado")
 
         with closing(socket.socket(socket.AF_INET, socket.SOCK_STREAM)) as s:
             if s.connect_ex((_conf["LAN_IP"], _conf["U7D_PORT"])) == 0:
-                raise ValueError(f"El puerto {_conf['LAN_IP']}:{_conf['U7D_PORT']} está ocupado")
+                raise LocalNetworkError(f"El puerto {_conf['LAN_IP']}:{_conf['U7D_PORT']} está ocupado")
 
     def _get_iptv_iface_ip():
         iptv_iface = _conf["IPTV_IFACE"]
@@ -598,7 +606,7 @@ if __name__ == "__main__":
                         log.info("IPTV interface: waiting for it...")
                         sleep(5)
                     else:
-                        raise ValueError(f"Unable to get address from interface {iptv_iface}...")
+                        raise LocalNetworkError(f"Unable to get address from interface {iptv_iface}...")
 
     _conf = mu7d_config()
 
@@ -639,8 +647,8 @@ if __name__ == "__main__":
             asyncio.run(u7d_main())
     except (CancelledError, KeyboardInterrupt):
         sys.exit(1)
-    except ValueError as ex:
-        log.critical(ex)
+    except (IPTVNetworkError, LocalNetworkError) as err:
+        log.critical(err)
         sys.exit(1)
     except Timeout:
         log.critical("Cannot be run more than once!")
