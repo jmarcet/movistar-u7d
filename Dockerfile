@@ -55,19 +55,20 @@ COPY patches/comskip.patch .
 # mesa-va-drivers: needed for AMD VAAPI
 RUN --mount=type=cache,sharing=locked,target=/var/cache/apt \
     if [ "$BUILD_TYPE" = "full" ]; then \
-        echo "deb [arch=$( dpkg --print-architecture )] https://repo.jellyfin.org/$( awk -F'=' '/^ID=/{ print $NF }' /etc/os-release ) $( awk -F'=' '/^VERSION_CODENAME=/{ print $NF }' /etc/os-release ) main" | tee /etc/apt/sources.list.d/jellyfin.list \
-        && VER=$( wget -q -O- https://repo.jellyfin.org/releases/server/debian/versions/jellyfin-ffmpeg/ | tac | grep -m 1 'href="6' | cut -d'"' -f2 ) \
-        && FFMPEG=$( wget -q -O- https://repo.jellyfin.org/releases/server/debian/versions/jellyfin-ffmpeg/${VER} | grep -m 1 "bookworm_${TARGETARCH}\(hf\)\?.deb" | cut -d'"' -f2 ) \
-        && wget https://repo.jellyfin.org/releases/server/debian/versions/jellyfin-ffmpeg/${VER}${FFMPEG} \
+        APT_SRC=/etc/apt/sources.list.d/jellyfin.sources \
+        && echo "Types: deb" > ${APT_SRC} \
+        && echo "URIs: https://repo.jellyfin.org/debian" >> ${APT_SRC} \
+        && echo "Suites: $( awk -F'=' '/^VERSION_CODENAME=/{ print $NF }' /etc/os-release )" >> ${APT_SRC} \
+        && echo "Components: main" >> ${APT_SRC} \
+        && echo "Architectures: $( dpkg --print-architecture )" >> ${APT_SRC} \
+        && echo "Signed-By: /etc/apt/keyrings/jellyfin.gpg" >> ${APT_SRC} \
         && apt-get install --no-install-recommends --no-install-suggests -y gnupg \
-        && wget -O - https://repo.jellyfin.org/jellyfin_team.gpg.key | apt-key add - \
+        && wget -O- https://repo.jellyfin.org/jellyfin_team.gpg.key | gpg --dearmor --yes --output /etc/apt/keyrings/jellyfin.gpg \
         && apt-get update \
         && apt-get install --no-install-recommends --no-install-suggests -y \
-           jellyfin-ffmpeg5 \
+           jellyfin-ffmpeg6 \
            mesa-va-drivers \
-        && apt-get purge -y gnupg jellyfin-ffmpeg5 \
-        && dpkg -i ${FFMPEG} \
-        && rm -f ${FFMPEG} \
+        && apt-get purge -y gnupg \
         && apt-get install --no-install-recommends --no-install-suggests -y \
            autoconf \
            automake \
