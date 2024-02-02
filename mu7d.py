@@ -405,6 +405,9 @@ def mu7d_config():
     if "NO_VERBOSE_LOGS" not in conf or not isinstance(conf["NO_VERBOSE_LOGS"], bool):
         conf["NO_VERBOSE_LOGS"] = False
 
+    if "OTT_HACK" not in conf or not isinstance(conf["OTT_HACK"], bool):
+        conf["OTT_HACK"] = False
+
     if "RECORDINGS" not in conf or not all((which("ffmpeg"), which("ffprobe"))):
         conf["RECORDINGS"] = conf["RECORDINGS_M3U"] = None
     else:
