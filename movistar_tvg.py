@@ -1027,6 +1027,9 @@ class XmlTV:
         tag_value = SubElement(tag_rating, "value")
         tag_value.text = AGE_RATING[program["age_rating"]]
 
+        if OTT_HACK:
+            tag_title.text = tag_title.text.translate(str.maketrans("()!?", "❨❩ᴉ‽"))
+
         return tag_programme
 
     def __get_client_services(self):
@@ -1270,6 +1273,7 @@ if __name__ == "__main__":
 
     CACHE_DIR = os.path.join(_conf["HOME"], ".xmltv", "cache")
     EPG_CHANNELS = _conf["EPG_CHANNELS"]
+    OTT_HACK = _conf["OTT_HACK"]
     U7D_URL = _conf["U7D_URL"]
 
     AGE_RATING = ["0", "0", "0", "7", "12", "16", "17", "18"]
