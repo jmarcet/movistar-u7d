@@ -592,7 +592,7 @@ async def network_saturation():
 
         if last:
             tp = (cur - last) * 0.008 / (now - before)
-            _NETWORK_SATURATION = 2 if tp > IPTV_BW_HARD else 1 if (IPTV_BW_SOFT and tp > IPTV_BW_SOFT) else 0
+            _NETWORK_SATURATION = 2 if tp > IPTV_BW_HARD else 1 if tp > IPTV_BW_SOFT else 0
 
             if _NETWORK_SATURATION:
                 if _t_timers and not _t_timers.done():
