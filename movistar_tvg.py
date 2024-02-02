@@ -1096,15 +1096,12 @@ class XmlTV:
         if not any((cloud, local)):
             channels = channels[1:] + channels[:1]
 
-        _fresh = not os.path.exists(file_path)
-        _skipped = 0
+        skipped = []
         for channel_id in channels:
             if channel_id in self.__channels:
                 channel_name = self.__channels[channel_id]["name"].strip(" *")
                 if channel_id not in EPG_CHANNELS and not local:
-                    msg = f'Saltando canal: [{channel_id:4}] "{channel_name}"'
-                    log.info(msg) if _fresh else log.debug(msg)
-                    _skipped += 1
+                    skipped.append(f'Saltando canal: [{channel_id:4}] "{channel_name}"')
                     continue
                 channel_tag = "Cloud" if cloud else "Local" if local else "U7D"
                 channel_tag += " - TDT Movistar.es"
@@ -1119,8 +1116,12 @@ class XmlTV:
                 m3u += f"{U7D_URL}"
                 m3u += "/cloud" if cloud else "/local" if local else ""
                 m3u += f"/{channel_id}/mpegts\n"
-        if _skipped:
-            log.info(f"Canales disponibles no indexados: {_skipped:2}")
+        if len(skipped) < 20 or not os.path.exists(file_path):
+            [log.info(msg) for msg in skipped]
+        else:
+            [log.debug(msg) for msg in skipped]
+        if len(skipped) > 0:
+            log.info(f"Canales disponibles no indexados: {len(skipped):2}")
 
         self.__write(file_path, m3u)
 
