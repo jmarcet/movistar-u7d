@@ -305,15 +305,14 @@ async def get_vod_info(session, endpoint, channel, cloud, program, _log):
     params = {"action": "getRecordingData" if cloud else "getCatchUpUrl"}
     params.update({"extInfoID": program, "channelID": channel, "mode": 1})
 
-    msg = f"Could not get uri for [{channel:4}] [{program}]:"
     try:
         async with session.get(endpoint, params=params) as r:
             res = await r.json()
         if res.get("resultData"):
             return res["resultData"]
-        _log.error(f"{msg} {res}")
     except (ClientConnectionError, ClientOSError, ServerDisconnectedError, TypeError) as ex:
-        _log.error(f"{msg} {repr(ex)}")
+        res = ex
+    _log.error(f"[{channel:4}] [{program}]: NOT AVAILABLE => {res}")
 
 
 def glob_safe(string, recursive=False):
