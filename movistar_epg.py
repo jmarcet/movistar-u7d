@@ -360,7 +360,7 @@ def get_siblings(channel_id, filename):
     ]
 
 
-@app.route("/archive/<channel_id:int>/<program_id:int>", methods=["OPTIONS", "PUT"])
+@app.put("/archive/<channel_id:int>/<program_id:int>")
 async def handle_archive(request, channel_id, program_id, cloud=False):
     global _t_timers
 
@@ -380,32 +380,9 @@ async def handle_archive(request, channel_id, program_id, cloud=False):
     if not _t_timers or _t_timers.done():
         _t_timers = app.add_task(timers_check(delay=3))
 
-    recorded = int(request.args.get("recorded", 0))
-    if recorded:
-        if recorded < 45:
-            log.error(DIV_ONE % ("Recording WRONG", log_suffix))
-            return response.json({"status": "Recording WRONG"}, status=202)
-
-        async with recordings_inc_lock:
-            if channel_id not in _RECORDINGS_INC:
-                _RECORDINGS_INC[channel_id] = {}
-            if program_id not in _RECORDINGS_INC[channel_id]:
-                _RECORDINGS_INC[channel_id][program_id] = []
-            _RECORDINGS_INC[channel_id][program_id].append(recorded)
-            _t = _RECORDINGS_INC[channel_id][program_id]
-
-        if len(_t) < 2 or sorted(_t)[-1] - sorted(_t)[-2] >= 3:
-            log.debug(DIV_TWO % ("Recording INCOMPLETE", "[%5ss]" % str(_t[-1]), log_suffix))
-            return response.json({"status": "Recording INCOMPLETE"}, status=202)
-
-    if request.method == "OPTIONS":
-        msg = f"Recording {'INCOMPLETE ' if recorded else ''}OK"
-        log.debug(DIV_ONE % (msg, log_suffix))
-        return response.json({"status": msg}, status=200)
-
+    errors = ""
     log.debug('Checking for "%s"' % filename)
     if does_recording_exist(filename):
-        errors = ""
         async with recordings_lock:
             if channel_id not in _RECORDINGS:
                 _RECORDINGS[channel_id] = {}
@@ -421,20 +398,15 @@ async def handle_archive(request, channel_id, program_id, cloud=False):
                 errors = ", event changed -> aborted"
 
         if not errors:
-            async with recordings_inc_lock:
-                if channel_id in _RECORDINGS_INC and program_id in _RECORDINGS_INC[channel_id]:
-                    del _RECORDINGS_INC[channel_id][program_id]
-
             app.add_task(update_recordings(channel_id))
 
-            msg = DIV_ONE % ("Recording ARCHIVED" + errors, log_suffix)
-
-            log.info(msg)
+            msg = "Recording ARCHIVED"
+            log.info(DIV_ONE % (msg, log_suffix))
             return response.json({"status": msg}, ensure_ascii=False)
 
-    msg = DIV_ONE % ("Recording NOT ARCHIVED" + errors, log_suffix)
-    log.error(msg)
-    return response.json({"status": msg}, ensure_ascii=False, status=203)
+    msg = "Recording NOT ARCHIVED"
+    log.error(DIV_ONE % (msg, log_suffix))
+    return response.json({"status": msg}, ensure_ascii=False, status=204)
 
 
 @app.get("/channels/")
@@ -1394,7 +1366,6 @@ if __name__ == "__main__":
     _EPGDATA = {}
     _KEEP = {}
     _RECORDINGS = {}
-    _RECORDINGS_INC = {}
 
     _last_bw_warning = _last_epg = _t_timers = _t_timers_next = None
 
@@ -1452,7 +1423,6 @@ if __name__ == "__main__":
     epg_lock = asyncio.Lock()
     network_bw_lock = asyncio.Lock()
     recordings_lock = asyncio.Lock()
-    recordings_inc_lock = asyncio.Lock()
     tvgrab_lock = asyncio.Lock()
 
     flussonic_regex = re.compile(r"\w*-?(\d{10})-?(\d+){0,1}\.?\w*")

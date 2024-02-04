@@ -101,29 +101,34 @@ def _archive_recording():
             remove(parent)
 
 
-def _cleanup(*exts, meta=False):
+def _cleanup(*exts):
     for ext in exts:
         if os.path.exists(_tmpname + ext):
             remove(_tmpname + ext)
-        if meta:
-            remove(*glob_safe(f"{_filename}.*.jpg"))
 
 
-async def _cleanup_recording(exception, start=0):
-    msg = str(exception) if isinstance(exception, RecordingError) else repr(exception)
-    msg = "Cancelled" if isinstance(exception, CancelledError) else msg
-    log_suffix = (" @ [%6ss] / [%5ss]" % ("~" + str(int(time.time() - start)), str(_args.time))) if start else ""
-    msg_len = 64 if log_suffix else 87
-    log.error("%-17s%87s" % ("Recording FAILED", re.sub(r"\s+", " ", msg)[:msg_len] + log_suffix))
+async def _cleanup_recording(exception, start=None):
+    if isinstance(exception, CancelledError):
+        msg = "Cancelled"
+        if start:
+            msg += " @ [%6ss] / [%5ss]" % ("~" + str(int(time.time() - start)), str(_args.time))
+        log.error("%-17s%87s" % ("Recording FAILED", msg))
+    else:
+        log.error(f'Recording FAILED: {str(exception).split(" - ", 1)[-1]}')
 
-    if any((os.path.exists(x) for x in (_tmpname + TMP_EXT, _tmpname + TMP_EXT2))):
+    remove(*glob_safe(os.path.join(os.path.dirname(_tmpname), f"??_show_segment{VID_EXT}")))
+    if RECORDINGS_TMP or any((os.path.exists(x) for x in (_tmpname + TMP_EXT, _tmpname + TMP_EXT2))):
         log.debug("_cleanup_recording: cleaning only TMP files")
-        _cleanup(TMP_EXT, TMP_EXT2, ".jpg", ".log", ".logo.txt", ".png", ".txt")
+        _cleanup(TMP_EXT, TMP_EXT2, ".log", ".logo.txt", ".txt")
+        if RECORDINGS_TMP:
+            _cleanup(".jpg", ".png")
     else:
         log.debug("_cleanup_recording: cleaning everything")
-        _cleanup(NFO_EXT, VID_EXT, meta=True)
-        remove(*glob_safe(f"{_filename}.*"))
-    remove(*glob_safe(os.path.join(os.path.dirname(_tmpname), f"??_show_segment{VID_EXT}")))
+        _cleanup(NFO_EXT)
+        remove(*(set(glob_safe(f"{_tmpname}.*")) | set(glob_safe(f"{_filename}.*"))))
+        remove(
+            *glob_safe(os.path.join(os.path.dirname(_filename), "metadata", os.path.basename(_filename) + "-*"))
+        )
 
     if U7D_PARENT:
         path = os.path.dirname(_tmpname)
@@ -156,7 +161,7 @@ async def _open_sessions():
         )
 
 
-async def postprocess(archive_params, archive_url, mtime, vod_info):
+async def postprocess(vod_info):
     async def _check_process(msg=""):
         nonlocal proc
 
@@ -168,13 +173,15 @@ async def postprocess(archive_params, archive_url, mtime, vod_info):
 
         if proc.returncode:
             stdout = await proc.stdout.read() if proc.stdout else ""
-            stdout = ': "%s"' % stdout.decode().replace("\n", " ").strip() if stdout else ""
+            if stdout:
+                msg += ": " if msg else ""
+                msg += '"%s"' % re.sub(r"\s+", " ", stdout.decode().replace("\n", " ").strip())
 
             if any((not WIN32 and proc.returncode == -9, WIN32 and proc.returncode == 15)):
-                raise RecordingError(msg + stdout)
+                raise RecordingError(msg)
 
-            if msg + stdout:
-                log.error(msg + stdout)
+            if msg:
+                log.error(msg)
 
     async def _get_duration(recording):
         cmd = ["ffprobe", "-i", recording, "-show_entries", "format=duration", "-v", "quiet", "-of", "json"]
@@ -201,8 +208,8 @@ async def postprocess(archive_params, archive_url, mtime, vod_info):
             log.debug('Saving cover cache "%s"' % cached_cover)
             shutil.copy2(cover, cached_cover)
 
-    async def _save_metadata(get_cover=False):
-        nonlocal duration, metadata
+    async def _save_metadata(duration=None, get_cover=False):
+        nonlocal metadata, mtime
 
         # Only the main cover, to embed in the video file
         if get_cover:
@@ -212,7 +219,7 @@ async def postprocess(archive_params, archive_url, mtime, vod_info):
                     async with aiofiles.open(cache_metadata, encoding="utf8") as f:
                         metadata = ujson.loads(await f.read())["data"]
 
-                if not metadata or int(metadata["beginTime"] / 1000 + _args.start) != mtime:
+                if not metadata:
                     log.debug("Getting extended info")
 
                     params = {"action": "epgInfov2", "productID": _args.program, "channelID": _args.channel}
@@ -223,9 +230,8 @@ async def postprocess(archive_params, archive_url, mtime, vod_info):
                     async with aiofiles.open(cache_metadata, "w", encoding="utf8") as f:
                         await f.write(data)
 
-            except (TypeError, ValueError) as ex:
-                log.warning(f"Extended info not found => {repr(ex)}")
-                return None, None
+            except (ClientConnectionError, ClientOSError, ServerDisconnectedError, TypeError, ValueError) as ex:
+                raise RecordingError(f"Extended info not found => {repr(ex)}")
 
             cover = metadata["cover"]
             img_ext = os.path.splitext(cover)[1]
@@ -233,25 +239,25 @@ async def postprocess(archive_params, archive_url, mtime, vod_info):
             metadata["cover"] = archival_img_name[len(RECORDINGS) + 1 :]
             log.debug('Getting cover "%s"' % cover)
             for x in range(2):
-                async with _SESSION_CLOUD.get(f"{URL_COVER}/{cover}") as resp:
-                    if resp.status == 200:
-                        img_data = await resp.read()
-                        if img_data:
-                            log.debug('Got cover "%s"' % cover)
-                            async with aiofiles.open(img_name, "wb") as f:
-                                await f.write(await resp.read())
-                            utime(mtime, img_name)
-                            img_mime = "image/png" if img_ext == ".png" else "image/jpeg"
-                            return img_mime, img_name
+                try:
+                    async with _SESSION_CLOUD.get(f"{URL_COVER}/{cover}") as resp:
+                        if resp.status == 200:
+                            img_data = await resp.read()
+                            if img_data:
+                                log.debug('Got cover "%s"' % cover)
+                                async with aiofiles.open(img_name, "wb") as f:
+                                    await f.write(await resp.read())
+                                utime(mtime, img_name)
+                                img_mime = "image/png" if img_ext == ".png" else "image/jpeg"
+                                return img_mime, img_name
+                except (ClientConnectionError, ClientOSError, ServerDisconnectedError) as ex:
+                    resp = ex
 
                 log.warning('Failed to get cover "%s" => %s' % (cover, str(resp).splitlines()[0]))
                 if x == 0:
                     await asyncio.sleep(2)
 
-            return None, None
-
-        if not metadata:
-            return
+            raise RecordingError("Failed to get cover")
 
         # Save all the available metadata
         log.debug('metadata="%s"' % metadata)
@@ -316,20 +322,10 @@ async def postprocess(archive_params, archive_url, mtime, vod_info):
         utime(mtime, _filename + NFO_EXT)
         log.debug("XML Metadata saved")
 
-    async def _step_0():
-        nonlocal archive_params
-
-        resp = await _SESSION.options(archive_url, params=archive_params)  # signal recording ended
-        if resp.status != 200:
-            raise RecordingError("Too short, missing [%5ss]" % str(_args.time - archive_params["recorded"]))
-
     async def _step_1():
-        nonlocal archive_params, duration
-
         duration = await _get_duration(_tmpname + TMP_EXT)
         bad = duration < _args.time * 0.99
 
-        archive_params["recorded"] = duration if bad else 0
         log_suffix = f"[{str(timedelta(seconds=duration))}s = {str(duration):>5}s] / [{str(_args.time):>5}s]"
 
         msg = f"POSTPROCESS #1  - Recording is {'INCOMPLETE' if bad else 'COMPLETE'}"
@@ -375,7 +371,7 @@ async def postprocess(archive_params, archive_url, mtime, vod_info):
             cmd.append("-sn")
 
         img_mime, img_name = await _save_metadata(get_cover=True)
-        if _args.mkv and img_mime and img_name:
+        if _args.mkv:
             tags += ["-attach", img_name, "-metadata:s:t:0", f"mimetype={img_mime}"]
 
         cmd += [*tags, "-v", "error", "-y", "-f", "matroska" if _args.mkv else "mpegts", _tmpname + TMP_EXT2]
@@ -417,7 +413,7 @@ async def postprocess(archive_params, archive_url, mtime, vod_info):
         log.warning(msg) if proc.returncode else log.info(msg)
 
     async def _step_4():
-        nonlocal duration, mtime, proc, tags
+        nonlocal proc, tags
 
         if COMSKIP and os.path.exists(_tmpname + CHP_EXT):
             intervals = []
@@ -486,7 +482,7 @@ async def postprocess(archive_params, archive_url, mtime, vod_info):
             remove(*pieces)
 
     async def _step_5():
-        nonlocal archive_params, duration, mtime
+        nonlocal mtime
 
         duration = await _get_duration(_tmpname + TMP_EXT)
         length = f"[{str(timedelta(seconds=duration))}s]"
@@ -497,21 +493,25 @@ async def postprocess(archive_params, archive_url, mtime, vod_info):
 
         _archive_recording()
 
-        await _save_metadata()
+        await _save_metadata(duration=duration)
 
-        newest = sorted(glob_safe(f"{os.path.dirname(_filename)}/*{VID_EXT}"), key=os.path.getmtime)[-1]
-        newest_ts = os.path.getmtime(newest)
-        utime(mtime, *glob_safe(f"{_filename}.*"))
-        utime(newest_ts, os.path.join(os.path.dirname(_filename), "metadata"), os.path.dirname(_filename))
+        dirname = os.path.dirname(_filename)
+        metadata_dir = os.path.join(dirname, "metadata")
+
+        utime(mtime, _filename + VID_EXT)
+        newest_ts = os.path.getmtime(sorted(glob_safe(f"{dirname}/*{VID_EXT}"), key=os.path.getmtime)[-1])
+        utime(newest_ts, metadata_dir, dirname)
 
         if _args.index:
-            resp = await _SESSION.put(archive_url, params=archive_params)
+            archive_url = f"{EPG_URL}/archive/{_args.channel}/{_args.program}"
+            resp = await _SESSION.put(archive_url, params={"cloud": 1} if _args.cloud else {})
             if resp.status != 200:
-                raise RecordingError("Failed indexing recording")
+                log.error("Failed indexing recording")
 
     await asyncio.sleep(0.1)  # Prioritize the main loop
 
-    duration = metadata = proc = None
+    metadata = proc = None
+    mtime = vod_info["beginTime"] // 1000 + _args.start
     tags = ["-metadata", 'service_name="%s"' % vod_info["channelName"]]
     tags += ["-metadata", 'service_provider="Movistar IPTV"']
     tags += ["-metadata:s:s:0", "language=esp", "-metadata:s:s:1", "language=und"]
@@ -521,8 +521,6 @@ async def postprocess(archive_params, archive_url, mtime, vod_info):
     pp_lock = FileLock(lockfile)
 
     try:
-        await _step_0()  # Verify if raw recording time is OK
-
         pp_lock.acquire(poll_interval=5)
         log.debug("POSTPROCESS STARTS")
 
@@ -573,10 +571,6 @@ async def record_stream(vod_info):
             _args.time = _args.time * 7 // 6 if _args.time > 900 else _args.time if _args.time > 60 else 60
         _args.time = min(_args.time, vod_info["duration"])
 
-    archive_params = {"cloud": 1} if _args.cloud else {}
-    archive_url = f"{EPG_URL}/archive/{_args.channel}/{_args.program}"
-    mtime = vod_info["beginTime"] // 1000 + _args.start
-
     flags = "[COMSKIPCUT] " if _args.comskipcut else "[COMSKIP] " if _args.comskip else ""
     flags += "[MKV] " if _args.mkv else ""
     flags += "[VO] " if _args.vo else ""
@@ -596,7 +590,7 @@ async def record_stream(vod_info):
             buffer += (await stream.recv())[0]
         return buffer
 
-    f = None
+    f = start = None
     path = os.path.dirname(_tmpname)
     try:
         if not os.path.exists(path):
@@ -639,7 +633,7 @@ async def record_stream(vod_info):
         _archive_recording()
         return
 
-    return asyncio.create_task(postprocess(archive_params, archive_url, mtime, vod_info))
+    return asyncio.create_task(postprocess(vod_info))
 
 
 async def rtsp(vod_info):
