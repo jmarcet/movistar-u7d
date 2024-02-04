@@ -333,21 +333,20 @@ def get_recording_files(fname):
 
 def get_recording_name(channel_id, timestamp, cloud=False):
     guide = _CLOUD if cloud else _EPGDATA
-    daily_program = not guide[channel_id][timestamp]["is_serie"] and guide[channel_id][timestamp][
-        "genre"
-    ].startswith("0")
+
+    _program = guide[channel_id][timestamp]
+    anchor = _program["genre"][0] == "0" and not _program["is_serie"]
 
     path = os.path.join(RECORDINGS, get_channel_dir(channel_id))
-    if guide[channel_id][timestamp]["serie"]:
-        path = os.path.join(path, get_safe_filename(guide[channel_id][timestamp]["serie"]))
-    elif daily_program:
-        path = os.path.join(path, get_safe_filename(guide[channel_id][timestamp]["full_title"]))
+    if _program.get("serie"):
+        path = os.path.join(path, get_safe_filename(_program["serie"]))
+    elif anchor:
+        path = os.path.join(path, get_safe_filename(_program["full_title"]))
     path = path.rstrip(".").rstrip(",")
 
-    filename = os.path.join(path, get_safe_filename(guide[channel_id][timestamp]["full_title"]))
-    if daily_program:
-        _time = "%Y%m%d" + ("_%H%M" if guide[channel_id][timestamp]["genre"] == "0C" else "")
-        filename += f" - {datetime.fromtimestamp(timestamp).strftime(_time)}"
+    filename = os.path.join(path, get_safe_filename(_program["full_title"]))
+    if anchor:
+        filename += f' - {datetime.fromtimestamp(timestamp).strftime("%Y%m%d_%H%M")}'
 
     return filename[len(RECORDINGS) + 1 :]
 
@@ -1271,7 +1270,8 @@ async def upgrade_recordings():
         return
 
     log.info(f"UPGRADING RECORDINGS METADATA: {RECORDINGS_UPGRADE}")
-    covers = wrong = 0
+    anchored_regex = re.compile(r"^(.+?) - \d{8}(?:_\d{4})?$")
+    covers = names = wrong = 0
 
     for nfo_file in sorted(glob(f"{RECORDINGS}/**/*{NFO_EXT}", recursive=True)):
         basename = nfo_file.split(NFO_EXT)[0]
@@ -1309,6 +1309,13 @@ async def upgrade_recordings():
 
         nfo["name"] = os.path.basename(basename)
 
+        if not any((nfo.get("originalName"), nfo.get("is_serie"))):
+            _match = anchored_regex.match(nfo["name"])
+            if _match:
+                names += 1
+                nfo["originalName"] = _match.groups()[0]
+                log.info(f'"{nfo["name"]}" => "{nfo["originalName"]}"')
+
         if not nfo.get("cover", "") == basename[len(RECORDINGS) + 1 :] + ".jpg":
             nfo["cover"] = basename[len(RECORDINGS) + 1 :] + ".jpg"
             covers += 1
@@ -1336,7 +1343,7 @@ async def upgrade_recordings():
             [nfo["covers"].pop(cover) for cover in drop_covers]
 
         try:
-            xml = xmltodict.unparse({"metadata": nfo}, pretty=True)
+            xml = xmltodict.unparse({"metadata": dict(sorted(nfo.items()))}, pretty=True)
         except Exception as ex:
             log.error(f"Metadata malformed: {nfo_file=} => {repr(ex)}")
             continue
@@ -1349,7 +1356,7 @@ async def upgrade_recordings():
             os.rename(nfo_file + ".tmp", nfo_file)
             utime(mtime, nfo_file)
 
-    log.info(f"Updated #{covers} covers & Fixed #{wrong} timestamps")
+    log.info(f"Updated #{covers} covers. Fixed #{names} originalNames & #{wrong} timestamps")
 
 
 if __name__ == "__main__":

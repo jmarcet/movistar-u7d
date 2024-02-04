@@ -929,11 +929,6 @@ class XmlTV:
 
         tag_title.text = title.rstrip(":.")
 
-        if local:
-            _match = daily_regex.match(tag_title.text)
-            if _match:
-                tag_title.text = _match.groups()[0]
-
         if ext_info:
 
             def _clean(string):
@@ -1279,7 +1274,6 @@ if __name__ == "__main__":
     AGE_RATING = ["0", "0", "0", "7", "12", "16", "17", "18"]
     LANG = {"es": {"lang": "es"}, "en": {"lang": "en"}}
 
-    daily_regex = re.compile(r"^(.+?) - \d{8}(?:_\d{4})?$")
     series_regex = re.compile(r"^(S\d+E\d+|Ep[isode]*\.)(?:.*)")
 
     logging.getLogger("asyncio").setLevel(logging.FATAL)
