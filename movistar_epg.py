@@ -1356,7 +1356,11 @@ async def upgrade_recordings():
             os.rename(nfo_file + ".tmp", nfo_file)
             utime(mtime, nfo_file)
 
-    log.info(f"Updated #{covers} covers. Fixed #{names} originalNames & #{wrong} timestamps")
+    if any((covers, names, wrong)):
+        msg = ("Would update", "Would fix") if RECORDINGS_UPGRADE < 0 else ("Updated", "Fixed")
+        log.info(f"{msg[0]} #{covers} covers. {msg[1]} #{names} originalNames & #{wrong} timestamps")
+    else:
+        log.info(f"No updates {'would be ' if RECORDINGS_UPGRADE < 0 else ''}carried out")
 
 
 if __name__ == "__main__":
