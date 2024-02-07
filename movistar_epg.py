@@ -828,32 +828,14 @@ async def timers_check(delay=0):
         return filter(lambda ts: channel_id not in recs or ts not in recs[channel_id], timestamps)
 
     async def _record(cloud=False):
-        nonlocal channel_id, comskip, keep, kept, nr_procs, ongoing
-        nonlocal queued, recs, repeat, timer_match, timestamp, vo
-
-        filename = get_recording_name(channel_id, timestamp, cloud)
-        program = get_program_name(filename)
-
-        if keep and re.search(_clean(timer_match), _clean(program), re.IGNORECASE):
-            kept[channel_id][program] = keep
-            if keep < 0:
-                if (datetime.fromtimestamp(timestamp) - datetime.now()).days < keep:
-                    log.debug('Older than     %d days: SKIPPING [%d] "%s"' % (abs(keep), timestamp, filename))
-                    return
-            else:
-                current = list(filter(lambda x: program in x, (await ongoing_vods(_all=True)).split("|")))
-                if len(current) == keep:
-                    log.debug('Recording %02d programs: SKIPPING [%d] "%s"' % (keep, timestamp, filename))
-                    return
-                siblings = get_siblings(channel_id, filename)
-                if len(current) + len(siblings) == keep and timestamp < siblings[0]:
-                    log.debug('Recorded  %02d programs: SKIPPING [%d] "%s"' % (keep, timestamp, filename))
-                    return
+        nonlocal channel_id, comskip, keep, kept, nr_procs, ongoing, queued, recs, repeat, timestamp, vo
 
         if (channel_id, timestamp) in queued:
             return
 
         guide = _CLOUD if cloud else _EPGDATA
+
+        filename = get_recording_name(channel_id, timestamp, cloud)
         duration, pid, title = [guide[channel_id][timestamp][t] for t in ["duration", "pid", "full_title"]]
 
         if filename in ongoing:
@@ -861,39 +843,51 @@ async def timers_check(delay=0):
             if f"{channel_id} {pid} -b {timestamp} " in vod or f"{channel_id} {pid} -b " not in vod:
                 return
 
-        if not cloud and timestamp > _last_epg + 3600:
-            return
-
         if channel_id in recs:
-            r = list(filter(lambda event: recs[channel_id][event]["filename"] == filename, recs[channel_id]))
+            r = list(filter(lambda ts: filename.startswith(recs[channel_id][ts]["filename"]), recs[channel_id]))
             # only repeat a recording when title changed
             if r and not len(filename) > len(recs[channel_id][r[0]]["filename"]):
                 # or asked to and new event is more recent than the archived
                 if not repeat or timestamp <= r[0]:
                     return
 
-        if cloud or re.search(_clean(timer_match), _clean(title), re.IGNORECASE):
-            _time = 0 if cloud else duration
-            now = round(datetime.now().timestamp())
-            if timestamp + 30 > now:
-                next_timers.append((title, timestamp))
-                return
-            log_suffix = f': [{channel_id:4}] [{pid}] [{timestamp}] "{filename}"'
-            if 0 < _time < 300:
-                log.debug(DIV_TWO % ("Skipping MATCH", f"Too short [{_time}s]", log_suffix))
-                return
-            if await record_program(channel_id, pid, 0, _time, cloud, comskip, True, MKV_OUTPUT, vo):
-                return
+        if keep:
+            program = get_program_name(filename)
+            kept[channel_id][program] = keep
+            if keep < 0:
+                if (datetime.fromtimestamp(timestamp) - datetime.now()).days < keep:
+                    log.info('Older than     %d days: SKIPPING [%d] "%s"' % (abs(keep), timestamp, filename))
+                    return
+            else:
+                current = list(filter(lambda x: program in x, (await ongoing_vods(_all=True)).split("|")))
+                if len(current) == keep:
+                    log.info('Recording %02d programs: SKIPPING [%d] "%s"' % (keep, timestamp, filename))
+                    return
+                siblings = get_siblings(channel_id, filename)
+                if len(current) + len(siblings) == keep and timestamp < siblings[0]:
+                    log.info('Recorded  %02d programs: SKIPPING [%d] "%s"' % (keep, timestamp, filename))
+                    return
 
-            log.info(DIV_ONE % (f"Found {'Cloud ' if cloud else ''}EPG MATCH", log_suffix))
+        _time = 0 if cloud else duration
+        if timestamp + 30 > round(datetime.now().timestamp()):
+            next_timers.append((title, timestamp))
+            return
+        log_suffix = f': [{channel_id:4}] [{pid}] [{timestamp}] "{filename}"'
+        if 0 < _time < 300:
+            log.info(DIV_TWO % ("Skipping MATCH", f"Too short [{_time}s]", log_suffix))
+            return
+        if await record_program(channel_id, pid, 0, _time, cloud, comskip, True, MKV_OUTPUT, vo):
+            return
 
-            queued.append((channel_id, timestamp))
-            await asyncio.sleep(2.5 if not WIN32 else 4)
+        log.info(DIV_ONE % (f"Found {'Cloud ' if cloud else ''}EPG MATCH", log_suffix))
 
-            nr_procs += 1
-            if nr_procs >= RECORDINGS_THREADS:
-                await log_network_saturated(nr_procs)
-                return -1
+        queued.append((channel_id, timestamp))
+        await asyncio.sleep(2.5 if not WIN32 else 4)
+
+        nr_procs += 1
+        if nr_procs >= RECORDINGS_THREADS:
+            await log_network_saturated(nr_procs)
+            return -1
 
     if not os.path.exists(timers):
         log.debug("timers_check: no timers.conf found")
@@ -928,7 +922,18 @@ async def timers_check(delay=0):
     ongoing = await ongoing_vods(_all=True)  # we want to check against all ongoing vods, also in pp
     log.debug("Ongoing VODs: [%s]" % str(ongoing))
 
+    keep = repeat = False
     kept, next_timers, queued = defaultdict(dict), [], []
+
+    if sync_cloud:
+        log.debug("Syncing cloud recordings")
+        vo = _timers.get("sync_cloud_language", "") == "VO"
+        for channel_id in _CLOUD:
+            channel_name = _CHANNELS[channel_id]["name"]
+            log.debug("Checking Cloud: [%4d] [%s]" % (channel_id, channel_name))
+            for timestamp in _filter_recorded(sorted(_CLOUD[channel_id])):
+                if await _record(cloud=True):
+                    return _exit()
 
     for str_channel_id in _timers.get("match", {}):
         channel_id = int(str_channel_id)
@@ -936,11 +941,13 @@ async def timers_check(delay=0):
             log.warning(f"Channel [{channel_id}] not found in EPG")
             continue
         channel_name = _CHANNELS[channel_id]["name"]
+        log.debug("Checking EPG  : [%4d] [%s]" % (channel_id, channel_name))
 
         for timer_match in _timers["match"][str_channel_id]:
             comskip = 2 if _timers.get("comskipcut") else 1 if _timers.get("comskip") else 0
             days = fixed_timer = keep = repeat = None
             lang = deflang
+            msg = ""
             if " ## " in timer_match:
                 match_split = timer_match.split(" ## ")
                 timer_match = match_split[0]
@@ -950,11 +957,10 @@ async def timers_check(delay=0):
                             hour, minute = map(int, res.split(":"))
                             _ts = datetime.now().replace(hour=hour, minute=minute, second=0).timestamp()
                             fixed_timer = int(_ts)
-                            log.debug(
-                                '[%s] "%s" %02d:%02d %d' % (channel_name, timer_match, hour, minute, fixed_timer)
-                            )
+                            msg = " [%02d:%02d] [%d]" % (hour, minute, fixed_timer)
                         except ValueError:
-                            log.warning(f'Failed to parse [{channel_name}] "{timer_match}" [{res}] correctly')
+                            _msg = f'Parsing failed: [{channel_id}] [{channel_name}] [{timer_match}] -> "{res}"'
+                            log.warning(_msg)
 
                     elif res[0] == "@":
                         days = dict(map(lambda x: (x[0], x[1] == "x"), enumerate(res[1:8], start=1)))
@@ -998,18 +1004,14 @@ async def timers_check(delay=0):
             elif days:
                 tss = filter(lambda ts: days.get(datetime.fromtimestamp(ts).isoweekday()), tss)
 
-            log.debug("Checking timer: [%s] [%d] [%s]" % (channel_name, channel_id, _clean(timer_match)))
+            log.debug("Checking timer: [%4d] [%s] [%s]%s" % (channel_id, channel_name, timer_match, msg))
             for timestamp in _filter_recorded(tss):
+                _title = _EPGDATA[channel_id][timestamp]["full_title"]
+                if not re.search(_clean(timer_match), _clean(_title), re.IGNORECASE):
+                    continue
                 if await _record():
                     return _exit()
 
-    if sync_cloud:
-        vo = _timers.get("sync_cloud_language", "") == "VO"
-        for channel_id in _CLOUD:
-            channel_name = _CHANNELS[channel_id]["name"]
-            for timestamp in _filter_recorded(sorted(_CLOUD[channel_id])):
-                if await _record(cloud=True):
-                    return _exit()
     _exit()
 
 
