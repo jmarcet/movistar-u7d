@@ -140,6 +140,8 @@ def get_channel_id(channel_name):
 @app.route("/<channel_id:int>/mpegts", methods=["GET", "HEAD"], name="channel_mpegts")
 @app.route(r"/<channel_name:([A-Za-z1-9]+)\.ts$>", methods=["GET", "HEAD"], name="channel_name")
 async def handle_channel(request, channel_id=None, channel_name=None):
+    log.debug("%s %s %s" % tuple(map(str, (request, request.args, request.headers))))
+
     _start = time.time()
     _raw_url = request.raw_url.decode()
     _u7d_url = (U7D_URL + _raw_url) if not NO_VERBOSE_LOGS else ""
@@ -180,6 +182,7 @@ async def handle_channel(request, channel_id=None, channel_name=None):
     try:
         # 1st packet on SDTV channels is bogus and breaks ffmpeg
         if ua.startswith("Jellyfin") and " HD" not in name:
+            log.debug('UA="%s" detected, skipping first packet' % ua)
             await stream.recv()
         else:
             await _response.send((await stream.recv())[0][28:])
@@ -211,6 +214,8 @@ async def handle_channel(request, channel_id=None, channel_name=None):
 @app.route("/<channel_id:int>/<url>", methods=["GET", "HEAD"], name="flussonic_id")
 @app.route(r"/<channel_name:([A-Za-z1-9]+)>/<url>", methods=["GET", "HEAD"], name="flussonic_name")
 async def handle_flussonic(request, url, channel_id=None, channel_name=None, cloud=False, local=False):
+    log.debug("%s %s %s" % tuple(map(str, (request, request.args, request.headers))))
+
     _start = time.time()
     _raw_url = request.raw_url.decode()
     _u7d_url = (U7D_URL + _raw_url) if not NO_VERBOSE_LOGS else ""
@@ -295,6 +300,7 @@ async def handle_flussonic(request, url, channel_id=None, channel_name=None, clo
     try:
         # 1st packet on SDTV channels is bogus and breaks ffmpeg
         if ua.startswith("Jellyfin") and " HD" not in _CHANNELS[channel_id]["name"]:
+            log.debug('UA="%s" detected, skipping first packet' % ua)
             await stream.recv()
         else:
             await _response.send((await stream.recv())[0])
@@ -547,6 +553,11 @@ async def send_prom_event(event):
 
 
 async def transcode(request, event, channel_id=0, filename="", offset=0, port=0, vod=None):
+    log.debug(
+        "transcode(): channel_id=%s port=%s vod=%s offset=%s filename=%s"
+        % tuple(map(str, (channel_id, port, vod, offset, filename)))
+    )
+
     if filename:
         cmd = ["ffmpeg", "-ss", f"{offset}", "-i", filename, "-map", "0", "-c", "copy", "-dn"]
         cmd += ["-f", "mpegts"]
