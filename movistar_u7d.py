@@ -406,8 +406,10 @@ async def handle_images(request, cover=None, logo=None, path=None):
 
 @app.get(r"/<m3u_file:([A-Za-z1-9]+)\.m3u$>")
 async def handle_m3u_files(request, m3u_file):
-    m3u, m3u_matched, pad = m3u_file.lower(), None, ""
-    if m3u in ("movistartv", "canales", "channels"):
+    m3u_matched = pad = ""
+
+    m3u = m3u_file.lower()
+    if m3u in ("movistartv", "canales", "channels", "playlist"):
         m3u_matched = CHANNELS
         pad = " " * 5
     elif m3u in ("movistartvcloud", "cloud", "nube"):
@@ -425,7 +427,7 @@ async def handle_m3u_files(request, m3u_file):
         except IndexError:
             pass
 
-    if m3u_matched and os.path.exists(m3u_matched):
+    if os.path.exists(m3u_matched):
         log.info(f'[{request.ip}] {request.method} {request.url}{pad} => "{m3u_matched}"')
         return await response.file(m3u_matched, mime_type=MIME_M3U)
 
@@ -598,7 +600,7 @@ async def transcode(request, event, channel_id=0, filename="", offset=0, port=0,
 class VodHttpProtocol(HttpProtocol):
     def connection_made(self, transport):
         """
-        HTTP-protocol-specific new connection handler
+        HTTP-protocol-specific new connection handler tuned for Movistar IPTV.
         """
         try:
             transport.set_write_buffer_limits(low=ATOM, high=BUFF)
