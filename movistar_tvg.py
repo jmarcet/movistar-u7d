@@ -729,8 +729,14 @@ class MulticastIPTV:
 
     async def get_epg(self):
         cached_epg = self.__clean_epg_channels(await Cache.load_epg())
-        self.__get_bin_epg()
-        self.__parse_bin_epg()
+
+        while True:
+            self.__get_bin_epg()
+            try:
+                self.__parse_bin_epg()
+                break
+            except Exception:
+                log.warning("Error descargando la EPG. Reintentando...")
         self.__sanitize_epg()
         new_epg = self.__clean_epg_channels(self.__epg)
 
