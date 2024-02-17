@@ -6,8 +6,8 @@ cx_Freeze>=6.16.0.dev25
 defusedxml
 filelock
 psutil
-git+https://github.com/jmarcet/sanic@22.6LTS
-git+https://github.com/jmarcet/sanic-prometheus
+sanic @ git+https://github.com/jmarcet/sanic@22.6LTS
+sanic-prometheus @ git+https://github.com/jmarcet/sanic-prometheus
 tomli
 ujson
 wmi

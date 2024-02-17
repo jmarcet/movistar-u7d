@@ -16,15 +16,17 @@ RUN --mount=type=cache,sharing=locked,target=/var/cache/apt \
        netcat-openbsd \
        procps \
        wget \
-    && sed -i \
-       -e 's/# en_US.UTF-8 UTF-8/en_US.UTF-8 UTF-8/' \
-       -e 's/# es_ES.UTF-8 UTF-8/es_ES.UTF-8 UTF-8/' \
-       /etc/locale.gen \
+    && sed -i -e 's/# es_ES.UTF-8 UTF-8/es_ES.UTF-8 UTF-8/' /etc/locale.gen \
     && locale-gen
 
 ENV LC_ALL es_ES.UTF-8
 ENV LANG es_ES.UTF-8
 ENV LANGUAGE es_ES:UTF-8
+
+ENV HOME=/home
+ENV PATH=/home/.local/bin:/usr/local/bin:/usr/sbin:/usr/bin
+ENV PYTHONPATH=/app
+ENV TMP=/tmp
 
 WORKDIR /tmp
 
@@ -34,9 +36,8 @@ RUN --mount=type=cache,sharing=locked,target=/var/cache/apt \
 COPY requirements.txt .
 
 RUN --mount=type=cache,target=${HOME}/.cache \
-    pip install --disable-pip-version-check --root-user-action ignore --use-pep517 --upgrade pip \
-    && pip install --disable-pip-version-check --root-user-action ignore --use-pep517 -r requirements.txt \
-    && pip freeze > requirements-frozen.txt
+    pip install --disable-pip-version-check --root-user-action ignore --use-pep517 uv \
+    && VIRTUAL_ENV=/usr/local uv pip install -r requirements.txt
 
 # http://stackoverflow.com/questions/48162574/ddg#49462622
 ARG APT_KEY_DONT_WARN_ON_DANGEROUS_USAGE=DontWarn
@@ -114,29 +115,25 @@ RUN apt-get purge -y binutils-common build-essential dpkg-dev git git-man gpg-ag
     && apt-get autoremove -y \
     && rm -fr /var/lib/apt/lists/*
 
-ENV HOME=/home
-ENV PATH=/home/.local/bin:/usr/local/bin:/usr/sbin:/usr/bin
-ENV PYTHONPATH=/app
-ENV TMP=/tmp
-
 WORKDIR /app
 
 COPY . .
 
 RUN --mount=type=cache,target=${HOME}/.cache \
     if [ "${BUILD_TYPE}" = "full" ] && [ "$TARGETARCH" = "amd64" ]; then \
-        pip install --disable-pip-version-check --root-user-action ignore --use-pep517 bandit pycodestyle pylint ruff \
+        VIRTUAL_ENV=/usr/local uv pip install bandit pycodestyle pylint ruff 2>&1 | tee /tmp/lint-install.txt \
         && bandit -v *.py \
         && pycodestyle -v *.py \
         && pylint --rcfile pyproject.toml -v *.py \
         && ruff check --config pyproject.toml --diff --no-cache --no-fix-only -v *.py \
         && ruff format --config pyproject.toml --diff --no-cache -v *.py \
-        && pip freeze > /tmp/requirements-frozen-lint.txt \
-        && pip uninstall --disable-pip-version-check --root-user-action ignore -y \
-           $( diff -pru /tmp/requirements-frozen.txt /tmp/requirements-frozen-lint.txt | grep '^+[^+]' | sed -E -e 's:^.::g' -e 's:==.+::g' | tr '\n' ' ' ); \
+        && VIRTUAL_ENV=/usr/local uv pip uninstall $( awk '/==/ { print $2 }' /tmp/lint-install.txt ); \
     fi
 
-RUN rm -fr Dockerfile patches pyproject.toml requirements*.txt tox.ini /tmp/requirements*.txt *.conf
+RUN --mount=type=cache,target=${HOME}/.cache \
+    pip uninstall --disable-pip-version-check --root-user-action ignore -y uv wheel
+
+RUN rm -fr Dockerfile patches pyproject.toml requirements*.txt tox.ini /tmp/*.txt /usr/local/.lock *.conf
 
 RUN chown nobody:nogroup /home && chmod g+s /home
 
