@@ -51,10 +51,14 @@
   - `RECORDINGS_M3U`: activada por defecto, para controlar si generar listas `m3u` de grabaciones. Con `Jellyfin` es recomendable desactivarla, o se quejará de que no puede localizar las grabaciones.
   - ~~`RECORDINGS_PER_CHANNEL`~~: opción eliminada. Las grabaciones siempre se hacen organizadas en una carpeta por canal.
   - `RECORDINGS_REINDEX`: regenerar índice de grabaciones, `recordings.json`, a partir de los metadatos guardados con las grabaciones, `-movistar.nfo`. Pensado para ser usado de forma controlada y a continuación ser desactivado.
+  - `RECORDING_PROCESSES`: para limitar el número de grabaciones simultaneas.
+  - ~~`RECORDING_THREADS`~~: opción renombrada a `RECORDING_PROCESSES`.
   - `RECORDINGS_TMP`: para realizar las grabaciones y el postprocesado en almacenamiento rápido (SDD, NVME), copiándose al final a `RECORDINGS` que puede ser almacenamiento lento (HDD).
   - `RECORDINGS_TRANSCODE_INPUT` & `RECORDINGS_TRANSCODE_OUTPUT`: permiten controlar el transcoding de (entrada y salida de) las grabaciones.
   - `RECORDINGS_UPGRADE`: actualiza los ficheros de metadatos de las grabaciones `-movistar.nfo`. Es necesario activarlo una vez para indexar correctamente grabaciones hechas con versiones anteriores a la v6.
   - ~~`TVG_THREADS`~~: opción eliminada. La EPG se descargará siempre con 8 hilos de ejecución.
+  - `U7D_PROCESSES`: número de procesos para la parte externa del proxy. Es extraño necesitar incrementarlo. Sólo relevante en UNIX.
+  - ~~`U7D_THREADS`~~: opción renombrada a `U7D_PROCESSES`.
 
 - Nuevas opciones globales en `timers.conf`:
   - `comskip`: detectar anuncios y grabar capítulos en fichero `.ffmeta`.
