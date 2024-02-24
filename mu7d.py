@@ -56,8 +56,11 @@ VID_EXTS = (".avi", ".mkv", ".mp4", ".mpeg", ".mpg", ".ts")
 VID_EXTS_KEEP = (*VID_EXTS, ".tmp", ".tmp2")
 YEAR_SECONDS = 365 * 24 * 60 * 60
 
-DROP_KEYS = ["5S_signLanguage", "hasDolby", "isHdr", "isPromotional", "isuserfavorite", "lockdata", "logos"]
-DROP_KEYS += ["opvr", "playcount", "recordingAllowed", "resume", "startOver", "watched", "wishListEnabled"]
+DROP_KEYS = ("5S_signLanguage", "hasDolby", "isHdr", "isPromotional", "isuserfavorite", "lockdata", "logos")
+DROP_KEYS += ("opvr", "playcount", "recordingAllowed", "resume", "startOver", "watched", "wishListEnabled")
+
+XML_INT_KEYS = ("ageRatingID", "beginTime", "duration", "endTime", "expDate")
+XML_INT_KEYS += ("productType", "rating", "serviceID", "serviceUID", "themeID")
 
 END_POINTS = {
     "epNoCach1": "http://portalnc.imagenio.telefonica.net:2001",
@@ -147,8 +150,8 @@ def find_free_port(iface=""):
         return s.getsockname()[1]
 
 
-async def get_end_point(conf):
-    ep_path = os.path.join(conf["HOME"], ".xmltv", "cache", END_POINTS_FILE)
+async def get_end_point(home):
+    ep_path = os.path.join(home, ".xmltv", "cache", END_POINTS_FILE)
     if os.path.exists(ep_path):
         async with aiofiles.open(ep_path) as f:
             end_points = ujson.loads(await f.read())["data"]
@@ -156,7 +159,7 @@ async def get_end_point(conf):
     else:
         end_points = END_POINTS
 
-    for end_point in list(dict.fromkeys(end_points.values())):
+    for end_point in tuple(dict.fromkeys(end_points.values())):
         async with aiohttp.ClientSession(headers={"User-Agent": UA}) as session:
             try:
                 async with session.get(end_point):
@@ -189,8 +192,7 @@ async def get_local_info(channel, timestamp, path, _log, extended=False):
         if not os.path.exists(nfo_file):
             return
         async with aiofiles.open(nfo_file, encoding="utf-8") as f:
-            nfo = xmltodict.parse(await f.read())["metadata"]
-        nfo.update({k: int(v) for k, v in nfo.items() if k in ("beginTime", "duration", "endTime")})
+            nfo = xmltodict.parse(await f.read(), postprocessor=pp_xml)["metadata"]
         if extended:
             _match = re.search(r"^(.+) (?:S(\d+)E(\d+)|Ep[isode.]+ (\d+))", nfo.get("originalName", nfo["name"]))
             if _match:
@@ -208,7 +210,6 @@ async def get_local_info(channel, timestamp, path, _log, extended=False):
                     "start": nfo["beginTime"],
                     "end": nfo["endTime"],
                     "full_title": nfo.get("originalName", nfo["name"]),
-                    "age_rating": int(nfo.get("ageRatingID")),
                     "description": nfo.get("description") or nfo.get("synopsis") or "",
                     "is_serie": is_serie,
                     "serie": serie,
@@ -251,7 +252,7 @@ def get_title_meta(title, serie_id, service_id, genre):
         episode_title = _x[3] if _x[3] else episode_title
 
         is_serie = bool(serie and episode)
-        serie, episode_title = [x.strip(":-/ ") for x in (serie, episode_title)]
+        serie, episode_title = (x.strip(":-/ ") for x in (serie, episode_title))
         serie = re.sub(r"([^,.])[,.]$", r"\1", serie)
         if serie.lower() == episode_title.lower():
             episode_title = ""
@@ -276,7 +277,7 @@ def get_title_meta(title, serie_id, service_id, genre):
         _match = re.match(r"^([^/]+): ([^a-z].+)", full_title)
         if _match:
             is_serie = True
-            serie, episode_title = [x.strip(":-/ ") for x in _match.groups()]
+            serie, episode_title = (x.strip(":-/ ") for x in _match.groups())
             serie = re.sub(r"([^,.])[,.]$", r"\1", serie)
             if season and episode:
                 episode_title = re.sub(r" S\d+E\d+$", "", episode_title)
@@ -319,8 +320,12 @@ def glob_safe(string, recursive=False):
     return glob(f"{string.replace('[', '?').replace(']', '?')}", recursive=recursive)
 
 
+def keys_to_int(dictionary):
+    return {int(k) if k.isdigit() else k: v for k, v in dictionary.items()}
+
+
 async def launch(cmd):
-    cmd = [sys.executable, *cmd] if EXT == ".py" else cmd
+    cmd = (sys.executable, *cmd) if EXT == ".py" else cmd
     proc = await asyncio.create_subprocess_exec(*cmd, cwd=os.path.dirname(__file__) if EXT == ".py" else None)
     try:
         return await proc.wait()
@@ -475,8 +480,12 @@ async def ongoing_vods(channel_id="", program_id="", filename="", _all=False, _f
     regex += " .+%s" % filename.replace("\\", "\\\\") if filename else ""
     regex += ")" if filename and program_id else ""
 
-    vods = list(filter(None, [proc_grep(proc, regex) for proc in family]))
+    vods = tuple(filter(None, [proc_grep(proc, regex) for proc in family]))
     return vods if not _all else "|".join([" ".join(proc.cmdline()).strip() for proc in vods])
+
+
+def pp_xml(path, key, value):
+    return key, int(value) if key in XML_INT_KEYS else value
 
 
 def proc_grep(proc, regex):
@@ -518,8 +527,8 @@ def utime(timestamp, *items):
 
 
 async def u7d_main():
-    u7d_cmd = [f"movistar_u7d{EXT}"]
-    epg_cmd = [f"movistar_epg{EXT}"]
+    u7d_cmd = (f"movistar_u7d{EXT}",)
+    epg_cmd = (f"movistar_epg{EXT}",)
 
     u7d_t = asyncio.create_task(launch(u7d_cmd))
     epg_t = asyncio.create_task(launch(epg_cmd))
@@ -646,6 +655,7 @@ if __name__ == "__main__":
         with FileLock(lockfile, timeout=0):
             _check_iptv()
             _check_ports()
+            del _conf
             asyncio.run(u7d_main())
     except (CancelledError, KeyboardInterrupt):
         sys.exit(1)

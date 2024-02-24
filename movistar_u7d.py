@@ -30,8 +30,8 @@ from warnings import filterwarnings
 
 from mu7d import ATOM, BUFF, CHUNK, DATEFMT, EPG_URL, FMT, MIME_M3U, MIME_WEBM, UA
 from mu7d import URL_COVER, URL_FANART, URL_LOGO, VID_EXTS, WIN32, YEAR_SECONDS, IPTVNetworkError
-from mu7d import add_logfile, cleanup_handler, find_free_port, get_end_point
-from mu7d import get_iptv_ip, get_vod_info, mu7d_config, ongoing_vods, _version
+from mu7d import add_logfile, cleanup_handler, find_free_port, get_end_point, get_iptv_ip
+from mu7d import get_vod_info, keys_to_int, mu7d_config, ongoing_vods, _version
 from movistar_vod import Vod
 
 
@@ -85,10 +85,7 @@ async def before_server_start(app):
         try:
             async with _SESSION.get(f"{EPG_URL}/channels/") as r:
                 if r.status == 200:
-                    _CHANNELS = json.loads(
-                        await r.text(),
-                        object_hook=lambda d: {int(k) if k.isdigit() else k: v for k, v in d.items()},
-                    )
+                    _CHANNELS = json.loads(await r.text(), object_hook=keys_to_int)
                     break
                 await asyncio.sleep(5)
         except (ClientConnectionError, ClientOSError, ServerDisconnectedError):
@@ -103,7 +100,7 @@ async def before_server_start(app):
 
 @app.listener("after_server_start")
 async def after_server_start(app):
-    app.ctx.ep = await get_end_point(_conf)
+    app.ctx.ep = await get_end_point(HOME)
     app.ctx.vod_client = aiohttp.ClientSession(
         connector=aiohttp.TCPConnector(keepalive_timeout=YEAR_SECONDS),
         headers={"User-Agent": UA},
@@ -157,7 +154,7 @@ async def handle_channel(request, channel_id=None, channel_name=None):
         return await handle_flussonic(request, f"{int(datetime.now().timestamp())}.ts", channel_id)
 
     try:
-        name, mc_grp, mc_port = [_CHANNELS[channel_id][t] for t in ["name", "address", "port"]]
+        name, mc_grp, mc_port = (_CHANNELS[channel_id][t] for t in ("name", "address", "port"))
     except (AttributeError, KeyError):
         raise NotFound(f"Requested URL {_raw_url} not found")
 
@@ -375,10 +372,10 @@ async def handle_guide_local(request):
 async def handle_images(request, cover=None, logo=None, path=None):
     log.debug("[%s] %s %s" % (request.ip, request.method, request.url))
     if path and cover:
-        urls = [f'{URL_FANART}/{request.args.get("fanart")}'] if "?fanart=" in request.url else []
-        urls += [f"{URL_COVER}/{path}/{cover}"]
+        urls = (f'{URL_FANART}/{request.args.get("fanart")}',) if "?fanart=" in request.url else ()
+        urls += (f"{URL_COVER}/{path}/{cover}",)
     elif logo:
-        urls = [f"{URL_LOGO}/{logo}"]
+        urls = (f"{URL_LOGO}/{logo}",)
     else:
         raise NotFound(f"Requested URL {request.raw_url.decode()} not found")
 
@@ -649,30 +646,35 @@ if __name__ == "__main__":
     CHANNELS = _conf["CHANNELS"]
     CHANNELS_CLOUD = _conf["CHANNELS_CLOUD"]
     CHANNELS_LOCAL = _conf["CHANNELS_LOCAL"]
+    DEBUG = _conf["DEBUG"]
     GUIDE = _conf["GUIDE"]
     GUIDE_CLOUD = _conf["GUIDE_CLOUD"]
     GUIDE_LOCAL = _conf["GUIDE_LOCAL"]
+    HOME = _conf["HOME"]
     IPTV_BW_HARD = _conf["IPTV_BW_HARD"]
     IPTV_BW_SOFT = _conf["IPTV_BW_SOFT"]
     IPTV_IFACE = _conf["IPTV_IFACE"]
+    LAN_IP = _conf["LAN_IP"]
     NO_VERBOSE_LOGS = _conf["NO_VERBOSE_LOGS"]
     RECORDINGS = _conf["RECORDINGS"]
     RECORDINGS_TMP = _conf["RECORDINGS_TMP"]
+    U7D_PORT = _conf["U7D_PORT"]
     U7D_PROCESSES = _conf["U7D_PROCESSES"]
     U7D_URL = _conf["U7D_URL"]
 
     VodArgs = namedtuple("Vod", ["channel", "program", "client_ip", "client_port", "start", "cloud"])
 
+    del _conf
     lockfile = os.path.join(os.getenv("TMP", os.getenv("TMPDIR", "/tmp")), ".movistar_u7d.lock")  # nosec B108
     try:
         with FileLock(lockfile, timeout=0):
             app.run(
-                host=_conf["LAN_IP"],
-                port=_conf["U7D_PORT"],
+                host=LAN_IP,
+                port=U7D_PORT,
                 protocol=VodHttpProtocol,
                 access_log=False,
                 auto_reload=False,
-                debug=_conf["DEBUG"],
+                debug=DEBUG,
                 workers=U7D_PROCESSES if not WIN32 else 1,
             )
     except (AttributeError, CancelledError, KeyboardInterrupt):

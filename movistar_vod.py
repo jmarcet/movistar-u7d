@@ -184,7 +184,7 @@ async def postprocess(vod_info):
                 log.error(msg)
 
     async def _get_duration(recording):
-        cmd = ["ffprobe", "-i", recording, "-show_entries", "format=duration", "-v", "quiet", "-of", "json"]
+        cmd = ("ffprobe", "-i", recording, "-show_entries", "format=duration", "-v", "quiet", "-of", "json")
         proc = await asyncio.create_subprocess_exec(*cmd, stdin=NULL, stdout=PIPE, stderr=NULL)
         recording_data = ujson.loads((await proc.communicate())[0].decode())
 
@@ -397,7 +397,7 @@ async def postprocess(vod_info):
         global COMSKIP
         nonlocal proc
 
-        cmd = ["comskip"] + COMSKIP + ["--ts", _tmpname + TMP_EXT]
+        cmd = ("comskip", *COMSKIP, "--ts", _tmpname + TMP_EXT)
 
         log.info("POSTPROCESS #3  - COMSKIP - Checking recording for commercials")
         async with aiofiles.open(COMSKIP_LOG, "ab") as f:
@@ -423,7 +423,7 @@ async def postprocess(vod_info):
                 c = await f.read()
 
             _s = filter(lambda x: "Show Segment" in x, (" ".join(c.splitlines()).split("[CHAPTER]"))[1:])
-            segments = list(_s)
+            segments = tuple(_s)
             if not segments:
                 log.warning("POSTPROCESS #4  - COMSKIP - Could not find any Show Segment")
                 _cleanup(CHP_EXT, ".log", ".logo.txt", ".txt")
@@ -439,8 +439,8 @@ async def postprocess(vod_info):
                 for idx, (start, end) in enumerate(intervals, start=1):
                     tmpdir = os.path.dirname(_tmpname)
                     pieces.append(os.path.join(tmpdir, f"{idx:02}_show_segment{VID_EXT}"))
-                    cmd = ["ffmpeg", "-i", _tmpname + TMP_EXT, "-ss", start, "-to", end]
-                    cmd += ["-c", "copy", "-map", "0", *tags, "-v", "error", "-y", pieces[-1]]
+                    cmd = ("ffmpeg", "-i", _tmpname + TMP_EXT, "-ss", start, "-to", end)
+                    cmd += ("-c", "copy", "-map", "0", *tags, "-v", "error", "-y", pieces[-1])
 
                     ch = chr(idx + 64)
                     msg1, msg2 = f"POSTPROCESS #4{ch} - Cutting Chapter [{idx:02}]", f"({start} - {end})"
@@ -449,8 +449,8 @@ async def postprocess(vod_info):
 
                     await _check_process(f"Failed Cutting Chapter [{idx:02}]")
 
-                cmd = ["ffmpeg", "-i", f"concat:{'|'.join(pieces)}", "-c", "copy", "-map", "0"]
-                cmd += [*tags, "-v", "error", "-y", "-f", "mpegts", _tmpname + TMP_EXT2]
+                cmd = ("ffmpeg", "-i", f"concat:{'|'.join(pieces)}", "-c", "copy", "-map", "0")
+                cmd += (*tags, "-v", "error", "-y", "-f", "mpegts", _tmpname + TMP_EXT2)
 
                 ch = chr(ord(ch) + 1)
                 log.info(f"POSTPROCESS #4{ch} - Merging recording w/o commercials")
@@ -459,8 +459,8 @@ async def postprocess(vod_info):
                 await _check_process("Failed merging recording w/o commercials")
 
             elif _args.mkv:
-                cmd = ["ffmpeg", "-i", _tmpname + TMP_EXT, "-i", _tmpname + CHP_EXT, *tags]
-                cmd += ["-v", "error", "-y", "-f", "matroska", _tmpname + TMP_EXT2]
+                cmd = ("ffmpeg", "-i", _tmpname + TMP_EXT, "-i", _tmpname + CHP_EXT, *tags)
+                cmd += ("-v", "error", "-y", "-f", "matroska", _tmpname + TMP_EXT2)
 
                 log.info("POSTPROCESS #4  - COMSKIP - Merging mkv chapters")
                 proc = await asyncio.create_subprocess_exec(*cmd, stdin=NULL, stdout=PIPE, stderr=OUT)
@@ -702,7 +702,7 @@ async def Vod(args=None, vod_client=None, vod_info=None):
             global _loop
             _loop = asyncio.get_running_loop()
 
-        _END_POINT = await get_end_point(_conf)
+        _END_POINT = await get_end_point(HOME)
 
         await _open_sessions()
 
@@ -835,7 +835,11 @@ if __name__ == "__main__":
         TMP_EXT2 = ".tmp2"
         VID_EXT = ".mkv" if _args.mkv else ".ts"
 
+    HOME = _conf["HOME"]
+
     U7D_PARENT = os.getenv("U7D_PARENT")
+
+    del _conf
 
     try:
         asyncio.run(Vod())
