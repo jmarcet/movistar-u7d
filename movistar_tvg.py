@@ -151,7 +151,7 @@ class Cache:
     @staticmethod
     def load_epg_local():
         try:
-            with open(os.path.join(_conf["HOME"], "recordings.json"), "r", encoding="utf8") as f:
+            with open(os.path.join(HOME, "recordings.json"), "r", encoding="utf8") as f:
                 data = json.load(f)
         except (IOError, KeyError, ValueError):
             return
@@ -198,6 +198,25 @@ class Cache:
             json.dump({"data": data}, f, ensure_ascii=False, indent=4, sort_keys=True)
 
     @staticmethod
+    def save_channels_data(channels, packages, tvPackages):
+        clean_channels, services = {}, {}
+
+        for package in tvPackages.split("|") if tvPackages != "ALL" else packages:
+            services = {**services, **packages[package]["services"]}
+
+        for channel in EPG_CHANNELS & set(channels) & set(map(int, services)):
+            clean_channels[channel] = {
+                "address": channels[channel]["address"],
+                "name": channels[channel]["name"].strip(" *"),
+                "number": int(services[str(channel)]),
+                "port": channels[channel]["port"],
+            }
+            if "replacement" in channels[channel]:
+                clean_channels[channel]["replacement"] = channels[channel]["replacement"]
+
+        Cache.save("channels.json", clean_channels)
+
+    @staticmethod
     def save_config(data):
         Cache.save("config.json", data)
 
@@ -230,10 +249,10 @@ class MovistarTV:
     @staticmethod
     async def get_epg_extended_info(channel_id, program):
         def _fill_data(data):
-            pairs = [("episode", "episode"), ("episode_title", "episodeName"), ("full_title", "name")]
-            pairs += [("season", "season"), ("serie", "seriesName"), ("year", "productionDate")]
-            if data and any((program.get(t[0]) and program.get(t[0], "") != data.get(t[1], "") for t in pairs)):
-                for src, dst in pairs:
+            if data and any(
+                (program.get(t[0]) and program.get(t[0], "") != data.get(t[1], "") for t in EPG_EXTINFO_PAIRS)
+            ):
+                for src, dst in EPG_EXTINFO_PAIRS:
                     if program.get(src) and program.get(src, "") != data.get(dst, ""):
                         # log.debug('%s="%s" => %s="%s"' % (src, program.get(src, ""), dst, data.get(dst, "")))
                         data[dst] = program[src]
@@ -289,7 +308,7 @@ class MovistarTV:
         log.info(f'Paquete contratado: {client["tvPackages"]}')
 
         dvb_entry_point = platform["dvbConfig"]["dvbipiEntryPoint"].split(":")
-        uri = platform[list(filter(lambda f: re.search("base.*uri", f, re.IGNORECASE), platform.keys()))[0]]
+        uri = platform[tuple(filter(lambda f: re.search("base.*uri", f, re.IGNORECASE), platform.keys()))[0]]
         conf = {
             "tvPackages": client["tvPackages"],
             "demarcation": client["demarcation"],
@@ -605,7 +624,7 @@ class MulticastIPTV:
         parsed_epg = {}
         for epg_day in self.__epg:
             channel_epg = {}
-            for _id in [d for d in epg_day if epg_day[d]]:
+            for _id in (d for d in epg_day if epg_day[d]):
                 head = self.__parse_bin_epg_header(epg_day[_id])
                 if head["service_id"] not in self.__sv_ids:
                     continue
@@ -667,7 +686,7 @@ class MulticastIPTV:
         _channels = self.__xml_data["channels"]
         for channel_key in self.__epg:
             assigned = False
-            for channel_id in [ch for ch in _channels if _channels[ch].get("replacement", "") == channel_key]:
+            for channel_id in (ch for ch in _channels if _channels[ch].get("replacement", "") == channel_key):
                 sane_epg[channel_id] = self.__epg[channel_key]
                 assigned = True
                 break
@@ -1028,9 +1047,9 @@ class XmlTV:
                     src = f"{U7D_URL}/recording/?" + ext_info["covers"]["fanart"]
             SubElement(tag_programme, "icon", {"src": src})
 
-        tag_rating = SubElement(tag_programme, "rating", {"system": "pl"})
-        tag_value = SubElement(tag_rating, "value")
-        tag_value.text = AGE_RATING[program["age_rating"]]
+            tag_rating = SubElement(tag_programme, "rating", {"system": "pl"})
+            tag_value = SubElement(tag_rating, "value")
+            tag_value.text = AGE_RATING[int(ext_info["ageRatingID"])]
 
         if OTT_HACK:
             tag_title.text = tag_title.text.translate(str.maketrans("()!?", "❨❩ᴉ‽"))
@@ -1184,9 +1203,11 @@ async def tvg_main():
         json_serialize=json.dumps,
     )
 
+    epg = {}
+
     try:
         # Descarga la configuración del servicio Web de MovistarTV
-        _END_POINT = await get_end_point(_conf)
+        _END_POINT = await get_end_point(HOME)
         _CONFIG = await MovistarTV.get_service_config(refresh)
 
         # Busca el Proveedor de Servicios y descarga los archivos XML: canales, paquetes y segmentos
@@ -1197,9 +1218,13 @@ async def tvg_main():
         _XMLTV = XmlTV(xdata)
 
         if args.m3u:
+            Cache.save_channels_data(xdata["channels"], xdata["packages"], _CONFIG["tvPackages"])
             _XMLTV.write_m3u(args.m3u)
             if not args.guide:
                 return
+
+        epg_nr_days = len(xdata["segments"])
+        del xdata
 
         # Descarga los segments de cada EPG_X_BIN.imagenio.es y devuelve la guía decodificada
         if args.guide:
@@ -1215,15 +1240,18 @@ async def tvg_main():
             if args.cloud_m3u or args.local_m3u:
                 _XMLTV.write_m3u(
                     args.cloud_m3u or args.local_m3u,
-                    cloud=list(epg) if args.cloud_m3u else None,
-                    local=list(epg) if args.local_m3u else None,
+                    cloud=tuple(epg) if args.cloud_m3u else None,
+                    local=tuple(epg) if args.local_m3u else None,
                 )
             if not args.cloud_recordings and not args.local_recordings:
                 return
 
+        del _MIPTV
+
         # Genera el árbol XMLTV de los paquetes contratados
-        epg_x = await _XMLTV.generate_xml(epg, bool(args.local_m3u or args.local_recordings))
-        dom = minidom.parseString(ElTr.tostring(epg_x.getroot()))  # nosec B318
+        dom = await _XMLTV.generate_xml(epg, bool(args.local_m3u or args.local_recordings))
+        epg_nr_channels = len(epg)
+        del _CONFIG, _XMLTV, epg
 
         if args.guide:
             with open(args.guide, "w", encoding="utf8") as f:
@@ -1237,7 +1265,7 @@ async def tvg_main():
 
         if not any((args.cloud_recordings, args.local_recordings)):
             _t = str(timedelta(seconds=round(time.time() - _time_start)))
-            log.info(f"EPG de {len(epg)} canales y {len(xdata['segments'])} días generada en {_t}s")
+            log.info(f"EPG de {epg_nr_channels} canales y {epg_nr_days} días generada en {_t}s")
             log.info(f"Fecha de caducidad: [{time.ctime(_DEADLINE)}] [{_DEADLINE}]")
 
     finally:
@@ -1278,10 +1306,20 @@ if __name__ == "__main__":
 
     CACHE_DIR = os.path.join(_conf["HOME"], ".xmltv", "cache")
     EPG_CHANNELS = _conf["EPG_CHANNELS"]
+    HOME = _conf["HOME"]
+    RECORDINGS = _conf["RECORDINGS"]
     OTT_HACK = _conf["OTT_HACK"]
     U7D_URL = _conf["U7D_URL"]
 
-    AGE_RATING = ["0", "0", "0", "7", "12", "16", "17", "18"]
+    AGE_RATING = ("0", "0", "0", "7", "12", "16", "17", "18")
+    EPG_EXTINFO_PAIRS = (
+        ("episode", "episode"),
+        ("episode_title", "episodeName"),
+        ("full_title", "name"),
+        ("season", "season"),
+        ("serie", "seriesName"),
+        ("year", "productionDate"),
+    )
     LANG = {"es": {"lang": "es"}, "en": {"lang": "en"}}
 
     series_regex = re.compile(r"^(S\d+E\d+|Ep[isode]*\.)(?:.*)")
@@ -1293,6 +1331,7 @@ if __name__ == "__main__":
     if _conf["LOG_TO_FILE"]:
         add_logfile(log, _conf["LOG_TO_FILE"], _conf["DEBUG"] and logging.DEBUG or logging.INFO)
 
+    del _conf
     lockfile = os.path.join(os.getenv("TMP", os.getenv("TMPDIR", "/tmp")), ".movistar_tvg.lock")  # nosec B108
     try:
         with FileLock(lockfile, timeout=0):
