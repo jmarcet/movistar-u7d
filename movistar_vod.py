@@ -590,7 +590,7 @@ async def record_stream(vod_info):
             buffer += (await stream.recv())[0]
         return buffer
 
-    f = start = None
+    f, end = None, 0
     path = os.path.dirname(_tmpname)
     try:
         if not os.path.exists(path):
@@ -599,7 +599,7 @@ async def record_stream(vod_info):
 
         f = await aiofiles.open(_tmpname + TMP_EXT, "wb")
         log.info(DIV_LOG % ("Recording STARTED", log_start))
-        start = time.time()
+        end = _args.time + time.time()
 
         if vod_info.get("isHdtv"):
             await f.write((await asyncio.wait_for(stream.recv(), timeout=0.2))[0])
@@ -609,13 +609,13 @@ async def record_stream(vod_info):
 
         while True:
             await f.write(await asyncio.wait_for(_buffer(), timeout=1.0))
-            if time.time() - start >= _args.time:
+            if time.time() >= end:
                 break
 
     except (CancelledError, asyncio_dgram.aio.TransportClosed):
         if f:
             await f.close()
-        await asyncio.shield(_cleanup_recording(CancelledError(), start))
+        await asyncio.shield(_cleanup_recording(CancelledError(), end - _args.time))
         return
 
     except TimeoutError:
@@ -626,7 +626,7 @@ async def record_stream(vod_info):
 
     if f:
         await f.close()
-    record_time = int(time.time() - start)
+    record_time = int(time.time() - end + _args.time)
     log.info(DIV_LOG % ("Recording ENDED", "[%6ss] / [%5ss]" % (f"~{record_time}", f"{_args.time}")))
 
     if not U7D_PARENT:
