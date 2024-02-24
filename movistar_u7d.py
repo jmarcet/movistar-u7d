@@ -111,7 +111,7 @@ async def after_server_start(app):
     )
 
     banner = f"Movistar U7D - U7D v{_version}"
-    if U7D_THREADS > 1:
+    if U7D_PROCESSES > 1:
         log.info(f"*** {banner} ***")
     else:
         log.info("-" * len(banner))
@@ -658,7 +658,7 @@ if __name__ == "__main__":
     NO_VERBOSE_LOGS = _conf["NO_VERBOSE_LOGS"]
     RECORDINGS = _conf["RECORDINGS"]
     RECORDINGS_TMP = _conf["RECORDINGS_TMP"]
-    U7D_THREADS = _conf["U7D_THREADS"]
+    U7D_PROCESSES = _conf["U7D_PROCESSES"]
     U7D_URL = _conf["U7D_URL"]
 
     VodArgs = namedtuple("Vod", ["channel", "program", "client_ip", "client_port", "start", "cloud"])
@@ -673,7 +673,7 @@ if __name__ == "__main__":
                 access_log=False,
                 auto_reload=False,
                 debug=_conf["DEBUG"],
-                workers=U7D_THREADS if not WIN32 else 1,
+                workers=U7D_PROCESSES if not WIN32 else 1,
             )
     except (AttributeError, CancelledError, KeyboardInterrupt):
         sys.exit(1)

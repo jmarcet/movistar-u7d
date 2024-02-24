@@ -59,7 +59,7 @@ async def before_server_start(app):
 
     if IPTV_BW_SOFT:
         app.add_task(network_saturation())
-        log.info(f"Ignoring RECORDINGS_THREADS => BW: {IPTV_BW_SOFT}-{IPTV_BW_HARD} kbps / {IPTV_IFACE}")
+        log.info(f"Ignoring RECORDINGS_PROCESSES => BW: {IPTV_BW_SOFT}-{IPTV_BW_HARD} kbps / {IPTV_IFACE}")
 
     await reload_epg()
 
@@ -885,7 +885,7 @@ async def timers_check(delay=0):
         await asyncio.sleep(2.5 if not WIN32 else 4)
 
         nr_procs += 1
-        if nr_procs >= RECORDINGS_THREADS:
+        if nr_procs >= RECORDINGS_PROCESSES:
             await log_network_saturated(nr_procs)
             return -1
 
@@ -912,7 +912,7 @@ async def timers_check(delay=0):
     sync_cloud = _timers.get("sync_cloud", False)
 
     nr_procs = len(await ongoing_vods())
-    if _NETWORK_SATURATION or nr_procs >= RECORDINGS_THREADS:
+    if _NETWORK_SATURATION or nr_procs >= RECORDINGS_PROCESSES:
         await log_network_saturated(nr_procs)
         return
 
@@ -1414,7 +1414,7 @@ if __name__ == "__main__":
     RECORDINGS = _conf["RECORDINGS"]
     RECORDINGS_M3U = _conf["RECORDINGS_M3U"]
     RECORDINGS_REINDEX = _conf["RECORDINGS_REINDEX"]
-    RECORDINGS_THREADS = _conf["RECORDINGS_THREADS"]
+    RECORDINGS_PROCESSES = _conf["RECORDINGS_PROCESSES"]
     RECORDINGS_TMP = _conf["RECORDINGS_TMP"]
     RECORDINGS_UPGRADE = _conf["RECORDINGS_UPGRADE"]
     U7D_URL = _conf["U7D_URL"]

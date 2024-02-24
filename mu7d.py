@@ -437,15 +437,15 @@ def mu7d_config():
         conf["RECORDINGS_UPGRADE"] = 0
 
     if not WIN32 and conf["IPTV_BW_SOFT"]:
-        conf["RECORDINGS_THREADS"] = 9999
-    elif "RECORDINGS_THREADS" not in conf or not isinstance(conf["RECORDINGS_THREADS"], int):
-        conf["RECORDINGS_THREADS"] = 4
+        conf["RECORDINGS_PROCESSES"] = 9999
+    elif "RECORDINGS_PROCESSES" not in conf or not isinstance(conf["RECORDINGS_PROCESSES"], int):
+        conf["RECORDINGS_PROCESSES"] = 4
 
     if "U7D_PORT" not in conf or not isinstance(conf["U7D_PORT"], int):
         conf["U7D_PORT"] = 8888
 
-    if "U7D_THREADS" not in conf or not isinstance(conf["U7D_THREADS"], int):
-        conf["U7D_THREADS"] = 1
+    if "U7D_PROCESSES" not in conf or not isinstance(conf["U7D_PROCESSES"], int):
+        conf["U7D_PROCESSES"] = 1
 
     conf["CHANNELS"] = os.path.join(conf["HOME"], "MovistarTV.m3u")
     conf["CHANNELS_CLOUD"] = os.path.join(conf["HOME"], "MovistarTVCloud.m3u")
