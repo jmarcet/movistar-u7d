@@ -169,6 +169,10 @@ async def get_end_point(home):
             finally:
                 await session.close()
 
+    log.info("Failed to get end_point. Trying again...")
+    await asyncio.sleep(5)
+    return await get_end_point(home)
+
 
 def get_iptv_ip():
     with closing(socket.socket(socket.AF_INET, socket.SOCK_DGRAM)) as s:
