@@ -29,7 +29,6 @@ from filelock import FileLock, Timeout
 from html import unescape
 from queue import Queue
 from xml.dom import minidom  # nosec B408
-from xml.etree.ElementTree import Element, ElementTree, SubElement  # nosec B405
 
 from mu7d import DATEFMT, END_POINTS_FILE, FMT, UA, UA_U7D, WIN32, YEAR_SECONDS, IPTVNetworkError
 from mu7d import add_logfile, get_end_point, get_iptv_ip, get_local_info, get_title_meta, mu7d_config, _version
@@ -911,150 +910,148 @@ class MulticastIPTV:
 
 class XmlTV:
     def __init__(self, data):
+        self.__doc = minidom.Document()
         self.__channels = data["channels"]
         self.__packages = data["packages"]
 
+    async def __add_programmes_tags(self, channel_id, programs, local, tz_offset):
+        for ts in programs:
+            program = programs[ts]
+
+            if not local:
+                ext_info = await MovistarTV.get_epg_extended_info(channel_id, program)
+            else:
+                filename = os.path.join(RECORDINGS, program["filename"])
+                ext_info = await get_local_info(channel_id, ts, filename, log, extended=True)
+                if not ext_info:
+                    continue
+                ext_info["end"] = ts + program["duration"]  # Use the corrected duration to avoid overlaps
+                program = ext_info
+
+            dst_start = time.localtime(program["start"]).tm_isdst
+            dst_stop = time.localtime(program["end"]).tm_isdst
+            start = datetime.fromtimestamp(program["start"]).strftime("%Y%m%d%H%M%S")
+            stop = datetime.fromtimestamp(program["end"]).strftime("%Y%m%d%H%M%S")
+
+            tag_programme = self.__doc.createElement("programme")
+            tag_programme.setAttribute("start", f"{start} +0{tz_offset + dst_start}00")
+            tag_programme.setAttribute("stop", f"{stop} +0{tz_offset + dst_stop}00")
+            tag_programme.setAttribute("channel", f"{channel_id}.movistar.tv")
+
+            is_serie = program["is_serie"]
+            title = program["serie"] if is_serie else program["full_title"]
+
+            tag_title = self.__append_child(tag_programme, "title", title.rstrip(":."), "es")
+            tag_stitle = _match = None
+
+            if is_serie:
+                subtitle = program["full_title"].split(title, 1)[-1].strip("- ")
+                if subtitle and subtitle not in title:
+                    tag_stitle = self.__append_child(tag_programme, "sub-title", subtitle, "es")
+
+            if ext_info:
+                desc = ""
+                year = ext_info.get("productionDate")
+                orig_title = ext_info.get("originalTitle", "")
+                orig_title = "" if orig_title.lower().lstrip().startswith("episod") else orig_title
+
+                if orig_title:
+                    _clean_origt = self.__clean(orig_title)
+
+                    if is_serie:
+                        if tag_stitle is not None and " - " in tag_stitle.data:
+                            se, _stitle = tag_stitle.data.split(" - ", 1)
+                            if _clean_origt.startswith(self.__clean(_stitle)):
+                                tag_stitle.data = f"{se} - {orig_title}"
+                    else:
+                        if ext_info["theme"] in ("Cine", "Documentales") and " (" in program["full_title"]:
+                            _match = re.match(r"([^()]+) \((.+)\)", program["full_title"])
+                            if _match and orig_title == _match.groups()[1]:
+                                tag_title.data = _match.groups()[0]
+
+                    if ext_info["theme"] == "Cine":
+                        tag_stitle = self.__append_child(tag_programme, "sub-title", f"«{orig_title}»", "es")
+
+                    elif ext_info["theme"] not in ("Deportes", "Música", "Programas"):
+                        if _clean_origt != self.__clean(tag_title.data):
+                            if tag_stitle is None or (_clean_origt not in self.__clean(tag_stitle.data)):
+                                desc = f"«{orig_title}»"
+
+                if local and tag_stitle is not None and ext_info.get("episodeName"):
+                    if self.__clean(ext_info["episodeName"]) in self.__clean(tag_stitle.data):
+                        if not tag_stitle.data.endswith(ext_info["episodeName"]):
+                            if len(ext_info["episodeName"]) >= len(tag_stitle.data):
+                                _match = series_regex.match(tag_stitle.data)
+                                if _match:
+                                    tag_stitle.data = _match.groups()[0] + " - " + ext_info["episodeName"]
+                                else:
+                                    tag_stitle.data = ext_info["episodeName"]
+
+                if ext_info.get("description", "").strip():
+                    if desc:
+                        desc += "\n\n"
+                    desc += re.sub(r"\s*\n", r"\n\n", re.sub(r",\s*\n", ", ", ext_info["description"].strip()))
+                    self.__append_child(tag_programme, "desc", desc, "es")
+
+                if any((key in ext_info for key in ("directors", "mainActors", "producer"))):
+                    tag_credits = self.__doc.createElement("credits")
+                    tag_programme.appendChild(tag_credits)
+                    for key in ("directors", "mainActors", "producer"):
+                        if key in ext_info:
+                            field = ext_info[key]
+                            if isinstance(field, str):
+                                field = field.split(", ")
+                            elif isinstance(field, dict):  # -movistar.nfo (lists in xml)
+                                field = tuple(field.values())[0]
+                            key = re.sub(r"(?:main)?([^s]+)s?$", r"\1", key.lower())
+                            for credit in field:
+                                self.__append_child(tag_credits, key, credit.strip())
+
+                if year:
+                    self.__append_child(tag_programme, "date", year)
+
+                if ext_info.get("labelGenre"):
+                    self.__append_child(tag_programme, "category", ext_info["labelGenre"], "es")
+                if ext_info.get("genre") and ext_info["genre"] != ext_info.get("labelGenre", ""):
+                    self.__append_child(tag_programme, "category", ext_info["genre"], "es")
+                if ext_info.get("theme"):
+                    if ext_info["theme"] not in (ext_info.get("genre", ""), ext_info.get("labelGenre", "")):
+                        self.__append_child(tag_programme, "category", ext_info["theme"], "es")
+                    if ext_info["theme"] in THEME_MAP:
+                        self.__append_child(tag_programme, "category", THEME_MAP[ext_info["theme"]], "en")
+
+                src = f"{U7D_URL}/{'recording/?' if local else 'Covers/'}" + ext_info["cover"]
+                if ext_info.get("covers", {}).get("fanart"):
+                    if not local:
+                        src = f"{src}?fanart=" + os.path.basename(ext_info["covers"]["fanart"])
+                    else:
+                        src = f"{U7D_URL}/recording/?" + ext_info["covers"]["fanart"]
+                self.__append_child(tag_programme, "icon", attr=("src", src))
+
+                tag_rating = self.__append_child(tag_programme, "rating", attr=("system", "pl"))
+                self.__append_child(tag_rating, "value", AGE_RATING[int(ext_info["ageRatingID"])])
+
+            if OTT_HACK:
+                tag_title.data = tag_title.data.translate(str.maketrans("()!?", "❨❩ᴉ‽"))
+
+            self.__doc.documentElement.appendChild(tag_programme)
+
+    def __append_child(self, tag, name, text=None, lang=None, attr=()):
+        child = self.__doc.createElement(name)
+        tag.appendChild(child)
+        if lang:
+            child.setAttribute("lang", lang)
+        elif attr:
+            child.setAttribute(*attr)
+        if text:
+            text_child = self.__doc.createTextNode(text)
+            child.appendChild(text_child)
+            return text_child
+        return child
+
     @staticmethod
-    async def __build_programme_tag(channel_id, ts, program, tz_offset):
-        local = "filename" in program
-
-        if not local:
-            ext_info = await MovistarTV.get_epg_extended_info(channel_id, program)
-        else:
-            filename = os.path.join(_conf["RECORDINGS"], program["filename"])
-            ext_info = await get_local_info(channel_id, ts, filename, log, extended=True)
-            if not ext_info:
-                return
-            ext_info["end"] = ts + program["duration"]  # Use the corrected duration to avoid overlaps
-            program = ext_info
-
-        dst_start = time.localtime(program["start"]).tm_isdst
-        dst_stop = time.localtime(program["end"]).tm_isdst
-        start = datetime.fromtimestamp(program["start"]).strftime("%Y%m%d%H%M%S")
-        stop = datetime.fromtimestamp(program["end"]).strftime("%Y%m%d%H%M%S")
-
-        tag_programme = Element(
-            "programme",
-            {
-                "start": f"{start} +0{tz_offset + dst_start}00",
-                "stop": f"{stop} +0{tz_offset + dst_stop}00",
-                "channel": f"{channel_id}.movistar.tv",
-            },
-        )
-
-        tag_title = SubElement(tag_programme, "title", LANG["es"])
-        tag_desc = tag_stitle = None
-
-        _match = False
-        is_serie, title = program["is_serie"], program["full_title"]
-
-        if is_serie:
-            title = program["serie"]
-            subtitle = program["full_title"].split(title, 1)[-1].strip("- ")
-
-            if subtitle and subtitle not in title:
-                tag_stitle = SubElement(tag_programme, "sub-title", LANG["es"])
-                tag_stitle.text = subtitle
-
-        tag_title.text = title.rstrip(":.")
-
-        if ext_info:
-
-            def _clean(string):
-                return re.sub(r"[^a-z0-9]", "", string.lower())
-
-            desc = ""
-            year = ext_info.get("productionDate")
-            orig_title = ext_info.get("originalTitle", "")
-            orig_title = "" if orig_title.lower().lstrip().startswith("episod") else orig_title
-
-            if orig_title:
-                _clean_origt = _clean(orig_title)
-
-                if is_serie:
-                    if tag_stitle is not None and " - " in tag_stitle.text:
-                        se, _stitle = tag_stitle.text.split(" - ", 1)
-                        if _clean_origt.startswith(_clean(_stitle)):
-                            tag_stitle.text = f"{se} - {orig_title}"
-                else:
-                    if ext_info["theme"] in ("Cine", "Documentales") and " (" in program["full_title"]:
-                        _match = re.match(r"([^()]+) \((.+)\)", program["full_title"])
-                        if _match and orig_title == _match.groups()[1]:
-                            tag_title.text = _match.groups()[0]
-
-                if ext_info["theme"] == "Cine":
-                    tag_stitle = SubElement(tag_programme, "sub-title", LANG["es"])
-                    tag_stitle.text = f"«{orig_title}»"
-
-                elif ext_info["theme"] not in ("Deportes", "Música", "Programas"):
-                    if _clean_origt != _clean(tag_title.text):
-                        if tag_stitle is None or (_clean_origt not in _clean(tag_stitle.text)):
-                            desc = f"«{orig_title}»"
-
-            if all((local, tag_stitle is not None, ext_info.get("episodeName"))):
-                if _clean(ext_info["episodeName"]) in _clean(tag_stitle.text):
-                    if not tag_stitle.text.endswith(ext_info["episodeName"]):
-                        if len(ext_info["episodeName"]) >= len(tag_stitle.text):
-                            _match = series_regex.match(tag_stitle.text)
-                            if _match:
-                                tag_stitle.text = _match.groups()[0] + " - " + ext_info["episodeName"]
-                            else:
-                                tag_stitle.text = ext_info["episodeName"]
-
-            if ext_info.get("description", "").strip():
-                _desc = re.sub(r"\s*\n", r"\n\n", re.sub(r",\s*\n", ", ", ext_info["description"].strip()))
-                tag_desc = SubElement(tag_programme, "desc", LANG["es"])
-                tag_desc.text = f"{desc}\n\n" if desc else ""
-                tag_desc.text += _desc
-
-            if any((key in ext_info for key in ("directors", "mainActors", "producer"))):
-                tag_credits = SubElement(tag_programme, "credits")
-                for key in ("directors", "mainActors", "producer"):
-                    if key in ext_info:
-                        field = ext_info[key]
-                        if isinstance(field, str):
-                            field = field.split(", ")
-                        elif isinstance(field, dict):  # -movistar.nfo (lists in xml)
-                            field = list(field.values())[0]
-                        key = key.lower()
-                        for credit in field:
-                            tag_credit = SubElement(tag_credits, re.sub(r"(?:main)?([^s]+)s?$", r"\1", key))
-                            tag_credit.text = credit.strip()
-
-            if year:
-                tag_date = SubElement(tag_programme, "date")
-                tag_date.text = year
-
-            if ext_info.get("labelGenre"):
-                tag_genrelabel = SubElement(tag_programme, "category", LANG["es"])
-                tag_genrelabel.text = ext_info["labelGenre"]
-            if ext_info.get("genre") and ext_info["genre"] != ext_info.get("labelGenre", ""):
-                tag_genre = SubElement(tag_programme, "category", LANG["es"])
-                tag_genre.text = ext_info["genre"]
-            if ext_info.get("theme"):
-                if ext_info["theme"] not in (ext_info.get("genre", ""), ext_info.get("labelGenre", "")):
-                    tag_theme = SubElement(tag_programme, "category", LANG["es"])
-                    tag_theme.text = ext_info["theme"]
-                if ext_info["theme"] in THEME_MAP:
-                    tag_category = SubElement(tag_programme, "category", LANG["en"])
-                    tag_category.text = THEME_MAP[ext_info["theme"]]
-
-            src = f"{U7D_URL}/{'recording/?' if local else 'Covers/'}" + ext_info["cover"]
-            if ext_info.get("covers", {}).get("fanart"):
-                if not local:
-                    src = f"{src}?fanart=" + os.path.basename(ext_info["covers"]["fanart"])
-                else:
-                    src = f"{U7D_URL}/recording/?" + ext_info["covers"]["fanart"]
-            SubElement(tag_programme, "icon", {"src": src})
-
-            tag_rating = SubElement(tag_programme, "rating", {"system": "pl"})
-            tag_value = SubElement(tag_rating, "value")
-            tag_value.text = AGE_RATING[int(ext_info["ageRatingID"])]
-
-        if OTT_HACK:
-            tag_title.text = tag_title.text.translate(str.maketrans("()!?", "❨❩ᴉ‽"))
-
-        return tag_programme
+    def __clean(string):
+        return re.sub(r"[^a-z0-9]", "", string.lower())
 
     def __get_client_services(self):
         services = {}
@@ -1069,38 +1066,33 @@ class XmlTV:
             f.write(content)
 
     async def generate_xml(self, parsed_epg, local=False):
-        root = Element(
-            "tv",
-            {
-                "date": datetime.now().strftime("%Y%m%d%H%M%S"),
-                "source-info-name": "Movistar IPTV Spain",
-                "source-info-url": "https://www.movistar.es/",
-                "generator-info-name": "Movistar U7D's movistar_tvg",
-                "generator-info-url": "https://github.com/jmarcet/movistar-u7d/",
-            },
-        )
         tz_offset = int(abs(time.timezone / 3600))
         services = self.__get_client_services()
-        for channel_id in sorted(services, key=lambda key: services[key]):
-            if channel_id in self.__channels and parsed_epg.get(channel_id):
-                tag_channel = Element("channel", {"id": f"{channel_id}.movistar.tv"})
-                tag_dname = SubElement(tag_channel, "display-name")
-                tag_dname.text = self.__channels[channel_id]["name"].strip(" *")
-                logo = f"{U7D_URL}/Logos/" + self.__channels[channel_id]["logo_uri"]
-                SubElement(tag_channel, "icon", {"src": logo})
-                root.append(tag_channel)
+        channels = [
+            ch_id
+            for ch_id in sorted(services, key=lambda key: services[key])
+            if any((ch_id in self.__channels, local)) and ch_id in parsed_epg
+        ]
 
-        for channel_id in [
-            cid
-            for cid in sorted(services, key=lambda key: services[key])
-            if any((cid in self.__channels, local)) and cid in parsed_epg
-        ]:
-            _tasks = [
-                self.__build_programme_tag(channel_id, program, parsed_epg[channel_id][program], tz_offset)
-                for program in sorted(parsed_epg[channel_id])
-            ]
-            [root.append(program) for program in (await asyncio.gather(*_tasks)) if program is not None]
-        return ElementTree(root)
+        root = self.__doc.createElement("tv")
+        root.setAttribute("date", datetime.now().strftime("%Y%m%d%H%M%S"))
+        root.setAttribute("source-info-name", "Movistar IPTV Spain")
+        root.setAttribute("source-info-url", "https://www.movistar.es/")
+        root.setAttribute("generator-info-name", "Movistar U7D's movistar_tvg")
+        root.setAttribute("generator-info-url", "https://github.com/jmarcet/movistar-u7d/")
+        self.__doc.appendChild(root)
+
+        for channel_id in channels:
+            tag_channel = self.__append_child(root, "channel", attr=("id", f"{channel_id}.movistar.tv"))
+            self.__append_child(tag_channel, "display-name", self.__channels[channel_id]["name"].strip(" *"))
+            self.__append_child(
+                tag_channel, "icon", attr=("src", f"{U7D_URL}/Logos/" + self.__channels[channel_id]["logo_uri"])
+            )
+
+        for channel_id in channels:
+            await self.__add_programmes_tags(channel_id, parsed_epg[channel_id], local, tz_offset)
+
+        return self.__doc
 
     def write_m3u(self, file_path, cloud=None, local=None):
         m3u = '#EXTM3U name="'
