@@ -482,14 +482,18 @@ class MulticastIPTV:
             _msg += "5_0 " if "5_0" in xml else "    "
             _msg += "6_0" if "6_0" in xml else "   "
             _msg += "] / [2_0 5_0 6_0]"
-            if all((x in xml for x in ("2_0", "5_0", "6_0"))):
-                log.info(f"{_msg} => Completos")
-                break
-            log.warning(f"{_msg} => Incompletos. Reintentando...")
+            if not all((x in xml for x in ("2_0", "5_0", "6_0"))):
+                log.warning(f"{_msg} => Incompletos. Reintentando...")
+                continue
 
-        self.__xml_data["channels"] = self.__get_channels(xml["2_0"])
-        self.__xml_data["packages"] = self.__get_packages(xml["5_0"])
-        self.__xml_data["segments"] = self.__get_segments(xml["6_0"])
+            try:
+                self.__xml_data["channels"] = self.__get_channels(xml["2_0"])
+                self.__xml_data["packages"] = self.__get_packages(xml["5_0"])
+                self.__xml_data["segments"] = self.__get_segments(xml["6_0"])
+                log.info(f"{_msg} => Completos y correctos")
+                break
+            except ElTr.ParseError:
+                log.warning(f"{_msg} => Incorrectos. Reintentando...")
 
         stats = tuple(len(self.__xml_data[x]) for x in ("segments", "channels", "packages"))
         log.info("Días de EPG: %i _ Canales: %i _ Paquetes: %i" % stats)
