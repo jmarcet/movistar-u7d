@@ -26,9 +26,8 @@ from collections import defaultdict
 from contextlib import closing
 from datetime import date, datetime, timedelta
 from filelock import FileLock, Timeout
-from html import unescape
+from html import escape, unescape
 from queue import Queue
-from xml.dom import minidom  # nosec B408
 
 from mu7d import DATEFMT, END_POINTS_FILE, FMT, UA, UA_U7D, WIN32, YEAR_SECONDS, IPTVNetworkError
 from mu7d import add_logfile, get_end_point, get_iptv_ip, get_local_info, get_title_meta, mu7d_config, _version
@@ -910,7 +909,7 @@ class MulticastIPTV:
 
 class XmlTV:
     def __init__(self, data):
-        self.__doc = minidom.Document()
+        self.__doc = ['<?xml version="1.0" encoding="UTF-8"?>']
         self.__channels = data["channels"]
         self.__packages = data["packages"]
 
@@ -933,25 +932,28 @@ class XmlTV:
             start = datetime.fromtimestamp(program["start"]).strftime("%Y%m%d%H%M%S")
             stop = datetime.fromtimestamp(program["end"]).strftime("%Y%m%d%H%M%S")
 
-            tag_programme = self.__doc.createElement("programme")
-            tag_programme.setAttribute("start", f"{start} +0{tz_offset + dst_start}00")
-            tag_programme.setAttribute("stop", f"{stop} +0{tz_offset + dst_stop}00")
-            tag_programme.setAttribute("channel", f"{channel_id}.movistar.tv")
+            self.__append_elem(
+                "programme",
+                attr={
+                    "start": f"{start} +0{tz_offset + dst_start}00",
+                    "stop": f"{stop} +0{tz_offset + dst_stop}00",
+                    "channel": f"{channel_id}.movistar.tv",
+                },
+                pad=8,
+                child=True,
+            )
 
             is_serie = program["is_serie"]
             title = program["serie"] if is_serie else program["full_title"]
-
-            tag_title = self.__append_child(tag_programme, "title", title.rstrip(":."), "es")
-            tag_stitle = _match = None
+            subtitle = desc = ""
+            _match = None
 
             if is_serie:
                 subtitle = program["full_title"].split(title, 1)[-1].strip("- ")
-                if subtitle and subtitle not in title:
-                    tag_stitle = self.__append_child(tag_programme, "sub-title", subtitle, "es")
+                if subtitle in title:
+                    subtitle = ""
 
             if ext_info:
-                desc = ""
-                year = ext_info.get("productionDate")
                 orig_title = ext_info.get("originalTitle", "")
                 orig_title = "" if orig_title.lower().lstrip().startswith("episod") else orig_title
 
@@ -959,43 +961,52 @@ class XmlTV:
                     _clean_origt = self.__clean(orig_title)
 
                     if is_serie:
-                        if tag_stitle is not None and " - " in tag_stitle.data:
-                            se, _stitle = tag_stitle.data.split(" - ", 1)
+                        if " - " in subtitle:
+                            se, _stitle = subtitle.split(" - ", 1)
                             if _clean_origt.startswith(self.__clean(_stitle)):
-                                tag_stitle.data = f"{se} - {orig_title}"
+                                subtitle = f"{se} - {orig_title}"
                     else:
                         if ext_info["theme"] in ("Cine", "Documentales") and " (" in program["full_title"]:
                             _match = re.match(r"([^()]+) \((.+)\)", program["full_title"])
                             if _match and orig_title == _match.groups()[1]:
-                                tag_title.data = _match.groups()[0]
+                                title = _match.groups()[0]
 
                     if ext_info["theme"] == "Cine":
-                        tag_stitle = self.__append_child(tag_programme, "sub-title", f"«{orig_title}»", "es")
+                        subtitle = f"«{orig_title}»"
 
                     elif ext_info["theme"] not in ("Deportes", "Música", "Programas"):
-                        if _clean_origt != self.__clean(tag_title.data):
-                            if tag_stitle is None or (_clean_origt not in self.__clean(tag_stitle.data)):
+                        if _clean_origt != self.__clean(title):
+                            if not subtitle or (_clean_origt not in self.__clean(subtitle)):
                                 desc = f"«{orig_title}»"
 
-                if local and tag_stitle is not None and ext_info.get("episodeName"):
-                    if self.__clean(ext_info["episodeName"]) in self.__clean(tag_stitle.data):
-                        if not tag_stitle.data.endswith(ext_info["episodeName"]):
-                            if len(ext_info["episodeName"]) >= len(tag_stitle.data):
-                                _match = series_regex.match(tag_stitle.data)
+            if OTT_HACK:
+                title = title.translate(str.maketrans("()!?", "❨❩ᴉ‽"))
+
+            if ext_info:
+                if local and subtitle and ext_info.get("episodeName"):
+                    if self.__clean(ext_info["episodeName"]) in self.__clean(subtitle):
+                        if not subtitle.endswith(ext_info["episodeName"]):
+                            if len(ext_info["episodeName"]) >= len(subtitle):
+                                _match = series_regex.match(subtitle)
                                 if _match:
-                                    tag_stitle.data = _match.groups()[0] + " - " + ext_info["episodeName"]
+                                    subtitle = _match.groups()[0] + " - " + ext_info["episodeName"]
                                 else:
-                                    tag_stitle.data = ext_info["episodeName"]
+                                    subtitle = ext_info["episodeName"]
 
                 if ext_info.get("description", "").strip():
                     if desc:
                         desc += "\n\n"
                     desc += re.sub(r"\s*\n", r"\n\n", re.sub(r",\s*\n", ", ", ext_info["description"].strip()))
-                    self.__append_child(tag_programme, "desc", desc, "es")
 
+            self.__append_elem("title", title.rstrip(":."), "es", pad=12)
+            if subtitle:
+                self.__append_elem("sub-title", subtitle, "es", pad=12)
+            if desc:
+                self.__append_elem("desc", desc, "es", pad=12)
+
+            if ext_info:
                 if any((key in ext_info for key in ("directors", "mainActors", "producer"))):
-                    tag_credits = self.__doc.createElement("credits")
-                    tag_programme.appendChild(tag_credits)
+                    self.__append_elem("credits", pad=12, child=True)
                     for key in ("directors", "mainActors", "producer"):
                         if key in ext_info:
                             field = ext_info[key]
@@ -1005,20 +1016,22 @@ class XmlTV:
                                 field = tuple(field.values())[0]
                             key = re.sub(r"(?:main)?([^s]+)s?$", r"\1", key.lower())
                             for credit in field:
-                                self.__append_child(tag_credits, key, credit.strip())
+                                self.__append_elem(key, credit.strip(), pad=16)
+                    self.__append_elem("credits", pad=12, close=True)
 
+                year = ext_info.get("productionDate")
                 if year:
-                    self.__append_child(tag_programme, "date", year)
+                    self.__append_elem("date", year, pad=12)
 
                 if ext_info.get("labelGenre"):
-                    self.__append_child(tag_programme, "category", ext_info["labelGenre"], "es")
+                    self.__append_elem("category", ext_info["labelGenre"], "es", pad=12)
                 if ext_info.get("genre") and ext_info["genre"] != ext_info.get("labelGenre", ""):
-                    self.__append_child(tag_programme, "category", ext_info["genre"], "es")
+                    self.__append_elem("category", ext_info["genre"], "es", pad=12)
                 if ext_info.get("theme"):
                     if ext_info["theme"] not in (ext_info.get("genre", ""), ext_info.get("labelGenre", "")):
-                        self.__append_child(tag_programme, "category", ext_info["theme"], "es")
+                        self.__append_elem("category", ext_info["theme"], "es", pad=12)
                     if ext_info["theme"] in THEME_MAP:
-                        self.__append_child(tag_programme, "category", THEME_MAP[ext_info["theme"]], "en")
+                        self.__append_elem("category", THEME_MAP[ext_info["theme"]], "en", pad=12)
 
                 src = f"{U7D_URL}/{'recording/?' if local else 'Covers/'}" + ext_info["cover"]
                 if ext_info.get("covers", {}).get("fanart"):
@@ -1026,28 +1039,28 @@ class XmlTV:
                         src = f"{src}?fanart=" + os.path.basename(ext_info["covers"]["fanart"])
                     else:
                         src = f"{U7D_URL}/recording/?" + ext_info["covers"]["fanart"]
-                self.__append_child(tag_programme, "icon", attr=("src", src))
+                self.__append_elem("icon", attr={"src": src}, pad=12)
 
-                tag_rating = self.__append_child(tag_programme, "rating", attr=("system", "pl"))
-                self.__append_child(tag_rating, "value", AGE_RATING[int(ext_info["ageRatingID"])])
+                self.__append_elem("rating", attr={"system": "pl"}, pad=12, child=True)
+                self.__append_elem("value", AGE_RATING[int(ext_info["ageRatingID"])], pad=16)
+                self.__append_elem("rating", pad=12, close=True)
 
-            if OTT_HACK:
-                tag_title.data = tag_title.data.translate(str.maketrans("()!?", "❨❩ᴉ‽"))
+            self.__append_elem("programme", pad=8, close=True)
 
-            self.__doc.documentElement.appendChild(tag_programme)
-
-    def __append_child(self, tag, name, text=None, lang=None, attr=()):
-        child = self.__doc.createElement(name)
-        tag.appendChild(child)
+    def __append_elem(self, name, text=None, lang=None, attr={}, pad=0, child=False, close=False):
+        elem = (" " * pad) + "<" + ("/" if close else "") + name
         if lang:
-            child.setAttribute("lang", lang)
+            elem += f' lang="{lang}"'
         elif attr:
-            child.setAttribute(*attr)
+            for key, value in attr.items():
+                elem += f' {key}="{value}"'
         if text:
-            text_child = self.__doc.createTextNode(text)
-            child.appendChild(text_child)
-            return text_child
-        return child
+            elem += f">{escape(text)}</{name}>"
+        elif any((child, close)):
+            elem += ">"
+        else:
+            elem += "/>"
+        self.__doc.append(elem)
 
     @staticmethod
     def __clean(string):
@@ -1074,25 +1087,29 @@ class XmlTV:
             if any((ch_id in self.__channels, local)) and ch_id in parsed_epg
         ]
 
-        root = self.__doc.createElement("tv")
-        root.setAttribute("date", datetime.now().strftime("%Y%m%d%H%M%S"))
-        root.setAttribute("source-info-name", "Movistar IPTV Spain")
-        root.setAttribute("source-info-url", "https://www.movistar.es/")
-        root.setAttribute("generator-info-name", "Movistar U7D's movistar_tvg")
-        root.setAttribute("generator-info-url", "https://github.com/jmarcet/movistar-u7d/")
-        self.__doc.appendChild(root)
+        attr = {
+            "date": datetime.now().strftime("%Y%m%d%H%M%S"),
+            "source-info-name": "Movistar IPTV Spain",
+            "source-info-url": "https://www.movistar.es/",
+            "generator-info-name": "Movistar U7D's movistar_tvg",
+            "generator-info-url": "https://github.com/jmarcet/movistar-u7d/",
+        }
+        self.__append_elem("tv", attr=attr, pad=4, child=True)
 
         for channel_id in channels:
-            tag_channel = self.__append_child(root, "channel", attr=("id", f"{channel_id}.movistar.tv"))
-            self.__append_child(tag_channel, "display-name", self.__channels[channel_id]["name"].strip(" *"))
-            self.__append_child(
-                tag_channel, "icon", attr=("src", f"{U7D_URL}/Logos/" + self.__channels[channel_id]["logo_uri"])
+            self.__append_elem("channel", attr={"id": f"{channel_id}.movistar.tv"}, pad=8, child=True)
+            self.__append_elem("display-name", self.__channels[channel_id]["name"].strip(" *"), pad=12)
+            self.__append_elem(
+                "icon", attr={"src": f"{U7D_URL}/Logos/" + self.__channels[channel_id]["logo_uri"]}, pad=12
             )
+            self.__append_elem("channel", pad=8, close=True)
 
         for channel_id in channels:
             await self.__add_programmes_tags(channel_id, parsed_epg[channel_id], local, tz_offset)
 
-        return self.__doc
+        self.__append_elem("tv", pad=4, close=True)
+
+        return "\n".join(self.__doc)
 
     def write_m3u(self, file_path, cloud=None, local=None):
         m3u = '#EXTM3U name="'
@@ -1205,6 +1222,7 @@ async def tvg_main():
         # Busca el Proveedor de Servicios y descarga los archivos XML: canales, paquetes y segmentos
         _MIPTV = MulticastIPTV()
         xdata = _MIPTV.get_service_provider_data(refresh)
+        epg_nr_days = len(xdata["segments"])
 
         # Crea el objeto XMLTV a partir de los datos descargados del Proveedor de Servicios
         _XMLTV = XmlTV(xdata)
@@ -1215,13 +1233,9 @@ async def tvg_main():
             if not args.guide:
                 return
 
-        epg_nr_days = len(xdata["segments"])
-        del xdata
-
-        # Descarga los segments de cada EPG_X_BIN.imagenio.es y devuelve la guía decodificada
+        # Descarga los segmentos de cada EPG_X_BIN.imagenio.es y obtiene la guía decodificada
         if args.guide:
             epg = await _MIPTV.get_epg()
-
         elif args.cloud_m3u or args.cloud_recordings or args.local_m3u or args.local_recordings:
             if args.cloud_m3u or args.cloud_recordings:
                 epg = await _MIPTV.get_epg_cloud()
@@ -1237,23 +1251,20 @@ async def tvg_main():
                 )
             if not args.cloud_recordings and not args.local_recordings:
                 return
-
-        del _MIPTV
+        epg_nr_channels = len(epg)
 
         # Genera el árbol XMLTV de los paquetes contratados
         dom = await _XMLTV.generate_xml(epg, bool(args.local_m3u or args.local_recordings))
-        epg_nr_channels = len(epg)
-        del _CONFIG, _XMLTV, epg
-
         if args.guide:
-            with open(args.guide, "w", encoding="utf8") as f:
-                dom.writexml(f, indent="    ", addindent="    ", newl="\n", encoding="UTF-8")
-            with gzip.open(args.guide + ".gz", "wt", encoding="utf8") as f:
-                dom.writexml(f, indent="    ", addindent="    ", newl="\n", encoding="UTF-8")
-
+            with (
+                open(args.guide, "w", encoding="utf8") as f,
+                gzip.open(args.guide + ".gz", "wt", encoding="utf8") as f_z,
+            ):
+                f.write(dom)
+                f_z.write(dom)
         elif args.cloud_recordings or args.local_recordings:
             with open(args.cloud_recordings or args.local_recordings, "w", encoding="utf8") as f:
-                dom.writexml(f, indent="    ", addindent="    ", newl="\n", encoding="UTF-8")
+                f.write(dom)
 
         if not any((args.cloud_recordings, args.local_recordings)):
             _t = str(timedelta(seconds=round(time.time() - _time_start)))
@@ -1312,7 +1323,6 @@ if __name__ == "__main__":
         ("serie", "seriesName"),
         ("year", "productionDate"),
     )
-    LANG = {"es": {"lang": "es"}, "en": {"lang": "en"}}
 
     series_regex = re.compile(r"^(S\d+E\d+|Ep[isode]*\.)(?:.*)")
 
