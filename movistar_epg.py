@@ -378,33 +378,29 @@ async def handle_archive(request, channel_id, program_id, cloud=False):
     if not _t_timers or _t_timers.done():
         _t_timers = app.add_task(timers_check(delay=3))
 
-    errors = ""
     log.debug('Checking for "%s"' % filename)
-    if does_recording_exist(filename):
-        async with recordings_lock:
-            if channel_id not in _RECORDINGS:
-                _RECORDINGS[channel_id] = {}
+    if not does_recording_exist(filename):
+        msg = "Recording NOT ARCHIVED"
+        log.error(DIV_ONE % (msg, log_suffix))
+        return response.json({"status": msg}, ensure_ascii=False, status=204)
 
-            prune_duplicates(channel_id, filename)
-            if channel_id in _KEEP:
-                prune_expired(channel_id, filename)
+    async with recordings_lock:
+        if channel_id not in _RECORDINGS:
+            _RECORDINGS[channel_id] = {}
 
-            nfo = await get_local_info(channel_id, timestamp, get_path(filename, bare=True), log)
-            if timestamp == nfo["beginTime"]:
-                _RECORDINGS[channel_id][timestamp] = {"duration": nfo["duration"], "filename": filename}
-            else:
-                errors = ", event changed -> aborted"
+        prune_duplicates(channel_id, filename)
+        if channel_id in _KEEP:
+            prune_expired(channel_id, filename)
 
-        if not errors:
-            app.add_task(update_recordings(channel_id))
+        nfo = await get_local_info(channel_id, timestamp, get_path(filename, bare=True), log)
+        # Metadata's beginTime rules since it is how the recording will be found
+        _RECORDINGS[channel_id][nfo["beginTime"]] = {"duration": nfo["duration"], "filename": filename}
 
-            msg = "Recording ARCHIVED"
-            log.info(DIV_ONE % (msg, log_suffix))
-            return response.json({"status": msg}, ensure_ascii=False)
+        app.add_task(update_recordings(channel_id))
 
-    msg = "Recording NOT ARCHIVED"
-    log.error(DIV_ONE % (msg, log_suffix))
-    return response.json({"status": msg}, ensure_ascii=False, status=204)
+        msg = "Recording ARCHIVED"
+        log.info(DIV_ONE % (msg, log_suffix))
+        return response.json({"status": msg}, ensure_ascii=False)
 
 
 @app.get("/channels/")
