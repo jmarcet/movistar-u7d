@@ -86,18 +86,16 @@ async def before_server_start(app):
                     _indexed = set()
                     try:
                         async with aiofiles.open(recordings, encoding="utf8") as f:
-                            recordingsdata = ujson.loads(await f.read())
-                        int_recordings = {}
-                        for str_channel in recordingsdata:
-                            channel_id = int(str_channel)
-                            int_recordings[channel_id] = {}
-                            for str_timestamp in recordingsdata[str_channel]:
-                                timestamp = int(str_timestamp)
-                                recording = recordingsdata[str_channel][str_timestamp]
+                            _RECORDINGS = json.loads(await f.read(), object_hook=keys_to_int)
+                        for channel_id in _RECORDINGS:
+                            _drop = []
+                            for timestamp in _RECORDINGS[channel_id]:
+                                recording = _RECORDINGS[channel_id][timestamp]
                                 try:
                                     filename = recording["filename"]
                                 except KeyError:
                                     log.warning(f'Dropping old style "{recording}" from recordings.json')
+                                    _drop.append(timestamp)
                                     continue
                                 for old_ch, new_ch in upgraded_channels:
                                     if filename.startswith(old_ch):
@@ -107,7 +105,7 @@ async def before_server_start(app):
                                         filename = recording["filename"] = filename.replace(old_ch, new_ch)
                                 if not does_recording_exist(filename):
                                     if timestamp > oldest_epg:
-                                        log.warning(f'Archived recording "{filename}" not found on disk')
+                                        log.warning(f'Archived Local Recording "{filename}" not found on disk')
                                     elif channel_id in _CLOUD and timestamp in _CLOUD[channel_id]:
                                         log.warning(f'Archived Cloud Recording "{filename}" not found on disk')
                                     else:
@@ -115,8 +113,8 @@ async def before_server_start(app):
                                 else:
                                     _indexed.add(get_path(filename))
                                     utime(timestamp, *get_recording_files(filename))
-                                int_recordings[channel_id][timestamp] = recording
-                        _RECORDINGS = int_recordings
+                            for timestamp in _drop:
+                                del _RECORDINGS[channel_id][timestamp]
                     except (TypeError, ValueError) as ex:
                         log.error(f'Failed to parse "recordings.json". It will be reset!!!: {repr(ex)}')
                         remove(CHANNELS_LOCAL, GUIDE_LOCAL)
@@ -995,15 +993,9 @@ async def update_cloud():
 
     try:
         async with aiofiles.open(cloud_data, encoding="utf8") as f:
-            clouddata = ujson.loads(await f.read())["data"]
+            _CLOUD = json.loads(await f.read(), object_hook=keys_to_int)["data"]
     except (FileNotFoundError, TypeError, ValueError):
         return await update_cloud()
-
-    cloud_epg = defaultdict(dict)
-    for channel in clouddata:
-        cloud_epg[int(channel)] = {int(k): v for k, v in clouddata[channel].items()}
-
-    _CLOUD = cloud_epg
 
     log.info(f"Cloud Recordings Updated => {U7D_URL}/MovistarTVCloud.m3u - {U7D_URL}/cloud.xml")
     nr_epg = sum((len(_CLOUD[channel]) for channel in _CLOUD))
