@@ -688,7 +688,7 @@ class MulticastIPTV:
                 sane_epg[channel_id] = self.__epg[channel_key]
                 assigned = True
                 break
-            if not assigned:
+            if not assigned or channel_key in EPG_CHANNELS:
                 sane_epg[channel_key] = self.__epg[channel_key]
         self.__epg = sane_epg
 
