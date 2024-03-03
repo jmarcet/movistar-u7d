@@ -114,6 +114,7 @@ EPG_CHANNELS = {
     3103,  # _ "Movistar Plus+"
 }
 
+anchored_regex = re.compile(r"^(.+ - \d{8}_)\d{4}$")
 episode_regex = re.compile(r"^.*(?:Ep[isode.]+) (\d+)$")
 title_select_regex = re.compile(r".+ T\d+ .+")
 title_1_regex = re.compile(r"(.+(?!T\d)) +T(\d+)(?: *Ep[isode.]+ (\d+))?[ -]*(.*)")
@@ -478,14 +479,20 @@ async def ongoing_vods(channel_id="", program_id="", filename="", _all=False, _f
         regex = "^movistar_vod REC" if not _all else "^movistar_vod .*"
     else:
         regex = "^%smovistar_vod%s" % ((sys.executable.replace("\\", "\\\\") + " ") if EXT == ".py" else "", EXT)
+
+    if filename:
+        _match = anchored_regex.match(filename)
+        if _match:
+            filename = _match.groups()[0]
+
     regex += "(" if filename and program_id else ""
     regex += f" {channel_id:4} {program_id}" if program_id else ""
     regex += "|" if filename and program_id else ""
     regex += " .+%s" % filename.replace("\\", "\\\\") if filename else ""
     regex += ")" if filename and program_id else ""
 
-    vods = tuple(filter(None, [proc_grep(proc, regex) for proc in family]))
-    return vods if not _all else "|".join([" ".join(proc.cmdline()).strip() for proc in vods])
+    vods = filter(None, map(lambda proc: proc_grep(proc, regex), family))
+    return tuple(vods) if not _all else "|".join([" ".join(proc.cmdline()).strip() for proc in vods])
 
 
 def pp_xml(path, key, value):
