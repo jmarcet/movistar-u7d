@@ -32,8 +32,9 @@ from warnings import filterwarnings
 
 from mu7d import DATEFMT, DIV_ONE, DIV_TWO, DROP_KEYS, EXT, FMT, NFO_EXT
 from mu7d import UA_U7D, VID_EXTS, WIN32, YEAR_SECONDS, IPTVNetworkError
-from mu7d import add_logfile, cleanup_handler, find_free_port, get_iptv_ip, get_local_info, get_safe_filename
-from mu7d import glob_safe, keys_to_int, launch, mu7d_config, ongoing_vods, pp_xml, remove, utime, _version
+from mu7d import add_logfile, anchored_regex, cleanup_handler, find_free_port, get_iptv_ip, get_local_info
+from mu7d import get_safe_filename, glob_safe, keys_to_int, launch, mu7d_config, ongoing_vods, pp_xml, remove
+from mu7d import utime, _version
 
 
 app = Sanic("movistar_epg")
@@ -655,7 +656,6 @@ async def record_program(
         return "Event not found"
 
     filename = get_recording_name(channel_id, timestamp, cloud)
-
     ongoing = await ongoing_vods(filename=filename, _all=True)
     if ongoing:
         log_suffix = f': [{channel_id:4}] [{pid}] [{timestamp}] "{filename}"'
@@ -677,7 +677,7 @@ async def record_program(
             await asyncio.sleep(5)
         elif timestamp > prev_ts:
             msg = DIV_TWO % ("Event DELAYED", begin_time, log_suffix)
-            log.debug(msg)
+            log.info(msg)
             return re.sub(r"\s+:", ":", msg)
 
     if _NETWORK_SATURATION:
@@ -803,11 +803,10 @@ async def timers_check(delay=0):
             return
 
         guide = _CLOUD if cloud else _EPGDATA
-
         filename = get_recording_name(channel_id, timestamp, cloud)
         duration, pid, title = (guide[channel_id][timestamp][t] for t in ("duration", "pid", "full_title"))
 
-        if filename in ongoing:
+        if f"{channel_id} {pid} -b " in ongoing:
             vod = await ongoing_vods(filename=filename, _all=True)
             if f"{channel_id} {pid} -b {timestamp} " in vod or f"{channel_id} {pid} -b " not in vod:
                 return
@@ -900,7 +899,7 @@ async def timers_check(delay=0):
         for channel_id in _CLOUD:
             channel_name = _CHANNELS[channel_id]["name"]
             log.debug("Checking Cloud: [%4d] [%s]" % (channel_id, channel_name))
-            for timestamp in _filter_recorded(sorted(_CLOUD[channel_id])):
+            for timestamp in _filter_recorded(_CLOUD[channel_id]):
                 if await _record(cloud=True):
                     return _exit()
 
@@ -1235,7 +1234,6 @@ async def upgrade_recordings():
         return
 
     log.info(f"UPGRADING RECORDINGS METADATA: {RECORDINGS_UPGRADE}")
-    anchored_regex = re.compile(r"^(.+?) - \d{8}(?:_\d{4})?$")
     covers = names = wrong = 0
 
     for nfo_file in sorted(glob(f"{RECORDINGS}/**/*{NFO_EXT}", recursive=True)):
