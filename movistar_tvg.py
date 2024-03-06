@@ -878,6 +878,7 @@ class XmlTV:
         self.__doc = ['<?xml version="1.0" encoding="UTF-8"?>']
         self.__channels = data["channels"]
         self.__services = data["services"]
+        self.__trans = str.maketrans("()!?", "❨❩ᴉ‽")
 
     async def __add_programmes_tags(self, channel_id, programs, local, tz_offset):
         if not local:
@@ -950,10 +951,6 @@ class XmlTV:
                             if not subtitle or (_clean_origt not in self.__clean(subtitle)):
                                 desc = f"«{orig_title}»"
 
-            if OTT_HACK:
-                title = title.translate(str.maketrans("()!?", "❨❩ᴉ‽"))
-
-            if ext_info:
                 if local and subtitle and ext_info.get("episodeName"):
                     if self.__clean(ext_info["episodeName"]) in self.__clean(subtitle):
                         if not subtitle.endswith(ext_info["episodeName"]):
@@ -968,6 +965,11 @@ class XmlTV:
                     if desc:
                         desc += "\n\n"
                     desc += re.sub(r"\s*\n", r"\n\n", re.sub(r",\s*\n", ", ", ext_info["description"].strip()))
+
+            if OTT_HACK:
+                title = title.translate(self.__trans)
+                if desc:
+                    desc = desc.translate(self.__trans)
 
             self.__append_elem("title", title.rstrip(":."), "es", pad=12)
             if subtitle:
