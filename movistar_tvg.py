@@ -171,9 +171,9 @@ class Cache:
         return Cache.load("provider.json")
 
     @staticmethod
-    def save(cfile, data):
+    def save(cfile, data, sort_keys=False):
         with open(os.path.join(CACHE_DIR, cfile), "w", encoding="utf8") as f:
-            json.dump({"data": data}, f, ensure_ascii=False, indent=4, sort_keys=True)
+            json.dump({"data": data}, f, ensure_ascii=False, indent=4, sort_keys=sort_keys)
 
     @staticmethod
     def save_channels_data(xdata):
@@ -202,11 +202,11 @@ class Cache:
 
     @staticmethod
     def save_epg(data):
-        Cache.save("epg.json", data)
+        Cache.save("epg.json", data, sort_keys=True)
 
     @staticmethod
     def save_epg_cloud(data):
-        Cache.save("cloud.json", data)
+        Cache.save("cloud.json", data, sort_keys=True)
 
     @staticmethod
     def save_epg_metadata(data):
@@ -214,7 +214,7 @@ class Cache:
 
     @staticmethod
     def save_epg_extended_info(data):
-        Cache.save(os.path.join("programs", f'{data["productID"]}.json'), data)
+        Cache.save(os.path.join("programs", f'{data["productID"]}.json'), data, sort_keys=True)
 
     @staticmethod
     def save_service_provider_data(data):
