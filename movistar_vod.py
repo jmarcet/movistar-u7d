@@ -189,10 +189,7 @@ async def postprocess(vod_info):
         proc = await asyncio.create_subprocess_exec(*cmd, stdin=NULL, stdout=PIPE, stderr=NULL)
         recording_data = ujson.loads((await proc.communicate())[0].decode())
 
-        if "format" not in recording_data:
-            return 0
-
-        return int(float(recording_data["format"].get("duration", 0)))
+        return int(float(recording_data.get("format", {}).get("duration", 0)))
 
     def _save_cover_cache(metadata):
         if metadata.get("covers", {}).get("fanart"):
@@ -400,7 +397,7 @@ async def postprocess(vod_info):
 
         cmd = ("comskip", *COMSKIP, "--ts", _tmpname + TMP_EXT)
 
-        log.info("POSTPROCESS #3  - COMSKIP - Checking recording for commercials")
+        log.info("POSTPROCESS #3A - COMSKIP - Checking recording for commercials")
         async with aiofiles.open(COMSKIP_LOG, "ab") as f:
             start = time.time()
             proc = await asyncio.create_subprocess_exec(*cmd, stdin=NULL, stdout=f, stderr=f)
@@ -408,7 +405,7 @@ async def postprocess(vod_info):
             end = time.time()
 
         COMSKIP = None if proc.returncode else COMSKIP
-        msg1 = f"POSTPROCESS #3  - COMSKIP - Commercials {'NOT found' if proc.returncode else 'found'}"
+        msg1 = f"POSTPROCESS #3B - COMSKIP - Commercials {'NOT found' if proc.returncode else 'found'}"
         msg2 = f"In [{str(timedelta(seconds=round(end - start)))}s]"
         msg = DIV_LOG % (msg1, msg2)
         log.warning(msg) if proc.returncode else log.info(msg)
@@ -608,12 +605,10 @@ async def record_stream(vod_info):
             # 1st packet on SDTV channels is bogus and breaks ffmpeg
             await asyncio.wait_for(stream.recv(), timeout=0.2)
 
-        while True:
+        while time.time() < end:
             await f.write(await asyncio.wait_for(_buffer(), timeout=1.0))
-            if time.time() >= end:
-                break
 
-    except (CancelledError, asyncio_dgram.aio.TransportClosed):
+    except (CancelledError, asyncio_dgram.TransportClosed):
         if f:
             await f.close()
         await asyncio.shield(_cleanup_recording(CancelledError(), end - _args.time))
