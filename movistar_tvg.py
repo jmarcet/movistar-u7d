@@ -466,7 +466,6 @@ class MulticastIPTV:
             )
 
         queue.join()
-        del self.__xml_data["segments"]
 
     @staticmethod
     def __get_channels(xml_channels):
@@ -630,7 +629,6 @@ class MulticastIPTV:
             else:
                 self.__cached_epg[channel] = self.__epg[channel]
             del self.__epg[channel]
-        del self.__epg
 
         gaps = 0
         for channel in (ch for ch in self.__xml_data["services"] if ch in self.__cached_epg):
@@ -644,7 +642,10 @@ class MulticastIPTV:
         log.info(msg)
 
         self.__sort_epg()
+        Cache.save_epg(self.__cached_epg)
+
         log.debug("__merge_epg(): %s" % str(self.__cached_epg.keys()))
+        return gaps
 
     def __parse_bin_epg(self):
         parsed_epg = {}
@@ -750,15 +751,15 @@ class MulticastIPTV:
             self.__get_bin_epg()
             try:
                 self.__parse_bin_epg()
-                break
-            except Exception:
+                self.__sanitize_channels()
+                self.__fix_epg()
+                if not self.__merge_epg():
+                    del self.__epg, self.__xml_data["segments"]
+                    break
+                log.warning("EPG con huecos. Descargando de nuevo...")
+            except Exception as ex:
+                log.debug("%s" % repr(ex))
                 log.warning("Error descargando la EPG. Reintentando...")
-
-        self.__sanitize_channels()
-        self.__fix_epg()
-        self.__merge_epg()
-
-        Cache.save_epg(self.__cached_epg)
 
         skipped = 0
         for channel_id in tuple(ch for ch in self.__cached_epg if ch not in EPG_CHANNELS):
