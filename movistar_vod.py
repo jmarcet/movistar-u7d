@@ -25,6 +25,7 @@ from asyncio.exceptions import CancelledError
 from asyncio.subprocess import DEVNULL as NULL, PIPE, STDOUT as OUT
 from datetime import timedelta
 from filelock import FileLock
+from html import unescape
 
 from mu7d import BUFF, CHUNK, DATEFMT, DIV_LOG, DROP_KEYS, EPG_URL, FMT
 from mu7d import NFO_EXT, UA, URL_COVER, WIN32, YEAR_SECONDS, IPTVNetworkError
@@ -224,7 +225,7 @@ async def postprocess(vod_info):
 
                     params = {"action": "epgInfov2", "productID": _args.program, "channelID": _args.channel}
                     async with _SESSION_CLOUD.get(_END_POINT, params=params) as resp:
-                        metadata = (await resp.json())["resultData"]
+                        metadata = ujson.loads(unescape(await resp.text()))["resultData"]
 
                     data = ujson.dumps({"data": metadata}, ensure_ascii=False, indent=4, sort_keys=True)
                     async with aiofiles.open(cache_metadata, "w", encoding="utf8") as f:
