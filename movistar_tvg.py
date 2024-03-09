@@ -1017,8 +1017,6 @@ class XmlTV:
                             field = ext_info[key]
                             if isinstance(field, str):
                                 field = field.split(", ")
-                            elif isinstance(field, dict):  # -movistar.nfo (lists in xml)
-                                field = tuple(field.values())[0]
                             key = re.sub(r"(?:main)?([^s]+)s?$", r"\1", key.lower())
                             for credit in field:
                                 self.__append_elem(key, credit.strip(), pad=16)
