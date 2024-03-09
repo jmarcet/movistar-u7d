@@ -10,6 +10,7 @@ import codecs
 import defusedxml.ElementTree as ElTr
 import glob
 import gzip
+import json
 import logging
 import os
 import re
@@ -18,7 +19,6 @@ import struct
 import sys
 import threading
 import time
-import ujson as json
 
 from aiohttp.client_exceptions import ClientConnectionError, ClientOSError, ServerDisconnectedError
 from asyncio.exceptions import CancelledError
@@ -30,7 +30,8 @@ from html import escape, unescape
 from queue import Queue
 
 from mu7d import DATEFMT, END_POINTS_FILE, FMT, UA, UA_U7D, WIN32, YEAR_SECONDS, IPTVNetworkError
-from mu7d import add_logfile, get_end_point, get_iptv_ip, get_local_info, get_title_meta, mu7d_config, _version
+from mu7d import add_logfile, get_end_point, get_iptv_ip, get_local_info, get_title_meta, keys_to_int
+from mu7d import mu7d_config, _version
 
 
 log = logging.getLogger("TVG")
@@ -70,10 +71,9 @@ THEME_MAP = {
 
 class Cache:
     def __init__(self, full=True):
-        if full:
-            self.check_dirs()
-            if datetime.now().hour < 1:
-                self.clean()
+        self.check_dirs()
+        if full and datetime.now().hour < 1:
+            self.clean()
 
     @staticmethod
     def check_dirs():
@@ -86,9 +86,8 @@ class Cache:
         for file in glob.glob(os.path.join(CACHE_DIR, "programs", "*.json")):
             try:
                 with open(file, encoding="utf8") as f:
-                    _data = json.load(f)["data"]
-                _exp_date = int(_data["endTime"] / 1000)
-                if _exp_date < _DEADLINE:
+                    _data = json.loads(f.read(), object_hook=keys_to_int)["data"]
+                if _data["endTime"] // 1000 < _DEADLINE:
                     log.debug('Eliminando "%s" caducado' % os.path.basename(file))
                     os.remove(file)
             except (IOError, KeyError, ValueError):
@@ -98,7 +97,7 @@ class Cache:
     def load(cfile):
         try:
             with open(os.path.join(CACHE_DIR, cfile), "r", encoding="utf8") as f:
-                return json.load(f)["data"]
+                return json.loads(f.read(), object_hook=keys_to_int)["data"]
         except (FileNotFoundError, IOError, KeyError, ValueError):
             pass
 
@@ -120,9 +119,8 @@ class Cache:
                     try:
                         async with _SESSION.get("https://openwrt.marcet.info/epg.json") as r:
                             if r.status == 200:
-                                res = await r.json()
+                                data = json.loads(await r.text(), object_hook=keys_to_int)["data"]
                                 log.info("Obtenida Caché de EPG actualizada")
-                                data = res["data"]
                                 break
                             if i < 4:
                                 log.warning(f"No ha habido suerte. Reintentando en 15s... [{i + 2} / 5]")
@@ -136,11 +134,7 @@ class Cache:
                     "Caché de EPG no encontrada. "
                     "Tendrá que esperar unos días para poder acceder a todo el archivo de los útimos 7 días."
                 )
-        if data:
-            epg = defaultdict(dict)
-            for channel in data:
-                epg[int(channel)] = {int(k): v for k, v in data[channel].items()}
-            return epg
+        return data or {}
 
     @staticmethod
     def load_epg_extended_info(pid):
@@ -150,16 +144,12 @@ class Cache:
     def load_epg_local():
         try:
             with open(os.path.join(HOME, "recordings.json"), "r", encoding="utf8") as f:
-                data = json.load(f)
+                local_epg = json.loads(f.read(), object_hook=keys_to_int)
         except (IOError, KeyError, ValueError):
             return
 
-        local_epg = defaultdict(dict)
-        for channel in data:
-            local_epg[int(channel)] = {int(k): v for k, v in data[channel].items()}
-
         # Recordings can overlap, so we need to shorten the duration when they do
-        for channel in sorted(local_epg):
+        for channel in local_epg:
             sorted_channel = sorted(local_epg[channel])
             for i in range(len(sorted_channel) - 1):
                 ts = sorted_channel[i]
@@ -174,16 +164,7 @@ class Cache:
 
     @staticmethod
     def load_epg_metadata():
-        metadata = Cache.load("epg_metadata.json")
-        if not metadata:
-            return
-
-        channels_data = defaultdict(dict)
-        for channel in metadata["channels"]:
-            channels_data[int(channel)] = metadata["channels"][channel]
-        metadata["channels"] = channels_data
-
-        return metadata
+        return Cache.load("epg_metadata.json")
 
     @staticmethod
     def load_service_provider_data():
@@ -191,26 +172,23 @@ class Cache:
 
     @staticmethod
     def save(cfile, data):
-        data = json.loads(unescape(json.dumps(data)))
         with open(os.path.join(CACHE_DIR, cfile), "w", encoding="utf8") as f:
             json.dump({"data": data}, f, ensure_ascii=False, indent=4, sort_keys=True)
 
     @staticmethod
-    def save_channels_data(channels, packages, tvPackages):
-        clean_channels, services = {}, {}
+    def save_channels_data(xdata):
+        channels, services = xdata["channels"], xdata["services"]
 
-        for package in tvPackages.split("|") if tvPackages != "ALL" else packages:
-            services = {**services, **packages[package]["services"]}
+        _channels = EPG_CHANNELS & set(channels) & set(services)
+        clean_channels = {}
 
-        for channel in EPG_CHANNELS & set(channels) & set(map(int, services)):
+        for channel in sorted(_channels, key=lambda channel: services[channel]):
             clean_channels[channel] = {
                 "address": channels[channel]["address"],
                 "name": channels[channel]["name"].strip(" *"),
-                "number": int(services[str(channel)]),
+                "number": services[channel],
                 "port": channels[channel]["port"],
             }
-            if "replacement" in channels[channel]:
-                clean_channels[channel]["replacement"] = channels[channel]["replacement"]
 
         Cache.save("channels.json", clean_channels)
 
@@ -352,41 +330,19 @@ class MulticastEPGFetcher(threading.Thread):
 
 class MulticastIPTV:
     def __init__(self):
-        self.__epg = None
-        self.__ch_ids = None
-        self.__sv_ids = None
+        self.__cached_epg = defaultdict(dict)
+        self.__epg = defaultdict(dict)
+        self.__expired = 0
+        self.__fixed = 0
+        self.__new_gaps = defaultdict(list)
         self.__xml_data = {}
 
-    def __clean_epg_channels(self, epg):
-        if not self.__ch_ids:
-            self.__fill_channel_ids()
-
-        clean_epg = {}
-        for channel in EPG_CHANNELS & set(epg) & set(self.__ch_ids):
-            clean_epg[channel] = epg[channel]
-
-        return clean_epg
-
-    @staticmethod
-    def __expire_epg(epg):
-        expired = 0
+    def __expire_epg(self):
+        epg = self.__cached_epg
         for channel in epg:
             _expired = tuple(filter(lambda ts: epg[channel][ts]["end"] < _DEADLINE, epg[channel]))
             tuple(map(epg[channel].pop, _expired))
-            expired += len(_expired)
-        return expired
-
-    def __fill_channel_ids(self):
-        services = {}
-        _channels = self.__xml_data["channels"]
-        _packages = self.__xml_data["packages"]
-
-        for package in _CONFIG["tvPackages"].split("|") if _CONFIG["tvPackages"] != "ALL" else _packages:
-            services.update(_packages.get(package, {}).get("services", {}))
-
-        enabled = set(_channels) & EPG_CHANNELS
-        self.__ch_ids = [int(k) for k in services]
-        self.__sv_ids = [_channels[int(k)].get("replacement", int(k)) for k in services if int(k) in enabled]
+            self.__expired += len(_expired)
 
     @staticmethod
     def __fill_cloud_event(data, meta, pid, timestamp, year):
@@ -406,30 +362,77 @@ class MulticastIPTV:
             "serie_id": data.get("seriesID"),
         }
 
-    @staticmethod
-    def __fix_epg(epg):
+    def __fix_edges(self, channel, sorted_channel, new_epg=False):
+        drop = defaultdict(list)
+        fixed = gaps = 0
+        if new_epg:
+            name, epg = "New EPG   ", self.__epg
+        else:
+            name, epg = "Cached EPG", self.__cached_epg
+        now = int(datetime.now().timestamp())
+        chan = f"[{channel:4}] "
+
+        for i in range(len(sorted_channel) - 1):
+            ts = sorted_channel[i]
+            _end = epg[channel][ts]["end"]
+            _next = epg[channel][sorted_channel[i + 1]]["start"]
+            __ts, __end, __next = map(time.ctime, (ts, _end, _next))
+
+            if _end < _next:
+                msg = f"{chan}{name} GAP     ->  END:[{__end}] [{_end}] - TO:[{__next}] [{_next}]"
+                if new_epg:
+                    log.debug(msg)
+                    self.__new_gaps[channel].append((_end, _next))
+                elif ts < now:
+                    if _next - ts < 1500:
+                        epg[channel][ts]["end"] = _next
+                        epg[channel][ts]["duration"] = _next - ts
+                        log.warning(msg.replace(" GAP    ", " EXTEND "))
+                        fixed += 1
+                    else:
+                        log.warning(msg)
+                        gaps += _next - _end
+
+            elif _end > _next:
+                if ts < now:
+                    epg[channel][ts]["end"] = _next
+                    epg[channel][ts]["duration"] = _next - ts
+                    msg = f"{chan}{name} SHORTEN ->  END:[{__end}] [{_end}] - TO:[{__next}] [{_next}]"
+                    log.warning(msg)
+                    fixed += 1
+                else:
+                    drop[channel].append(ts)
+                    msg = f"{chan}{name} DROP    -> FROM:[{__ts}] [{ts}] - TO:[{__next}] [{_next}]"
+                    log.debug(msg)
+
+        for channel_id in drop:
+            for ts in drop[channel_id]:
+                del epg[channel_id][ts]
+
+        return fixed, gaps
+
+    def __fix_epg(self):
         fixed_diff = fixed_over = 0
-        new_gaps = defaultdict(list)
-        for channel in sorted(epg):
-            _new = sorted(epg[channel])
+        for channel in tuple(self.__epg):
+            _new = sorted(self.__epg[channel])
             msg = f"[{channel:4}] New EPG            -> FROM:[{time.ctime(_new[0])}] [{_new[0]}] - "
             msg += f"TO:[{time.ctime(_new[-1])}] [{_new[-1]}]"
 
             log.debug(msg)
 
-            for ts in sorted(epg[channel]):
-                _duration = epg[channel][ts]["duration"]
-                _end = epg[channel][ts]["end"]
+            for ts in _new:
+                _duration = self.__epg[channel][ts]["duration"]
+                _end = self.__epg[channel][ts]["end"]
 
                 if _duration != _end - ts:
-                    epg[channel][ts]["duration"] = _end - ts
+                    self.__epg[channel][ts]["duration"] = _end - ts
                     msg = f"New EPG    WRONG  -> FROM:[{time.ctime(ts)}] [{ts}] - "
                     msg += f"TO:[{time.ctime(ts + _duration)}] [{ts + _duration}] > "
                     msg += f"[{time.ctime(_end)}] [{_end}]"
                     log.warning(msg)
                     fixed_diff += 1
 
-            fixed_over += MulticastIPTV.fix_edges(epg, channel, _new, new_gaps=new_gaps)[0]
+            fixed_over += self.__fix_edges(channel, _new, new_epg=True)[0]
 
         if fixed_diff or fixed_over:
             log.warning("El nuevo EPG contenía errores")
@@ -442,7 +445,9 @@ class MulticastIPTV:
         else:
             log.info("Nuevo EPG sin errores")
 
-        return fixed_diff + fixed_over, new_gaps
+        self.__fixed = fixed_diff + fixed_over
+
+        log.debug("__fix_epg(): %s" % str(self.__epg.keys()))
 
     def __get_bin_epg(self):
         self.__epg = [{} for _ in range(len(self.__xml_data["segments"]))]
@@ -489,6 +494,13 @@ class MulticastIPTV:
 
         return channel_list
 
+    def __get_enabled_services(self):
+        _channels = self.__xml_data["channels"]
+        _services = self.__xml_data["services"]
+
+        enabled = set(_channels) & EPG_CHANNELS
+        return [_channels[key].get("replacement", key) for key in _services if key in enabled]
+
     def __get_epg_data(self, mcast_grp, mcast_port):
         log.info("Actualizando metadatos de la EPG. Descargando canales, paquetes y segmentos...")
 
@@ -512,8 +524,9 @@ class MulticastIPTV:
             except ElTr.ParseError:
                 log.warning(f"{_msg} => Incorrectos. Reintentando...")
 
-        stats = tuple(len(self.__xml_data[x]) for x in ("segments", "channels", "packages"))
-        log.info("Días de EPG: %i _ Canales: %i _ Paquetes: %i" % stats)
+        self.__xml_data["services"] = self.__get_services()
+        stats = tuple(len(self.__xml_data[x]) for x in ("segments", "channels", "packages", "services"))
+        log.info("Días de EPG: %i _ Canales: %i _ Paquetes: %i _ Servicios: %i" % stats)
 
         Cache.save_epg_metadata(self.__xml_data)
 
@@ -586,50 +599,60 @@ class MulticastIPTV:
 
         return data
 
-    @staticmethod
-    def __merge_epg(epg, expired, fixed, new_epg, new_gaps):
-        for channel in sorted(new_epg):
-            if channel in epg:
-                cached_epg = {}
-                _new = sorted(new_epg[channel])
-                new_start, new_end = _new[0], new_epg[channel][_new[-1]]["end"]
-                for ts in sorted(epg[channel]):
+    def __get_services(self):
+        _packages = self.__xml_data["packages"]
+
+        services = {}
+        for package in _CONFIG["tvPackages"].split("|") if _CONFIG["tvPackages"] != "ALL" else _packages:
+            services.update(_packages.get(package, {}).get("services", {}))
+
+        return {int(k): int(v) for k, v in services.items()}
+
+    def __merge_epg(self):
+        for channel in tuple(self.__epg):
+            if channel in self.__cached_epg:
+                merged_epg = {}
+                _new = sorted(self.__epg[channel])
+                new_start, new_end = _new[0], self.__epg[channel][_new[-1]]["end"]
+                for ts in sorted(self.__cached_epg[channel]):
                     if (
                         ts < new_start
                         or ts >= new_end
-                        or any(filter(lambda gap: gap[0] <= ts < gap[1], new_gaps[channel]))
+                        or any(filter(lambda gap: gap[0] <= ts < gap[1], self.__new_gaps[channel]))
                     ):
-                        cached_epg[ts] = epg[channel][ts]
-                epg[channel] = {**cached_epg, **new_epg[channel]}
+                        merged_epg[ts] = self.__cached_epg[channel][ts]
+                self.__cached_epg[channel] = {**merged_epg, **self.__epg[channel]}
             else:
-                epg[channel] = new_epg[channel]
+                self.__cached_epg[channel] = self.__epg[channel]
+            del self.__epg[channel]
+        del self.__epg
 
         gaps = 0
-        for channel in sorted(epg):
-            sorted_channel = sorted(epg[channel])
-            _fixed, _gaps = MulticastIPTV.fix_edges(epg, channel, sorted_channel, new_epg=new_epg)
-            fixed += _fixed
+        for channel in self.__cached_epg:
+            _fixed, _gaps = self.__fix_edges(channel, sorted(self.__cached_epg[channel]))
+            self.__fixed += _fixed
             gaps += _gaps
 
+        self.__expire_epg()
         gaps_msg = f" _ Huecos = [{str(timedelta(seconds=gaps))}s]" if gaps else ""
-        msg = f"Eventos en Caché: Arreglados = {fixed} _ Caducados = {expired}{gaps_msg}"
+        msg = f"Eventos en Caché: Arreglados = {self.__fixed} _ Caducados = {self.__expired}{gaps_msg}"
         log.info(msg)
 
-    def __parse_bin_epg(self):
-        if not self.__sv_ids:
-            self.__fill_channel_ids()
+        log.debug("__merge_epg(): %s" % str(self.__cached_epg.keys()))
 
+    def __parse_bin_epg(self):
         parsed_epg = {}
+        enabled_services = self.__get_enabled_services()
         for epg_day in self.__epg:
             channel_epg = {}
             for _id in (d for d in epg_day if epg_day[d]):
                 head = self.__parse_bin_epg_header(epg_day[_id])
-                if head["service_id"] not in self.__sv_ids:
+                if head["service_id"] not in enabled_services:
                     continue
                 channel_epg[head["service_id"]] = self.__parse_bin_epg_body(head["data"], head["service_id"])
             self.merge_dicts(parsed_epg, channel_epg)
         self.__epg = parsed_epg
-        Cache.save_epg(self.__epg)
+        log.debug("__parse_bin_epg(): %s" % str(self.__epg.keys()))
 
     @staticmethod
     def __parse_bin_epg_body(data, service_id):
@@ -679,77 +702,31 @@ class MulticastIPTV:
             "data": data[body:],
         }
 
-    def __sanitize_epg(self):
-        sane_epg = {}
+    def __sanitize_channels(self):
+        epg = self.__epg or self.__cached_epg
         _channels = self.__xml_data["channels"]
-        for channel_key in self.__epg:
+        for channel_key in set(epg) - EPG_CHANNELS:
             assigned = False
-            for channel_id in (ch for ch in _channels if _channels[ch].get("replacement", "") == channel_key):
-                sane_epg[channel_id] = self.__epg[channel_key]
+            for channel_id in filter(lambda ch: _channels[ch].get("replacement") == channel_key, _channels):
+                log.debug(f"__sanitize_channels(): [{channel_key:4}] => [{channel_id:4}]")
+                epg[channel_id] = epg[channel_key]
                 assigned = True
                 break
-            if not assigned or channel_key in EPG_CHANNELS:
-                sane_epg[channel_key] = self.__epg[channel_key]
-        self.__epg = sane_epg
+            del epg[channel_key]
+            if not assigned:
+                log.debug(f"__sanitize_channels(): [{channel_key:4}] => dropped")
 
     @staticmethod
     def decode_string(string):
         return unescape(("".join(chr(char ^ 0x15) for char in string)).encode("latin1").decode("utf8"))
 
     @staticmethod
-    def fix_edges(epg, channel, sorted_channel, new_epg=None, new_gaps=None):
-        drop = defaultdict(list)
-        fixed = gaps = 0
-        is_new_epg = new_gaps is not None
-        name = "New EPG   " if is_new_epg else "Cached EPG"
-        now = int(datetime.now().timestamp())
-        chan = f"[{channel:4}] "
-
-        for i in range(len(sorted_channel) - 1):
-            ts = sorted_channel[i]
-            _end = epg[channel][ts]["end"]
-            _next = epg[channel][sorted_channel[i + 1]]["start"]
-            __ts, __end, __next = map(time.ctime, (ts, _end, _next))
-
-            if _end < _next:
-                msg = f"{chan}{name} GAP     ->  END:[{__end}] [{_end}] - TO:[{__next}] [{_next}]"
-                if is_new_epg:
-                    log.debug(msg)
-                    new_gaps[channel].append((_end, _next))
-                elif ts < now:
-                    if _next - ts < 1500:
-                        epg[channel][ts]["end"] = _next
-                        epg[channel][ts]["duration"] = _next - ts
-                        log.warning(msg.replace(" GAP    ", " EXTEND "))
-                        fixed += 1
-                    else:
-                        log.warning(msg)
-                        gaps += _next - _end
-
-            elif _end > _next:
-                if ts < now:
-                    epg[channel][ts]["end"] = _next
-                    epg[channel][ts]["duration"] = _next - ts
-                    msg = f"{chan}{name} SHORTEN ->  END:[{__end}] [{_end}] - TO:[{__next}] [{_next}]"
-                    log.warning(msg)
-                    fixed += 1
-                else:
-                    drop[channel].append(ts)
-                    msg = f"{chan}{name} DROP    -> FROM:[{__ts}] [{ts}] - TO:[{__next}] [{_next}]"
-                    log.debug(msg)
-
-        for channel_id in drop:
-            for ts in drop[channel_id]:
-                del epg[channel_id][ts]
-
-        return fixed, gaps
-
-    @staticmethod
     def get_demarcation_name():
         return DEMARCATIONS.get(str(_CONFIG["demarcation"]), f'la demarcación {_CONFIG["demarcation"]}')
 
     async def get_epg(self):
-        cached_epg = self.__clean_epg_channels(await Cache.load_epg())
+        self.__cached_epg = await Cache.load_epg()
+        self.__sanitize_channels()
 
         while True:
             self.__get_bin_epg()
@@ -758,23 +735,13 @@ class MulticastIPTV:
                 break
             except Exception:
                 log.warning("Error descargando la EPG. Reintentando...")
-        self.__sanitize_epg()
-        new_epg = self.__clean_epg_channels(self.__epg)
 
-        if datetime.now().hour < 1:
-            self.__expire_epg(new_epg)
+        self.__sanitize_channels()
+        self.__fix_epg()
+        self.__merge_epg()
 
-        fixed, new_gaps = self.__fix_epg(new_epg)
-
-        if not cached_epg:
-            Cache.save_epg(new_epg)
-            return new_epg
-
-        expired = self.__expire_epg(cached_epg)
-        self.__merge_epg(cached_epg, expired, fixed, new_epg, new_gaps)
-
-        Cache.save_epg(cached_epg)
-        return cached_epg
+        Cache.save_epg(self.__cached_epg)
+        return self.__cached_epg
 
     async def get_epg_cloud(self):
         data = await MovistarTV.get_service_data("recordingList&mode=0&state=2&firstItem=0&numItems=999")
@@ -785,7 +752,6 @@ class MulticastIPTV:
 
         _channels = self.__xml_data["channels"]
 
-        epg = defaultdict(dict)
         for program in cloud_recordings:
             channel_id = program["serviceUID"]
             if channel_id not in EPG_CHANNELS:
@@ -805,12 +771,12 @@ class MulticastIPTV:
             service_id = _channels[channel_id].get("replacement", channel_id)
             meta = get_title_meta(data["name"], data.get("seriesID"), service_id, data["theme"])
 
-            epg[channel_id][timestamp] = self.__fill_cloud_event(data, meta, pid, timestamp, year)
+            self.__cached_epg[channel_id][timestamp] = self.__fill_cloud_event(data, meta, pid, timestamp, year)
             if meta["episode_title"]:
-                epg[channel_id][timestamp]["episode_title"] = meta["episode_title"]
+                self.__cached_epg[channel_id][timestamp]["episode_title"] = meta["episode_title"]
 
-        Cache.save_epg_cloud(epg)
-        return epg
+        Cache.save_epg_cloud(self.__cached_epg)
+        return self.__cached_epg
 
     def get_epg_day(self, mcast_grp, mcast_port, source):
         log.info(f'Descargando XML {source.split(".")[0]} -> {mcast_grp}:{mcast_port}')
@@ -852,7 +818,7 @@ class MulticastIPTV:
                         break
                 except (AttributeError, KeyError, TimeoutError, TypeError, UnicodeError):
                     pass
-                except OSError:
+                except (IPTVNetworkError, OSError):
                     if threading.current_thread() == threading.main_thread():
                         msg = "Multicast IPTV de Movistar no detectado"
                     else:
@@ -911,7 +877,7 @@ class XmlTV:
     def __init__(self, data):
         self.__doc = ['<?xml version="1.0" encoding="UTF-8"?>']
         self.__channels = data["channels"]
-        self.__packages = data["packages"]
+        self.__services = data["services"]
 
     async def __add_programmes_tags(self, channel_id, programs, local, tz_offset):
         if not local:
@@ -1069,27 +1035,12 @@ class XmlTV:
     def __clean(string):
         return re.sub(r"[^a-z0-9]", "", string.lower())
 
-    def __get_client_services(self):
-        services = {}
-        for package in _CONFIG["tvPackages"].split("|") if _CONFIG["tvPackages"] != "ALL" else self.__packages:
-            if package in self.__packages:
-                services.update(self.__packages[package]["services"])
-        return {int(k): int(v) for k, v in services.items()}
-
     @staticmethod
     def __write(file_path, content):
         with codecs.open(file_path, "w", "UTF-8") as f:
             f.write(content)
 
     async def generate_xml(self, parsed_epg, local=False):
-        tz_offset = int(abs(time.timezone / 3600))
-        services = self.__get_client_services()
-        channels = [
-            ch_id
-            for ch_id in sorted(services, key=lambda key: services[key])
-            if any((ch_id in self.__channels, local)) and ch_id in parsed_epg
-        ]
-
         attr = {
             "date": datetime.now().strftime("%Y%m%d%H%M%S"),
             "source-info-name": "Movistar IPTV Spain",
@@ -1099,6 +1050,11 @@ class XmlTV:
         }
         self.__append_elem("tv", attr=attr, pad=4, child=True)
 
+        _f = filter(lambda ch: ch in parsed_epg and any((ch in self.__channels, local)), self.__services)
+        channels = sorted(_f, key=lambda key: self.__services[key])
+        if self.__services[channels[0]] == 0:  # Move "Portada HD" to last position
+            channels = channels[1:] + channels[:1]
+
         for channel_id in channels:
             self.__append_elem("channel", attr={"id": f"{channel_id}.movistar.tv"}, pad=8, child=True)
             self.__append_elem("display-name", self.__channels[channel_id]["name"].strip(" *"), pad=12)
@@ -1107,6 +1063,7 @@ class XmlTV:
             )
             self.__append_elem("channel", pad=8, close=True)
 
+        tz_offset = abs(time.timezone // 3600)
         for channel_id in channels:
             await self.__add_programmes_tags(channel_id, parsed_epg[channel_id], local, tz_offset)
 
@@ -1123,38 +1080,33 @@ class XmlTV:
         m3u += "cloud.xml" if cloud else "local.xml" if local else "guide.xml.gz"
         m3u += '"\n'
 
-        services = self.__get_client_services()
         if any((cloud, local)):
-            _services = {}
-            for channel_id, channel in services.items():
-                if channel_id in (cloud or local):
-                    _services[channel_id] = channel
-            services = _services
-
+            services = {k: v for k, v in self.__services.items() if k in (cloud or local)}
+        else:
+            services = self.__services
         channels = sorted(services, key=lambda key: services[key])
-        if not any((cloud, local)):
+        if services[channels[0]] == 0:  # Move "Portada HD" to last position
             channels = channels[1:] + channels[:1]
 
         skipped = []
-        for channel_id in channels:
-            if channel_id in self.__channels:
-                channel_name = self.__channels[channel_id]["name"].strip(" *")
-                if channel_id not in EPG_CHANNELS and not local:
-                    skipped.append(f'Saltando canal: [{channel_id:4}] "{channel_name}"')
-                    continue
-                channel_tag = "Cloud" if cloud else "Local" if local else "U7D"
-                channel_tag += " - TDT Movistar.es"
-                channel_number = services[channel_id]
-                channel_number = 999 if channel_number == 0 else channel_number
-                channel_logo = f"{U7D_URL}/Logos/" + self.__channels[channel_id]["logo_uri"]
-                m3u += f'#EXTINF:-1 ch-number="{channel_number}" audio-track="2" '
-                m3u += f'tvg-id="{channel_id}.movistar.tv" '
-                m3u += f'group-title="{channel_tag}" '
-                m3u += f'tvg-logo="{channel_logo}"'
-                m3u += f",{channel_name}\n"
-                m3u += f"{U7D_URL}"
-                m3u += "/cloud" if cloud else "/local" if local else ""
-                m3u += f"/{channel_id}/mpegts\n"
+        for channel_id in (ch for ch in channels if ch in self.__channels):
+            channel_name = self.__channels[channel_id]["name"].strip(" *")
+            if not any((channel_id in EPG_CHANNELS, local)):
+                skipped.append(f'Saltando canal: [{channel_id:4}] "{channel_name}"')
+                continue
+            channel_tag = "Cloud" if cloud else "Local" if local else "U7D"
+            channel_tag += " - TDT Movistar.es"
+            channel_number = services[channel_id]
+            channel_number = 999 if channel_number == 0 else channel_number  # Move "Portada HD" to 999
+            channel_logo = f"{U7D_URL}/Logos/" + self.__channels[channel_id]["logo_uri"]
+            m3u += f'#EXTINF:-1 ch-number="{channel_number}" audio-track="2" '
+            m3u += f'tvg-id="{channel_id}.movistar.tv" '
+            m3u += f'group-title="{channel_tag}" '
+            m3u += f'tvg-logo="{channel_logo}"'
+            m3u += f",{channel_name}\n"
+            m3u += f"{U7D_URL}"
+            m3u += "/cloud" if cloud else "/local" if local else ""
+            m3u += f"/{channel_id}/mpegts\n"
         if len(skipped) < 20 or not os.path.exists(file_path):
             [log.info(msg) for msg in skipped]
         else:
@@ -1231,33 +1183,37 @@ async def tvg_main():
         _XMLTV = XmlTV(xdata)
 
         if args.m3u:
-            Cache.save_channels_data(xdata["channels"], xdata["packages"], _CONFIG["tvPackages"])
+            Cache.save_channels_data(xdata)
             _XMLTV.write_m3u(args.m3u)
             if not args.guide:
                 return
 
+        del xdata
+
         # Descarga los segmentos de cada EPG_X_BIN.imagenio.es y obtiene la guía decodificada
         if args.guide:
             epg = await _MIPTV.get_epg()
-        elif args.cloud_m3u or args.cloud_recordings or args.local_m3u or args.local_recordings:
-            if args.cloud_m3u or args.cloud_recordings:
+        elif any((args.cloud_m3u, args.cloud_recordings, args.local_m3u, args.local_recordings)):
+            if any((args.cloud_m3u, args.cloud_recordings)):
                 epg = await _MIPTV.get_epg_cloud()
             else:
                 epg = Cache.load_epg_local()
             if not epg:
                 return
-            if args.cloud_m3u or args.local_m3u:
+            if any((args.cloud_m3u, args.local_m3u)):
                 _XMLTV.write_m3u(
                     args.cloud_m3u or args.local_m3u,
                     cloud=tuple(epg) if args.cloud_m3u else None,
                     local=tuple(epg) if args.local_m3u else None,
                 )
-            if not args.cloud_recordings and not args.local_recordings:
+            if not any((args.cloud_recordings, args.local_recordings)):
                 return
+        del _MIPTV
         epg_nr_channels = len(epg)
 
         # Genera el árbol XMLTV de los paquetes contratados
         dom = await _XMLTV.generate_xml(epg, bool(args.local_m3u or args.local_recordings))
+        del _XMLTV, epg
         if args.guide:
             with (
                 open(args.guide, "w", encoding="utf8") as f,
@@ -1265,7 +1221,7 @@ async def tvg_main():
             ):
                 f.write(dom)
                 f_z.write(dom)
-        elif args.cloud_recordings or args.local_recordings:
+        elif any((args.cloud_recordings, args.local_recordings)):
             with open(args.cloud_recordings or args.local_recordings, "w", encoding="utf8") as f:
                 f.write(dom)
 
