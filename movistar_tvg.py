@@ -606,6 +606,11 @@ class MulticastIPTV:
         for package in _CONFIG["tvPackages"].split("|") if _CONFIG["tvPackages"] != "ALL" else _packages:
             services.update(_packages.get(package, {}).get("services", {}))
 
+        # Move "Portada HD" to last position, channel number 999
+        key = next(k for k, v in services.items() if v == "0")
+        services.pop(key)
+        services[key] = "999"
+
         return {int(k): int(v) for k, v in services.items()}
 
     def __merge_epg(self):
@@ -1054,8 +1059,6 @@ class XmlTV:
 
         _f = filter(lambda ch: ch in parsed_epg and any((ch in self.__channels, local)), self.__services)
         channels = sorted(_f, key=lambda key: self.__services[key])
-        if self.__services[channels[0]] == 0:  # Move "Portada HD" to last position
-            channels = channels[1:] + channels[:1]
 
         for channel_id in channels:
             self.__append_elem("channel", attr={"id": f"{channel_id}.movistar.tv"}, pad=8, child=True)
@@ -1087,8 +1090,6 @@ class XmlTV:
         else:
             services = self.__services
         channels = sorted(services, key=lambda key: services[key])
-        if services[channels[0]] == 0:  # Move "Portada HD" to last position
-            channels = channels[1:] + channels[:1]
 
         skipped = []
         for channel_id in (ch for ch in channels if ch in self.__channels):
@@ -1099,7 +1100,6 @@ class XmlTV:
             channel_tag = "Cloud" if cloud else "Local" if local else "U7D"
             channel_tag += " - TDT Movistar.es"
             channel_number = services[channel_id]
-            channel_number = 999 if channel_number == 0 else channel_number  # Move "Portada HD" to 999
             channel_logo = f"{U7D_URL}/Logos/" + self.__channels[channel_id]["logo_uri"]
             m3u += f'#EXTINF:-1 ch-number="{channel_number}" audio-track="2" '
             m3u += f'tvg-id="{channel_id}.movistar.tv" '
