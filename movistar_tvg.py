@@ -179,10 +179,8 @@ class Cache:
     def save_channels_data(xdata):
         channels, services = xdata["channels"], xdata["services"]
 
-        _channels = EPG_CHANNELS & set(channels) & set(services)
         clean_channels = {}
-
-        for channel in sorted(_channels, key=lambda channel: services[channel]):
+        for channel in (ch for ch in services if ch in EPG_CHANNELS & set(channels)):
             clean_channels[channel] = {
                 "address": channels[channel]["address"],
                 "name": channels[channel]["name"].strip(" *"),
@@ -413,7 +411,7 @@ class MulticastIPTV:
 
     def __fix_epg(self):
         fixed_diff = fixed_over = 0
-        for channel in tuple(self.__epg):
+        for channel in (ch for ch in self.__xml_data["services"] if ch in self.__epg):
             _new = sorted(self.__epg[channel])
             msg = f"[{channel:4}] New EPG            -> FROM:[{time.ctime(_new[0])}] [{_new[0]}] - "
             msg += f"TO:[{time.ctime(_new[-1])}] [{_new[-1]}]"
@@ -495,12 +493,12 @@ class MulticastIPTV:
 
         return channel_list
 
-    def __get_enabled_services(self):
+    def __get_channels_keys(self):
         _channels = self.__xml_data["channels"]
         _services = self.__xml_data["services"]
 
-        enabled = set(_channels) & EPG_CHANNELS
-        return [_channels[key].get("replacement", key) for key in _services if key in enabled]
+        # Services not in channels are special access channels like DAZN, Disney, Netflix & Prime
+        return tuple(_channels[key].get("replacement", key) for key in _services if key in _channels)
 
     def __get_epg_data(self, mcast_grp, mcast_port):
         log.info("Actualizando metadatos de la EPG. Descargando canales, paquetes y segmentos...")
@@ -527,7 +525,7 @@ class MulticastIPTV:
 
         self.__xml_data["services"] = self.__get_services()
         stats = tuple(len(self.__xml_data[x]) for x in ("segments", "channels", "packages", "services"))
-        log.info("Días de EPG: %i _ Canales: %i _ Paquetes: %i _ Servicios: %i" % stats)
+        log.info("Días de EPG: %i _ Canales: %i _ Paquetes: %i _ Servicios contratados: %i" % stats)
 
         Cache.save_epg_metadata(self.__xml_data)
         del self.__xml_data["packages"]
@@ -635,7 +633,7 @@ class MulticastIPTV:
         del self.__epg
 
         gaps = 0
-        for channel in self.__cached_epg:
+        for channel in (ch for ch in self.__xml_data["services"] if ch in self.__cached_epg):
             _fixed, _gaps = self.__fix_edges(channel, sorted(self.__cached_epg[channel]))
             self.__fixed += _fixed
             gaps += _gaps
@@ -650,12 +648,12 @@ class MulticastIPTV:
 
     def __parse_bin_epg(self):
         parsed_epg = {}
-        enabled_services = self.__get_enabled_services()
+        channels_keys = self.__get_channels_keys()
         for epg_day in self.__epg:
             channel_epg = {}
             for _id in (d for d in epg_day if epg_day[d]):
                 head = self.__parse_bin_epg_header(epg_day[_id])
-                if head["service_id"] not in enabled_services:
+                if head["service_id"] not in channels_keys:
                     continue
                 channel_epg[head["service_id"]] = self.__parse_bin_epg_body(head["data"], head["service_id"])
             self.merge_dicts(parsed_epg, channel_epg)
@@ -713,15 +711,22 @@ class MulticastIPTV:
     def __sanitize_channels(self):
         epg = self.__epg or self.__cached_epg
         _channels = self.__xml_data["channels"]
-        for channel_key in set(epg) - EPG_CHANNELS:
-            assigned = False
+        _services = self.__xml_data["services"]
+
+        # We need to change the channel ids in the EPG which do not match our services for their replacements
+        for channel_key in set(epg) - set(_services):
             for channel_id in filter(lambda ch: _channels[ch].get("replacement") == channel_key, _channels):
                 log.debug(f"__sanitize_channels(): [{channel_key:4}] => [{channel_id:4}]")
                 epg[channel_id] = epg[channel_key]
-                assigned = True
+                del epg[channel_key]
                 break
-            del epg[channel_key]
-            if not assigned:
+            if channel_key in epg:
+                log.warning(f"__sanitize_channels(): [{channel_key:4}] => dropped, unknown")
+                del epg[channel_key]
+
+        if not CACHE_ALL_CHANNELS:
+            for channel_key in set(epg) - EPG_CHANNELS:
+                del epg[channel_key]
                 log.debug(f"__sanitize_channels(): [{channel_key:4}] => dropped")
 
     def __sort_epg(self):
@@ -754,6 +759,16 @@ class MulticastIPTV:
         self.__merge_epg()
 
         Cache.save_epg(self.__cached_epg)
+
+        skipped = 0
+        for channel_id in tuple(ch for ch in self.__cached_epg if ch not in EPG_CHANNELS):
+            channel_name = self.__xml_data["channels"][channel_id]["name"].strip(" *")
+            log.info(f'Saltando canal: [{channel_id:4}] "{channel_name}"')
+            del self.__cached_epg[channel_id]
+            skipped += 1
+        if skipped:
+            log.info(f"Canales disponibles no indexados: {skipped:2}")
+
         return self.__cached_epg
 
     async def get_epg_cloud(self):
@@ -893,7 +908,6 @@ class XmlTV:
         self.__channels = data["channels"]
         self.__services = data["services"]
         self.__trans = str.maketrans("()!?", "❨❩ᴉ‽")
-        self.__used_channels = []
 
     async def __add_programmes_tags(self, channel_id, programs, local, tz_offset):
         if not local:
@@ -1067,7 +1081,7 @@ class XmlTV:
         }
         self.__append_elem("tv", attr=attr, pad=4, child=True)
 
-        for channel_id in self.__used_channels:
+        for channel_id in parsed_epg:
             self.__append_elem("channel", attr={"id": f"{channel_id}.movistar.tv"}, pad=8, child=True)
             self.__append_elem("display-name", self.__channels[channel_id]["name"].strip(" *"), pad=12)
             self.__append_elem(
@@ -1079,7 +1093,7 @@ class XmlTV:
         self.__doc.clear()
 
         tz_offset = abs(time.timezone // 3600)
-        for channel_id in self.__used_channels:
+        for channel_id in tuple(parsed_epg):
             await self.__add_programmes_tags(channel_id, parsed_epg[channel_id], local, tz_offset)
             del parsed_epg[channel_id]
             yield self.__doc
@@ -1099,18 +1113,10 @@ class XmlTV:
         m3u += "cloud.xml" if cloud else "local.xml" if local else "guide.xml.gz"
         m3u += '"\n'
 
-        if any((cloud, local)):
-            services = {k: v for k, v in self.__services.items() if k in (cloud or local)}
-        else:
-            services = self.__services
+        services = {k: v for k, v in self.__services.items() if k in (cloud or local or EPG_CHANNELS)}
 
-        skipped = []
         for channel_id in (ch for ch in services if ch in self.__channels):
             channel_name = self.__channels[channel_id]["name"].strip(" *")
-            if not any((channel_id in EPG_CHANNELS, local)):
-                skipped.append(f'Saltando canal: [{channel_id:4}] "{channel_name}"')
-                continue
-            self.__used_channels.append(channel_id)
             channel_tag = "Cloud" if cloud else "Local" if local else "U7D"
             channel_tag += " - TDT Movistar.es"
             channel_number = services[channel_id]
@@ -1123,13 +1129,6 @@ class XmlTV:
             m3u += f"{U7D_URL}"
             m3u += "/cloud" if cloud else "/local" if local else ""
             m3u += f"/{channel_id}/mpegts\n"
-
-        if len(skipped) < 20 or not os.path.exists(file_path):
-            [log.info(msg) for msg in skipped]
-        else:
-            [log.debug(msg) for msg in skipped]
-        if len(skipped) > 0:
-            log.info(f"Canales disponibles no indexados: {len(skipped):2}")
 
         self.__write(file_path, m3u)
 
@@ -1291,6 +1290,7 @@ if __name__ == "__main__":
     _CONFIG = _DEADLINE = _END_POINT = _IPTV = _MIPTV = _SESSION = _XMLTV = None
 
     CACHE_DIR = os.path.join(_conf["HOME"], ".xmltv", "cache")
+    CACHE_ALL_CHANNELS = _conf["CACHE_ALL_CHANNELS"]
     EPG_CHANNELS = _conf["EPG_CHANNELS"]
     HOME = _conf["HOME"]
     RECORDINGS = _conf["RECORDINGS"]

@@ -770,7 +770,11 @@ async def reload_epg():
 
         try:
             async with aiofiles.open(epg_data, encoding="utf8") as f:
-                _EPGDATA = json.loads(await f.read(), object_hook=keys_to_int)["data"]
+                _EPGDATA = {
+                    k: v
+                    for k, v in json.loads(await f.read(), object_hook=keys_to_int)["data"].items()
+                    if k in EPG_CHANNELS
+                }
 
         except (FileNotFoundError, TypeError, ValueError) as ex:
             log.error(f"Failed to load EPG data {repr(ex)}")
@@ -1386,6 +1390,7 @@ if __name__ == "__main__":
     CHANNELS_CLOUD = _conf["CHANNELS_CLOUD"]
     CHANNELS_LOCAL = _conf["CHANNELS_LOCAL"]
     DEBUG = _conf["DEBUG"]
+    EPG_CHANNELS = _conf["EPG_CHANNELS"]
     GUIDE = _conf["GUIDE"]
     GUIDE_CLOUD = _conf["GUIDE_CLOUD"]
     GUIDE_LOCAL = _conf["GUIDE_LOCAL"]

@@ -41,6 +41,7 @@
 - Si se establete `RECORDINGS_TMP`, las portadas de las grabaciones se cachean dentro de la carpeta `covers`, con la idea de no tener que despertar el HDD donde se almacenan las grabaciones con sólo moverse por la programación disponible.
 
 - Opciones de configuración nuevas o modificadas:
+  - `CACHE_ALL_CHANNELS`: nueva opción para almacenar en caché la EPG de todos los canales a los que estamos subcritos, estén activados con EPG_CHANNELS o no. Así se puede llegar a consultar la EPG en disco (epg.json) y activar/desactivar canales y tener todo operativo sin esperas.
   - `COMSKIP`: estableciéndola se activa el `comskip` y permite controlar los argumentos usados para lanzarlo.
   - `EPG_CHANNELS`: nueva opción para establecer la lista de canales a los que queremos acceder.
   - ~~`EXTRA_CHANNELS`~~: opción eliminada, en favor de la anterior.
