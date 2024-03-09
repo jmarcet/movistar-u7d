@@ -371,6 +371,9 @@ def mu7d_config():
     if "GID" not in conf:
         conf["GID"] = 65534
 
+    if "CACHE_ALL_CHANNELS" not in conf or not isinstance(conf["CACHE_ALL_CHANNELS"], bool):
+        conf["CACHE_ALL_CHANNELS"] = False
+
     if "COMSKIP" not in conf or not which("comskip"):
         conf["COMSKIP"] = None
     else:
