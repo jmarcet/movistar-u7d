@@ -328,7 +328,7 @@ class MovistarTV:
         try:
             async with _SESSION.get(f"{_END_POINT}?action={action}") as response:
                 if response.status == 200:
-                    return (await response.json())["resultData"]
+                    return json.loads(unescape(await response.text()))["resultData"]
         except (ClientConnectionError, ClientOSError, ServerDisconnectedError):
             pass
 
