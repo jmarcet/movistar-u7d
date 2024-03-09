@@ -22,7 +22,7 @@ import time
 
 from aiohttp.client_exceptions import ClientConnectionError, ClientOSError, ServerDisconnectedError
 from asyncio.exceptions import CancelledError
-from collections import defaultdict
+from collections import defaultdict, deque
 from contextlib import closing
 from datetime import date, datetime, timedelta
 from filelock import FileLock, Timeout
@@ -31,7 +31,7 @@ from queue import Queue
 
 from mu7d import DATEFMT, END_POINTS_FILE, FMT, UA, UA_U7D, WIN32, YEAR_SECONDS, IPTVNetworkError
 from mu7d import add_logfile, get_end_point, get_iptv_ip, get_local_info, get_title_meta, keys_to_int
-from mu7d import mu7d_config, _version
+from mu7d import mu7d_config, remove, _version
 
 
 log = logging.getLogger("TVG")
@@ -468,6 +468,7 @@ class MulticastIPTV:
             )
 
         queue.join()
+        del self.__xml_data["segments"]
 
     @staticmethod
     def __get_channels(xml_channels):
@@ -529,6 +530,7 @@ class MulticastIPTV:
         log.info("Días de EPG: %i _ Canales: %i _ Paquetes: %i _ Servicios: %i" % stats)
 
         Cache.save_epg_metadata(self.__xml_data)
+        del self.__xml_data["packages"]
 
     @staticmethod
     def __get_packages(xml):
@@ -880,10 +882,11 @@ class MulticastIPTV:
 
 class XmlTV:
     def __init__(self, data):
-        self.__doc = ['<?xml version="1.0" encoding="UTF-8"?>']
+        self.__doc = deque(['<?xml version="1.0" encoding="UTF-8"?>'])
         self.__channels = data["channels"]
         self.__services = data["services"]
         self.__trans = str.maketrans("()!?", "❨❩ᴉ‽")
+        self.__used_channels = []
 
     async def __add_programmes_tags(self, channel_id, programs, local, tz_offset):
         if not local:
@@ -1057,10 +1060,7 @@ class XmlTV:
         }
         self.__append_elem("tv", attr=attr, pad=4, child=True)
 
-        _f = filter(lambda ch: ch in parsed_epg and any((ch in self.__channels, local)), self.__services)
-        channels = sorted(_f, key=lambda key: self.__services[key])
-
-        for channel_id in channels:
+        for channel_id in self.__used_channels:
             self.__append_elem("channel", attr={"id": f"{channel_id}.movistar.tv"}, pad=8, child=True)
             self.__append_elem("display-name", self.__channels[channel_id]["name"].strip(" *"), pad=12)
             self.__append_elem(
@@ -1068,13 +1068,20 @@ class XmlTV:
             )
             self.__append_elem("channel", pad=8, close=True)
 
+        yield self.__doc
+        self.__doc.clear()
+
         tz_offset = abs(time.timezone // 3600)
-        for channel_id in channels:
+        for channel_id in self.__used_channels:
             await self.__add_programmes_tags(channel_id, parsed_epg[channel_id], local, tz_offset)
+            del parsed_epg[channel_id]
+            yield self.__doc
+            self.__doc.clear()
+        del parsed_epg
 
         self.__append_elem("tv", pad=4, close=True)
-
-        return "\n".join(self.__doc)
+        yield self.__doc
+        self.__doc.clear()
 
     def write_m3u(self, file_path, cloud=None, local=None):
         m3u = '#EXTM3U name="'
@@ -1097,6 +1104,7 @@ class XmlTV:
             if not any((channel_id in EPG_CHANNELS, local)):
                 skipped.append(f'Saltando canal: [{channel_id:4}] "{channel_name}"')
                 continue
+            self.__used_channels.append(channel_id)
             channel_tag = "Cloud" if cloud else "Local" if local else "U7D"
             channel_tag += " - TDT Movistar.es"
             channel_number = services[channel_id]
@@ -1109,6 +1117,7 @@ class XmlTV:
             m3u += f"{U7D_URL}"
             m3u += "/cloud" if cloud else "/local" if local else ""
             m3u += f"/{channel_id}/mpegts\n"
+
         if len(skipped) < 20 or not os.path.exists(file_path):
             [log.info(msg) for msg in skipped]
         else:
@@ -1179,7 +1188,6 @@ async def tvg_main():
         # Busca el Proveedor de Servicios y descarga los archivos XML: canales, paquetes y segmentos
         _MIPTV = MulticastIPTV()
         xdata = _MIPTV.get_service_provider_data(refresh)
-        epg_nr_days = len(xdata["segments"])
 
         # Crea el objeto XMLTV a partir de los datos descargados del Proveedor de Servicios
         _XMLTV = XmlTV(xdata)
@@ -1190,6 +1198,7 @@ async def tvg_main():
             if not args.guide:
                 return
 
+        epg_nr_days = len(xdata["segments"])
         del xdata
 
         # Descarga los segmentos de cada EPG_X_BIN.imagenio.es y obtiene la guía decodificada
@@ -1214,18 +1223,25 @@ async def tvg_main():
         epg_nr_channels = len(epg)
 
         # Genera el árbol XMLTV de los paquetes contratados
-        dom = await _XMLTV.generate_xml(epg, bool(args.local_m3u or args.local_recordings))
-        del _XMLTV, epg
         if args.guide:
             with (
-                open(args.guide, "w", encoding="utf8") as f,
-                gzip.open(args.guide + ".gz", "wt", encoding="utf8") as f_z,
+                open(args.guide + ".tmp", "w", encoding="utf8") as f,
+                gzip.open(args.guide + ".gz" + ".tmp", "wt", encoding="utf8") as f_z,
             ):
-                f.write(dom)
-                f_z.write(dom)
+                async for dom in _XMLTV.generate_xml(epg, bool(args.local_m3u or args.local_recordings)):
+                    block = "\n".join(dom) + "\n"
+                    f.write(block)
+                    f_z.write(block)
+            remove(args.guide, args.guide + ".gz")
+            os.rename(args.guide + ".tmp", args.guide)
+            os.rename(args.guide + ".gz" + ".tmp", args.guide + ".gz")
         elif any((args.cloud_recordings, args.local_recordings)):
-            with open(args.cloud_recordings or args.local_recordings, "w", encoding="utf8") as f:
-                f.write(dom)
+            xml_file = args.cloud_recordings or args.local_recordings
+            with open(xml_file + ".tmp", "w", encoding="utf8") as f:
+                async for dom in _XMLTV.generate_xml(epg, bool(args.local_m3u or args.local_recordings)):
+                    f.write("\n".join(dom) + "\n")
+            remove(xml_file)
+            os.rename(xml_file + ".tmp", xml_file)
 
         if not any((args.cloud_recordings, args.local_recordings)):
             _t = str(timedelta(seconds=round(time.time() - _time_start)))
