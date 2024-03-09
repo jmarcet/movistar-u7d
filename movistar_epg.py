@@ -52,6 +52,8 @@ async def before_server_start(app):
     if not WIN32:
         [signal.signal(sig, cleanup_handler) for sig in (signal.SIGHUP, signal.SIGINT, signal.SIGTERM)]
 
+    _IPTV = get_iptv_ip()
+
     app.add_task(alive())
 
     banner = f"Movistar U7D - EPG v{_version}"
@@ -135,8 +137,6 @@ async def before_server_start(app):
                     await reindex_recordings()
 
         app.add_task(update_epg_cron())
-
-    _IPTV = get_iptv_ip()
 
     if not WIN32:
         [signal.signal(sig, signal.SIG_DFL) for sig in (signal.SIGHUP, signal.SIGINT, signal.SIGTERM)]
@@ -251,10 +251,10 @@ def get_program_id(channel_id, url=None, cloud=False, local=False):
 
     if not url:
         start = int(time.time())
-    elif len(url) == 10:
-        start = int(url)
     elif not url.isdigit():
         start = int(flussonic_regex.match(url).groups()[0])
+    elif len(url) == 10:
+        start = int(url)
     elif len(url) == 12:
         start = int(datetime.strptime(url, "%Y%m%d%H%M").timestamp())
     elif len(url) == 14:
@@ -677,7 +677,7 @@ async def record_program(
             await asyncio.sleep(5)
         elif timestamp > prev_ts:
             msg = DIV_TWO % ("Event DELAYED", begin_time, log_suffix)
-            log.info(msg)
+            log.debug(msg)
             return re.sub(r"\s+:", ":", msg)
 
     if _NETWORK_SATURATION:
@@ -975,10 +975,9 @@ async def timers_check(delay=0):
             log.debug("Checking timer: [%4d] [%s] [%s]%s" % (channel_id, channel_name, timer_match, msg))
             for timestamp in _filter_recorded(tss):
                 _title = _EPGDATA[channel_id][timestamp]["full_title"]
-                if not re.search(_clean(timer_match), _clean(_title), re.IGNORECASE):
-                    continue
-                if await _record():
-                    return _exit()
+                if re.search(_clean(timer_match), _clean(_title), re.IGNORECASE):
+                    if await _record():
+                        return _exit()
 
     _exit()
 
