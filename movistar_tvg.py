@@ -914,11 +914,16 @@ class XmlTV:
         self.__packages = data["packages"]
 
     async def __add_programmes_tags(self, channel_id, programs, local, tz_offset):
-        for ts in programs:
+        if not local:
+            ext_infos = await asyncio.gather(
+                *(MovistarTV.get_epg_extended_info(channel_id, programs[ts]) for ts in programs)
+            )
+
+        for idx, ts in enumerate(programs):
             program = programs[ts]
 
             if not local:
-                ext_info = await MovistarTV.get_epg_extended_info(channel_id, program)
+                ext_info = ext_infos[idx]
             else:
                 filename = os.path.join(RECORDINGS, program["filename"])
                 ext_info = await get_local_info(channel_id, ts, filename, log, extended=True)
