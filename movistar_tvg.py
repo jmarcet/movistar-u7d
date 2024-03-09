@@ -202,11 +202,11 @@ class Cache:
 
     @staticmethod
     def save_epg(data):
-        Cache.save("epg.json", data, sort_keys=True)
+        Cache.save("epg.json", data)
 
     @staticmethod
     def save_epg_cloud(data):
-        Cache.save("cloud.json", data, sort_keys=True)
+        Cache.save("cloud.json", data)
 
     @staticmethod
     def save_epg_metadata(data):
@@ -645,6 +645,7 @@ class MulticastIPTV:
         msg = f"Eventos en Caché: Arreglados = {self.__fixed} _ Caducados = {self.__expired}{gaps_msg}"
         log.info(msg)
 
+        self.__sort_epg()
         log.debug("__merge_epg(): %s" % str(self.__cached_epg.keys()))
 
     def __parse_bin_epg(self):
@@ -723,6 +724,11 @@ class MulticastIPTV:
             if not assigned:
                 log.debug(f"__sanitize_channels(): [{channel_key:4}] => dropped")
 
+    def __sort_epg(self):
+        epg = self.__cached_epg
+        _services = self.__xml_data["services"]
+        self.__cached_epg = {ch: dict(sorted(epg[ch].items())) for ch in (k for k in _services if k in epg)}
+
     @staticmethod
     def decode_string(string):
         return unescape(("".join(chr(char ^ 0x15) for char in string)).encode("latin1").decode("utf8"))
@@ -782,6 +788,7 @@ class MulticastIPTV:
             if meta["episode_title"]:
                 self.__cached_epg[channel_id][timestamp]["episode_title"] = meta["episode_title"]
 
+        self.__sort_epg()
         Cache.save_epg_cloud(self.__cached_epg)
         return self.__cached_epg
 
@@ -1096,10 +1103,9 @@ class XmlTV:
             services = {k: v for k, v in self.__services.items() if k in (cloud or local)}
         else:
             services = self.__services
-        channels = sorted(services, key=lambda key: services[key])
 
         skipped = []
-        for channel_id in (ch for ch in channels if ch in self.__channels):
+        for channel_id in (ch for ch in services if ch in self.__channels):
             channel_name = self.__channels[channel_id]["name"].strip(" *")
             if not any((channel_id in EPG_CHANNELS, local)):
                 skipped.append(f'Saltando canal: [{channel_id:4}] "{channel_name}"')
