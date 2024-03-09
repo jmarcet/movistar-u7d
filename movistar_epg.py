@@ -1234,7 +1234,7 @@ async def upgrade_recordings():
         return
 
     log.info(f"UPGRADING RECORDINGS METADATA: {RECORDINGS_UPGRADE}")
-    covers = names = wrong = 0
+    covers = items = names = wrong = 0
 
     for nfo_file in sorted(glob(f"{RECORDINGS}/**/*{NFO_EXT}", recursive=True)):
         basename = nfo_file.split(NFO_EXT)[0]
@@ -1270,6 +1270,12 @@ async def upgrade_recordings():
                 wrong += 1
 
         [nfo.pop(key) for key in set(nfo) & set(DROP_KEYS)]
+
+        for key in filter(lambda key: isinstance(nfo[key], dict) and "item" in nfo[key], nfo):
+            new_value = tuple(nfo[key].values())[0]
+            log.info(f"nfo[{key}] = {nfo[key]} => {new_value}")
+            nfo[key] = new_value
+            items += 1
 
         nfo["name"] = os.path.basename(basename)
 
@@ -1320,9 +1326,11 @@ async def upgrade_recordings():
             os.rename(nfo_file + ".tmp", nfo_file)
             utime(mtime, nfo_file)
 
-    if any((covers, names, wrong)):
+    if any((covers, items, names, wrong)):
         msg = ("Would update", "Would fix") if RECORDINGS_UPGRADE < 0 else ("Updated", "Fixed")
-        log.info(f"{msg[0]} #{covers} covers. {msg[1]} #{names} originalNames & #{wrong} timestamps")
+        log.info(
+            f"{msg[0]} #{covers} covers. {msg[1]} #{items} items, #{names} originalNames & #{wrong} timestamps"
+        )
     else:
         log.info(f"No updates {'would be ' if RECORDINGS_UPGRADE < 0 else ''}carried out")
 
