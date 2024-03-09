@@ -29,7 +29,7 @@ from html import unescape
 
 from mu7d import BUFF, CHUNK, DATEFMT, DIV_LOG, DROP_KEYS, EPG_URL, FMT
 from mu7d import NFO_EXT, UA, URL_COVER, WIN32, YEAR_SECONDS, IPTVNetworkError
-from mu7d import add_logfile, find_free_port, get_end_point, get_iptv_ip, get_safe_filename, get_title_meta
+from mu7d import add_logfile, find_free_port, get_end_point, get_iptv_ip, get_safe_filename
 from mu7d import get_vod_info, glob_safe, mu7d_config, ongoing_vods, remove, utime, _version
 
 
@@ -306,11 +306,14 @@ async def postprocess(vod_info):
         metadata.update({"expDate": int(metadata["expDate"] / 1000)})
         metadata.update({"name": os.path.basename(_args.filename)})
 
-        _meta = get_title_meta(
-            vod_info["name"], vod_info.get("seriesID"), metadata.get("nominalServiceUID"), vod_info["theme"]
-        )
-        if _meta["full_title"] != metadata["name"]:
-            metadata["originalName"] = _meta["full_title"]
+        epg_info_url = f"{EPG_URL}/epg_info/{_args.channel}/{_args.program}"
+        async with _SESSION.get(epg_info_url, params={"cloud": 1} if _args.cloud else {}) as resp:
+            if resp.status == 200:
+                _meta = await resp.json()
+                if metadata["name"] != _meta["full_title"]:
+                    metadata["originalName"] = _meta["full_title"]
+            else:
+                log.warning(f'Could not verify "full_title" => {await resp.text()}')
 
         xml = xmltodict.unparse({"metadata": dict(sorted(metadata.items()))}, pretty=True)
         async with aiofiles.open(_filename + NFO_EXT, "w", encoding="utf8") as f:
