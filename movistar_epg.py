@@ -231,14 +231,14 @@ def get_channel_dir(channel_id):
 def get_epg(channel_id, program_id, cloud=False):
     guide = _CLOUD if cloud else _EPGDATA
     if channel_id not in guide:
-        log.error(f"{channel_id=} not found")
-        return None, None
+        log.error(f"Not Found: {channel_id=}")
+        return {}
 
-    for timestamp in guide[channel_id]:
-        _epg = guide[channel_id][timestamp]
-        if program_id == _epg["pid"]:
-            return _epg, timestamp
-    log.error(f"{channel_id=} {program_id=} not found")
+    for timestamp in filter(lambda ts: guide[channel_id][ts]["pid"] == program_id, guide[channel_id]):
+        return guide[channel_id][timestamp]
+
+    log.error(f"Not Found: {channel_id=} {program_id=}")
+    return {}
 
 
 def get_path(filename, bare=False):
@@ -363,7 +363,7 @@ async def handle_archive(request, channel_id, program_id, cloud=False):
 
     cloud = request.args.get("cloud") == "1" if request else cloud
 
-    _, timestamp = get_epg(channel_id, program_id, cloud)
+    timestamp = get_epg(channel_id, program_id, cloud).get("start")
     if not timestamp:
         raise NotFound(f"Requested URL {request.raw_url.decode()} not found")
 
@@ -405,6 +405,15 @@ async def handle_archive(request, channel_id, program_id, cloud=False):
 @app.get("/channels/")
 async def handle_channels(request):
     return response.json(_CHANNELS) if _CHANNELS else response.empty(404)
+
+
+@app.get("/epg_info/<channel_id:int>/<program_id:int>")
+async def handle_epg_info(request, channel_id, program_id):
+    cloud = request.args.get("cloud", "") == "1"
+    epg = get_epg(channel_id, program_id, cloud)
+    if epg:
+        return response.json(epg)
+    raise NotFound(f"Requested URL {request.raw_url.decode()} not found")
 
 
 @app.get("/program_id/<channel_id:int>/<url>")
@@ -576,7 +585,7 @@ async def prom_event(request, method):
 
     _event = get_program_id(request.json["channel_id"], request.json.get("url"), cloud, local)
     if not local:
-        _epg, _ = get_epg(request.json["channel_id"], _event["program_id"], cloud)
+        _epg = get_epg(request.json["channel_id"], _event["program_id"], cloud)
     else:
         path = _event["program_id"].removesuffix(VID_EXT)
         _epg = await get_local_info(request.json["channel_id"], _event["start"], path, log, extended=True)
@@ -651,7 +660,7 @@ def prune_expired(channel_id, filename):
 async def record_program(
     channel_id, pid, offset=0, time=0, cloud=False, comskip=0, index=True, mkv=False, vo=False
 ):
-    _, timestamp = get_epg(channel_id, pid, cloud)
+    timestamp = get_epg(channel_id, pid, cloud).get("start")
     if not timestamp:
         return "Event not found"
 
