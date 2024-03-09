@@ -1082,8 +1082,11 @@ async def update_recordings(archive=False):
 
     async with recordings_lock:
         if archive and _RECORDINGS:
+            sorted_recordings = {
+                ch: dict(sorted(_RECORDINGS[ch].items())) for ch in (k for k in _CHANNELS if k in _RECORDINGS)
+            }
             async with aiofiles.open(recordings + ".tmp", "w", encoding="utf8") as f:
-                await f.write(ujson.dumps(_RECORDINGS, ensure_ascii=False, indent=4, sort_keys=True))
+                await f.write(ujson.dumps(sorted_recordings, ensure_ascii=False, indent=4))
             remove(recordings)
             os.rename(recordings + ".tmp", recordings)
 
