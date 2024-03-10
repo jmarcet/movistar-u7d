@@ -318,53 +318,40 @@ async def handle_flussonic(request, url, channel_id=None, channel_name=None, clo
 
 @app.route("/cloud/<channel_id:int>/<url>", methods=["GET", "HEAD"], name="flussonic_cloud_id")
 @app.route(r"/cloud/<channel_name:([A-Za-z1-9]+)>/<url>", methods=["GET", "HEAD"], name="flussonic_cloud_name")
-async def handle_flussonic_cloud(request, url, channel_id=None, channel_name=None):
-    if url in ("live", "mpegts"):
-        return await handle_channel(request, channel_id, channel_name)
-    return await handle_flussonic(request, url, channel_id, channel_name, cloud=True)
-
-
 @app.route("/local/<channel_id:int>/<url>", methods=["GET", "HEAD"], name="flussonic_local_id")
 @app.route(r"/local/<channel_name:([A-Za-z1-9]+)>/<url>", methods=["GET", "HEAD"], name="flussonic_local_name")
-async def handle_flussonic_local(request, url, channel_id=None, channel_name=None):
+async def handle_flussonic_extra(request, url, channel_id=None, channel_name=None):
     if url in ("live", "mpegts"):
         return await handle_channel(request, channel_id, channel_name)
-    return await handle_flussonic(request, url, channel_id, channel_name, local=True)
-
-
-@app.get("/guia.xml", name="xml_guia")
-@app.get("/guide.xml", name="xml_guide")
-async def handle_guide(request):
-    if not os.path.exists(GUIDE):
-        raise NotFound(f"Requested URL {request.raw_url.decode()} not found")
-    log.info(f'[{request.ip}] {request.method} {request.url}{" " * 10} => "{GUIDE}"')
-    return await response.file(GUIDE)
+    cloud = request.route.path.startswith("cloud")
+    local = request.route.path.startswith("local")
+    return await handle_flussonic(request, url, channel_id, channel_name, cloud=cloud, local=local)
 
 
 @app.get("/cloud.xml", name="xml_cloud")
-@app.get("/nube.xml", name="xml_nube")
-async def handle_guide_cloud(request):
-    if not os.path.exists(GUIDE_CLOUD):
-        raise NotFound(f"Requested URL {request.raw_url.decode()} not found")
-    log.info(f'[{request.ip}] {request.method} {request.url}{" " * 10} => "{GUIDE_CLOUD}"')
-    return await response.file(GUIDE_CLOUD)
-
-
+@app.get("/guia.xml", name="xml_guia")
 @app.get("/guia.xml.gz", name="xmlz_guia")
+@app.get("/guide.xml", name="xml_guide")
 @app.get("/guide.xml.gz", name="xmlz_guide")
-async def handle_guide_gz(request):
-    if not os.path.exists(GUIDE + ".gz"):
-        raise NotFound(f"Requested URL {request.raw_url.decode()} not found")
-    log.info(f'[{request.ip}] {request.method} {request.url}{" " * 7} => "{GUIDE}.gz"')
-    return await response.file(GUIDE + ".gz")
-
-
 @app.get("/local.xml", name="xml_local")
-async def handle_guide_local(request):
-    if not os.path.exists(GUIDE_LOCAL):
+@app.get("/nube.xml", name="xml_nube")
+async def handle_guides(request):
+    guide = {
+        "cloud.xml": GUIDE_CLOUD,
+        "guia.xml": GUIDE,
+        "guia.xml.gz": GUIDE + ".gz",
+        "guide.xml": GUIDE,
+        "guide.xml.gz": GUIDE + ".gz",
+        "local.xml": GUIDE_LOCAL,
+        "nube.xml": GUIDE_CLOUD,
+    }[request.route.path]
+    pad = 10 if request.route.path.endswith(".xml") else 7
+
+    if not os.path.exists(guide):
         raise NotFound(f"Requested URL {request.raw_url.decode()} not found")
-    log.info(f'[{request.ip}] {request.method} {request.url}{" " * 10} => "{GUIDE_LOCAL}"')
-    return await response.file(GUIDE_LOCAL)
+
+    log.info(f'[{request.ip}] {request.method} {request.url}{" " * pad} => "{guide}"')
+    return await response.file(guide)
 
 
 @app.route("/Covers/<path:int>/<cover>", methods=["GET", "HEAD"], name="images_covers")
@@ -440,7 +427,17 @@ async def handle_notfound(request):
 async def handle_prometheus(request):
     try:
         async with _SESSION.get(f"{EPG_URL}/metrics") as r:
-            return response.text((await r.read()).decode())
+            return response.text(await r.text())
+    except (ClientConnectionError, ClientOSError, ServerDisconnectedError):
+        raise ServiceUnavailable("Not available")
+
+
+@app.get("/timers_check", name="proxied_timers_check")
+@app.get("/update_epg", name="proxied_update_epg")
+async def handle_proxied(request):
+    try:
+        async with _SESSION.get(f"{EPG_URL}/{request.route.path}") as r:
+            return response.json(await r.json())
     except (ClientConnectionError, ClientOSError, ServerDisconnectedError):
         raise ServiceUnavailable("Not available")
 
@@ -470,18 +467,19 @@ async def handle_recording(request):
     if not RECORDINGS:
         raise NotFound(f"Requested URL {request.raw_url.decode()} not found")
 
-    _path = urllib.parse.unquote(request.raw_url.decode().split("/recording/")[1])
-    ext = os.path.splitext(_path[1:])[1]
+    _path = urllib.parse.unquote(request.raw_url.decode().split("/recording/")[1])[1:]
+    ext = os.path.splitext(_path)[1]
 
     if RECORDINGS_TMP and ext in (".jpg", ".png"):
-        cached_cover = os.path.join(RECORDINGS_TMP, "covers", _path[1:])
+        cached_cover = os.path.join(RECORDINGS_TMP, "covers", _path)
         if os.path.exists(cached_cover):
             if request.method == "HEAD":
                 return response.HTTPResponse(status=200)
 
             return await response.file(cached_cover)
+        log.warning(f'Cover not found in cache: "{_path}"')
 
-    file = os.path.join(RECORDINGS, _path[1:])
+    file = os.path.join(RECORDINGS, _path)
     if os.path.exists(file):
         if request.method == "HEAD":
             return response.HTTPResponse(status=200)
@@ -498,15 +496,6 @@ async def handle_recording(request):
             return await response.file_stream(file, mime_type=MIME_WEBM, _range=_range)
 
     raise NotFound(f"Requested URL {request.raw_url.decode()} not found")
-
-
-@app.get("/timers_check")
-async def handle_timers_check(request):
-    try:
-        async with _SESSION.get(f"{EPG_URL}/timers_check") as r:
-            return response.json(await r.json())
-    except (ClientConnectionError, ClientOSError, ServerDisconnectedError):
-        raise ServiceUnavailable("Not available")
 
 
 async def network_saturated():
