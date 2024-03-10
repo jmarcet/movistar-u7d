@@ -7,7 +7,6 @@ import aiohttp
 import argparse
 import asyncio
 import codecs
-import defusedxml.ElementTree as ElTr
 import glob
 import gzip
 import json
@@ -25,6 +24,7 @@ from asyncio.exceptions import CancelledError
 from collections import defaultdict, deque
 from contextlib import closing
 from datetime import date, datetime, timedelta
+from defusedxml.ElementTree import ParseError, fromstring
 from filelock import FileLock, Timeout
 from html import escape, unescape
 from queue import Queue
@@ -468,28 +468,21 @@ class MulticastIPTV:
         queue.join()
 
     @staticmethod
-    def __get_channels(xml_channels):
+    def __get_channels(root):
         channel_list = {}
-        root = ElTr.fromstring(xml_channels.replace("\n", " "))
-        services = root[0][0].findall("{urn:dvb:ipisdns:2006}SingleService")
-
-        for i in services:
-            try:
-                channel_id = int(i[1].attrib["ServiceName"])
-                channel_list[channel_id] = {
-                    "id": channel_id,
-                    "address": i[0][0].attrib["Address"],
-                    "port": i[0][0].attrib["Port"],
-                    "name": i[2][0].text.encode("latin1").decode("utf8"),
-                    "shortname": i[2][1].text.encode("latin1").decode("utf8"),
-                    "genre": i[2][3][0].text.encode("latin1").decode("utf8"),
-                    "logo_uri": i[1].attrib["logoURI"] if "logoURI" in i[1].attrib else "MAY_1/imSer/4146.jpg",
-                }
-                if i[2][4].tag == "{urn:dvb:ipisdns:2006}ReplacementService":
-                    channel_list[channel_id]["replacement"] = int(i[2][4][0].attrib["ServiceName"])
-            except (AttributeError, IndexError, KeyError, TypeError, UnicodeError):
-                pass
-
+        for svc in (s for s in root[0][0].iterfind("{urn:dvb:ipisdns:2006}SingleService") if len(s[0]) > 0):
+            channel_id = int(svc[1].attrib["ServiceName"])
+            channel_list[channel_id] = {
+                "id": channel_id,
+                "address": svc[0][0].attrib["Address"],
+                "port": svc[0][0].attrib["Port"],
+                "name": svc[2][0].text.encode("latin1").decode("utf8"),
+                "shortname": svc[2][1].text.encode("latin1").decode("utf8"),
+                "genre": svc[2][3][0].text.encode("latin1").decode("utf8"),
+                "logo_uri": svc[1].attrib.get("logoURI", "4146.jpg"),
+            }
+            if svc[2][4].tag == "{urn:dvb:ipisdns:2006}ReplacementService":
+                channel_list[channel_id]["replacement"] = int(svc[2][4][0].attrib["ServiceName"])
         return channel_list
 
     def __get_channels_keys(self):
@@ -503,23 +496,25 @@ class MulticastIPTV:
         log.info("Actualizando metadatos de la EPG. Descargando canales, paquetes y segmentos...")
 
         while True:
-            xml = self.get_xml_files(mcast_grp, mcast_port)
-            _msg = "Ficheros XML: ["
-            _msg += "2_0 " if "2_0" in xml else "    "
-            _msg += "5_0 " if "5_0" in xml else "    "
-            _msg += "6_0" if "6_0" in xml else "   "
-            _msg += "] / [2_0 5_0 6_0]"
-            if not all((x in xml for x in ("2_0", "5_0", "6_0"))):
-                log.warning(f"{_msg} => Incompletos. Reintentando...")
-                continue
-
+            _msg = ""
             try:
-                self.__xml_data["channels"] = self.__get_channels(xml["2_0"])
-                self.__xml_data["packages"] = self.__get_packages(xml["5_0"])
-                self.__xml_data["segments"] = self.__get_segments(xml["6_0"])
+                xml = self.get_xml_files(mcast_grp, mcast_port)
+                _msg += "Ficheros XML: ["
+                _msg += "2_0 " if "2_0" in xml else "    "
+                _msg += "5_0 " if "5_0" in xml else "    "
+                _msg += "6_0" if "6_0" in xml else "   "
+                _msg += "] / [2_0 5_0 6_0]"
+                if not all((x in xml for x in ("2_0", "5_0", "6_0"))):
+                    log.warning(f"{_msg} => Incompletos. Reintentando...")
+                    continue
+
+                self.__xml_data["channels"] = self.__get_channels(fromstring(xml["2_0"].replace("\n", " ")))
+                self.__xml_data["packages"] = self.__get_packages(fromstring(xml["5_0"].replace("\n", " ")))
+                self.__xml_data["segments"] = self.__get_segments(fromstring(xml["6_0"].replace("\n", " ")))
                 log.info(f"{_msg} => Completos y correctos")
                 break
-            except ElTr.ParseError:
+            except (AttributeError, IndexError, ParseError, KeyError, TypeError, UnicodeError) as ex:
+                log.debug("%s" % repr(ex))
                 log.warning(f"{_msg} => Incorrectos. Reintentando...")
 
         self.__xml_data["services"] = self.__get_services()
@@ -530,49 +525,35 @@ class MulticastIPTV:
         del self.__xml_data["packages"]
 
     @staticmethod
-    def __get_packages(xml):
+    def __get_packages(root):
         package_list = {}
-        root = ElTr.fromstring(xml.replace("\n", " "))
-        packages = root[0].findall("{urn:dvb:ipisdns:2006}Package")
-
-        for package in packages:
-            try:
-                package_name = package[0].text
-                package_list[package_name] = {
-                    "id": package.attrib["Id"],
-                    "name": package_name,
-                    "services": {},
-                }
-                for service in package:
-                    if service.tag != "{urn:dvb:ipisdns:2006}PackageName":
-                        service_id = service[0].attrib["ServiceName"]
-                        package_list[package_name]["services"][service_id] = service[1].text
-            except (AttributeError, IndexError, KeyError, TypeError):
-                pass
-
+        for package in root[0].iterfind("{urn:dvb:ipisdns:2006}Package"):
+            package_name = package[0].text
+            package_list[package_name] = {
+                "id": package.attrib["Id"],
+                "name": package_name,
+                "services": {},
+            }
+            for service in package:
+                if service.tag != "{urn:dvb:ipisdns:2006}PackageName":
+                    service_id = service[0].attrib["ServiceName"]
+                    package_list[package_name]["services"][service_id] = service[1].text
         return package_list
 
     @staticmethod
-    def __get_segments(xml):
+    def __get_segments(root):
         segment_list = {}
-        root = ElTr.fromstring(xml.replace("\n", " "))
-        payloads = root[0][1][1].findall("{urn:dvb:ipisdns:2006}DVBBINSTP")
-
-        for segments in payloads:
-            try:
-                source = segments.attrib["Source"]
-                segment_list[source] = {
-                    "Source": source,
-                    "Port": segments.attrib["Port"],
-                    "Address": segments.attrib["Address"],
-                    "Segments": {},
-                }
-                for segment in segments[0]:
-                    segment_id = segment.attrib["ID"]
-                    segment_list[source]["Segments"][segment_id] = segment.attrib["Version"]
-            except (AttributeError, IndexError, KeyError, TypeError):
-                pass
-
+        for segments in root[0][1][1].iterfind("{urn:dvb:ipisdns:2006}DVBBINSTP"):
+            source = segments.attrib["Source"]
+            segment_list[source] = {
+                "Source": source,
+                "Port": segments.attrib["Port"],
+                "Address": segments.attrib["Address"],
+                "Segments": {},
+            }
+            for segment in segments[0]:
+                segment_id = segment.attrib["ID"]
+                segment_list[source]["Segments"][segment_id] = segment.attrib["Version"]
         return segment_list
 
     @staticmethod
@@ -828,7 +809,6 @@ class MulticastIPTV:
         _files = {}
         failed = 0
         first_file = ""
-        loop = True
 
         with closing(socket.socket(socket.AF_INET, socket.SOCK_DGRAM, socket.IPPROTO_UDP)) as s:
             s.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
@@ -839,7 +819,7 @@ class MulticastIPTV:
                 socket.IP_ADD_MEMBERSHIP,
                 socket.inet_aton(mc_grp) + socket.inet_aton(_IPTV),
             )
-            # Wait for an end chunk to start by the beginning
+            # Wait for an end chunk to start at the beginning
             while True:
                 try:
                     chunk = MulticastIPTV.parse_chunk(s.recv(1500))
@@ -857,25 +837,23 @@ class MulticastIPTV:
                     failed += 1
                     if failed == 3:
                         raise IPTVNetworkError(msg)
-            # Loop until firstfile
-            while loop:
-                try:
-                    xmldata = ""
+            # Loop until first_file
+            while True:
+                xmldata = ""
+                chunk = MulticastIPTV.parse_chunk(s.recv(1500))
+                # Discard headers
+                body = chunk["data"]
+                while not chunk["end"]:
+                    xmldata += body
                     chunk = MulticastIPTV.parse_chunk(s.recv(1500))
-                    # Discard headers
                     body = chunk["data"]
-                    while not chunk["end"]:
-                        xmldata += body
-                        chunk = MulticastIPTV.parse_chunk(s.recv(1500))
-                        body = chunk["data"]
-                    # Discard last 4bytes binary footer?
-                    xmldata += body[:-4]
-                    _files[f'{chunk["filetype"]}_{chunk["fileid"]}'] = xmldata
-                    if f'{chunk["filetype"]}_{chunk["fileid"]}' == first_file:
-                        loop = False
-                        log.info(f"{mc_grp}:{mc_port} -> XML descargado")
-                except (AttributeError, KeyError, TimeoutError, TypeError, UnicodeError):
-                    pass
+                # Discard last 4bytes binary footer
+                xmldata += body[:-4]
+                current_file = f'{chunk["filetype"]}_{chunk["fileid"]}'
+                _files[current_file] = xmldata
+                if current_file == first_file:
+                    log.info(f"{mc_grp}:{mc_port} -> XML descargado")
+                    break
         return _files
 
     @staticmethod
