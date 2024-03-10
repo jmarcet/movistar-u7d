@@ -706,11 +706,6 @@ class MulticastIPTV:
                 log.warning(f"__sanitize_channels(): [{channel_key:4}] => dropped, unknown")
                 del epg[channel_key]
 
-        if not CACHE_ALL_CHANNELS:
-            for channel_key in set(epg) - EPG_CHANNELS:
-                del epg[channel_key]
-                log.debug(f"__sanitize_channels(): [{channel_key:4}] => dropped")
-
     def __sort_epg(self):
         epg = self.__cached_epg
         _services = self.__xml_data["services"]
@@ -1270,7 +1265,6 @@ if __name__ == "__main__":
     _CONFIG = _DEADLINE = _END_POINT = _IPTV = _MIPTV = _SESSION = _XMLTV = None
 
     CACHE_DIR = os.path.join(_conf["HOME"], ".xmltv", "cache")
-    CACHE_ALL_CHANNELS = _conf["CACHE_ALL_CHANNELS"]
     EPG_CHANNELS = _conf["EPG_CHANNELS"]
     HOME = _conf["HOME"]
     RECORDINGS = _conf["RECORDINGS"]
