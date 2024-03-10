@@ -4,6 +4,8 @@
 
 - `ffmpeg` actualizado a la versión 6
 
+- Consumo de memoria y recursos enormemente reducidos. En Linux se puede usar con 192MB de RAM en lugar de 512MB.
+
 - Las imágenes de docker ahora usan `debian-slim` y [jellyfin-ffmpeg](https://github.com/jellyfin/jellyfin-ffmpeg), con mucho mejor rendimiento que con `Alpine` y con aceleración de la codificación/decodificación de video tanto en `ffmpeg` como en `comskip`, con soporte de Intel QSV, AMD, Nvidia, Raspberry, ...
   - Las imágenes de docker están disponibles para `amd64, `arm64` y `arm`, con nuevas etiquetas `stable` y `unstable` y nuevas versiones `slim`, `stable-slim` y `unstable-slim`, sin `ffmpeg`/`ffprobe`/`comskip` y mucho más pequeñas.
   - Para Windows el `comskip` se debe [descargar](https://www.kaashoek.com/files/) por separado y copiarlo o bien junto a `mu7d` o bien en una ruta que esté en el `PATH`, es decir, que con escribir `comskip` en un `CMD`/`PowerShell` lo encuentre y ejecute.

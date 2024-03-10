@@ -1025,6 +1025,7 @@ class XmlTV:
                 self.__append_elem("rating", pad=12, close=True)
 
             self.__append_elem("programme", pad=8, close=True)
+            yield
 
     def __append_elem(self, name, text=None, lang=None, attr={}, pad=0, child=False, close=False):
         elem = (" " * pad) + "<" + ("/" if close else "") + name
@@ -1073,10 +1074,10 @@ class XmlTV:
 
         tz_offset = abs(time.timezone // 3600)
         for channel_id in tuple(parsed_epg):
-            await self.__add_programmes_tags(channel_id, parsed_epg[channel_id], local, tz_offset)
+            async for _ in self.__add_programmes_tags(channel_id, parsed_epg[channel_id], local, tz_offset):
+                yield self.__doc
+                self.__doc.clear()
             del parsed_epg[channel_id]
-            yield self.__doc
-            self.__doc.clear()
         del parsed_epg
 
         self.__append_elem("tv", pad=4, close=True)
