@@ -481,6 +481,7 @@ async def ongoing_vods(channel_id="", program_id="", filename="", _all=False, _f
         regex = "^%smovistar_vod%s" % ((sys.executable.replace("\\", "\\\\") + " ") if EXT == ".py" else "", EXT)
 
     if filename:
+        filename = filename.translate(str.maketrans("[]", ".."))
         _match = anchored_regex.match(filename)
         if _match:
             filename = _match.groups()[0]
