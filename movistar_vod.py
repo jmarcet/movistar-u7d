@@ -191,6 +191,23 @@ async def postprocess(vod_info):
 
         return int(float(recording_data.get("format", {}).get("duration", 0)))
 
+    async def _get_language_tags(recording, vo):
+        cmd = ("ffprobe", "-i", recording, "-v", "quiet", "-of", "json")
+        cmd += ("-show_entries", "stream=codec_type:stream_tags=language")
+        proc = await asyncio.create_subprocess_exec(*cmd, stdin=NULL, stdout=PIPE, stderr=NULL)
+        recording_data = ujson.loads((await proc.communicate())[0].decode())
+
+        sub_idx, tags = 0, []
+        langs_map = {"ads": "spa", "esp": "spa", "srd": "spa", "vo": "mul", "vos": "mul"}
+        for idx, stream in enumerate(recording_data["streams"][1:]):
+            codec = "a" if stream["codec_type"] == "audio" else "s"
+            lang = langs_map.get(stream["tags"]["language"], stream["tags"]["language"])
+            sub_idx = idx if all((codec == "s", sub_idx == 0)) else sub_idx
+            tags.append(f"-metadata:s:{codec}:{idx - sub_idx} language={lang}")
+            if all((codec == "a", idx == 1, vo)):
+                tags[0], tags[1] = tags[1].replace("s:a:1", "s:a:0"), tags[0].replace("s:a:0", "s:a:1")
+        return " ".join(tags).split()
+
     def _save_cover_cache(metadata):
         if metadata.get("covers", {}).get("fanart"):
             cover = os.path.join(RECORDINGS, metadata["covers"]["fanart"])
@@ -360,10 +377,10 @@ async def postprocess(vod_info):
                 cmd += ["-ss", str(timedelta(seconds=new_mtime - mtime))]
 
         if _args.vo:
-            cmd += ["-map", "0:v", "-map", "0:a:1?", "-map", "0:a:0", "-map", "0:a:3?"]
-            cmd += ["-map", "0:a:2?", "-map", "0:a:5?", "-map", "0:a:4?", "-map", "0:s?"]
+            cmd += ["-map", "0:v", "-map", "0:a:1?", "-map", "0:a:0", "-map", "0:s?"]
         else:
             cmd += ["-map", "0:v", "-map", "0:a", "-map", "0:s?"]
+        tags += await _get_language_tags(_tmpname + TMP_EXT, _args.vo)
 
         cmd += RECORDINGS_TRANSCODE_OUTPUT
 
@@ -515,7 +532,6 @@ async def postprocess(vod_info):
     mtime = vod_info["beginTime"] // 1000 + _args.start
     tags = ["-metadata", 'service_name="%s"' % vod_info["channelName"]]
     tags += ["-metadata", 'service_provider="Movistar IPTV"']
-    tags += ["-metadata:s:s:0", "language=esp", "-metadata:s:s:1", "language=und"]
     tags += ["-metadata:s:v", f"title={os.path.basename(_args.filename)}"] if _args.mkv else []
 
     lockfile = os.path.join(TMP_DIR, ".movistar_vod.lock")
