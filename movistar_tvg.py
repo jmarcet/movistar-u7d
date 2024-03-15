@@ -237,7 +237,13 @@ class MovistarTV:
         data = Cache.load_epg_extended_info(pid)
         _fill_data(data)
 
-        if not data or data["beginTime"] // 1000 != ts:
+        if not data or any(
+            (
+                data["beginTime"] // 1000 != ts,
+                not data.get("description", "").strip(),
+                all((data.get("theme", "") == "Cine", not data.get("originalTitle", "").strip())),
+            )
+        ):
             _data = await MovistarTV.get_service_data(f"epgInfov2&productID={pid}&channelID={channel_id}")
             if not _data:
                 if data:
