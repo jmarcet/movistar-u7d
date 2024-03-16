@@ -756,7 +756,7 @@ async def reload_epg():
 
     elif not all(map(os.path.exists, (CHANNELS, channels_data, epg_data, GUIDE, GUIDE + ".gz"))):
         log.warning("Missing channels data! Need to download it. Please be patient...")
-        return await update_epg()
+        return await update_epg(abort_on_error=True)
 
     async with epg_lock:
         try:

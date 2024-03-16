@@ -159,8 +159,9 @@ async def get_end_point(home):
         end_points = dict(sorted(end_points.items(), key=lambda x: int(re.sub(r"[A-Za-z]+", "", x[0]))))
     else:
         end_points = END_POINTS
+    end_points = tuple(dict.fromkeys(end_points.values()))
 
-    for end_point in tuple(dict.fromkeys(end_points.values())):
+    for end_point in end_points:
         async with aiohttp.ClientSession(headers={"User-Agent": UA}) as session:
             try:
                 async with session.get(end_point):
@@ -170,9 +171,8 @@ async def get_end_point(home):
             finally:
                 await session.close()
 
-    log.info("Failed to get end_point. Trying again...")
-    await asyncio.sleep(5)
-    return await get_end_point(home)
+    log.debug("Failed to verify end_point. Using default one.")
+    return end_points[0] + "/appserver/mvtv.do"
 
 
 def get_iptv_ip():
@@ -551,6 +551,9 @@ async def u7d_main():
         except CancelledError:
             if WIN32:
                 await u7d_t
+            break
+
+        if WIN32:
             break
 
         u7d_t = asyncio.create_task(launch(u7d_cmd)) if u7d_t in done else u7d_t
