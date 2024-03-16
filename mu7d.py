@@ -549,11 +549,12 @@ async def u7d_main():
         try:
             done, _ = await asyncio.wait(asyncio.all_tasks(), return_when=asyncio.FIRST_COMPLETED)
         except CancelledError:
-            if WIN32:
-                await u7d_t
-            break
+            if not WIN32:
+                break
+            await u7d_t
 
         if WIN32:
+            input("\nPulsa una tecla para salir...")
             break
 
         u7d_t = asyncio.create_task(launch(u7d_cmd)) if u7d_t in done else u7d_t
