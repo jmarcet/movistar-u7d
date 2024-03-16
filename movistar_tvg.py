@@ -16,7 +16,6 @@ import re
 import socket
 import struct
 import sys
-import threading
 import time
 
 from aiohttp.client_exceptions import ClientConnectionError, ClientOSError, ServerDisconnectedError
@@ -28,6 +27,7 @@ from defusedxml.ElementTree import ParseError, fromstring
 from filelock import FileLock, Timeout
 from html import escape, unescape
 from queue import Queue
+from threading import Thread, current_thread, main_thread
 
 from mu7d import DATEFMT, END_POINTS_FILE, FMT, UA, UA_U7D, WIN32, YEAR_SECONDS, IPTVNetworkError
 from mu7d import add_logfile, get_end_point, get_iptv_ip, get_local_info, get_title_meta, keys_to_int
@@ -320,22 +320,21 @@ class MovistarTV:
         return data
 
 
-class MulticastEPGFetcher(threading.Thread):
+class MulticastEPGFetcher(Thread):
     def __init__(self, queue):
-        threading.Thread.__init__(self, daemon=True)
+        super().__init__(daemon=True)
         self.queue = queue
 
     def run(self):
-        while True:
-            mcast = self.queue.get()
-            _MIPTV.get_epg_day(mcast["mcast_grp"], mcast["mcast_port"], mcast["source"])
-            self.queue.task_done()
+        mcast = self.queue.get()
+        _MIPTV.get_epg_day(mcast["mcast_grp"], mcast["mcast_port"], mcast["source"])
+        self.queue.task_done()
 
 
 class MulticastIPTV:
     def __init__(self):
         self.__cached_epg = defaultdict(dict)
-        self.__epg = defaultdict(dict)
+        self.__epg = None
         self.__expired = 0
         self.__fixed = 0
         self.__new_gaps = defaultdict(list)
@@ -454,15 +453,11 @@ class MulticastIPTV:
         log.debug("__fix_epg(): %s" % str(self.__epg.keys()))
 
     def __get_bin_epg(self):
-        self.__epg = [{} for _ in range(len(self.__xml_data["segments"]))]
-        queue = Queue()
-        threads = 8
+        days = len(self.__xml_data["segments"])
+        self.__epg = deque([{} for _ in range(days)])
+        queue = Queue(days)
 
-        for _ in range(threads):
-            process = MulticastEPGFetcher(queue)
-            process.start()
-
-        for key in sorted(self.__xml_data["segments"]):
+        for key in self.__xml_data["segments"]:
             queue.put(
                 {
                     "mcast_grp": self.__xml_data["segments"][key]["Address"],
@@ -470,6 +465,7 @@ class MulticastIPTV:
                     "source": key,
                 }
             )
+            MulticastEPGFetcher(queue).start()
 
         queue.join()
 
@@ -496,7 +492,7 @@ class MulticastIPTV:
         _services = self.__xml_data["services"]
 
         # Services not in channels are special access channels like DAZN, Disney, Netflix & Prime
-        return tuple(_channels[key].get("replacement", key) for key in _services if key in _channels)
+        return {_channels[key].get("replacement", key): key for key in _services if key in _channels}
 
     def __get_epg_data(self, mcast_grp, mcast_port):
         log.info("Actualizando metadatos de la EPG. Descargando canales, paquetes y segmentos...")
@@ -538,12 +534,12 @@ class MulticastIPTV:
             package_list[package_name] = {
                 "id": package.attrib["Id"],
                 "name": package_name,
-                "services": {},
+                "services": {
+                    service[0].attrib["ServiceName"]: service[1].text
+                    for service in package
+                    if service.tag != "{urn:dvb:ipisdns:2006}PackageName"
+                },
             }
-            for service in package:
-                if service.tag != "{urn:dvb:ipisdns:2006}PackageName":
-                    service_id = service[0].attrib["ServiceName"]
-                    package_list[package_name]["services"][service_id] = service[1].text
         return package_list
 
     @staticmethod
@@ -555,11 +551,8 @@ class MulticastIPTV:
                 "Source": source,
                 "Port": segments.attrib["Port"],
                 "Address": segments.attrib["Address"],
-                "Segments": {},
+                "Segments": {segment.attrib["ID"]: segment.attrib["Version"] for segment in segments[0]},
             }
-            for segment in segments[0]:
-                segment_id = segment.attrib["ID"]
-                segment_list[source]["Segments"][segment_id] = segment.attrib["Version"]
         return segment_list
 
     @staticmethod
@@ -635,17 +628,17 @@ class MulticastIPTV:
         return gaps
 
     def __parse_bin_epg(self):
-        parsed_epg = {}
+        epg = defaultdict(dict)
         channels_keys = self.__get_channels_keys()
-        for epg_day in self.__epg:
-            channel_epg = {}
-            for _id in (d for d in epg_day if epg_day[d]):
-                head = self.__parse_bin_epg_header(epg_day[_id])
-                if head["service_id"] not in channels_keys:
+        while self.__epg:
+            bin_epg_day = self.__epg.popleft()
+            for _id in (d for d in bin_epg_day if bin_epg_day[d]):
+                head = self.__parse_bin_epg_header(bin_epg_day[_id])
+                key = channels_keys.get(head["service_id"])
+                if not key:
                     continue
-                channel_epg[head["service_id"]] = self.__parse_bin_epg_body(head["data"], head["service_id"])
-            self.merge_dicts(parsed_epg, channel_epg)
-        self.__epg = parsed_epg
+                epg[key] = {**epg[key], **self.__parse_bin_epg_body(head["data"], head["service_id"])}
+        self.__epg = epg
         log.debug("__parse_bin_epg(): %s" % str(self.__epg.keys()))
 
     @staticmethod
@@ -696,22 +689,6 @@ class MulticastIPTV:
             "data": data[body:],
         }
 
-    def __sanitize_channels(self):
-        epg = self.__epg or self.__cached_epg
-        _channels = self.__xml_data["channels"]
-        _services = self.__xml_data["services"]
-
-        # We need to change the channel ids in the EPG which do not match our services for their replacements
-        for channel_key in set(epg) - set(_services):
-            for channel_id in filter(lambda ch: _channels[ch].get("replacement") == channel_key, _channels):
-                log.debug(f"__sanitize_channels(): [{channel_key:4}] => [{channel_id:4}]")
-                epg[channel_id] = epg[channel_key]
-                del epg[channel_key]
-                break
-            if channel_key in epg:
-                log.warning(f"__sanitize_channels(): [{channel_key:4}] => dropped, unknown")
-                del epg[channel_key]
-
     def __sort_epg(self):
         epg = self.__cached_epg
         _services = self.__xml_data["services"]
@@ -727,13 +704,11 @@ class MulticastIPTV:
 
     async def get_epg(self):
         self.__cached_epg = await Cache.load_epg()
-        self.__sanitize_channels()
 
         while True:
             self.__get_bin_epg()
             try:
                 self.__parse_bin_epg()
-                self.__sanitize_channels()
                 self.__fix_epg()
                 if not self.__merge_epg():
                     del self.__epg, self.__xml_data["segments"]
@@ -792,7 +767,7 @@ class MulticastIPTV:
 
     def get_epg_day(self, mcast_grp, mcast_port, source):
         log.info(f'Descargando XML {source.split(".")[0]} -> {mcast_grp}:{mcast_port}')
-        self.__epg[int(source.split("_")[1]) - 1] = self.get_xml_files(mcast_grp, mcast_port)
+        self.__epg[int(source.split("_")[1])] = self.get_xml_files(mcast_grp, mcast_port)
 
     def get_service_provider_data(self, refresh):
         if not refresh:
@@ -830,7 +805,7 @@ class MulticastIPTV:
                 except (AttributeError, KeyError, TimeoutError, TypeError, UnicodeError):
                     pass
                 except (IPTVNetworkError, OSError):
-                    if threading.current_thread() == threading.main_thread():
+                    if current_thread() == main_thread():
                         msg = "Multicast IPTV de Movistar no detectado"
                     else:
                         msg = "Imposible descargar XML"
@@ -856,18 +831,6 @@ class MulticastIPTV:
                     log.info(f"{mc_grp}:{mc_port} -> XML descargado")
                     break
         return _files
-
-    @staticmethod
-    def merge_dicts(dict1, dict2, path=[]):
-        for key in dict2:
-            if key in dict1:
-                if isinstance(dict1[key], dict) and isinstance(dict2[key], dict):
-                    MulticastIPTV.merge_dicts(dict1[key], dict2[key], path + [str(key)])
-                elif dict1[key] != dict2[key]:
-                    raise IPTVNetworkError("Conflicto en %s" % ".".join(path + [str(key)]))
-            else:
-                dict1[key] = dict2[key]
-        return dict1
 
     @staticmethod
     def parse_chunk(data):
