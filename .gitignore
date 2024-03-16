@@ -8,5 +8,6 @@ build/
 lib/
 lib64
 pyvenv.cfg
+*.dll
 *.exe
 *.swp
