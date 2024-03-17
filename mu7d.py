@@ -62,14 +62,14 @@ DROP_KEYS += ("opvr", "playcount", "recordingAllowed", "resume", "startOver", "w
 XML_INT_KEYS = ("ageRatingID", "beginTime", "duration", "endTime", "expDate")
 XML_INT_KEYS += ("productType", "rating", "serviceID", "serviceUID", "themeID")
 
-END_POINTS = {
-    "epNoCach1": "http://portalnc.imagenio.telefonica.net:2001",
-    "epNoCach7": "http://asiptvnc.imagenio.telefonica.net:2070",
-    "epNoCach8": "http://reg360.imagenio.telefonica.net:2070",
-    "epNoCach9": "https://auraiptv.imagenio.telefonica.net",
-    "epNoCach10": "https://oauth4p.imagenio.telefonica.net",
-    "epNoCach11": "http://asfenc.imagenio.telefonica.net:2001",
-}
+END_POINTS = (
+    "http://portalnc.imagenio.telefonica.net:2001",
+    "http://asiptvnc.imagenio.telefonica.net:2070",
+    "http://reg360.imagenio.telefonica.net:2070",
+    "https://auraiptv.imagenio.telefonica.net",
+    "https://oauth4p.imagenio.telefonica.net",
+    "http://asfenc.imagenio.telefonica.net:2001",
+)
 
 END_POINTS_FILE = "mu7d.endpoints"
 
@@ -152,14 +152,14 @@ def find_free_port(iface=""):
 
 
 async def get_end_point(home):
+    end_points = END_POINTS
     ep_path = os.path.join(home, ".xmltv", "cache", END_POINTS_FILE)
     if os.path.exists(ep_path):
-        async with aiofiles.open(ep_path) as f:
-            end_points = ujson.loads(await f.read())["data"]
-        end_points = dict(sorted(end_points.items(), key=lambda x: int(re.sub(r"[A-Za-z]+", "", x[0]))))
-    else:
-        end_points = END_POINTS
-    end_points = tuple(dict.fromkeys(end_points.values()))
+        try:
+            async with aiofiles.open(ep_path) as f:
+                end_points = ujson.loads(await f.read())["data"]
+        except (FileNotFoundError, PermissionError):
+            pass
 
     for end_point in end_points:
         async with aiohttp.ClientSession(headers={"User-Agent": UA}) as session:

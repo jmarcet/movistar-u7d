@@ -315,9 +315,9 @@ class MovistarTV:
             pass
 
     @staticmethod
-    def update_end_points(data):
-        Cache.save_end_points(data)
-        return data
+    def update_end_points(end_points):
+        end_points = dict(sorted(end_points.items(), key=lambda x: int(re.sub(r"[A-Za-z]+", "", x[0])))).values()
+        Cache.save_end_points(tuple(dict.fromkeys(end_points)))
 
 
 class MulticastEPGFetcher(Thread):
