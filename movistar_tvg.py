@@ -6,6 +6,7 @@
 import aiohttp
 import argparse
 import asyncio
+import asyncio_dgram
 import codecs
 import glob
 import gzip
@@ -26,8 +27,7 @@ from datetime import date, datetime, timedelta
 from defusedxml.ElementTree import ParseError, fromstring
 from filelock import FileLock, Timeout
 from html import escape, unescape
-from queue import Queue
-from threading import Lock, Thread, current_thread, main_thread
+from threading import current_thread, main_thread
 
 from mu7d import DATEFMT, END_POINTS_FILE, FMT, UA, UA_U7D, WIN32, YEAR_SECONDS, IPTVNetworkError
 from mu7d import add_logfile, get_end_point, get_iptv_ip, get_local_info, get_title_meta, keys_to_int
@@ -320,22 +320,11 @@ class MovistarTV:
         Cache.save_end_points(tuple(dict.fromkeys(end_points)))
 
 
-class MulticastEPGFetcher(Thread):
-    def __init__(self, queue):
-        super().__init__(daemon=True)
-        self.queue = queue
-
-    def run(self):
-        mcast = self.queue.get()
-        _MIPTV.get_epg_day(mcast["mcast_grp"], mcast["mcast_port"], mcast["source"])
-        self.queue.task_done()
-
-
 class MulticastIPTV:
     def __init__(self):
         self.__cached_epg = defaultdict(dict)
         self.__epg = defaultdict(dict)
-        self.__epg_lock = Lock()
+        self.__epg_lock = asyncio.Lock()
         self.__expired = 0
         self.__fixed = 0
         self.__new_gaps = defaultdict(list)
@@ -453,21 +442,11 @@ class MulticastIPTV:
 
         log.debug("__fix_epg(): %s" % str(self.__epg.keys()))
 
-    def __get_bin_epg(self):
-        days = len(self.__xml_data["segments"])
-        queue = Queue(days)
-
-        for key in self.__xml_data["segments"]:
-            queue.put(
-                {
-                    "mcast_grp": self.__xml_data["segments"][key]["Address"],
-                    "mcast_port": self.__xml_data["segments"][key]["Port"],
-                    "source": key,
-                }
-            )
-            MulticastEPGFetcher(queue).start()
-
-        queue.join()
+    async def __get_bin_epg(self):
+        segments = self.__xml_data["segments"]
+        await asyncio.gather(
+            *(self.__get_epg_day(segments[key]["Address"], segments[key]["Port"], key) for key in segments)
+        )
 
     @staticmethod
     def __get_channels(root):
@@ -494,13 +473,13 @@ class MulticastIPTV:
         # Services not in channels are special access channels like DAZN, Disney, Netflix & Prime
         return {_channels[key].get("replacement", key): key for key in _services if key in _channels}
 
-    def __get_epg_data(self, mcast_grp, mcast_port):
+    async def __get_epg_data(self, mcast_grp, mcast_port):
         log.info("Actualizando metadatos de la EPG. Descargando canales, paquetes y segmentos...")
 
         while True:
             _msg = ""
             try:
-                xml = self.get_xml_files(mcast_grp, mcast_port)
+                xml = await self.get_xml_files(mcast_grp, mcast_port)
                 _msg += "Ficheros XML: ["
                 _msg += "2_0 " if "2_0" in xml else "    "
                 _msg += "5_0 " if "5_0" in xml else "    "
@@ -525,6 +504,10 @@ class MulticastIPTV:
 
         Cache.save_epg_metadata(self.__xml_data)
         del self.__xml_data["packages"]
+
+    async def __get_epg_day(self, mcast_grp, mcast_port, source):
+        log.info(f'Descargando XML {source.split(".")[0]} -> {mcast_grp}:{mcast_port}')
+        await self.__parse_bin_epg_day(await self.get_xml_files(mcast_grp, mcast_port))
 
     @staticmethod
     def __get_packages(root):
@@ -556,7 +539,7 @@ class MulticastIPTV:
         return segment_list
 
     @staticmethod
-    def __get_service_provider_ip():
+    async def __get_service_provider_ip():
         if datetime.now().hour > 0:
             data = Cache.load_service_provider_data()
             if data:
@@ -565,7 +548,7 @@ class MulticastIPTV:
         _demarcation = MulticastIPTV.get_demarcation_name()
         log.info("Buscando el Proveedor de Servicios de %s..." % _demarcation)
 
-        xml = MulticastIPTV.get_xml_files(_CONFIG["mcast_grp"], _CONFIG["mcast_port"])["1_0"]
+        xml = (await MulticastIPTV.get_xml_files(_CONFIG["mcast_grp"], _CONFIG["mcast_port"]))["1_0"]
         result = re.findall(
             f'DEM_{_CONFIG["demarcation"]}' + r'\..*?Address="(.*?)".*?\s*Port="(.*?)".*?',
             xml,
@@ -663,14 +646,14 @@ class MulticastIPTV:
             epg_dt = epg_dt[struct.unpack("B", epg_dt[cut + 3 : cut + 4])[0] + cut + 4 :]
         return programs
 
-    def __parse_bin_epg_day(self, bin_epg_day):
+    async def __parse_bin_epg_day(self, bin_epg_day):
         channels_keys = self.__get_channels_keys()
         for _id in (d for d in bin_epg_day if bin_epg_day[d]):
             head = self.__parse_bin_epg_header(bin_epg_day[_id])
             key = channels_keys.get(head["service_id"])
             if not key:
                 continue
-            with self.__epg_lock:
+            async with self.__epg_lock:
                 self.__epg[key] = {
                     **self.__epg[key],
                     **self.__parse_bin_epg_body(head["data"], head["service_id"]),
@@ -706,8 +689,8 @@ class MulticastIPTV:
         self.__cached_epg = await Cache.load_epg()
 
         while True:
-            self.__get_bin_epg()
             try:
+                await self.__get_bin_epg()
                 self.__fix_epg()
                 if not self.__merge_epg():
                     del self.__epg, self.__xml_data["segments"]
@@ -764,71 +747,68 @@ class MulticastIPTV:
         Cache.save_epg_cloud(self.__cached_epg)
         return self.__cached_epg
 
-    def get_epg_day(self, mcast_grp, mcast_port, source):
-        log.info(f'Descargando XML {source.split(".")[0]} -> {mcast_grp}:{mcast_port}')
-        self.__parse_bin_epg_day(self.get_xml_files(mcast_grp, mcast_port))
-
-    def get_service_provider_data(self, refresh):
+    async def get_service_provider_data(self, refresh):
         if not refresh:
             data = Cache.load_epg_metadata()
             if data:
                 self.__xml_data = data
                 return data
 
-        connection = self.__get_service_provider_ip()
-        self.__get_epg_data(connection["mcast_grp"], connection["mcast_port"])
+        connection = await self.__get_service_provider_ip()
+        await self.__get_epg_data(connection["mcast_grp"], connection["mcast_port"])
         return self.__xml_data
 
     @staticmethod
-    def get_xml_files(mc_grp, mc_port):
+    async def get_xml_files(mc_grp, mc_port):
         _files = {}
         failed = 0
         first_file = ""
 
-        with closing(socket.socket(socket.AF_INET, socket.SOCK_DGRAM, socket.IPPROTO_UDP)) as s:
-            s.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
-            s.settimeout(3)
-            s.bind((mc_grp if not WIN32 else "", int(mc_port)))
-            s.setsockopt(
+        with closing(socket.socket(socket.AF_INET, socket.SOCK_DGRAM, socket.IPPROTO_UDP)) as sock:
+            sock.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+            sock.settimeout(3)
+            sock.bind((mc_grp if not WIN32 else "", int(mc_port)))
+            sock.setsockopt(
                 socket.IPPROTO_IP,
                 socket.IP_ADD_MEMBERSHIP,
                 socket.inet_aton(mc_grp) + socket.inet_aton(_IPTV),
             )
-            # Wait for an end chunk to start at the beginning
-            while True:
-                try:
-                    chunk = MulticastIPTV.parse_chunk(s.recv(1500))
-                    if chunk["end"]:
-                        first_file = f'{chunk["filetype"]}_{chunk["fileid"]}'
-                        break
-                except (AttributeError, KeyError, TimeoutError, TypeError, UnicodeError):
-                    pass
-                except (IPTVNetworkError, OSError):
-                    if current_thread() == main_thread():
-                        msg = "Multicast IPTV de Movistar no detectado"
-                    else:
-                        msg = "Imposible descargar XML"
-                    log.error(msg)
-                    failed += 1
-                    if failed == 3:
-                        raise IPTVNetworkError(msg)
-            # Loop until first_file
-            while True:
-                xmldata = ""
-                chunk = MulticastIPTV.parse_chunk(s.recv(1500))
-                # Discard headers
-                body = chunk["data"]
-                while not chunk["end"]:
-                    xmldata += body
-                    chunk = MulticastIPTV.parse_chunk(s.recv(1500))
+            with closing(await asyncio_dgram.from_socket(sock)) as stream:
+                # Wait for an end chunk to start at the beginning
+                while True:
+                    try:
+                        chunk = MulticastIPTV.parse_chunk((await stream.recv())[0])
+                        if chunk["end"]:
+                            first_file = f'{chunk["filetype"]}_{chunk["fileid"]}'
+                            break
+                    except (AttributeError, KeyError, TimeoutError, TypeError, UnicodeError):
+                        pass
+                    except (IPTVNetworkError, OSError):
+                        if current_thread() == main_thread():
+                            msg = "Multicast IPTV de Movistar no detectado"
+                        else:
+                            msg = "Imposible descargar XML"
+                        log.error(msg)
+                        failed += 1
+                        if failed == 3:
+                            raise IPTVNetworkError(msg)
+                # Loop until first_file
+                while True:
+                    xmldata = ""
+                    chunk = MulticastIPTV.parse_chunk((await stream.recv())[0])
+                    # Discard headers
                     body = chunk["data"]
-                # Discard last 4bytes binary footer
-                xmldata += body[:-4]
-                current_file = f'{chunk["filetype"]}_{chunk["fileid"]}'
-                _files[current_file] = xmldata
-                if current_file == first_file:
-                    log.info(f"{mc_grp}:{mc_port} -> XML descargado")
-                    break
+                    while not chunk["end"]:
+                        xmldata += body
+                        chunk = MulticastIPTV.parse_chunk((await stream.recv())[0])
+                        body = chunk["data"]
+                    # Discard last 4bytes binary footer
+                    xmldata += body[:-4]
+                    current_file = f'{chunk["filetype"]}_{chunk["fileid"]}'
+                    _files[current_file] = xmldata
+                    if current_file == first_file:
+                        log.info(f"{mc_grp}:{mc_port} -> XML descargado")
+                        break
         return _files
 
     @staticmethod
@@ -1135,7 +1115,7 @@ async def tvg_main():
 
         # Busca el Proveedor de Servicios y descarga los archivos XML: canales, paquetes y segmentos
         _MIPTV = MulticastIPTV()
-        xdata = _MIPTV.get_service_provider_data(refresh)
+        xdata = await _MIPTV.get_service_provider_data(refresh)
 
         # Crea el objeto XMLTV a partir de los datos descargados del Proveedor de Servicios
         _XMLTV = XmlTV(xdata)
