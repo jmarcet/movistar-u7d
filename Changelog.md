@@ -49,6 +49,7 @@
   - `LOG_TO_FILE`: para escribir los logs en un fichero.
   - ~~`MP4_OUTPUT`~~: opción eliminada. Por defecto las grabaciones se realizan en formato `.ts`, el único en el que los subtítulos funcionan correctamente con cualquier reproductor.
   - `MKV_OUTPUT`: para hacer las grabaciones en formato `.mkv`. No es deseable de querer usar la nueva `MovistarTVLocal.m3u`/`local.xml`.
+  - ~~`NO_VERBOSE_LOGS`~~: opción eliminada.
   - `OTT_HACK`: hack para que OTT Navigator muestre los caracteres "()?¡!" en los títulos, de lo contrario, lo que vaya entre () lo pasa al subtítulo y los otros caracteres se los come.
   - `RECORDINGS_M3U`: activada por defecto, para controlar si generar listas `m3u` de grabaciones. Con `Jellyfin` es recomendable desactivarla, o se quejará de que no puede localizar las grabaciones.
   - ~~`RECORDINGS_PER_CHANNEL`~~: opción eliminada. Las grabaciones siempre se hacen organizadas en una carpeta por canal.

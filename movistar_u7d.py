@@ -190,7 +190,7 @@ async def handle_channel(request, channel_id=None, channel_name=None):
                     "lat": time.time() - _start,
                     "method": "live",
                     "endpoint": f"{name} _ {request.ip} _ ",
-                    "msg": f"[{request.ip}] -> Playing {('' if NO_VERBOSE_LOGS else U7D_URL) + request.path}",
+                    "msg": f"[{request.ip}] -> Playing {request.url}",
                 }
             )
         )
@@ -230,7 +230,7 @@ async def handle_flussonic(request, url, channel_id=None, channel_name=None, clo
         "lat": 0,
         "url": url,
         "method": "catchup",
-        "msg": f"[{request.ip}] -> Playing {('' if NO_VERBOSE_LOGS else U7D_URL) + request.path}",
+        "msg": f"[{request.ip}] -> Playing {request.url}",
         "endpoint": _CHANNELS[channel_id]["name"] + f" _ {request.ip} _ ",
     }
 
@@ -640,12 +640,10 @@ if __name__ == "__main__":
     IPTV_BW_SOFT = _conf["IPTV_BW_SOFT"]
     IPTV_IFACE = _conf["IPTV_IFACE"]
     LAN_IP = _conf["LAN_IP"]
-    NO_VERBOSE_LOGS = _conf["NO_VERBOSE_LOGS"]
     RECORDINGS = _conf["RECORDINGS"]
     RECORDINGS_TMP = _conf["RECORDINGS_TMP"]
     U7D_PORT = _conf["U7D_PORT"]
     U7D_PROCESSES = _conf["U7D_PROCESSES"]
-    U7D_URL = _conf["U7D_URL"]
 
     VodArgs = namedtuple("Vod", ["channel", "program", "client_ip", "client_port", "start", "cloud"])
 
