@@ -140,14 +140,12 @@ async def handle_channel(request, channel_id=None, channel_name=None):
     log.debug("%s %s %s" % tuple(map(str, (request, request.args, request.headers))))
 
     _start = time.time()
-    _raw_url = request.raw_url.decode()
-    _u7d_url = (U7D_URL + _raw_url) if not NO_VERBOSE_LOGS else ""
 
     if channel_name:
         channel_id = get_channel_id(channel_name)
 
     if channel_id not in _CHANNELS:
-        raise NotFound(f"Requested URL {_raw_url} not found")
+        raise NotFound(f"Requested URL {request.path} not found")
 
     ua = request.headers.get("user-agent", "")
     if " Chrome/" in ua:
@@ -156,13 +154,13 @@ async def handle_channel(request, channel_id=None, channel_name=None):
     try:
         name, mc_grp, mc_port = (_CHANNELS[channel_id][t] for t in ("name", "address", "port"))
     except (AttributeError, KeyError):
-        raise NotFound(f"Requested URL {_raw_url} not found")
+        raise NotFound(f"Requested URL {request.path} not found")
 
     if request.method == "HEAD":
         return response.HTTPResponse(content_type=MIME_WEBM, status=200)
 
     if _NETWORK_SATURATED and not await ongoing_vods(_fast=True):
-        log.warning(f"[{request.ip}] {_raw_url} -> Network Saturated")
+        log.warning(f"[{request.ip}] {request.path} -> Network Saturated")
         raise ServiceUnavailable("Network Saturated")
 
     sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM, socket.IPPROTO_UDP)
@@ -192,7 +190,7 @@ async def handle_channel(request, channel_id=None, channel_name=None):
                     "lat": time.time() - _start,
                     "method": "live",
                     "endpoint": f"{name} _ {request.ip} _ ",
-                    "msg": f"[{request.ip}] -> Playing {_u7d_url}",
+                    "msg": f"[{request.ip}] -> Playing {('' if NO_VERBOSE_LOGS else U7D_URL) + request.path}",
                 }
             )
         )
@@ -215,8 +213,6 @@ async def handle_flussonic(request, url, channel_id=None, channel_name=None, clo
     log.debug("%s %s %s" % tuple(map(str, (request, request.args, request.headers))))
 
     _start = time.time()
-    _raw_url = request.raw_url.decode()
-    _u7d_url = (U7D_URL + _raw_url) if not NO_VERBOSE_LOGS else ""
 
     if not url:
         return response.empty(404)
@@ -225,7 +221,7 @@ async def handle_flussonic(request, url, channel_id=None, channel_name=None, clo
         channel_id = get_channel_id(channel_name)
 
     if channel_id not in _CHANNELS:
-        raise NotFound(f"Requested URL {_raw_url} not found")
+        raise NotFound(f"Requested URL {request.path} not found")
 
     event = {
         "channel_id": channel_id,
@@ -234,7 +230,7 @@ async def handle_flussonic(request, url, channel_id=None, channel_name=None, clo
         "lat": 0,
         "url": url,
         "method": "catchup",
-        "msg": f"[{request.ip}] -> Playing {_u7d_url}",
+        "msg": f"[{request.ip}] -> Playing {('' if NO_VERBOSE_LOGS else U7D_URL) + request.path}",
         "endpoint": _CHANNELS[channel_id]["name"] + f" _ {request.ip} _ ",
     }
 
@@ -243,7 +239,7 @@ async def handle_flussonic(request, url, channel_id=None, channel_name=None, clo
         async with _SESSION.get(f"{EPG_URL}/program_id/{channel_id}/{url}", params=params) as r:
             _, program_id, _, duration, offset = (await r.json()).values()
     except (AttributeError, KeyError, ValueError, ClientConnectionError, ClientOSError, ServerDisconnectedError):
-        raise NotFound(f"Requested URL {_raw_url} not found")
+        raise NotFound(f"Requested URL {request.path} not found")
 
     if request.method == "HEAD":
         return response.HTTPResponse(content_type=MIME_WEBM, status=200)
@@ -276,16 +272,16 @@ async def handle_flussonic(request, url, channel_id=None, channel_name=None, clo
                     await _response.eof()
 
             return
-        raise NotFound(f"Requested URL {_raw_url} not found")
+        raise NotFound(f"Requested URL {request.path} not found")
 
     if _NETWORK_SATURATED and not await ongoing_vods(_fast=True):
-        log.warning(f"[{request.ip}] {_raw_url} -> Network Saturated")
+        log.warning(f"[{request.ip}] {request.path} -> Network Saturated")
         raise ServiceUnavailable("Network Saturated")
 
     client_port = find_free_port(_IPTV)
     info = await get_vod_info(request.app.ctx.vod_client, request.app.ctx.ep, channel_id, cloud, program_id, log)
     if not info:
-        raise NotFound(f"Requested URL {_raw_url} not found")
+        raise NotFound(f"Requested URL {request.path} not found")
 
     args = VodArgs(channel_id, program_id, request.ip, client_port, offset, cloud)
     vod = app.add_task(Vod(args, request.app.ctx.vod_client, info))
@@ -351,7 +347,7 @@ async def handle_guides(request):
     pad = 10 if request.route.path.endswith(".xml") else 7
 
     if not os.path.exists(guide):
-        raise NotFound(f"Requested URL {request.raw_url.decode()} not found")
+        raise NotFound(f"Requested URL {request.path} not found")
 
     log.info(f'[{request.ip}] {request.method} {request.url}{" " * pad} => "{guide}"')
     return await response.file(guide)
@@ -367,7 +363,7 @@ async def handle_images(request, cover=None, logo=None, path=None):
     elif logo:
         urls = (f"{URL_LOGO}/{logo}",)
     else:
-        raise NotFound(f"Requested URL {request.raw_url.decode()} not found")
+        raise NotFound(f"Requested URL {request.path} not found")
 
     if request.method == "HEAD":
         return response.HTTPResponse(content_type="image/jpeg", status=200)
@@ -388,7 +384,7 @@ async def handle_images(request, cover=None, logo=None, path=None):
                     log.warning("Could not get image => %s" % str(r).splitlines()[0])
         except (ClientConnectionError, ClientOSError, ServerDisconnectedError) as ex:
             log.warning("Could not get image => %s" % str(ex))
-    raise NotFound(f"Requested URL {request.raw_url.decode()} not found")
+    raise NotFound(f"Requested URL {request.path} not found")
 
 
 @app.get(r"/<m3u_file:([A-Za-z1-9]+)\.m3u$>")
@@ -407,18 +403,16 @@ async def handle_m3u_files(request, m3u_file):
         m3u_matched = os.path.join(RECORDINGS, "Recordings.m3u")
         pad = " " * 5
     else:
-        try:
-            channel_id = get_channel_id(m3u)
+        channel_id = get_channel_id(m3u)
+        if channel_id in _CHANNELS:
             channel_tag = "%03d. %s" % (_CHANNELS[channel_id]["number"], _CHANNELS[channel_id]["name"])
             m3u_matched = os.path.join(os.path.join(RECORDINGS, channel_tag), f"{channel_tag}.m3u")
-        except IndexError:
-            pass
 
     if os.path.exists(m3u_matched):
         log.info(f'[{request.ip}] {request.method} {request.url}{pad} => "{m3u_matched}"')
         return await response.file(m3u_matched, mime_type=MIME_M3U)
 
-    raise NotFound(f"Requested URL {request.raw_url.decode()} not found")
+    raise NotFound(f"Requested URL {request.path} not found")
 
 
 @app.get("/favicon.ico")
@@ -453,10 +447,10 @@ async def handle_record_program(request, url, channel_id=None, channel_name=None
         return response.empty(404)
 
     if channel_name:
-        try:
-            channel_id = get_channel_id(channel_name)
-        except IndexError:
-            raise NotFound(f"Requested URL {request.raw_url.decode()} not found")
+        channel_id = get_channel_id(channel_name)
+
+    if channel_id not in _CHANNELS:
+        raise NotFound(f"Requested URL {request.path} not found")
 
     try:
         async with _SESSION.get(f"{EPG_URL}/record/{channel_id}/{url}", params=request.args) as r:
@@ -468,9 +462,9 @@ async def handle_record_program(request, url, channel_id=None, channel_name=None
 @app.route("/recording/", methods=["GET", "HEAD"])
 async def handle_recording(request):
     if not RECORDINGS:
-        raise NotFound(f"Requested URL {request.raw_url.decode()} not found")
+        raise NotFound(f"Requested URL {request.path} not found")
 
-    _path = urllib.parse.unquote(request.raw_url.decode().split("/recording/")[1])[1:]
+    _path = urllib.parse.unquote(request.url).split("/recording/")[1][1:]
     ext = os.path.splitext(_path)[1]
 
     if RECORDINGS_TMP and ext in (".jpg", ".png"):
@@ -493,12 +487,11 @@ async def handle_recording(request):
         if ext in VID_EXTS:
             try:
                 _range = ContentRangeHandler(request, await stat_async(file))
+                return await response.file_stream(file, mime_type=MIME_WEBM, _range=_range)
             except HeaderNotFound:
-                _range = None
+                pass
 
-            return await response.file_stream(file, mime_type=MIME_WEBM, _range=_range)
-
-    raise NotFound(f"Requested URL {request.raw_url.decode()} not found")
+    raise NotFound(f"Requested URL {request.path} not found")
 
 
 async def network_saturated():
