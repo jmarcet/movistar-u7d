@@ -548,9 +548,9 @@ async def transcode(request, event, channel_id=0, filename="", offset=0, port=0,
     )
 
     if request.args.get("vo") == "1":
-        lang_channel = ["-map", "0:a:m:language:mul?", "-map", "0:a:m:language:vo?"]
+        lang_channel = ("-map", "0:a", "-map", "-0:m:language:spa", "-map", "-0:m:language:esp")
     else:
-        lang_channel = ["-map", "0:a:m:language:spa?", "-map", "0:a:m:language:esp?"]
+        lang_channel = ("-map", "0:a", "-map", "-0:m:language:mul", "-map", "-0:m:language:vo")
 
     cmd = ["ffmpeg"]
     if filename:
