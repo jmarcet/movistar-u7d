@@ -202,6 +202,7 @@ async def handle_channel(request, channel_id=None, channel_name=None):
 
     finally:
         stream.close()
+        sock.close()
         if prom:
             prom.cancel()
             await prom
