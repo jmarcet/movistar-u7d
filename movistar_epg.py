@@ -366,7 +366,7 @@ async def handle_archive(request, channel_id, program_id, cloud=False):
 
     timestamp = get_epg(channel_id, program_id, cloud).get("start")
     if not timestamp:
-        raise NotFound(f"Requested URL {request.raw_url.decode()} not found")
+        raise NotFound(f"Requested URL {request.path} not found")
 
     filename = get_recording_name(channel_id, timestamp, cloud)
 
@@ -414,7 +414,7 @@ async def handle_epg_info(request, channel_id, program_id):
     epg = get_epg(channel_id, program_id, cloud)
     if epg:
         return response.json(epg)
-    raise NotFound(f"Requested URL {request.raw_url.decode()} not found")
+    raise NotFound(f"Requested URL {request.path} not found")
 
 
 @app.get("/program_id/<channel_id:int>/<url>")
@@ -423,7 +423,7 @@ async def handle_program_id(request, channel_id, url):
         cloud, local = request.args.get("cloud", "") == "1", request.args.get("local", "") == "1"
         return response.json(get_program_id(channel_id, url, cloud, local))
     except (AttributeError, KeyError):
-        raise NotFound(f"Requested URL {request.raw_url.decode()} not found")
+        raise NotFound(f"Requested URL {request.path} not found")
 
 
 @app.post("/prom_event/<method>")
@@ -444,12 +444,12 @@ async def handle_record_program(request, channel_id, url):
     vo = request.args.get("vo") == "1"
 
     if comskip not in (0, 1, 2):
-        raise NotFound(f"Requested URL {request.raw_url.decode()} not found")
+        raise NotFound(f"Requested URL {request.path} not found")
 
     try:
         channel, program_id, start, duration, offset = get_program_id(channel_id, url, cloud).values()
     except AttributeError:
-        raise NotFound(f"Requested URL {request.raw_url.decode()} not found")
+        raise NotFound(f"Requested URL {request.path} not found")
 
     if not record_time:
         record_time = duration - offset
