@@ -21,6 +21,7 @@ from datetime import datetime
 from filelock import FileLock, Timeout
 from glob import glob
 from html import unescape
+from json import JSONDecodeError
 from shutil import which
 from time import sleep
 
@@ -135,7 +136,7 @@ def add_logfile(logger, logfile, loglevel):
         fh.setFormatter(logging.Formatter(fmt=FMT, datefmt=DATEFMT))
         fh.setLevel(loglevel)
         logger.addHandler(fh)
-    except FileNotFoundError:
+    except (FileNotFoundError, OSError, PermissionError):
         log.error(f"Cannot write logs to '{logfile}'")
         return
 
@@ -158,7 +159,7 @@ async def get_end_point(home):
         try:
             async with aiofiles.open(ep_path) as f:
                 end_points = ujson.loads(await f.read())["data"]
-        except (FileNotFoundError, PermissionError):
+        except (FileNotFoundError, JSONDecodeError, OSError, PermissionError, TypeError, ValueError):
             pass
 
     for end_point in end_points:
@@ -359,7 +360,7 @@ def mu7d_config():
     try:
         with open(fileconf, encoding="utf8") as f:
             conf = tomli.loads(f.read().lstrip("\ufeff"))
-    except FileNotFoundError:
+    except (AttributeError, FileNotFoundError, OSError, PermissionError):
         conf = {}
 
     if "HOME" not in conf:

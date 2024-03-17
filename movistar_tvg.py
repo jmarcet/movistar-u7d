@@ -27,6 +27,7 @@ from datetime import date, datetime, timedelta
 from defusedxml.ElementTree import ParseError, fromstring
 from filelock import FileLock, Timeout
 from html import escape, unescape
+from json import JSONDecodeError
 from threading import current_thread, main_thread
 
 from mu7d import DATEFMT, END_POINTS_FILE, FMT, UA, UA_U7D, WIN32, YEAR_SECONDS, IPTVNetworkError
@@ -90,7 +91,7 @@ class Cache:
                 if _data["endTime"] // 1000 < _DEADLINE:
                     log.debug('Eliminando "%s" caducado' % os.path.basename(file))
                     os.remove(file)
-            except (IOError, KeyError, ValueError):
+            except (FileNotFoundError, JSONDecodeError, OSError, PermissionError, TypeError, ValueError):
                 pass
 
     @staticmethod
@@ -98,7 +99,7 @@ class Cache:
         try:
             with open(os.path.join(CACHE_DIR, cfile), "r", encoding="utf8") as f:
                 return json.loads(f.read(), object_hook=keys_to_int)["data"]
-        except (FileNotFoundError, IOError, KeyError, ValueError):
+        except (FileNotFoundError, JSONDecodeError, OSError, PermissionError, TypeError, ValueError):
             pass
 
     @staticmethod
@@ -145,7 +146,7 @@ class Cache:
         try:
             with open(os.path.join(HOME, "recordings.json"), "r", encoding="utf8") as f:
                 local_epg = json.loads(f.read(), object_hook=keys_to_int)
-        except (IOError, KeyError, ValueError):
+        except (FileNotFoundError, JSONDecodeError, OSError, PermissionError, ValueError):
             return
 
         # Recordings can overlap, so we need to shorten the duration when they do
