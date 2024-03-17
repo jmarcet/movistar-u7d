@@ -27,7 +27,7 @@ from defusedxml.ElementTree import ParseError, fromstring
 from filelock import FileLock, Timeout
 from html import escape, unescape
 from queue import Queue
-from threading import Thread, current_thread, main_thread
+from threading import Lock, Thread, current_thread, main_thread
 
 from mu7d import DATEFMT, END_POINTS_FILE, FMT, UA, UA_U7D, WIN32, YEAR_SECONDS, IPTVNetworkError
 from mu7d import add_logfile, get_end_point, get_iptv_ip, get_local_info, get_title_meta, keys_to_int
@@ -334,7 +334,8 @@ class MulticastEPGFetcher(Thread):
 class MulticastIPTV:
     def __init__(self):
         self.__cached_epg = defaultdict(dict)
-        self.__epg = None
+        self.__epg = defaultdict(dict)
+        self.__epg_lock = Lock()
         self.__expired = 0
         self.__fixed = 0
         self.__new_gaps = defaultdict(list)
@@ -454,7 +455,6 @@ class MulticastIPTV:
 
     def __get_bin_epg(self):
         days = len(self.__xml_data["segments"])
-        self.__epg = deque([{} for _ in range(days)])
         queue = Queue(days)
 
         for key in self.__xml_data["segments"]:
@@ -627,20 +627,6 @@ class MulticastIPTV:
         log.debug("__merge_epg(): %s" % str(self.__cached_epg.keys()))
         return gaps
 
-    def __parse_bin_epg(self):
-        epg = defaultdict(dict)
-        channels_keys = self.__get_channels_keys()
-        while self.__epg:
-            bin_epg_day = self.__epg.popleft()
-            for _id in (d for d in bin_epg_day if bin_epg_day[d]):
-                head = self.__parse_bin_epg_header(bin_epg_day[_id])
-                key = channels_keys.get(head["service_id"])
-                if not key:
-                    continue
-                epg[key] = {**epg[key], **self.__parse_bin_epg_body(head["data"], head["service_id"])}
-        self.__epg = epg
-        log.debug("__parse_bin_epg(): %s" % str(self.__epg.keys()))
-
     @staticmethod
     def __parse_bin_epg_body(data, service_id):
         programs = {}
@@ -677,6 +663,20 @@ class MulticastIPTV:
             epg_dt = epg_dt[struct.unpack("B", epg_dt[cut + 3 : cut + 4])[0] + cut + 4 :]
         return programs
 
+    def __parse_bin_epg_day(self, bin_epg_day):
+        channels_keys = self.__get_channels_keys()
+        for _id in (d for d in bin_epg_day if bin_epg_day[d]):
+            head = self.__parse_bin_epg_header(bin_epg_day[_id])
+            key = channels_keys.get(head["service_id"])
+            if not key:
+                continue
+            with self.__epg_lock:
+                self.__epg[key] = {
+                    **self.__epg[key],
+                    **self.__parse_bin_epg_body(head["data"], head["service_id"]),
+                }
+        log.debug("__parse_bin_epg(): %s" % str(self.__epg.keys()))
+
     @staticmethod
     def __parse_bin_epg_header(data):
         data = data.encode("latin1")
@@ -708,7 +708,6 @@ class MulticastIPTV:
         while True:
             self.__get_bin_epg()
             try:
-                self.__parse_bin_epg()
                 self.__fix_epg()
                 if not self.__merge_epg():
                     del self.__epg, self.__xml_data["segments"]
@@ -767,7 +766,7 @@ class MulticastIPTV:
 
     def get_epg_day(self, mcast_grp, mcast_port, source):
         log.info(f'Descargando XML {source.split(".")[0]} -> {mcast_grp}:{mcast_port}')
-        self.__epg[int(source.split("_")[1])] = self.get_xml_files(mcast_grp, mcast_port)
+        self.__parse_bin_epg_day(self.get_xml_files(mcast_grp, mcast_port))
 
     def get_service_provider_data(self, refresh):
         if not refresh:
