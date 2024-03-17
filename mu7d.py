@@ -421,7 +421,7 @@ def mu7d_config():
         conf["RECORDINGS"] = conf["RECORDINGS"].rstrip("/").rstrip("\\")
 
     if "RECORDINGS_M3U" not in conf or not isinstance(conf["RECORDINGS_M3U"], bool):
-        conf["RECORDINGS_M3U"] = True
+        conf["RECORDINGS_M3U"] = False
 
     if "RECORDINGS_REINDEX" not in conf or not isinstance(conf["RECORDINGS_REINDEX"], bool):
         conf["RECORDINGS_REINDEX"] = False
