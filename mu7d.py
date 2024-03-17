@@ -412,9 +412,6 @@ def mu7d_config():
     if "NO_SUBS" not in conf or not isinstance(conf["NO_SUBS"], bool):
         conf["NO_SUBS"] = False
 
-    if "NO_VERBOSE_LOGS" not in conf or not isinstance(conf["NO_VERBOSE_LOGS"], bool):
-        conf["NO_VERBOSE_LOGS"] = False
-
     if "OTT_HACK" not in conf or not isinstance(conf["OTT_HACK"], bool):
         conf["OTT_HACK"] = False
 
