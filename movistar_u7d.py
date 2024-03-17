@@ -248,31 +248,34 @@ async def handle_flussonic(request, url, channel_id=None, channel_name=None, clo
     if request.method == "HEAD":
         return response.HTTPResponse(content_type=MIME_WEBM, status=200)
 
+    ua = request.headers.get("user-agent", "")
+
     if local:
         if os.path.exists(program_id):
-            if program_id.endswith(".ts"):
-                _stat = await stat_async(program_id)
-                bytepos = round(offset * _stat.st_size / duration)
-                bytepos -= bytepos % CHUNK
-                to_send = _stat.st_size - bytepos
+            if " Chrome/" in ua or not program_id.endswith(".ts"):
+                return await transcode(request, event, filename=program_id, offset=offset)
 
-                async with await open_async(program_id, mode="rb") as f:
-                    await f.seek(bytepos)
-                    _response = await request.respond(content_type=MIME_WEBM)
-                    prom = app.add_task(send_prom_event(event))
+            _stat = await stat_async(program_id)
+            bytepos = round(offset * _stat.st_size / duration)
+            bytepos -= bytepos % CHUNK
+            to_send = _stat.st_size - bytepos
 
-                    try:
-                        while to_send >= CHUNK:
-                            content = await f.read(BUFF)
-                            await _response.send(content)
-                            to_send -= len(content)
-                    finally:
-                        prom.cancel()
-                        await prom
-                        await _response.eof()
+            async with await open_async(program_id, mode="rb") as f:
+                await f.seek(bytepos)
+                _response = await request.respond(content_type=MIME_WEBM)
+                prom = app.add_task(send_prom_event(event))
 
-                return
-            return await transcode(request, event, filename=program_id, offset=offset)
+                try:
+                    while to_send >= CHUNK:
+                        content = await f.read(BUFF)
+                        await _response.send(content)
+                        to_send -= len(content)
+                finally:
+                    prom.cancel()
+                    await prom
+                    await _response.eof()
+
+            return
         raise NotFound(f"Requested URL {_raw_url} not found")
 
     if _NETWORK_SATURATED and not await ongoing_vods(_fast=True):
@@ -287,7 +290,6 @@ async def handle_flussonic(request, url, channel_id=None, channel_name=None, clo
     args = VodArgs(channel_id, program_id, request.ip, client_port, offset, cloud)
     vod = app.add_task(Vod(args, request.app.ctx.vod_client, info))
 
-    ua = request.headers.get("user-agent", "")
     if " Chrome/" in ua:
         return await transcode(request, event, channel_id=channel_id, port=client_port, vod=vod)
 
@@ -543,23 +545,23 @@ async def send_prom_event(event):
 
 async def transcode(request, event, channel_id=0, filename="", offset=0, port=0, vod=None):
     log.debug(
-        "transcode(): channel_id=%s port=%s vod=%s offset=%s filename=%s"
+        'transcode(): channel_id=%s port=%s vod=%s offset=%s filename="%s"'
         % tuple(map(str, (channel_id, port, vod, offset, filename)))
     )
 
-    if filename:
-        cmd = ["ffmpeg", "-ss", f"{offset}", "-i", filename, "-map", "0", "-c", "copy", "-dn"]
-        cmd += ["-f", "mpegts"]
-
+    if request.args.get("vo") == "1":
+        lang_channel = ["-map", "0:a:m:language:mul?", "-map", "0:a:m:language:vo?"]
     else:
-        channel = 2 if request.args.get("vo") == "1" else 1
-        cmd = ["ffmpeg"]
+        lang_channel = ["-map", "0:a:m:language:spa?", "-map", "0:a:m:language:esp?"]
+
+    cmd = ["ffmpeg"]
+    if filename:
+        cmd += ["-ss", f"{offset}", "-i", filename]
+    else:
         cmd += ["-skip_initial_bytes", f"{CHUNK}"] if " HD" not in _CHANNELS[channel_id]["name"] else []
         cmd += ["-i", f"udp://@{_IPTV}:{port}"]
-        cmd += ["-map", "0:0", "-map", f"0:{channel}", "-c:v:0", "copy", "-c:a:0", "libfdk_aac"]
-        cmd += ["-b:a", "128k", "-f", "matroska", "-live", "1"]
-
-    cmd += ["-v", "fatal", "-"]
+    cmd += ["-map", "0:v", *lang_channel, "-c:v:0", "copy", "-c:a:0", "libfdk_aac", "-b:a", "128k"]
+    cmd += ["-f", "matroska", "-v", "fatal", "-"]
 
     proc = await asyncio.create_subprocess_exec(*cmd, stdin=DEVNULL, stdout=PIPE)
     _response = await request.respond(content_type=MIME_WEBM)
