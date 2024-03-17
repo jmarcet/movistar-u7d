@@ -24,6 +24,7 @@ from collections import defaultdict
 from datetime import date, datetime, timedelta
 from filelock import FileLock, Timeout
 from glob import glob
+from json import JSONDecodeError
 from psutil import boot_time
 from sanic import Sanic, response
 from sanic_prometheus import monitor
@@ -118,10 +119,10 @@ async def before_server_start(app):
                                     utime(timestamp, *get_recording_files(filename))
                             for timestamp in _drop:
                                 del _RECORDINGS[channel_id][timestamp]
-                    except (TypeError, ValueError) as ex:
+                    except (JSONDecodeError, TypeError, ValueError) as ex:
                         log.error(f'Failed to parse "recordings.json". It will be reset!!!: {repr(ex)}')
                         remove(CHANNELS_LOCAL, GUIDE_LOCAL)
-                    except FileNotFoundError:
+                    except (FileNotFoundError, OSError, PermissionError):
                         remove(CHANNELS_LOCAL, GUIDE_LOCAL)
 
                     for file in sorted(set(glob(f"{RECORDINGS}/**/*{VID_EXT}", recursive=True)) - _indexed):
@@ -763,7 +764,7 @@ async def reload_epg():
             async with aiofiles.open(channels_data, encoding="utf8") as f:
                 _CHANNELS = json.loads(await f.read(), object_hook=keys_to_int)["data"]
 
-        except (FileNotFoundError, TypeError, ValueError) as ex:
+        except (FileNotFoundError, JSONDecodeError, OSError, PermissionError, TypeError, ValueError) as ex:
             log.error(f"Failed to load Channels metadata {repr(ex)}")
             remove(channels_data)
             return await reload_epg()
@@ -776,7 +777,7 @@ async def reload_epg():
                     if k in EPG_CHANNELS
                 }
 
-        except (FileNotFoundError, TypeError, ValueError) as ex:
+        except (FileNotFoundError, JSONDecodeError, OSError, PermissionError, TypeError, ValueError) as ex:
             log.error(f"Failed to load EPG data {repr(ex)}")
             remove(epg_data)
             return await reload_epg()
@@ -883,9 +884,9 @@ async def timers_check(delay=0):
         async with aiofiles.open(timers, encoding="utf8") as f:
             try:
                 _timers = tomli.loads(await f.read())
-            except ValueError:
+            except (AttributeError, ValueError):
                 _timers = ujson.loads(await f.read())
-    except (TypeError, ValueError) as ex:
+    except (FileNotFoundError, JSONDecodeError, OSError, PermissionError, TypeError, ValueError) as ex:
         log.error(f"Failed to parse timers.conf: {repr(ex)}")
         return
 
@@ -1005,7 +1006,7 @@ async def update_cloud():
     try:
         async with aiofiles.open(cloud_data, encoding="utf8") as f:
             _CLOUD = json.loads(await f.read(), object_hook=keys_to_int)["data"]
-    except (FileNotFoundError, TypeError, ValueError):
+    except (FileNotFoundError, JSONDecodeError, OSError, PermissionError, TypeError, ValueError):
         return await update_cloud()
 
     log.info(f"Cloud Recordings Updated => {U7D_URL}/MovistarTVCloud.m3u - {U7D_URL}/cloud.xml")
@@ -1102,7 +1103,7 @@ async def update_recordings(archive=False):
                 _files = list(filter(lambda x: os.path.splitext(x)[1] in VID_EXTS, _files))
                 _files.sort(key=os.path.getmtime)
                 break
-            except FileNotFoundError:
+            except (FileNotFoundError, OSError, PermissionError):
                 await asyncio.sleep(1)
 
         if not isinstance(archive, bool):
@@ -1273,7 +1274,7 @@ async def upgrade_recordings():
             cmd += ("-v", "quiet", "-of", "json")
             proc = await asyncio.create_subprocess_exec(*cmd, stdin=DEVNULL, stdout=PIPE, stderr=DEVNULL)
             recording_data = ujson.loads((await proc.communicate())[0].decode())
-            duration = round(float(recording_data["format"]["duration"]))
+            duration = round(float(recording_data.get("format", {}).get("duration", 0)))
 
             _start, _end, _exp = (
                 nfo[x] // 1000 if nfo[x] > 10**10 else nfo[x] for x in ("beginTime", "endTime", "expDate")
