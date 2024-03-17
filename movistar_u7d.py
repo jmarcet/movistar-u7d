@@ -249,7 +249,12 @@ async def handle_flussonic(request, url, channel_id=None, channel_name=None, clo
     if local:
         if os.path.exists(program_id):
             if " Chrome/" in ua or not program_id.endswith(".ts"):
-                return await transcode(request, event, filename=program_id, offset=offset)
+                prom = app.add_task(send_prom_event(event))
+                try:
+                    return await transcode(request, event, filename=program_id, offset=offset)
+                finally:
+                    prom.cancel()
+                    await prom
 
             _stat = await stat_async(program_id)
             bytepos = round(offset * _stat.st_size / duration)
