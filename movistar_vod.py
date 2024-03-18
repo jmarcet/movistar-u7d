@@ -717,7 +717,7 @@ async def Vod(args=None, vod_client=None, vod_info=None):
             global _loop
             _loop = asyncio.get_running_loop()
 
-        _END_POINT = await get_end_point(HOME)
+        _END_POINT = await get_end_point(HOME, log)
 
         await _open_sessions()
 
