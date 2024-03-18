@@ -20,11 +20,13 @@ import xmltodict
 from aiohttp.client_exceptions import ClientConnectionError, ClientOSError, ServerDisconnectedError
 from asyncio.exceptions import CancelledError
 from asyncio.subprocess import DEVNULL, PIPE
-from collections import defaultdict
+from collections import defaultdict, deque
 from datetime import date, datetime, timedelta
 from filelock import FileLock, Timeout
 from glob import glob
+from itertools import chain
 from json import JSONDecodeError
+from operator import itemgetter
 from psutil import boot_time
 from sanic import Sanic, response
 from sanic_prometheus import monitor
@@ -79,27 +81,24 @@ async def before_server_start(app):
                 os.makedirs(RECORDINGS)
 
             else:
-                oldest_epg = 9999999999
-                for channel_id in _EPGDATA:
-                    oldest_epg = min(oldest_epg, next(iter(_EPGDATA[channel_id])))
+                if RECORDINGS_UPGRADE:
+                    await upgrade_recordings()
 
-                await upgrade_recordings()
                 upgraded_channels = await upgrade_channel_numbers()
 
                 if not RECORDINGS_REINDEX:
-                    _indexed = set()
                     try:
-                        async with aiofiles.open(recordings, encoding="utf8") as f:
+                        async with aiofiles.open(recordings_data, encoding="utf8") as f:
                             _RECORDINGS = json.loads(await f.read(), object_hook=keys_to_int)
-                        for channel_id in _RECORDINGS:
-                            _drop = []
-                            for timestamp in _RECORDINGS[channel_id]:
+                        for channel_id in tuple(ch for ch in _EPGDATA if ch in _RECORDINGS):
+                            oldest_epg = min(_EPGDATA[channel_id].keys())
+                            for timestamp in sorted(_RECORDINGS[channel_id]):
                                 recording = _RECORDINGS[channel_id][timestamp]
                                 try:
                                     filename = recording["filename"]
                                 except KeyError:
-                                    log.warning(f'Dropping old style "{recording}" from recordings.json')
-                                    _drop.append(timestamp)
+                                    log.warning(f'Dropping old style "{recording}" from "recordings.json"')
+                                    del _RECORDINGS[channel_id][timestamp]
                                     continue
                                 for old_ch, new_ch in upgraded_channels:
                                     if filename.startswith(old_ch):
@@ -107,28 +106,20 @@ async def before_server_start(app):
                                         msg += f'"{filename.replace(old_ch, new_ch)}"'
                                         log.debug(msg)
                                         filename = recording["filename"] = filename.replace(old_ch, new_ch)
-                                if not does_recording_exist(filename):
+                                if does_recording_exist(filename):
+                                    utime(timestamp, *get_recording_files(filename))
+                                else:
                                     if timestamp > oldest_epg:
                                         log.warning(f'Archived Local Recording "{filename}" not found on disk')
                                     elif channel_id in _CLOUD and timestamp in _CLOUD[channel_id]:
                                         log.warning(f'Archived Cloud Recording "{filename}" not found on disk')
-                                    else:
-                                        continue
-                                else:
-                                    _indexed.add(get_path(filename))
-                                    utime(timestamp, *get_recording_files(filename))
-                            for timestamp in _drop:
-                                del _RECORDINGS[channel_id][timestamp]
                     except (JSONDecodeError, TypeError, ValueError) as ex:
                         log.error(f'Failed to parse "recordings.json". It will be reset!!!: {repr(ex)}')
                         remove(CHANNELS_LOCAL, GUIDE_LOCAL)
                     except (FileNotFoundError, OSError, PermissionError):
                         remove(CHANNELS_LOCAL, GUIDE_LOCAL)
 
-                    for file in sorted(set(glob(f"{RECORDINGS}/**/*{VID_EXT}", recursive=True)) - _indexed):
-                        utime(os.path.getmtime(file), *get_recording_files(os.path.splitext(file)[0]))
-
-                    await update_recordings(True)
+                    await update_recordings()
 
                     if RECORDINGS_TMP and _RECORDINGS:
                         if not os.path.exists(os.path.join(RECORDINGS_TMP, "covers")):
@@ -313,18 +304,15 @@ def get_program_name(filename):
 
 
 def get_recording_files(fname):
-    fname = fname.removesuffix(VID_EXT)
-    absname = os.path.join(RECORDINGS, fname)
-    basename = os.path.basename(fname)
-    path = os.path.dirname(absname)
+    absname = os.path.join(RECORDINGS, fname.removesuffix(VID_EXT))
+    nfo = os.path.join(absname + NFO_EXT)
 
+    path, basename = os.path.split(absname)
     metadata = os.path.join(path, "metadata")
-    nfo = os.path.join(path, basename + NFO_EXT)
 
-    files = glob_safe(os.path.join(path, f"{basename}.*"))
-    files += glob_safe(os.path.join(metadata, f"{basename}-*"))
+    files = glob_safe(f"{absname}.*")
     files += [nfo] if os.path.exists(nfo) else []
-    files += [metadata] if os.path.exists(metadata) else []
+    files += [metadata, *glob_safe(os.path.join(metadata, f"{basename}-*"))] if os.path.exists(metadata) else []
     files += [path] if path != RECORDINGS else []
 
     return filter(lambda file: os.access(file, os.W_OK), files)
@@ -359,19 +347,19 @@ def get_siblings(channel_id, filename):
 
 
 @app.put("/archive/<channel_id:int>/<program_id:int>")
-async def handle_archive(request, channel_id, program_id, cloud=False):
+async def handle_archive(request, channel_id, program_id):
     global _t_timers
 
-    cloud = request.args.get("cloud") == "1" if request else cloud
+    if not RECORDINGS:
+        return response.json({"status": "RECORDINGS not configured"}, 404)
+
+    cloud = request.args.get("cloud") == "1"
 
     timestamp = get_epg(channel_id, program_id, cloud).get("start")
     if not timestamp:
         raise NotFound(f"Requested URL {request.path} not found")
 
     filename = get_recording_name(channel_id, timestamp, cloud)
-
-    if not RECORDINGS:
-        return response.json({"status": "RECORDINGS not configured"}, 404)
 
     log_suffix = f': [{channel_id:4}] [{program_id}] [{timestamp}] "{filename}"'
 
@@ -486,13 +474,13 @@ async def handle_reload_epg(request):
 async def handle_timers_check(request):
     global _t_timers
 
-    delay = int(request.args.get("delay", 0))
-
     if not RECORDINGS:
         return response.json({"status": "RECORDINGS not configured"}, 404)
 
     if _NETWORK_SATURATION:
         return response.json({"status": await log_network_saturated()}, 404)
+
+    delay = int(request.args.get("delay", 0))
 
     if _t_timers and not _t_timers.done():
         if delay:
@@ -622,8 +610,7 @@ async def prom_event(request, method):
 
 
 def prune_duplicates(channel_id, filename):
-    found = [ts for ts in _RECORDINGS[channel_id] if _RECORDINGS[channel_id][ts]["filename"] in filename]
-    for ts in found:
+    for ts in tuple(ts for ts in _RECORDINGS[channel_id] if _RECORDINGS[channel_id][ts]["filename"] in filename):
         duplicate = _RECORDINGS[channel_id][ts]["filename"]
         old_files = sorted(set(get_recording_files(duplicate)) - set(get_recording_files(filename)))
 
@@ -713,9 +700,9 @@ async def reindex_recordings():
     log.warning("REINDEXING RECORDINGS")
     _recordings = defaultdict(dict)
 
-    for nfo_file in sorted(glob(f"{RECORDINGS}/**/*{NFO_EXT}", recursive=True)):
+    for nfo_file in sorted(glob(f"{RECORDINGS}/[0-9][0-9][0-9]. */**/*{NFO_EXT}", recursive=True)):
         basename = nfo_file[:-13]
-        if not any((os.path.exists(basename + ext) for ext in VID_EXTS)):
+        if not os.path.exists(basename + VID_EXT):
             log.error(f"No recording found: {basename=} {nfo_file=}")
             continue
 
@@ -737,7 +724,7 @@ async def reindex_recordings():
         async with recordings_lock:
             _RECORDINGS = _recordings
 
-        await update_recordings(True)
+        await update_recordings()
 
 
 async def reload_epg():
@@ -865,7 +852,7 @@ async def timers_check(delay=0):
             await log_network_saturated(nr_procs)
             return -1
 
-    if not os.path.exists(timers):
+    if not os.path.exists(timers_data):
         log.debug("timers_check: no timers.conf found")
         return
 
@@ -875,7 +862,7 @@ async def timers_check(delay=0):
 
     log.debug("Processing timers")
     try:
-        async with aiofiles.open(timers, encoding="utf8") as f:
+        async with aiofiles.open(timers_data, encoding="utf8") as f:
             try:
                 _timers = tomli.loads(await f.read())
             except (AttributeError, ValueError):
@@ -914,7 +901,7 @@ async def timers_check(delay=0):
     for str_channel_id in _timers.get("match", {}):
         channel_id = int(str_channel_id)
         if channel_id not in _EPGDATA:
-            log.warning(f"Channel [{channel_id}] not found in EPG")
+            log.warning(f"Channel [{channel_id}] in timers.conf not found in EPG")
             continue
         channel_name = _CHANNELS[channel_id]["name"]
         log.debug("Checking EPG  : [%4d] [%s]" % (channel_id, channel_name))
@@ -1055,130 +1042,106 @@ async def update_epg_local():
     log.info(f"Total: {len(_RECORDINGS):2} Channels & {nr_epg:5} EPG entries")
 
 
-async def update_recordings(archive=False):
-    def _dump_files(files, channel=False, latest=False):
-        m3u = ""
-        for file in files:
-            filename, ext = os.path.splitext(file)
-            relname = filename[len(RECORDINGS) + 1 :]
-            if os.path.exists(filename + ".jpg"):
-                logo = relname + ".jpg"
-            else:
-                _logo = glob_safe(f"{filename}*.jpg")
-                if _logo and os.path.isfile(_logo[0]):
-                    logo = _logo[0][len(RECORDINGS) + 1 :]
-                else:
-                    logo = ""
-            path, name = (t.replace(",", ":").replace(" - ", ": ") for t in os.path.split(relname))
-            m3u += '#EXTINF:-1 group-title="'
-            m3u += '# Recientes"' if latest else f'{path}"' if path else '#"'
-            m3u += f' tvg-logo="{U7D_URL}/recording/?' if logo else ""
-            m3u += (urllib.parse.quote(logo) + '"') if logo else ""
-            m3u += f",{path} - " if (channel and path) else ","
-            m3u += f"{name}\n{U7D_URL}/recording/?"
-            m3u += urllib.parse.quote(relname + ext) + "\n"
-        return m3u
-
+async def update_recordings(channel_id=None):
     async with recordings_lock:
-        if archive and _RECORDINGS:
-            sorted_recordings = {
-                ch: dict(sorted(_RECORDINGS[ch].items())) for ch in (k for k in _CHANNELS if k in _RECORDINGS)
-            }
-            async with aiofiles.open(recordings + ".tmp", "w", encoding="utf8") as f:
-                await f.write(ujson.dumps(sorted_recordings, ensure_ascii=False, indent=4))
-            remove(recordings)
-            os.rename(recordings + ".tmp", recordings)
+        if not _RECORDINGS:
+            return
+
+        sorted_recordings = {
+            ch: dict(sorted(_RECORDINGS[ch].items())) for ch in (k for k in _CHANNELS if k in _RECORDINGS)
+        }
+        async with aiofiles.open(recordings_data + ".tmp", "w", encoding="utf8") as f:
+            await f.write(ujson.dumps(sorted_recordings, ensure_ascii=False, indent=4))
+        remove(recordings_data)
+        os.rename(recordings_data + ".tmp", recordings_data)
 
         await update_epg_local()
 
-        while True:
-            try:
-                _files = glob(f"{RECORDINGS}/**", recursive=True)
-                _files = list(filter(lambda x: os.path.splitext(x)[1] in VID_EXTS, _files))
-                _files.sort(key=os.path.getmtime)
-                break
-            except (FileNotFoundError, OSError, PermissionError):
-                await asyncio.sleep(1)
-
-        if not isinstance(archive, bool):
-            topdirs = [get_channel_dir(archive)]
+    if not RECORDINGS_M3U:
+        if channel_id:
+            utime(max(_RECORDINGS[channel_id].keys()), os.path.join(RECORDINGS, get_channel_dir(channel_id)))
         else:
-            topdirs = sorted(
-                [
-                    _dir
-                    for _dir in os.listdir(RECORDINGS)
-                    if re.match(r"^[0-9]+\. ", _dir) and os.path.isdir(os.path.join(RECORDINGS, _dir))
-                ]
+            for ch_id in _RECORDINGS:
+                utime(max(_RECORDINGS[ch_id].keys()), os.path.join(RECORDINGS, get_channel_dir(ch_id)))
+        utime(max(max(_RECORDINGS[channel].keys()) for channel in _RECORDINGS), RECORDINGS)
+        return
+
+    translation = str.maketrans("_;[]", "/:()")
+
+    def _dump_files(files, channel=False, latest=False):
+        m3u = deque()
+        for file in filter(lambda f: os.path.exists(f + VID_EXT), files):
+            path, name = (urllib.parse.quote(x.translate(translation)) for x in os.path.split(file))
+            _m3u = '#EXTINF:-1 group-title="'
+            _m3u += '# Recientes"' if latest else f'{path}"' if path else '#"'
+            _m3u += f' tvg-logo="{U7D_URL}/recording/?{urllib.parse.quote(file + ".jpg")}"'
+            _m3u += f",{path} - " if (channel and path) else ","
+            _m3u += f"{name}\n"
+            _m3u += f"{U7D_URL}/recording/?{urllib.parse.quote(file + VID_EXT)}"
+            m3u.append(_m3u)
+        return m3u
+
+    def _get_files(channel=None):
+        if channel:
+            return (f for f in sorted(_RECORDINGS[channel][ts]["filename"] for ts in _RECORDINGS[channel]))
+        return (
+            f
+            for f in sorted([p[1]["filename"] for p in chain(*(_RECORDINGS[ch].items() for ch in _RECORDINGS))])
+        )
+
+    def _get_files_reversed():
+        return (
+            p["filename"]
+            for _, p in sorted(
+                tuple(chain(*(_RECORDINGS[ch].items() for ch in _RECORDINGS))), key=itemgetter(0), reverse=True
             )
+        )
 
-        updated_m3u = False
-        for _dir in [RECORDINGS] + topdirs:
-            log.debug('Looking for recordings in "%s"' % _dir)
-            files = (
-                _files
-                if _dir == RECORDINGS
-                else tuple(filter(lambda x: x.startswith(os.path.join(RECORDINGS, _dir)), _files))
-            )
-            if not files:
-                continue
+    channels = (channel_id,) if channel_id else tuple(ch for ch in _CHANNELS if ch in _RECORDINGS)
+    channels_dirs = [(ch, get_channel_dir(ch)) for ch in channels]
+    channels_dirs += [(0, RECORDINGS)]
 
-            if archive is True and _dir != RECORDINGS:
-                for subdir in os.listdir(os.path.join(RECORDINGS, _dir)):
-                    subdir = os.path.join(RECORDINGS, _dir, subdir)
-                    if not os.path.isdir(subdir):
-                        continue
-                    try:
-                        newest = os.path.getmtime(tuple(filter(lambda x: x.startswith(subdir), files))[-1])
-                    except IndexError:
-                        continue
-                    utime(newest, subdir)
-                    if os.path.exists(os.path.join(subdir, "metadata")):
-                        utime(newest, os.path.join(subdir, "metadata"))
+    for ch_id, _dir in channels_dirs:
+        header = f"#EXTM3U name=\"{'Recordings' if _dir == RECORDINGS else _dir}\" dlna_extras=mpeg_ps_pal\n"
+        if ch_id:
+            m3u_file = os.path.join(RECORDINGS, _dir, f"{_dir}.m3u")
+        else:
+            m3u_file = os.path.join(RECORDINGS, "Recordings.m3u")
 
-            if not RECORDINGS_M3U:
-                continue
-
-            m3u = f"#EXTM3U name=\"{'Recordings' if _dir == RECORDINGS else _dir}\" dlna_extras=mpeg_ps_pal\n"
-            if _dir == RECORDINGS:
-                m3u += _dump_files(reversed(files), latest=True)
-                m3u += _dump_files(sorted(files))
-                m3u_file = os.path.join(RECORDINGS, "Recordings.m3u")
+        async with aiofiles.open(m3u_file + ".tmp", "w", encoding="utf8") as f:
+            await f.write(header)
+            if ch_id:
+                await f.write("\n".join(_dump_files(_get_files(ch_id), channel=True)))
             else:
-                m3u += _dump_files(files, channel=True)
-                m3u_file = os.path.join(os.path.join(RECORDINGS, _dir), f"{_dir}.m3u")
+                await f.write("\n".join(_dump_files(_get_files_reversed(), latest=True)) + "\n")
+                await f.write("\n".join(_dump_files(_get_files())))
+        remove(m3u_file)
+        os.rename(m3u_file + ".tmp", m3u_file)
 
-            async with aiofiles.open(m3u_file, "w", encoding="utf8") as f:
-                await f.write(m3u)
+        if ch_id:
+            utime(max(_RECORDINGS[ch_id].keys()), *(m3u_file, os.path.join(RECORDINGS, _dir)))
+        else:
+            utime(max(max(_RECORDINGS[channel].keys()) for channel in _RECORDINGS), *(m3u_file, RECORDINGS))
 
-            newest = int(os.path.getmtime(files[-1]))
-            utime(newest, *(m3u_file, os.path.join(RECORDINGS, _dir)))
+        log.info(f"Wrote m3u [{m3u_file[len(RECORDINGS) + 1 :]}]")
 
-            if topdirs:
-                log.info(f"Wrote m3u [{m3u_file[len(RECORDINGS) + 1 :]}]")
-
-            updated_m3u = True
-
-    if updated_m3u:
-        log.info(f"Local Recordings' M3U Updated => {U7D_URL}/Recordings.m3u")
+    log.info(f"Local Recordings' M3U Updated => {U7D_URL}/Recordings.m3u")
 
 
 async def upgrade_channel_numbers():
     dirs = os.listdir(RECORDINGS)
-    pairs = (r.groups() for r in (re.match(r"^(\d{3}). (.+)$", dir) for dir in dirs) if r)
+    pairs = (r.groups() for r in (re.match(r"^(\d{3})\. (.+)$", dir) for dir in dirs) if r)
 
-    stale = []
+    stale = deque()
     for nr, name in pairs:
         _f = filter(lambda x: _CHANNELS[x]["name"] == name and _CHANNELS[x]["number"] != int(nr), _CHANNELS)
-        try:
-            channel_id = next(_f)
-            stale.append((int(channel_id), int(nr), _CHANNELS[channel_id]["number"], name))
-        except StopIteration:
-            pass
+        for channel_id in _f:
+            stale.append((channel_id, int(nr), _CHANNELS[channel_id]["number"], name))
 
     if not stale:
         return ()
 
-    stale_pairs = []
+    stale_pairs = deque()
     log.warning("UPGRADING CHANNEL NUMBERS")
     for channel_id, old_nr, new_nr, name in stale:
         old_channel_name = f"{old_nr:03}. {name}"
@@ -1240,9 +1203,6 @@ async def upgrade_channel_numbers():
 
 
 async def upgrade_recordings():
-    if not RECORDINGS_UPGRADE:
-        return
-
     log.info(f"UPGRADING RECORDINGS METADATA: {RECORDINGS_UPGRADE}")
     covers = items = names = wrong = 0
 
@@ -1410,8 +1370,8 @@ if __name__ == "__main__":
     cloud_data = os.path.join(_conf["HOME"], ".xmltv/cache/cloud.json")
     channels_data = os.path.join(_conf["HOME"], ".xmltv/cache/channels.json")
     epg_data = os.path.join(_conf["HOME"], ".xmltv/cache/epg.json")
-    recordings = os.path.join(_conf["HOME"], "recordings.json")
-    timers = os.path.join(_conf["HOME"], "timers.conf")
+    recordings_data = os.path.join(_conf["HOME"], "recordings.json")
+    timers_data = os.path.join(_conf["HOME"], "timers.conf")
 
     epg_lock = asyncio.Lock()
     network_bw_lock = asyncio.Lock()
