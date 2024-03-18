@@ -1110,7 +1110,7 @@ async def tvg_main():
 
     try:
         # Descarga la configuración del servicio Web de MovistarTV
-        _END_POINT = await get_end_point(HOME)
+        _END_POINT = await get_end_point(HOME, log)
         _CONFIG = await MovistarTV.get_service_config(refresh)
 
         # Busca el Proveedor de Servicios y descarga los archivos XML: canales, paquetes y segmentos

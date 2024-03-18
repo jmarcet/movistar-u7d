@@ -100,7 +100,7 @@ async def before_server_start(app):
 
 @app.listener("after_server_start")
 async def after_server_start(app):
-    app.ctx.ep = await get_end_point(HOME)
+    app.ctx.ep = await get_end_point(HOME, log)
     app.ctx.vod_client = aiohttp.ClientSession(
         connector=aiohttp.TCPConnector(keepalive_timeout=YEAR_SECONDS),
         headers={"User-Agent": UA},

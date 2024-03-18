@@ -152,7 +152,7 @@ def find_free_port(iface=""):
         return s.getsockname()[1]
 
 
-async def get_end_point(home):
+async def get_end_point(home, _log):
     end_points = END_POINTS
     ep_path = os.path.join(home, ".xmltv", "cache", END_POINTS_FILE)
     if os.path.exists(ep_path):
@@ -172,7 +172,7 @@ async def get_end_point(home):
             finally:
                 await session.close()
 
-    log.debug("Failed to verify end_point. Using default one.")
+    _log.debug("Failed to verify end_point. Using default one.")
     return end_points[0] + "/appserver/mvtv.do"
 
 
