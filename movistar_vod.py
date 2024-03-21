@@ -342,7 +342,7 @@ async def postprocess(vod_info):
 
     async def _step_1():
         duration = await _get_duration(_tmpname + TMP_EXT)
-        bad = duration < _args.time * 0.99
+        bad = duration < _args.time * 95 // 100
 
         log_suffix = f"[{str(timedelta(seconds=duration))}s = {str(duration):>5}s] / [{str(_args.time):>5}s]"
 
@@ -585,7 +585,7 @@ async def record_stream(vod_info):
         _args.time = vod_info["duration"]
     else:
         if U7D_PARENT:
-            _args.time = _args.time * 7 // 6 if _args.time > 900 else _args.time if _args.time > 60 else 60
+            _args.time = _args.time * 7 // 6 if _args.time >= 1800 else _args.time * 4 // 3
         _args.time = min(_args.time, vod_info["duration"])
 
     flags = "[COMSKIPCUT] " if _args.comskipcut else "[COMSKIP] " if _args.comskip else ""
