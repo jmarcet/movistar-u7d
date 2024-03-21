@@ -685,35 +685,39 @@ class MulticastIPTV:
 
         skipped = 0
         _channels = self.__xml_data["channels"]
-        for channel_id in (ch for ch in self.__xml_data["services"] if ch in set(_channels) - EPG_CHANNELS):
+        _services = self.__xml_data["services"]
+        for channel_id in (ch for ch in _services if ch in set(_channels) - EPG_CHANNELS):
             channel_name = _channels[channel_id]["name"].strip(" *")
-            log.info(f'Saltando canal: [{channel_id:4}] "{channel_name}"')
+            channel_number = _services[channel_id]
+            log.info(f'Saltando canal: [{channel_id:4}] "{channel_number:03}. {channel_name}"')
             if channel_id in self.__cached_epg:
                 del self.__cached_epg[channel_id]
             skipped += 1
         if skipped:
             log.info(f"Canales disponibles no indexados: {skipped:2}")
+        no_chs = EPG_CHANNELS - set(_services)
+        if no_chs:
+            log.warning(
+                f"Canal{'es' if len(no_chs) > 1 else ''} no existente{'s' if len(no_chs) > 1 else ''}: {no_chs}"
+            )
 
         while True:
             try:
                 await self.__get_bin_epg()
                 self.__fix_epg()
                 gaps = self.__merge_epg()
+                self.__expire_epg()
+                self.__sort_epg()
+                Cache.save_epg(self.__cached_epg)
                 if not gaps:
                     del self.__epg, self.__xml_data["segments"]
                     break
-                log.warning("EPG con huecos. Descargando de nuevo...")
+                log.warning(f"EPG con huecos de [{str(timedelta(seconds=gaps))}s]. Descargando de nuevo...")
             except Exception as ex:
                 log.debug("%s" % repr(ex))
                 log.warning("Error descargando la EPG. Reintentando...")
 
-        self.__expire_epg()
-        self.__sort_epg()
-
-        gaps_msg = f" _ Huecos = [{str(timedelta(seconds=gaps))}s]" if gaps else ""
-        log.info(f"Eventos en Caché: Arreglados = {self.__fixed} _ Caducados = {self.__expired}{gaps_msg}")
-
-        Cache.save_epg(self.__cached_epg)
+        log.info(f"Eventos en Caché: Arreglados = {self.__fixed} _ Caducados = {self.__expired}")
         return self.__cached_epg
 
     async def get_epg_cloud(self):
