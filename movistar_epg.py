@@ -660,7 +660,7 @@ async def record_program(
             if f"{channel_id} {pid} -b " in ongoing:
                 msg = DIV_ONE % ("Recording ONGOING", log_suffix)
             else:
-                msg = DIV_ONE % ("Found REPEATED EVENT", log_suffix)
+                msg = DIV_ONE % ("Recording ONGOING: REPEATED EVENT", log_suffix)
             log.warning(msg)
             return re.sub(r"\s+:", ":", msg)
 
@@ -788,20 +788,28 @@ async def timers_check(delay=0):
                 _t_timers_next = app.add_task(timers_check(delay=delay), name=f"{ts}")
 
     def _filter_recorded(timestamps):
-        nonlocal channel_id, recs
-        return filter(lambda ts: channel_id not in recs or ts not in recs[channel_id], timestamps)
+        nonlocal channel_id, recs, stored_filenames
+        return filter(
+            lambda ts: channel_id not in recs
+            or ts not in recs[channel_id]
+            or get_recording_name(channel_id, ts) not in stored_filenames,
+            timestamps,
+        )
 
     async def _record(cloud=False):
         nonlocal channel_id, comskip, keep, kept, nr_procs, ongoing, queued, recs, repeat, timestamp, vo
 
-        if (channel_id, timestamp) in queued:
+        if timestamp in queued[channel_id]:
             return
 
         guide = _CLOUD if cloud else _EPGDATA
         filename = get_recording_name(channel_id, timestamp, cloud)
         duration, pid, title = (guide[channel_id][timestamp][t] for t in ("duration", "pid", "full_title"))
 
-        if f"{channel_id} {pid} -b " in ongoing:
+        if filename in queued[channel_id].values():
+            return
+
+        if any(x in ongoing for x in (f"{channel_id} {pid} -b ", filename)):
             vod = await ongoing_vods(filename=filename, _all=True)
             if f"{channel_id} {pid} -b {timestamp} " in vod or f"{channel_id} {pid} -b " not in vod:
                 return
@@ -844,7 +852,7 @@ async def timers_check(delay=0):
 
         log.info(DIV_ONE % (f"Found {'Cloud ' if cloud else ''}EPG MATCH", log_suffix))
 
-        queued.append((channel_id, timestamp))
+        queued[channel_id][timestamp] = filename
         await asyncio.sleep(2.5 if not WIN32 else 4)
 
         nr_procs += 1
@@ -883,15 +891,16 @@ async def timers_check(delay=0):
         recs = _RECORDINGS.copy()
 
     ongoing = await ongoing_vods(_all=True)  # we want to check against all ongoing vods, also in pp
-    log.debug("Ongoing VODs: [%s]" % str(ongoing))
+    log.debug("Ongoing VODs: |%s|" % ongoing)
 
     keep = repeat = False
-    kept, next_timers, queued = defaultdict(dict), [], []
+    kept, next_timers, queued = defaultdict(dict), [], defaultdict(dict)
 
     if sync_cloud:
         log.debug("Syncing cloud recordings")
         vo = _timers.get("sync_cloud_language", "") == "VO"
         for channel_id in _CLOUD:
+            stored_filenames = (program["filename"] for program in recs[channel_id].values())
             channel_name = _CHANNELS[channel_id]["name"]
             log.debug("Checking Cloud: [%4d] [%s]" % (channel_id, channel_name))
             for timestamp in _filter_recorded(_CLOUD[channel_id]):
@@ -906,6 +915,7 @@ async def timers_check(delay=0):
         channel_name = _CHANNELS[channel_id]["name"]
         log.debug("Checking EPG  : [%4d] [%s]" % (channel_id, channel_name))
 
+        stored_filenames = (program["filename"] for program in recs[channel_id].values())
         for timer_match in _timers["match"][str_channel_id]:
             comskip = 2 if _timers.get("comskipcut") else 1 if _timers.get("comskip") else 0
             days = fixed_timer = keep = repeat = None
