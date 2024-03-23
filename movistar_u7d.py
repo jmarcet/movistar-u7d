@@ -617,7 +617,12 @@ if __name__ == "__main__":
     logging.getLogger("sanic.error").setLevel(logging.FATAL)
     logging.getLogger("sanic.root").disabled = True
 
-    logging.basicConfig(datefmt=DATEFMT, format=FMT, level=_conf["DEBUG"] and logging.DEBUG or logging.INFO)
+    logging.basicConfig(datefmt=DATEFMT, format=FMT, level=_conf.get("DEBUG") and logging.DEBUG or logging.INFO)
+
+    if not _conf:
+        log.critical("Imposible parsear fichero de configuración")
+        sys.exit(1)
+
     if _conf["LOG_TO_FILE"]:
         add_logfile(log, _conf["LOG_TO_FILE"], _conf["DEBUG"] and logging.DEBUG or logging.INFO)
 
