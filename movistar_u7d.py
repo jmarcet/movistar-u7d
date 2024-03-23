@@ -20,7 +20,6 @@ from collections import namedtuple
 from datetime import datetime
 from filelock import FileLock, Timeout
 from sanic import Sanic, response
-from sanic.compat import open_async, stat_async
 from sanic.exceptions import HeaderNotFound, NotFound, ServiceUnavailable
 from sanic.handlers import ContentRangeHandler
 from sanic.log import error_logger
@@ -256,12 +255,12 @@ async def handle_flussonic(request, url, channel_id=None, channel_name=None, clo
                     prom.cancel()
                     await prom
 
-            _stat = await stat_async(program_id)
+            _stat = await aiofiles.os.stat(program_id)
             bytepos = round(offset * _stat.st_size / duration)
             bytepos -= bytepos % CHUNK
             to_send = _stat.st_size - bytepos
 
-            async with await open_async(program_id, mode="rb") as f:
+            async with aiofiles.open(program_id, mode="rb") as f:
                 await f.seek(bytepos)
                 _response = await request.respond(content_type=MIME_WEBM)
                 prom = app.add_task(send_prom_event(event))
@@ -491,7 +490,7 @@ async def handle_recording(request):
 
         if ext in VID_EXTS:
             try:
-                _range = ContentRangeHandler(request, await stat_async(file))
+                _range = ContentRangeHandler(request, await aiofiles.os.stat(file))
                 return await response.file_stream(file, mime_type=MIME_WEBM, _range=_range)
             except HeaderNotFound:
                 pass
