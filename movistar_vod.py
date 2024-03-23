@@ -789,6 +789,18 @@ if __name__ == "__main__":
 
     _conf = mu7d_config()
 
+    logging.getLogger("asyncio").setLevel(logging.FATAL)
+    logging.getLogger("filelock").setLevel(logging.FATAL)
+
+    logging.basicConfig(datefmt=DATEFMT, format=FMT, level=_conf.get("DEBUG") and logging.DEBUG or logging.INFO)
+
+    if not _conf:
+        log.critical("Imposible parsear fichero de configuración")
+        sys.exit(1)
+
+    if _conf["LOG_TO_FILE"]:
+        add_logfile(log, _conf["LOG_TO_FILE"], _conf["DEBUG"] and logging.DEBUG or logging.INFO)
+
     parser = argparse.ArgumentParser(f"Movistar U7D - VOD v{_version}")
     parser.add_argument("channel", help="channel id", type=int)
     parser.add_argument("program", help="program id", type=int)
@@ -813,13 +825,6 @@ if __name__ == "__main__":
     _args = parser.parse_args()
 
     _conf["DEBUG"] = _args.debug or _conf["DEBUG"]
-
-    logging.getLogger("asyncio").setLevel(logging.FATAL)
-    logging.getLogger("filelock").setLevel(logging.FATAL)
-
-    logging.basicConfig(datefmt=DATEFMT, format=FMT, level=_conf["DEBUG"] and logging.DEBUG or logging.INFO)
-    if _conf["LOG_TO_FILE"]:
-        add_logfile(log, _conf["LOG_TO_FILE"], _conf["DEBUG"] and logging.DEBUG or logging.INFO)
 
     try:
         _IPTV = get_iptv_ip()

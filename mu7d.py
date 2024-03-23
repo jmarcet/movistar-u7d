@@ -24,6 +24,7 @@ from html import unescape
 from json import JSONDecodeError
 from shutil import which
 from time import sleep
+from tomli import TOMLDecodeError
 
 
 _version = "6.0alpha"
@@ -360,8 +361,10 @@ def mu7d_config():
     try:
         with open(fileconf, encoding="utf8") as f:
             conf = tomli.loads(f.read().lstrip("\ufeff"))
-    except (AttributeError, FileNotFoundError, OSError, PermissionError):
+    except FileNotFoundError:
         conf = {}
+    except (AttributeError, OSError, PermissionError, TOMLDecodeError, TypeError, ValueError):
+        return {}
 
     if "HOME" not in conf:
         conf["HOME"] = os.getenv("HOME", os.getenv("USERPROFILE"))
@@ -638,7 +641,12 @@ if __name__ == "__main__":
     logging.getLogger("asyncio").setLevel(logging.FATAL)
     logging.getLogger("filelock").setLevel(logging.FATAL)
 
-    logging.basicConfig(datefmt=DATEFMT, format=FMT, level=_conf["DEBUG"] and logging.DEBUG or logging.INFO)
+    logging.basicConfig(datefmt=DATEFMT, format=FMT, level=_conf.get("DEBUG") and logging.DEBUG or logging.INFO)
+
+    if not _conf:
+        log.critical("Imposible parsear fichero de configuración")
+        sys.exit(1)
+
     if _conf["LOG_TO_FILE"]:
         add_logfile(log, _conf["LOG_TO_FILE"], _conf["DEBUG"] and logging.DEBUG or logging.INFO)
 

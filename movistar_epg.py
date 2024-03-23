@@ -1339,7 +1339,12 @@ if __name__ == "__main__":
     logging.getLogger("sanic.error").setLevel(logging.FATAL)
     logging.getLogger("sanic.root").disabled = True
 
-    logging.basicConfig(datefmt=DATEFMT, format=FMT, level=_conf["DEBUG"] and logging.DEBUG or logging.INFO)
+    logging.basicConfig(datefmt=DATEFMT, format=FMT, level=_conf.get("DEBUG") and logging.DEBUG or logging.INFO)
+
+    if not _conf:
+        log.critical("Imposible parsear fichero de configuración")
+        sys.exit(1)
+
     if _conf["LOG_TO_FILE"]:
         add_logfile(log, _conf["LOG_TO_FILE"], _conf["DEBUG"] and logging.DEBUG or logging.INFO)
 
@@ -1350,6 +1355,12 @@ if __name__ == "__main__":
         message=r"coroutine '\w+.create_server' was never awaited",
         module="sys",
     )
+
+    U7D_PARENT = int(os.getenv("U7D_PARENT", "0"))
+
+    if not U7D_PARENT:
+        log.critical("Must be run with mu7d")
+        sys.exit(1)
 
     CHANNELS = _conf["CHANNELS"]
     CHANNELS_CLOUD = _conf["CHANNELS_CLOUD"]
@@ -1370,12 +1381,6 @@ if __name__ == "__main__":
     RECORDINGS_UPGRADE = _conf["RECORDINGS_UPGRADE"]
     U7D_URL = _conf["U7D_URL"]
     VID_EXT = ".mkv" if MKV_OUTPUT else ".ts"
-
-    U7D_PARENT = int(os.getenv("U7D_PARENT", "0"))
-
-    if not U7D_PARENT:
-        log.critical("Must be run with mu7d")
-        sys.exit(1)
 
     cloud_data = os.path.join(_conf["HOME"], ".xmltv/cache/cloud.json")
     channels_data = os.path.join(_conf["HOME"], ".xmltv/cache/channels.json")

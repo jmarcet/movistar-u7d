@@ -1217,6 +1217,18 @@ if __name__ == "__main__":
 
     _conf = mu7d_config()
 
+    logging.getLogger("asyncio").setLevel(logging.FATAL)
+    logging.getLogger("filelock").setLevel(logging.FATAL)
+
+    logging.basicConfig(datefmt=DATEFMT, format=FMT, level=_conf.get("DEBUG") and logging.DEBUG or logging.INFO)
+
+    if not _conf:
+        log.critical("Imposible parsear fichero de configuración")
+        sys.exit(1)
+
+    if _conf["LOG_TO_FILE"]:
+        add_logfile(log, _conf["LOG_TO_FILE"], _conf["DEBUG"] and logging.DEBUG or logging.INFO)
+
     DEBUG = _conf["DEBUG"]
 
     _CONFIG = _DEADLINE = _END_POINT = _IPTV = _MIPTV = _SESSION = _XMLTV = None
@@ -1239,13 +1251,6 @@ if __name__ == "__main__":
     )
 
     series_regex = re.compile(r"^(S\d+E\d+|Ep[isode]*\.)(?:.*)")
-
-    logging.getLogger("asyncio").setLevel(logging.FATAL)
-    logging.getLogger("filelock").setLevel(logging.FATAL)
-
-    logging.basicConfig(datefmt=DATEFMT, format=FMT, level=_conf["DEBUG"] and logging.DEBUG or logging.INFO)
-    if _conf["LOG_TO_FILE"]:
-        add_logfile(log, _conf["LOG_TO_FILE"], _conf["DEBUG"] and logging.DEBUG or logging.INFO)
 
     del _conf
     lockfile = os.path.join(os.getenv("TMP", os.getenv("TMPDIR", "/tmp")), ".movistar_tvg.lock")  # nosec B108
