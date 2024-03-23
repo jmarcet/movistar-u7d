@@ -17,7 +17,8 @@ import unicodedata
 import urllib.parse
 import xmltodict
 
-from aiohttp.client_exceptions import ClientConnectionError, ClientOSError, ServerDisconnectedError
+from aiohttp.client_exceptions import ClientConnectionError, ClientConnectorError
+from aiohttp.client_exceptions import ClientOSError, ServerDisconnectedError
 from asyncio.exceptions import CancelledError
 from asyncio.subprocess import DEVNULL, PIPE
 from collections import defaultdict, deque
@@ -48,7 +49,7 @@ log = logging.getLogger("EPG")
 
 @app.listener("before_server_start")
 async def before_server_start(app):
-    global _IPTV, _last_epg
+    global _IPTV, _SESSION, _last_epg
 
     app.config.FALLBACK_ERROR_FORMAT = "json"
     app.config.KEEP_ALIVE_TIMEOUT = YEAR_SECONDS
@@ -57,6 +58,10 @@ async def before_server_start(app):
         [signal.signal(sig, cleanup_handler) for sig in (signal.SIGHUP, signal.SIGINT, signal.SIGTERM)]
 
     _IPTV = get_iptv_ip()
+
+    _SESSION = aiohttp.ClientSession(
+        connector=aiohttp.TCPConnector(keepalive_timeout=YEAR_SECONDS, limit_per_host=1)
+    )
 
     app.add_task(alive())
 
@@ -390,11 +395,6 @@ async def handle_archive(request, channel_id, program_id):
         msg = "Recording ARCHIVED"
         log.info(DIV_ONE % (msg, log_suffix))
         return response.json({"status": msg}, ensure_ascii=False)
-
-
-@app.get("/channels/")
-async def handle_channels(request):
-    return response.json(_CHANNELS) if _CHANNELS else response.empty(404)
 
 
 @app.get("/epg_info/<channel_id:int>/<program_id:int>")
@@ -750,11 +750,20 @@ async def reload_epg():
     async with epg_lock:
         try:
             async with aiofiles.open(channels_data, encoding="utf8") as f:
-                _CHANNELS = json.loads(await f.read(), object_hook=keys_to_int)["data"]
+                data = await f.read()
+            _CHANNELS = json.loads(data, object_hook=keys_to_int)["data"]
         except (FileNotFoundError, JSONDecodeError, OSError, PermissionError, TypeError, ValueError) as ex:
             log.error(f"Failed to load Channels metadata {repr(ex)}")
             remove(channels_data)
             return await reload_epg()
+
+        for _ in range(3):
+            try:
+                await _SESSION.post(f"{U7D_URL}/update_channels", data=data)
+                break
+            except (ClientConnectionError, ClientConnectorError, ClientOSError, ServerDisconnectedError):
+                await asyncio.sleep(1)
+        del data
 
         try:
             async with aiofiles.open(epg_data, encoding="utf8") as f:
@@ -1322,7 +1331,7 @@ if __name__ == "__main__":
 
         setproctitle("movistar_epg")
 
-    _IPTV = None
+    _IPTV = _SESSION = None
     _NETWORK_SATURATION = 0
 
     _CHANNELS = {}

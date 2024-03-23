@@ -41,7 +41,7 @@ log = logging.getLogger("U7D")
 
 @app.listener("before_server_start")
 async def before_server_start(app):
-    global _CHANNELS, _IPTV, _SESSION, _SESSION_LOGOS
+    global _IPTV, _SESSION, _SESSION_LOGOS
 
     app.config.FALLBACK_ERROR_FORMAT = "json"
     app.config.GRACEFUL_SHUTDOWN_TIMEOUT = 0
@@ -70,6 +70,8 @@ async def before_server_start(app):
 
         win32api.SetConsoleCtrlHandler(cancel_handler, 1)
 
+    _IPTV = get_iptv_ip()
+
     _SESSION = aiohttp.ClientSession(
         connector=aiohttp.TCPConnector(keepalive_timeout=YEAR_SECONDS, limit_per_host=1),
         json_serialize=ujson.dumps,
@@ -80,25 +82,6 @@ async def before_server_start(app):
         json_serialize=ujson.dumps,
     )
 
-    while True:
-        try:
-            async with _SESSION.get(f"{EPG_URL}/channels/") as r:
-                if r.status == 200:
-                    _CHANNELS = json.loads(await r.text(), object_hook=keys_to_int)
-                    break
-                await asyncio.sleep(5)
-        except (ClientConnectionError, ClientOSError, ServerDisconnectedError):
-            log.debug("Waiting for EPG service...")
-            await asyncio.sleep(1)
-
-    if IPTV_BW_SOFT:
-        app.add_task(network_saturated())
-
-    _IPTV = get_iptv_ip()
-
-
-@app.listener("after_server_start")
-async def after_server_start(app):
     app.ctx.ep = await get_end_point(HOME, log)
     app.ctx.vod_client = aiohttp.ClientSession(
         connector=aiohttp.TCPConnector(keepalive_timeout=YEAR_SECONDS),
@@ -115,6 +98,7 @@ async def after_server_start(app):
         log.info("-" * len(banner))
 
     if IPTV_BW_SOFT:
+        app.add_task(network_saturated())
         log.info(f"BW: {IPTV_BW_SOFT}-{IPTV_BW_HARD} kbps / {IPTV_IFACE}")
 
 
@@ -496,6 +480,15 @@ async def handle_recording(request):
                 pass
 
     raise NotFound(f"Requested URL {request.path} not found")
+
+
+@app.post("/update_channels")
+async def handle_update_channels(request):
+    global _CHANNELS
+
+    _CHANNELS = json.loads(request.body, object_hook=keys_to_int)["data"]
+
+    return response.empty(200)
 
 
 async def network_saturated():
