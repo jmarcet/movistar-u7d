@@ -31,6 +31,7 @@ from psutil import boot_time
 from sanic import Sanic, response
 from sanic_prometheus import monitor
 from sanic.exceptions import Forbidden, NotFound
+from tomli import TOMLDecodeError
 from warnings import filterwarnings
 
 from mu7d import DATEFMT, DIV_ONE, DIV_TWO, DROP_KEYS, EXT, FMT, NFO_EXT
@@ -871,12 +872,12 @@ async def timers_check(delay=0):
     log.debug("Processing timers")
     try:
         async with aiofiles.open(timers_data, encoding="utf8") as f:
-            try:
-                _timers = tomli.loads(await f.read())
-            except (AttributeError, ValueError):
-                _timers = ujson.loads(await f.read())
-    except (FileNotFoundError, JSONDecodeError, OSError, PermissionError, TypeError, ValueError) as ex:
+            _timers = tomli.loads(await f.read())
+    except (AttributeError, TOMLDecodeError, TypeError, ValueError) as ex:
         log.error(f"Failed to parse timers.conf: {repr(ex)}")
+        return
+    except (FileNotFoundError, OSError, PermissionError) as ex:
+        log.error(f"Failed to read timers.conf: {repr(ex)}")
         return
 
     deflang = _timers.get("default_language", "")
