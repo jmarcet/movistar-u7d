@@ -184,7 +184,7 @@ class Cache:
         for channel in (ch for ch in services if ch in EPG_CHANNELS & set(channels)):
             clean_channels[channel] = {
                 "address": channels[channel]["address"],
-                "name": channels[channel]["name"].strip(" *"),
+                "name": channels[channel]["name"],
                 "number": services[channel],
                 "port": channels[channel]["port"],
             }
@@ -458,7 +458,7 @@ class MulticastIPTV:
                 "id": channel_id,
                 "address": svc[0][0].attrib["Address"],
                 "port": svc[0][0].attrib["Port"],
-                "name": svc[2][0].text.encode("latin1").decode("utf8"),
+                "name": svc[2][0].text.encode("latin1").decode("utf8").strip(" .*"),
                 "shortname": svc[2][1].text.encode("latin1").decode("utf8"),
                 "genre": svc[2][3][0].text.encode("latin1").decode("utf8"),
                 "logo_uri": svc[1].attrib.get("logoURI", "4146.jpg"),
@@ -1015,7 +1015,7 @@ class XmlTV:
 
         for channel_id in parsed_epg:
             self.__append_elem("channel", attr={"id": f"{channel_id}.movistar.tv"}, pad=8, child=True)
-            self.__append_elem("display-name", self.__channels[channel_id]["name"].strip(" *"), pad=12)
+            self.__append_elem("display-name", self.__channels[channel_id]["name"], pad=12)
             self.__append_elem(
                 "icon", attr={"src": f"{U7D_URL}/Logos/" + self.__channels[channel_id]["logo_uri"]}, pad=12
             )
@@ -1048,7 +1048,7 @@ class XmlTV:
         services = {k: v for k, v in self.__services.items() if k in (cloud or local or EPG_CHANNELS)}
 
         for channel_id in (ch for ch in services if ch in self.__channels):
-            channel_name = self.__channels[channel_id]["name"].strip(" *")
+            channel_name = self.__channels[channel_id]["name"]
             channel_tag = "Cloud" if cloud else "Local" if local else "U7D"
             channel_tag += " - TDT Movistar.es"
             channel_number = services[channel_id]
