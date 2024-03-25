@@ -619,10 +619,10 @@ async def record_stream(vod_info):
         end = _args.time + time.time()
 
         if vod_info.get("isHdtv"):
-            await f.write((await asyncio.wait_for(stream.recv(), timeout=0.2))[0])
+            await f.write((await asyncio.wait_for(stream.recv(), timeout=1.0))[0])
         else:
             # 1st packet on SDTV channels is bogus and breaks ffmpeg
-            await asyncio.wait_for(stream.recv(), timeout=0.2)
+            await asyncio.wait_for(stream.recv(), timeout=1.0)
 
         while time.time() < end:
             await f.write(await asyncio.wait_for(_buffer(), timeout=1.0))
