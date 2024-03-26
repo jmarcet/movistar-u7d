@@ -25,7 +25,6 @@ from asyncio.exceptions import CancelledError
 from asyncio.subprocess import DEVNULL as NULL, PIPE, STDOUT as OUT
 from datetime import timedelta
 from filelock import FileLock
-from html import unescape
 
 from mu7d import BUFF, CHUNK, DATEFMT, DIV_LOG, DROP_KEYS, EPG_URL, FMT
 from mu7d import NFO_EXT, UA, URL_COVER, WIN32, YEAR_SECONDS, IPTVNetworkError
@@ -228,24 +227,10 @@ async def postprocess(vod_info):
 
         # Only the main cover, to embed in the video file
         if get_cover:
-            cache_metadata = os.path.join(CACHE_DIR, f"{_args.program}.json")
             try:
-                if os.path.exists(cache_metadata):
-                    async with aiofiles.open(cache_metadata, encoding="utf8") as f:
-                        metadata = ujson.loads(await f.read())["data"]
-
-                if not metadata:
-                    log.debug("Getting extended info")
-
-                    params = {"action": "epgInfov2", "productID": _args.program, "channelID": _args.channel}
-                    async with _SESSION_CLOUD.get(_END_POINT, params=params) as resp:
-                        metadata = ujson.loads(unescape(await resp.text()))["resultData"]
-
-                    data = ujson.dumps({"data": metadata}, ensure_ascii=False, indent=4, sort_keys=True)
-                    async with aiofiles.open(cache_metadata, "w", encoding="utf8") as f:
-                        await f.write(data)
-
-            except (ClientConnectionError, ClientOSError, ServerDisconnectedError, TypeError, ValueError) as ex:
+                async with aiofiles.open(os.path.join(CACHE_DIR, f"{_args.program}.json"), encoding="utf8") as f:
+                    metadata = ujson.loads(await f.read())["data"]
+            except (FileNotFoundError, OSError, PermissionError, TypeError, ValueError) as ex:
                 raise RecordingError(f"Extended info not found => {repr(ex)}")
 
             cover = metadata["cover"]
@@ -854,6 +839,10 @@ if __name__ == "__main__":
         TMP_EXT = ".tmp"
         TMP_EXT2 = ".tmp2"
         VID_EXT = ".mkv" if _args.mkv else ".ts"
+
+        if not os.path.exists(os.path.join(CACHE_DIR, f"{_args.program}.json")):
+            log.error(f"No metadata exists for [{_args.channel:4}] [{_args.program}]")
+            sys.exit(1)
 
     HOME = _conf["HOME"]
 
