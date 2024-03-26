@@ -81,58 +81,17 @@ async def before_server_start(app):
             _last_epg = int(os.path.getmtime(GUIDE))
 
         if RECORDINGS:
-            global _RECORDINGS
-
             if not os.path.exists(RECORDINGS):
                 os.makedirs(RECORDINGS)
-
             else:
                 if RECORDINGS_UPGRADE:
                     await upgrade_recordings()
-
-                upgraded_channels = await upgrade_channel_numbers()
-
-                if not RECORDINGS_REINDEX:
-                    try:
-                        async with aiofiles.open(recordings_data, encoding="utf8") as f:
-                            _RECORDINGS = json.loads(await f.read(), object_hook=keys_to_int)
-                        for channel_id in tuple(ch for ch in _EPGDATA if ch in _RECORDINGS):
-                            oldest_epg = min(_EPGDATA[channel_id].keys())
-                            for timestamp in sorted(_RECORDINGS[channel_id]):
-                                recording = _RECORDINGS[channel_id][timestamp]
-                                try:
-                                    filename = recording["filename"]
-                                except KeyError:
-                                    log.warning(f'Dropping old style "{recording}" from "recordings.json"')
-                                    del _RECORDINGS[channel_id][timestamp]
-                                    continue
-                                for old_ch, new_ch in upgraded_channels:
-                                    if filename.startswith(old_ch):
-                                        msg = f'Updating recording index "{filename}" => '
-                                        msg += f'"{filename.replace(old_ch, new_ch)}"'
-                                        log.debug(msg)
-                                        filename = recording["filename"] = filename.replace(old_ch, new_ch)
-                                if does_recording_exist(filename):
-                                    utime(timestamp, *get_recording_files(filename))
-                                else:
-                                    if timestamp > oldest_epg:
-                                        log.warning(f'Archived Local Recording "{filename}" not found on disk')
-                                    elif channel_id in _CLOUD and timestamp in _CLOUD[channel_id]:
-                                        log.warning(f'Archived Cloud Recording "{filename}" not found on disk')
-                    except (JSONDecodeError, TypeError, ValueError) as ex:
-                        log.error(f'Failed to parse "recordings.json". It will be reset!!!: {repr(ex)}')
-                        remove(CHANNELS_LOCAL, GUIDE_LOCAL)
-                    except (FileNotFoundError, OSError, PermissionError):
-                        remove(CHANNELS_LOCAL, GUIDE_LOCAL)
-
-                    await update_recordings()
-
-                    if RECORDINGS_TMP and _RECORDINGS:
-                        if not os.path.exists(os.path.join(RECORDINGS_TMP, "covers")):
-                            await create_covers_cache()
-
-                else:
+                elif RECORDINGS_REINDEX:
                     await reindex_recordings()
+                else:
+                    await reload_recordings()
+                if RECORDINGS_TMP and _RECORDINGS and not os.path.exists(os.path.join(RECORDINGS_TMP, "covers")):
+                    await create_covers_cache()
 
         app.add_task(update_epg_cron())
 
@@ -471,6 +430,15 @@ async def handle_reload_epg(request):
     return response.json({"status": "EPG Reload Queued"}, 200)
 
 
+@app.get("/reload_recordings")
+async def handle_reload_recordings(request):
+    if not RECORDINGS:
+        return response.json({"status": "RECORDINGS not configured"}, 404)
+
+    app.add_task(reload_recordings())
+    return response.json({"status": "Recordings Reload Queued"}, 200)
+
+
 @app.get("/timers_check")
 async def handle_timers_check(request):
     global _t_timers
@@ -718,6 +686,7 @@ async def reindex_recordings():
 
         channel_id, duration, timestamp = nfo["serviceUID"], nfo["duration"], nfo["beginTime"]
         filename = nfo["cover"][:-4]
+        utime(timestamp, *get_recording_files(filename))
         _recordings[channel_id][timestamp] = {"duration": duration, "filename": filename}
 
     if len(_recordings):
@@ -778,6 +747,39 @@ async def reload_epg():
         log.info(f"Total: {len(_EPGDATA):2} Channels & {nr_epg:5} EPG entries")
 
         await update_cloud()
+
+
+async def reload_recordings():
+    global _RECORDINGS
+
+    upgraded_channels = await upgrade_channel_numbers()
+    if upgraded_channels:
+        await reindex_recordings()
+    else:
+        async with recordings_lock:
+            try:
+                async with aiofiles.open(recordings_data, encoding="utf8") as f:
+                    _RECORDINGS = json.loads(await f.read(), object_hook=keys_to_int)
+            except (JSONDecodeError, TypeError, ValueError) as ex:
+                log.error(f'Failed to parse "recordings.json". It will be reset!!!: {repr(ex)}')
+                remove(CHANNELS_LOCAL, GUIDE_LOCAL)
+                return
+            except (FileNotFoundError, OSError, PermissionError):
+                remove(CHANNELS_LOCAL, GUIDE_LOCAL)
+                return
+
+            for channel_id in _RECORDINGS:
+                oldest_epg = min(_EPGDATA[channel_id].keys())
+                for timestamp in (
+                    ts
+                    for ts in _RECORDINGS[channel_id]
+                    if not does_recording_exist(_RECORDINGS[channel_id][ts]["filename"])
+                ):
+                    filename = _RECORDINGS[channel_id][timestamp]["filename"]
+                    if timestamp > oldest_epg:
+                        log.warning(f'Archived Local Recording "{filename}" not found on disk')
+                    elif channel_id in _CLOUD and timestamp in _CLOUD[channel_id]:
+                        log.warning(f'Archived Cloud Recording "{filename}" not found on disk')
 
 
 async def timers_check(delay=0):
@@ -1323,6 +1325,9 @@ async def upgrade_recordings():
         )
     else:
         log.info(f"No updates {'would be ' if RECORDINGS_UPGRADE < 0 else ''}carried out")
+
+    if RECORDINGS_UPGRADE > 0:
+        await update_recordings()
 
 
 if __name__ == "__main__":
