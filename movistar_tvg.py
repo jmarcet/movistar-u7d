@@ -1312,7 +1312,7 @@ if __name__ == "__main__":
 
     _CONFIG = _DEADLINE = _END_POINT = _IPTV = _MIPTV = _SESSION = _XMLTV = None
 
-    CACHE_DIR = os.path.join(_conf["HOME"], ".xmltv", "cache")
+    CACHE_DIR = _conf["CACHE_DIR"]
     EPG_CHANNELS = _conf["EPG_CHANNELS"]
     HOME = _conf["HOME"]
     RECORDINGS = _conf["RECORDINGS"]
@@ -1335,8 +1335,8 @@ if __name__ == "__main__":
     title_1_regex = re.compile(r"(.+(?!T\d)) +T(\d+)(?: *Ep[isode.]+ (\d+))?[ -]*(.*)")
     title_2_regex = re.compile(r"(.+(?!T\d))(?: +T(\d+))? *(?:[Ee]p[isode.]+|[Cc]ap[iítulo.]*) ?(\d+)[ .-]*(.*)")
 
+    lockfile = os.path.join(_conf["TMP_DIR"], ".movistar_tvg.lock")
     del _conf
-    lockfile = os.path.join(os.getenv("TMP", os.getenv("TMPDIR", "/tmp")), ".movistar_tvg.lock")  # nosec B108
     try:
         with FileLock(lockfile, timeout=0):
             _IPTV = get_iptv_ip()

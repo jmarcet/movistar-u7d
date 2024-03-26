@@ -1451,8 +1451,8 @@ if __name__ == "__main__":
         multiprocess_mode="livesum",
     ).expose_endpoint()
 
+    lockfile = os.path.join(_conf["TMP_DIR"], ".movistar_epg.lock")
     del _conf
-    lockfile = os.path.join(os.getenv("TMP", os.getenv("TMPDIR", "/tmp")), ".movistar_epg.lock")  # nosec B108
     try:
         with FileLock(lockfile, timeout=0):
             app.run(

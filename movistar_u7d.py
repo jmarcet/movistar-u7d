@@ -649,8 +649,8 @@ if __name__ == "__main__":
 
     VodArgs = namedtuple("Vod", ["channel", "program", "client_ip", "client_port", "start", "cloud"])
 
+    lockfile = os.path.join(_conf["TMP_DIR"], ".movistar_u7d.lock")
     del _conf
-    lockfile = os.path.join(os.getenv("TMP", os.getenv("TMPDIR", "/tmp")), ".movistar_u7d.lock")  # nosec B108
     try:
         with FileLock(lockfile, timeout=0):
             app.run(

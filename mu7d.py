@@ -378,6 +378,9 @@ def mu7d_config():
     if "U7D_PROCESSES" not in conf or not isinstance(conf["U7D_PROCESSES"], int):
         conf["U7D_PROCESSES"] = 1
 
+    conf["CACHE_DIR"] = os.path.join(conf["HOME"], ".xmltv", "cache")
+    conf["TMP_DIR"] = os.getenv("TMP", os.getenv("TMPDIR", "/tmp"))  # nosec B108
+
     conf["CHANNELS"] = os.path.join(conf["HOME"], "MovistarTV.m3u")
     conf["CHANNELS_CLOUD"] = os.path.join(conf["HOME"], "MovistarTVCloud.m3u")
     conf["CHANNELS_LOCAL"] = os.path.join(conf["HOME"], "MovistarTVLocal.m3u")
@@ -593,7 +596,7 @@ if __name__ == "__main__":
     os.environ["PYTHONOPTIMIZE"] = "0" if _conf["DEBUG"] else "2"
     os.environ["U7D_PARENT"] = str(os.getpid())
 
-    lockfile = os.path.join(os.getenv("TMP", os.getenv("TMPDIR", "/tmp")), ".mu7d.lock")  # nosec B108
+    lockfile = os.path.join(_conf["TMP_DIR"], ".mu7d.lock")
     try:
         with FileLock(lockfile, timeout=0):
             _check_iptv()
