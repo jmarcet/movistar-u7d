@@ -241,7 +241,12 @@ class MovistarTV:
         if not data or any(
             (
                 data["beginTime"] // 1000 != ts,
+                data["serviceUID"] != channel_id,
+                not data.get("covers", {}).get("fanart"),
                 not data.get("description", "").strip(),
+                "duration" not in data,
+                "labelGenre" not in data,
+                "synopsis" not in data or data["synopsis"] == "Cine",
                 all((data.get("theme", "") == "Cine", not data.get("originalTitle", "").strip())),
             )
         ):
