@@ -543,6 +543,7 @@ async def u7d_main():
     epg_cmd = (f"movistar_epg{EXT}",)
 
     u7d_t = asyncio.create_task(launch(u7d_cmd))
+    await asyncio.sleep(1)
     epg_t = asyncio.create_task(launch(epg_cmd))
 
     while True:
