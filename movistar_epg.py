@@ -172,13 +172,7 @@ async def create_covers_cache():
 
 
 def does_recording_exist(filename):
-    return bool(
-        [
-            file
-            for file in glob_safe(os.path.join(RECORDINGS, f"{filename}.*"))
-            if os.path.splitext(file)[1] in VID_EXTS
-        ]
-    )
+    return os.path.exists(os.path.join(RECORDINGS, filename + VID_EXT))
 
 
 def get_channel_dir(channel_id):
@@ -671,21 +665,40 @@ async def reindex_recordings():
 
     for nfo_file in sorted(glob(f"{RECORDINGS}/[0-9][0-9][0-9]. */**/*{NFO_EXT}", recursive=True)):
         basename = nfo_file[:-13]
-        if not os.path.exists(basename + VID_EXT):
-            log.error(f"No recording found: {basename=} {nfo_file=}")
+        if not does_recording_exist(basename):
+            log.error(f'No recording found: "{basename + VID_EXT}" {nfo_file=}')
             continue
 
         try:
             async with aiofiles.open(nfo_file, encoding="utf-8") as f:
-                xml = await f.read()
-
-            nfo = xmltodict.parse(xml, postprocessor=pp_xml)["metadata"]
+                nfo = xmltodict.parse(await f.read(), postprocessor=pp_xml)["metadata"]
         except Exception as ex:
             log.error(f"Cannot read {nfo_file=} => {repr(ex)}")
             continue
 
-        channel_id, duration, timestamp = nfo["serviceUID"], nfo["duration"], nfo["beginTime"]
         filename = nfo["cover"][:-4]
+        channel_id, duration, timestamp = nfo["serviceUID"], nfo["duration"], nfo["beginTime"]
+
+        if channel_id not in _CHANNELS:
+            stale = True
+            dirname = filename.split(os.path.sep)[0]
+            _match = re.match(r"^(\d{3})\. (.+)$", dirname)
+            if _match:
+                channel_nr = int(_match.groups()[0])
+                _ids = tuple(filter(lambda ch: _CHANNELS[ch]["number"] == channel_nr, _CHANNELS))
+                if _ids:
+                    stale = False
+                    log.warning(f'Replaced channel_id [{channel_id:4}] => [{_ids[0]:4}] in "{filename}"')
+                    nfo["serviceUID"] = channel_id = _ids[0]
+                    xml = xmltodict.unparse({"metadata": dict(sorted(nfo.items()))}, pretty=True)
+                    async with aiofiles.open(nfo_file + ".tmp", "w", encoding="utf8") as f:
+                        await f.write(xml)
+                    remove(nfo_file)
+                    os.rename(nfo_file + ".tmp", nfo_file)
+            if stale:
+                log.warning(f'Wrong channel_id [{channel_id:4}] in nfo => Skipping "{filename}"')
+                continue
+
         utime(timestamp, *get_recording_files(filename))
         _recordings[channel_id][timestamp] = {"duration": duration, "filename": filename}
 
@@ -746,14 +759,13 @@ async def reload_epg():
         nr_epg = sum((len(_EPGDATA[channel]) for channel in _EPGDATA))
         log.info(f"Total: {len(_EPGDATA):2} Channels & {nr_epg:5} EPG entries")
 
-        await update_cloud()
+    await update_cloud()
 
 
 async def reload_recordings():
     global _RECORDINGS
 
-    upgraded_channels = await upgrade_channel_numbers()
-    if upgraded_channels:
+    if await upgrade_recording_channels():
         await reindex_recordings()
     else:
         async with recordings_lock:
@@ -761,13 +773,17 @@ async def reload_recordings():
                 async with aiofiles.open(recordings_data, encoding="utf8") as f:
                     _RECORDINGS = json.loads(await f.read(), object_hook=keys_to_int)
             except (JSONDecodeError, TypeError, ValueError) as ex:
-                log.error(f'Failed to parse "recordings.json". It will be reset!!!: {repr(ex)}')
+                log.error(f'Failed to parse "recordings.json" => {repr(ex)}')
                 remove(CHANNELS_LOCAL, GUIDE_LOCAL)
-                return
             except (FileNotFoundError, OSError, PermissionError):
                 remove(CHANNELS_LOCAL, GUIDE_LOCAL)
+
+        if not _RECORDINGS:
+            await reindex_recordings()
+            if not _RECORDINGS:
                 return
 
+        async with recordings_lock:
             for channel_id in _RECORDINGS:
                 oldest_epg = min(_EPGDATA[channel_id].keys())
                 for timestamp in (
@@ -780,6 +796,8 @@ async def reload_recordings():
                         log.warning(f'Archived Local Recording "{filename}" not found on disk')
                     elif channel_id in _CLOUD and timestamp in _CLOUD[channel_id]:
                         log.warning(f'Archived Cloud Recording "{filename}" not found on disk')
+
+    await update_epg_local()
 
 
 async def timers_check(delay=0):
@@ -1002,19 +1020,20 @@ async def timers_check(delay=0):
 async def update_cloud():
     global _CLOUD
 
-    cmd = (f"movistar_tvg{EXT}", "--cloud_m3u", CHANNELS_CLOUD, "--cloud_recordings", GUIDE_CLOUD)
-    async with tvgrab_lock:
-        await launch(cmd)
+    async with epg_lock:
+        cmd = (f"movistar_tvg{EXT}", "--cloud_m3u", CHANNELS_CLOUD, "--cloud_recordings", GUIDE_CLOUD)
+        async with tvgrab_lock:
+            await launch(cmd)
 
-    try:
-        async with aiofiles.open(cloud_data, encoding="utf8") as f:
-            _CLOUD = json.loads(await f.read(), object_hook=keys_to_int)["data"]
-    except (FileNotFoundError, JSONDecodeError, OSError, PermissionError, TypeError, ValueError):
-        return await update_cloud()
+        try:
+            async with aiofiles.open(cloud_data, encoding="utf8") as f:
+                _CLOUD = json.loads(await f.read(), object_hook=keys_to_int)["data"]
+        except (FileNotFoundError, JSONDecodeError, OSError, PermissionError, TypeError, ValueError):
+            return await update_cloud()
 
-    log.info(f"Cloud Recordings Updated => {U7D_URL}/MovistarTVCloud.m3u - {U7D_URL}/cloud.xml")
-    nr_epg = sum((len(_CLOUD[channel]) for channel in _CLOUD))
-    log.info(f"Total: {len(_CLOUD):2} Channels & {nr_epg:5} EPG entries")
+        log.info(f"Cloud Recordings Updated => {U7D_URL}/MovistarTVCloud.m3u - {U7D_URL}/cloud.xml")
+        nr_epg = sum((len(_CLOUD[channel]) for channel in _CLOUD))
+        log.info(f"Total: {len(_CLOUD):2} Channels & {nr_epg:5} EPG entries")
 
 
 async def update_epg(abort_on_error=False):
@@ -1039,6 +1058,9 @@ async def update_epg(abort_on_error=False):
                 _t_timers = app.add_task(timers_check(delay=3))
             break
 
+    if RECORDINGS and _RECORDINGS and await upgrade_recording_channels():
+        await reindex_recordings()
+
 
 async def update_epg_cron():
     last_datetime = datetime.now().replace(minute=0, second=0, microsecond=0)
@@ -1051,17 +1073,15 @@ async def update_epg_cron():
 
 
 async def update_epg_local():
-    if not RECORDINGS:
-        return
+    async with recordings_lock:
+        cmd = (f"movistar_tvg{EXT}", "--local_m3u", CHANNELS_LOCAL, "--local_recordings", GUIDE_LOCAL)
 
-    cmd = (f"movistar_tvg{EXT}", "--local_m3u", CHANNELS_LOCAL, "--local_recordings", GUIDE_LOCAL)
+        async with tvgrab_lock:
+            await launch(cmd)
 
-    async with tvgrab_lock:
-        await launch(cmd)
-
-    log.info(f"Local Recordings Updated => {U7D_URL}/MovistarTVLocal.m3u - {U7D_URL}/local.xml")
-    nr_epg = sum((len(_RECORDINGS[channel]) for channel in _RECORDINGS))
-    log.info(f"Total: {len(_RECORDINGS):2} Channels & {nr_epg:5} EPG entries")
+        log.info(f"Local Recordings Updated => {U7D_URL}/MovistarTVLocal.m3u - {U7D_URL}/local.xml")
+        nr_epg = sum((len(_RECORDINGS[channel]) for channel in _RECORDINGS))
+        log.info(f"Total: {len(_RECORDINGS):2} Channels & {nr_epg:5} EPG entries")
 
 
 async def update_recordings(channel_id=None):
@@ -1077,7 +1097,7 @@ async def update_recordings(channel_id=None):
         remove(recordings_data)
         os.rename(recordings_data + ".tmp", recordings_data)
 
-        await update_epg_local()
+    await update_epg_local()
 
     if not RECORDINGS_M3U:
         if channel_id:
@@ -1150,28 +1170,47 @@ async def update_recordings(channel_id=None):
     log.info(f"Local Recordings' M3U Updated => {U7D_URL}/Recordings.m3u")
 
 
-async def upgrade_channel_numbers():
-    dirs = os.listdir(RECORDINGS)
-    pairs = (r.groups() for r in (re.match(r"^(\d{3})\. (.+)$", dir) for dir in dirs) if r)
+async def upgrade_recording_channels():
+    changed_nr, stale = deque(), deque()
 
-    stale = deque()
+    names = tuple(_CHANNELS[x]["name"] for x in _CHANNELS)
+    numbers = tuple(_CHANNELS[x]["number"] for x in _CHANNELS)
+
+    dirs = filter(lambda _dir: os.path.isdir(os.path.join(RECORDINGS, _dir)), os.listdir(RECORDINGS))
+    pairs = (r.groups() for r in (re.match(r"^(\d{3})\. (.+)$", _dir) for _dir in dirs) if r)
+
     for nr, name in pairs:
-        _f = filter(lambda x: _CHANNELS[x]["name"] == name and _CHANNELS[x]["number"] != int(nr), _CHANNELS)
-        for channel_id in _f:
-            stale.append((channel_id, int(nr), _CHANNELS[channel_id]["number"], name))
+        nr = int(nr)
+        if nr not in numbers and name in names:
+            _f = filter(lambda x: _CHANNELS[x]["name"] == name and _CHANNELS[x]["number"] != nr, _CHANNELS)
+            for channel_id in _f:
+                changed_nr.append((channel_id, nr, _CHANNELS[channel_id]["number"], name))
+        elif nr not in numbers or name not in names:
+            stale.append((nr, name))
 
-    if not stale:
-        return ()
+    if not changed_nr and not stale:
+        return False
 
-    stale_pairs = deque()
-    log.warning("UPGRADING CHANNEL NUMBERS")
-    for channel_id, old_nr, new_nr, name in stale:
+    log.warning("UPGRADING RECORDINGS' CHANNELS")
+
+    for nr, name in stale:
+        old_channel_name = f"{nr:03}. {name}"
+        new_channel_name = f'OLD_{datetime.now().strftime("%Y%m%dT%H%M%S")}_{nr:03}_{name}'
+        if nr in numbers and name not in names:
+            log.warning(f'Channel "{old_channel_name}" has changed its name')
+        else:
+            log.warning(f'Recording dir "{old_channel_name}" not recognized')
+        os.rename(os.path.join(RECORDINGS, old_channel_name), os.path.join(RECORDINGS, new_channel_name))
+        log.warning(f'RENAMING channel folder: "{old_channel_name}" => "{new_channel_name}"')
+
+    changed_pairs = deque()
+    for channel_id, old_nr, new_nr, name in changed_nr:
         old_channel_name = f"{old_nr:03}. {name}"
         new_channel_name = f"{new_nr:03}. {name}"
         old_channel_path = os.path.join(RECORDINGS, old_channel_name)
         new_channel_path = os.path.join(RECORDINGS, new_channel_name)
 
-        stale_pairs.append((old_channel_name, new_channel_name))
+        changed_pairs.append((old_channel_name, new_channel_name))
 
         for nfo_file in sorted(glob(f"{old_channel_path}/**/*{NFO_EXT}", recursive=True)):
             new_nfo_file = nfo_file.replace(old_channel_name, new_channel_name)
@@ -1212,16 +1251,16 @@ async def upgrade_channel_numbers():
                     os.rename(old_file, new_file)
 
         if os.path.exists(new_channel_path):
-            stale_channel_name = f"OLD_{old_nr:03}_{name}"
-            stale_channel_path = os.path.join(RECORDINGS, stale_channel_name)
+            changed_channel_name = f'OLD_{datetime.now().strftime("%Y%m%dT%H%M%S")}_{old_nr:03}_{name}'
+            changed_channel_path = os.path.join(RECORDINGS, changed_channel_name)
 
-            log.warning(f'RENAMING channel folder: "{old_channel_name}" => "{stale_channel_name}"')
-            os.rename(old_channel_path, stale_channel_path)
+            log.warning(f'RENAMING channel folder: "{old_channel_name}" => "{changed_channel_name}"')
+            os.rename(old_channel_path, changed_channel_path)
         else:
             log.warning(f'RENAMING channel folder: "{old_channel_name}" => "{new_channel_name}"')
             os.rename(old_channel_path, new_channel_path)
 
-    return stale_pairs
+    return True
 
 
 async def upgrade_recordings():
@@ -1304,16 +1343,10 @@ async def upgrade_recordings():
         elif drop_covers:
             [nfo["covers"].pop(cover) for cover in drop_covers]
 
-        try:
-            xml = xmltodict.unparse({"metadata": dict(sorted(nfo.items()))}, pretty=True)
-        except Exception as ex:
-            log.error(f"Metadata malformed: {nfo_file=} => {repr(ex)}")
-            continue
-
         if RECORDINGS_UPGRADE > 0:
+            xml = xmltodict.unparse({"metadata": dict(sorted(nfo.items()))}, pretty=True)
             async with aiofiles.open(nfo_file + ".tmp", "w", encoding="utf8") as f:
                 await f.write(xml)
-
             remove(nfo_file)
             os.rename(nfo_file + ".tmp", nfo_file)
             utime(mtime, nfo_file)
