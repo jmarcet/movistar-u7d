@@ -31,8 +31,8 @@ from json import JSONDecodeError
 from threading import current_thread, main_thread
 
 from mu7d import DATEFMT, END_POINTS_FILE, FMT, UA, UA_U7D, WIN32, YEAR_SECONDS, IPTVNetworkError
-from mu7d import add_logfile, get_end_point, get_iptv_ip, get_local_info, get_title_meta, keys_to_int
-from mu7d import mu7d_config, remove, _version
+from mu7d import add_logfile, get_end_point, get_iptv_ip, get_local_info, keys_to_int, mu7d_config, remove
+from mu7d import _version
 
 
 log = logging.getLogger("TVG")
@@ -623,7 +623,7 @@ class MulticastIPTV:
             season = struct.unpack("B", epg_dt[title_end + 11 : title_end + 12])[0]
             full_title = MulticastIPTV.decode_string(epg_dt[32:title_end])
             serie_id = struct.unpack(">H", epg_dt[title_end + 5 : title_end + 7])[0]
-            meta_data = get_title_meta(full_title, serie_id, service_id, genre)
+            meta_data = MulticastIPTV.get_title_meta(full_title, serie_id, service_id, genre)
             programs[start] = {
                 "pid": struct.unpack(">I", epg_dt[:4])[0],
                 "start": start,
@@ -751,7 +751,7 @@ class MulticastIPTV:
                 continue
 
             service_id = _channels[channel_id].get("replacement", channel_id)
-            meta = get_title_meta(data["name"], data.get("seriesID"), service_id, data["theme"])
+            meta = MulticastIPTV.get_title_meta(data["name"], data.get("seriesID"), service_id, data["theme"])
 
             self.__cached_epg[channel_id][timestamp] = self.__fill_cloud_event(data, meta, pid, timestamp, year)
             if meta["episode_title"]:
@@ -771,6 +771,80 @@ class MulticastIPTV:
         connection = await self.__get_service_provider_ip()
         await self.__get_epg_data(connection["mcast_grp"], connection["mcast_port"])
         return self.__xml_data
+
+    @staticmethod
+    def get_title_meta(title, serie_id, service_id, genre):
+        try:
+            _t = unescape(title).replace("\n", " ").replace("\r", " ").strip()
+        except TypeError:
+            _t = title.replace("\n", " ").replace("\r", " ").strip()
+        full_title = re.sub(r"(\d+)/(\d+)", r"\1\2", _t)
+
+        if title_select_regex.match(full_title):
+            x = title_1_regex.search(full_title)
+        else:
+            x = title_2_regex.search(full_title)
+
+        is_serie = False
+        season = episode = 0
+        serie = episode_title = ""
+
+        if x and x.groups():
+            _x = x.groups()
+            serie = _x[0] or full_title.split(" - ", 1)[0]
+            season = int(_x[1] or season)
+            episode = int(_x[2] or episode)
+            episode_title = _x[3] or episode_title
+
+            is_serie = bool(serie and episode)
+            serie, episode_title = (x.strip(":-/ ") for x in (serie, episode_title))
+            serie = re.sub(r"([^,.])[,.]$", r"\1", serie)
+            if serie.lower() == episode_title.lower():
+                episode_title = ""
+
+            if all((serie, season, episode)):
+                full_title = "%s S%02dE%02d" % (serie, season, episode)
+                if episode_title:
+                    if episode_regex.match(episode_title):
+                        episode_title = ""
+                    else:
+                        full_title += f" - {episode_title}"
+
+        elif serie_id:
+            is_serie = True
+            if " - " in full_title:
+                serie, episode_title = full_title.split(" - ", 1)
+            else:
+                serie = full_title
+
+        # Boing (578) & MEGA (2863); Movies (genre[0] == "1")
+        if all((service_id in (578, 2863), ": " in full_title, not episode_title, genre[0] != "1")):
+            _match = re.match(r"^([^/]+): ([^a-z].+)", full_title)
+            if _match:
+                is_serie = True
+                serie, episode_title = (x.strip(":-/ ") for x in _match.groups())
+                serie = re.sub(r"([^,.])[,.]$", r"\1", serie)
+                if season and episode:
+                    episode_title = re.sub(r" S\d+E\d+$", "", episode_title)
+                    full_title = "%s S%02dE%02d - %s" % (serie, season, episode, episode_title)
+                else:
+                    if not episode:
+                        _match = episode_regex.match(episode_title)
+                        if _match:
+                            episode = int(_match.groups()[0])
+                    full_title = "%s - %s" % (serie, episode_title)
+
+        for item in (episode_title, full_title, serie):
+            item = re.sub(r"\s+", " ", item)
+
+        return {
+            "full_title": full_title,
+            "serie": serie,
+            "season": season,
+            "episode": episode,
+            "episode_title": episode_title,
+            "is_serie": is_serie,
+        }
 
     @staticmethod
     async def get_xml_files(mc_grp, mc_port):
@@ -1255,7 +1329,11 @@ if __name__ == "__main__":
         ("year", "productionDate"),
     )
 
+    episode_regex = re.compile(r"^.*(?:Ep[isode.]+) (\d+)$")
     series_regex = re.compile(r"^(S\d+E\d+|Ep[isode]*\.)(?:.*)")
+    title_select_regex = re.compile(r".+ T\d+ .+")
+    title_1_regex = re.compile(r"(.+(?!T\d)) +T(\d+)(?: *Ep[isode.]+ (\d+))?[ -]*(.*)")
+    title_2_regex = re.compile(r"(.+(?!T\d))(?: +T(\d+))? *(?:[Ee]p[isode.]+|[Cc]ap[iítulo.]*) ?(\d+)[ .-]*(.*)")
 
     del _conf
     lockfile = os.path.join(os.getenv("TMP", os.getenv("TMPDIR", "/tmp")), ".movistar_tvg.lock")  # nosec B108

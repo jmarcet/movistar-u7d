@@ -20,7 +20,6 @@ from contextlib import closing
 from datetime import datetime
 from filelock import FileLock, Timeout
 from glob import glob
-from html import unescape
 from json import JSONDecodeError
 from shutil import which
 from time import sleep
@@ -116,10 +115,6 @@ EPG_CHANNELS = {
 }
 
 anchored_regex = re.compile(r"^(.+ - \d{8}_)\d{4}$")
-episode_regex = re.compile(r"^.*(?:Ep[isode.]+) (\d+)$")
-title_select_regex = re.compile(r".+ T\d+ .+")
-title_1_regex = re.compile(r"(.+(?!T\d)) +T(\d+)(?: *Ep[isode.]+ (\d+))?[ -]*(.*)")
-title_2_regex = re.compile(r"(.+(?!T\d))(?: +T(\d+))? *(?:[Ee]p[isode.]+|[Cc]ap[iítulo.]*) ?(\d+)[ .-]*(.*)")
 
 
 class IPTVNetworkError(Exception):
@@ -232,80 +227,6 @@ async def get_local_info(channel, timestamp, path, _log, extended=False):
 def get_safe_filename(filename):
     filename = filename.translate(str.maketrans("/:()", "_;[]"))
     return "".join(c for c in filename if c.isalnum() or c in " ,.;_-[]@#$%€").rstrip()
-
-
-def get_title_meta(title, serie_id, service_id, genre):
-    try:
-        _t = unescape(title).replace("\n", " ").replace("\r", " ").strip()
-    except TypeError:
-        _t = title.replace("\n", " ").replace("\r", " ").strip()
-    full_title = re.sub(r"(\d+)/(\d+)", r"\1\2", _t)
-
-    if title_select_regex.match(full_title):
-        x = title_1_regex.search(full_title)
-    else:
-        x = title_2_regex.search(full_title)
-
-    is_serie = False
-    season = episode = 0
-    serie = episode_title = ""
-
-    if x and x.groups():
-        _x = x.groups()
-        serie = _x[0] if _x[0] else full_title.split(" - ")[0] if " - " in full_title else full_title
-        season = int(_x[1]) if _x[1] else season
-        episode = int(_x[2]) if _x[2] else episode
-        episode_title = _x[3] if _x[3] else episode_title
-
-        is_serie = bool(serie and episode)
-        serie, episode_title = (x.strip(":-/ ") for x in (serie, episode_title))
-        serie = re.sub(r"([^,.])[,.]$", r"\1", serie)
-        if serie.lower() == episode_title.lower():
-            episode_title = ""
-
-        if all((serie, season, episode)):
-            full_title = "%s S%02dE%02d" % (serie, season, episode)
-            if episode_title:
-                if episode_regex.match(episode_title):
-                    episode_title = ""
-                else:
-                    full_title += f" - {episode_title}"
-
-    elif serie_id:
-        is_serie = True
-        if " - " in full_title:
-            serie, episode_title = full_title.split(" - ", 1)
-        else:
-            serie = full_title
-
-    # Boing (578) & MEGA (2863); Movies (genre[0] == "1")
-    if all((service_id in (578, 2863), ": " in full_title, not episode_title, genre[0] != "1")):
-        _match = re.match(r"^([^/]+): ([^a-z].+)", full_title)
-        if _match:
-            is_serie = True
-            serie, episode_title = (x.strip(":-/ ") for x in _match.groups())
-            serie = re.sub(r"([^,.])[,.]$", r"\1", serie)
-            if season and episode:
-                episode_title = re.sub(r" S\d+E\d+$", "", episode_title)
-                full_title = "%s S%02dE%02d - %s" % (serie, season, episode, episode_title)
-            else:
-                if not episode:
-                    _match = episode_regex.match(episode_title)
-                    if _match:
-                        episode = int(_match.groups()[0])
-                full_title = "%s - %s" % (serie, episode_title)
-
-    for item in (episode_title, full_title, serie):
-        item = re.sub(r"\s+", " ", item)
-
-    return {
-        "full_title": full_title,
-        "serie": serie,
-        "season": season,
-        "episode": episode,
-        "episode_title": episode_title,
-        "is_serie": is_serie,
-    }
 
 
 async def get_vod_info(session, endpoint, channel, cloud, program, _log):
