@@ -228,7 +228,9 @@ async def postprocess(vod_info):
         # Only the main cover, to embed in the video file
         if get_cover:
             try:
-                async with aiofiles.open(os.path.join(CACHE_DIR, f"{_args.program}.json"), encoding="utf8") as f:
+                async with aiofiles.open(
+                    os.path.join(CACHE_DIR, "programs", f"{_args.program}.json"), encoding="utf8"
+                ) as f:
                     metadata = ujson.loads(await f.read())["data"]
             except (FileNotFoundError, OSError, PermissionError, TypeError, ValueError) as ex:
                 raise RecordingError(f"Extended info not found => {repr(ex)}")
@@ -825,7 +827,7 @@ if __name__ == "__main__":
             log.error("RECORDINGS path not set")
             sys.exit(1)
 
-        CACHE_DIR = os.path.join(_conf["HOME"], ".xmltv/cache/programs")
+        CACHE_DIR = _conf["CACHE_DIR"]
         COMSKIP = (_args.comskip or _args.comskipcut) and _conf["COMSKIP"]
         COMSKIP_LOG = os.path.join(_conf["HOME"], "comskip.log") if COMSKIP else None
         NO_SUBS = _conf["NO_SUBS"]
@@ -833,14 +835,14 @@ if __name__ == "__main__":
         RECORDINGS_TMP = _conf["RECORDINGS_TMP"]
         RECORDINGS_TRANSCODE_INPUT = _conf["RECORDINGS_TRANSCODE_INPUT"]
         RECORDINGS_TRANSCODE_OUTPUT = _conf["RECORDINGS_TRANSCODE_OUTPUT"]
-        TMP_DIR = os.getenv("TMP", os.getenv("TMPDIR", "/tmp"))  # nosec B108
+        TMP_DIR = _conf["TMP_DIR"]
 
         CHP_EXT = ".ffmeta"
         TMP_EXT = ".tmp"
         TMP_EXT2 = ".tmp2"
         VID_EXT = ".mkv" if _args.mkv else ".ts"
 
-        if not os.path.exists(os.path.join(CACHE_DIR, f"{_args.program}.json")):
+        if not os.path.exists(os.path.join(CACHE_DIR, "programs", f"{_args.program}.json")):
             log.error(f"No metadata exists for [{_args.channel:4}] [{_args.program}]")
             sys.exit(1)
 
