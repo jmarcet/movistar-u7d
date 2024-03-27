@@ -952,7 +952,7 @@ async def timers_check(delay=0):
             stored_filenames = (program["filename"] for program in _RECORDINGS[channel_id].values())
             for timer_match in _timers["match"][str_channel_id]:
                 comskip = 2 if _timers.get("comskipcut") else 1 if _timers.get("comskip") else 0
-                days = fixed_timer = keep = repeat = None
+                days = delayed = fixed_timer = fresh = keep = repeat = None
                 lang = deflang
                 msg = ""
                 if " ## " in timer_match:
@@ -979,6 +979,12 @@ async def timers_check(delay=0):
                         elif res == "comskipcut":
                             comskip = 2
 
+                        elif res.startswith("delay"):
+                            delayed = True
+
+                        elif res == "fresh":
+                            fresh = True
+
                         elif res.startswith("keep"):
                             keep = int(res.lstrip("keep").rstrip("d"))
                             keep = -keep if res.endswith("d") else keep
@@ -993,7 +999,15 @@ async def timers_check(delay=0):
                             lang = res
 
                 vo = lang == "VO"
-                tss = filter(lambda ts: ts <= _last_epg + 3600, reversed(_EPGDATA[channel_id]))
+                if delayed:
+                    tss = filter(lambda ts: ts <= _last_epg - 3600 * 12, reversed(_EPGDATA[channel_id].keys()))
+                elif fresh:
+                    tss = filter(
+                        lambda ts: ts <= _last_epg + 3600 and _EPGDATA[channel_id][ts]["end"] > int(time.time()),
+                        reversed(_EPGDATA[channel_id].keys()),
+                    )
+                else:
+                    tss = filter(lambda ts: ts <= _last_epg + 3600, reversed(_EPGDATA[channel_id].keys()))
 
                 if fixed_timer:
                     # fixed timers are checked daily, so we want today's and all of last week
