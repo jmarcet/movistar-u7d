@@ -146,8 +146,11 @@ class Cache:
 
     @staticmethod
     def save(cfile, data, sort_keys=False):
-        with open(os.path.join(CACHE_DIR, cfile), "w", encoding="utf8") as f:
+        _file = os.path.join(CACHE_DIR, cfile)
+        with open(_file + ".tmp", "w", encoding="utf8") as f:
             json.dump({"data": data}, f, ensure_ascii=False, indent=4, sort_keys=sort_keys)
+        remove(_file)
+        os.rename(_file + ".tmp", _file)
 
     @staticmethod
     def save_channels_data(xdata):
