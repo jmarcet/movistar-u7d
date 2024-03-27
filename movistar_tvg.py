@@ -30,7 +30,7 @@ from html import escape, unescape
 from json import JSONDecodeError
 from threading import current_thread, main_thread
 
-from mu7d import DATEFMT, END_POINTS_FILE, FMT, UA, UA_U7D, WIN32, YEAR_SECONDS, IPTVNetworkError
+from mu7d import DATEFMT, END_POINTS_FILE, FMT, UA, WIN32, YEAR_SECONDS, IPTVNetworkError
 from mu7d import add_logfile, get_end_point, get_iptv_ip, get_local_info, keys_to_int, mu7d_config, remove
 from mu7d import _version
 
@@ -100,7 +100,7 @@ class Cache:
             with open(os.path.join(CACHE_DIR, cfile), "r", encoding="utf8") as f:
                 return json.loads(f.read(), object_hook=keys_to_int)["data"]
         except (FileNotFoundError, JSONDecodeError, OSError, PermissionError, TypeError, ValueError):
-            pass
+            return {}
 
     @staticmethod
     def load_config():
@@ -108,34 +108,7 @@ class Cache:
 
     @staticmethod
     async def load_epg():
-        data = Cache.load("epg.json")
-        now = datetime.now()
-        remote_cache_ts = int(now.replace(hour=0, minute=0, second=0).timestamp())
-        if now.hour == 0 and now.minute < 59:
-            remote_cache_ts -= 3600 * 24
-        if not data or int(os.path.getmtime(os.path.join(CACHE_DIR, "epg.json"))) < remote_cache_ts:
-            async with aiohttp.ClientSession(headers={"User-Agent": UA_U7D}) as _SESSION:
-                for i in range(5):
-                    log.info("Intentando obtener Caché de EPG actualizada...")
-                    try:
-                        async with _SESSION.get("https://openwrt.marcet.info/epg.json") as r:
-                            if r.status == 200:
-                                data = json.loads(await r.text(), object_hook=keys_to_int)["data"]
-                                log.info("Obtenida Caché de EPG actualizada")
-                                break
-                            if i < 4:
-                                log.warning(f"No ha habido suerte. Reintentando en 15s... [{i + 2} / 5]")
-                                await asyncio.sleep(15)
-                    except (ClientConnectionError, ClientOSError, ServerDisconnectedError):
-                        if i < 4:
-                            log.warning(f"No ha habido suerte. Reintentando en 15s... [{i + 2} / 5]")
-                            await asyncio.sleep(15)
-            if not data:
-                log.warning(
-                    "Caché de EPG no encontrada. "
-                    "Tendrá que esperar unos días para poder acceder a todo el archivo de los útimos 7 días."
-                )
-        return data or {}
+        return Cache.load("epg.json")
 
     @staticmethod
     def load_epg_extended_info(pid):
