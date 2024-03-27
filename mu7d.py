@@ -458,6 +458,12 @@ def remove(*items):
             pass
 
 
+def rename(src, dst):
+    if WIN32 and os.path.exists(dst):
+        os.remove(dst)
+    os.rename(src, dst)
+
+
 def utime(timestamp, *items):
     [os.utime(item, (-1, timestamp)) for item in items if os.access(item, os.W_OK)]
 

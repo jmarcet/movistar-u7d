@@ -39,7 +39,7 @@ from mu7d import DATEFMT, DIV_ONE, DIV_TWO, DROP_KEYS, EXT, FMT, NFO_EXT
 from mu7d import UA_U7D, VID_EXTS, WIN32, YEAR_SECONDS, IPTVNetworkError
 from mu7d import add_logfile, anchored_regex, cleanup_handler, find_free_port, get_iptv_ip, get_local_info
 from mu7d import get_safe_filename, glob_safe, keys_to_int, launch, mu7d_config, ongoing_vods, pp_xml, remove
-from mu7d import utime, _version
+from mu7d import rename, utime, _version
 
 
 app = Sanic("movistar_epg")
@@ -693,8 +693,7 @@ async def reindex_recordings():
                     xml = xmltodict.unparse({"metadata": dict(sorted(nfo.items()))}, pretty=True)
                     async with aiofiles.open(nfo_file + ".tmp", "w", encoding="utf8") as f:
                         await f.write(xml)
-                    remove(nfo_file)
-                    os.rename(nfo_file + ".tmp", nfo_file)
+                    rename(nfo_file + ".tmp", nfo_file)
             if stale:
                 log.warning(f'Wrong channel_id [{channel_id:4}] in nfo => Skipping "{filename}"')
                 continue
@@ -1111,8 +1110,7 @@ async def update_recordings(channel_id=None):
         }
         async with aiofiles.open(recordings_data + ".tmp", "w", encoding="utf8") as f:
             await f.write(ujson.dumps(sorted_recordings, ensure_ascii=False, indent=4))
-        remove(recordings_data)
-        os.rename(recordings_data + ".tmp", recordings_data)
+        rename(recordings_data + ".tmp", recordings_data)
 
     await update_epg_local()
 
@@ -1174,8 +1172,7 @@ async def update_recordings(channel_id=None):
             else:
                 await f.write("\n".join(_dump_files(_get_files_reversed(), latest=True)) + "\n")
                 await f.write("\n".join(_dump_files(_get_files())))
-        remove(m3u_file)
-        os.rename(m3u_file + ".tmp", m3u_file)
+        rename(m3u_file + ".tmp", m3u_file)
 
         if ch_id:
             utime(max(_RECORDINGS[ch_id].keys()), *(m3u_file, os.path.join(RECORDINGS, _dir)))
@@ -1364,8 +1361,7 @@ async def upgrade_recordings():
             xml = xmltodict.unparse({"metadata": dict(sorted(nfo.items()))}, pretty=True)
             async with aiofiles.open(nfo_file + ".tmp", "w", encoding="utf8") as f:
                 await f.write(xml)
-            remove(nfo_file)
-            os.rename(nfo_file + ".tmp", nfo_file)
+            rename(nfo_file + ".tmp", nfo_file)
             utime(mtime, nfo_file)
 
     if any((covers, items, names, wrong)):

@@ -31,7 +31,7 @@ from json import JSONDecodeError
 from threading import current_thread, main_thread
 
 from mu7d import DATEFMT, END_POINTS_FILE, FMT, UA, WIN32, YEAR_SECONDS, IPTVNetworkError
-from mu7d import add_logfile, get_end_point, get_iptv_ip, get_local_info, keys_to_int, mu7d_config, remove
+from mu7d import add_logfile, get_end_point, get_iptv_ip, get_local_info, keys_to_int, mu7d_config, rename
 from mu7d import _version
 
 
@@ -149,8 +149,7 @@ class Cache:
         _file = os.path.join(CACHE_DIR, cfile)
         with open(_file + ".tmp", "w", encoding="utf8") as f:
             json.dump({"data": data}, f, ensure_ascii=False, indent=4, sort_keys=sort_keys)
-        remove(_file)
-        os.rename(_file + ".tmp", _file)
+        rename(_file + ".tmp", _file)
 
     @staticmethod
     def save_channels_data(xdata):
@@ -1224,16 +1223,14 @@ async def tvg_main():
                     block = "\n".join(dom) + "\n"
                     f.write(block)
                     f_z.write(block)
-            remove(args.guide, args.guide + ".gz")
-            os.rename(args.guide + ".tmp", args.guide)
-            os.rename(args.guide + ".gz" + ".tmp", args.guide + ".gz")
+            rename(args.guide + ".tmp", args.guide)
+            rename(args.guide + ".gz" + ".tmp", args.guide + ".gz")
         elif any((args.cloud_recordings, args.local_recordings)):
             xml_file = args.cloud_recordings or args.local_recordings
             with open(xml_file + ".tmp", "w", encoding="utf8") as f:
                 async for dom in _XMLTV.generate_xml(epg, bool(args.local_m3u or args.local_recordings)):
                     f.write("\n".join(dom) + "\n")
-            remove(xml_file)
-            os.rename(xml_file + ".tmp", xml_file)
+            rename(xml_file + ".tmp", xml_file)
 
         if not any((args.cloud_recordings, args.local_recordings)):
             _t = str(timedelta(seconds=round(time.time() - _time_start)))
