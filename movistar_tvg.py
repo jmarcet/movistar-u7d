@@ -321,7 +321,6 @@ class MulticastIPTV:
     @staticmethod
     def __fill_cloud_event(data, meta, pid, timestamp, year):
         return {
-            "age_rating": data.get("ageRatingID"),
             "duration": data["duration"],
             "end": int(str(data["endTime"])[:-3]),
             "episode": meta["episode"] or data.get("episode"),
@@ -600,7 +599,6 @@ class MulticastIPTV:
                 "duration": duration,
                 "end": start + duration,
                 "genre": genre,
-                "age_rating": struct.unpack("B", epg_dt[24:25])[0],
                 "full_title": meta_data["full_title"],
                 "serie_id": serie_id,
                 "episode": meta_data["episode"] or episode,
