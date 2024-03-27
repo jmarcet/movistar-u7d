@@ -504,8 +504,11 @@ async def postprocess(vod_info):
         metadata_dir = os.path.join(dirname, "metadata")
 
         utime(mtime, _filename + VID_EXT)
+        if os.path.exists(metadata_dir):
+            newest_ts = os.path.getmtime(sorted(glob_safe(f"{metadata_dir}/*"), key=os.path.getmtime)[-1])
+            utime(newest_ts, metadata_dir)
         newest_ts = os.path.getmtime(sorted(glob_safe(f"{dirname}/*{VID_EXT}"), key=os.path.getmtime)[-1])
-        utime(newest_ts, metadata_dir, dirname)
+        utime(newest_ts, dirname)
 
         if _args.index:
             archive_url = f"{EPG_URL}/archive/{_args.channel}/{_args.program}"

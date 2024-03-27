@@ -661,7 +661,9 @@ async def reindex_recordings():
     log.warning("REINDEXING RECORDINGS")
     _recordings = defaultdict(dict)
 
-    for nfo_file in sorted(glob(f"{RECORDINGS}/[0-9][0-9][0-9]. */**/*{NFO_EXT}", recursive=True)):
+    for nfo_file in sorted(
+        glob(f"{RECORDINGS}/[0-9][0-9][0-9]. */**/*{NFO_EXT}", recursive=True), key=os.path.getmtime
+    ):
         basename = nfo_file[:-13]
         if not does_recording_exist(basename):
             log.error(f'No recording found: "{basename + VID_EXT}" {nfo_file=}')
