@@ -818,16 +818,16 @@ async def timers_check(delay=0):
                 _t_timers_next = app.add_task(timers_check(delay=delay), name=f"{ts}")
 
     def _filter_recorded(timestamps):
-        nonlocal channel_id, recs, stored_filenames
+        nonlocal channel_id, stored_filenames
         return filter(
-            lambda ts: channel_id not in recs
-            or ts not in recs[channel_id]
+            lambda ts: channel_id not in _RECORDINGS
+            or ts not in _RECORDINGS[channel_id]
             or get_recording_name(channel_id, ts) not in stored_filenames,
             timestamps,
         )
 
     async def _record(cloud=False):
-        nonlocal channel_id, comskip, keep, kept, nr_procs, ongoing, queued, recs, repeat, timestamp, vo
+        nonlocal channel_id, comskip, keep, kept, nr_procs, ongoing, queued, repeat, timestamp, vo
 
         if timestamp in queued[channel_id]:
             return
@@ -844,10 +844,15 @@ async def timers_check(delay=0):
             if f"{channel_id} {pid} -b {timestamp} " in vod or f"{channel_id} {pid} -b " not in vod:
                 return
 
-        if channel_id in recs:
-            r = tuple(filter(lambda ts: filename.startswith(recs[channel_id][ts]["filename"]), recs[channel_id]))
+        if channel_id in _RECORDINGS:
+            r = tuple(
+                filter(
+                    lambda ts: filename.startswith(_RECORDINGS[channel_id][ts]["filename"]),
+                    _RECORDINGS[channel_id],
+                )
+            )
             # only repeat a recording when title changed
-            if r and not len(filename) > len(recs[channel_id][r[0]]["filename"]):
+            if r and not len(filename) > len(_RECORDINGS[channel_id][r[0]]["filename"]):
                 # or asked to and new event is more recent than the archived
                 if not repeat or timestamp <= r[0]:
                     return
@@ -917,102 +922,100 @@ async def timers_check(delay=0):
         await log_network_saturated(nr_procs)
         return
 
-    async with recordings_lock:
-        recs = _RECORDINGS.copy()
-
     ongoing = await ongoing_vods(_all=True)  # we want to check against all ongoing vods, also in pp
     log.debug("Ongoing VODs: |%s|" % ongoing)
 
     keep = repeat = False
     kept, next_timers, queued = defaultdict(dict), [], defaultdict(dict)
-
-    if sync_cloud:
-        log.debug("Syncing cloud recordings")
-        vo = _timers.get("sync_cloud_language", "") == "VO"
-        for channel_id in _CLOUD:
-            stored_filenames = (program["filename"] for program in recs[channel_id].values())
-            channel_name = _CHANNELS[channel_id]["name"]
-            log.debug("Checking Cloud: [%4d] [%s]" % (channel_id, channel_name))
-            for timestamp in _filter_recorded(_CLOUD[channel_id]):
-                if await _record(cloud=True):
-                    return _exit()
-
-    for str_channel_id in _timers.get("match", {}):
-        channel_id = int(str_channel_id)
-        if channel_id not in _EPGDATA:
-            log.warning(f"Channel [{channel_id}] in timers.conf not found in EPG")
-            continue
-        channel_name = _CHANNELS[channel_id]["name"]
-        log.debug("Checking EPG  : [%4d] [%s]" % (channel_id, channel_name))
-
-        stored_filenames = (program["filename"] for program in recs[channel_id].values())
-        for timer_match in _timers["match"][str_channel_id]:
-            comskip = 2 if _timers.get("comskipcut") else 1 if _timers.get("comskip") else 0
-            days = fixed_timer = keep = repeat = None
-            lang = deflang
-            msg = ""
-            if " ## " in timer_match:
-                match_split = timer_match.split(" ## ")
-                timer_match = match_split[0]
-                for res in (res.lower().strip() for res in match_split[1:]):
-                    if res[0].isnumeric():
-                        try:
-                            hour, minute = map(int, res.split(":"))
-                            _ts = datetime.now().replace(hour=hour, minute=minute, second=0).timestamp()
-                            fixed_timer = int(_ts)
-                            msg = " [%02d:%02d] [%d]" % (hour, minute, fixed_timer)
-                        except ValueError:
-                            _msg = f'Parsing failed: [{channel_id}] [{channel_name}] [{timer_match}] -> "{res}"'
-                            log.warning(_msg)
-
-                    elif res[0] == "@":
-                        days = dict(map(lambda x: (x[0], x[1] == "x"), enumerate(res[1:8], start=1)))
-
-                    elif res == "comskip":
-                        comskip = 1
-
-                    elif res == "comskipcut":
-                        comskip = 2
-
-                    elif res.startswith("keep"):
-                        keep = int(res.lstrip("keep").rstrip("d"))
-                        keep = -keep if res.endswith("d") else keep
-
-                    elif res == "nocomskip":
-                        comskip = 0
-
-                    elif res == "repeat":
-                        repeat = True
-
-                    else:
-                        lang = res
-
-            vo = lang == "VO"
-            tss = filter(lambda ts: ts <= _last_epg + 3600, reversed(_EPGDATA[channel_id]))
-
-            if fixed_timer:
-                # fixed timers are checked daily, so we want today's and all of last week
-                fixed_timestamps = [fixed_timer] if fixed_timer <= _last_epg + 3600 else []
-                fixed_timestamps += [fixed_timer - i * 24 * 3600 for i in range(1, 8)]
-
-                found_ts = []
-                for ts in tss:
-                    for fixed_ts in fixed_timestamps:
-                        if abs(ts - fixed_ts) <= 1500:
-                            if not days or days.get(datetime.fromtimestamp(ts).isoweekday()):
-                                found_ts.append(ts)
-                            break
-                tss = found_ts
-
-            elif days:
-                tss = filter(lambda ts: days.get(datetime.fromtimestamp(ts).isoweekday()), tss)
-
-            log.debug("Checking timer: [%4d] [%s] [%s]%s" % (channel_id, channel_name, timer_match, msg))
-            for timestamp in _filter_recorded(tss):
-                _title = _EPGDATA[channel_id][timestamp]["full_title"]
-                if re.search(_clean(timer_match), _clean(_title), re.IGNORECASE):
-                    if await _record():
+    async with recordings_lock:
+        if sync_cloud:
+            log.debug("Syncing cloud recordings")
+            vo = _timers.get("sync_cloud_language", "") == "VO"
+            for channel_id in _CLOUD:
+                stored_filenames = (program["filename"] for program in _RECORDINGS[channel_id].values())
+                channel_name = _CHANNELS[channel_id]["name"]
+                log.debug("Checking Cloud: [%4d] [%s]" % (channel_id, channel_name))
+                for timestamp in _filter_recorded(_CLOUD[channel_id]):
+                    if await _record(cloud=True):
                         return _exit()
+
+        for str_channel_id in _timers.get("match", {}):
+            channel_id = int(str_channel_id)
+            if channel_id not in _EPGDATA:
+                log.warning(f"Channel [{channel_id}] in timers.conf not found in EPG")
+                continue
+            channel_name = _CHANNELS[channel_id]["name"]
+            log.debug("Checking EPG  : [%4d] [%s]" % (channel_id, channel_name))
+
+            stored_filenames = (program["filename"] for program in _RECORDINGS[channel_id].values())
+            for timer_match in _timers["match"][str_channel_id]:
+                comskip = 2 if _timers.get("comskipcut") else 1 if _timers.get("comskip") else 0
+                days = fixed_timer = keep = repeat = None
+                lang = deflang
+                msg = ""
+                if " ## " in timer_match:
+                    match_split = timer_match.split(" ## ")
+                    timer_match = match_split[0]
+                    for res in (res.lower().strip() for res in match_split[1:]):
+                        if res[0].isnumeric():
+                            try:
+                                hour, minute = map(int, res.split(":"))
+                                _ts = datetime.now().replace(hour=hour, minute=minute, second=0).timestamp()
+                                fixed_timer = int(_ts)
+                                msg = " [%02d:%02d] [%d]" % (hour, minute, fixed_timer)
+                            except ValueError:
+                                log.warning(
+                                    f'Parsing failed: [{channel_id}] [{channel_name}] [{timer_match}] -> "{res}"'
+                                )
+
+                        elif res[0] == "@":
+                            days = dict(map(lambda x: (x[0], x[1] == "x"), enumerate(res[1:8], start=1)))
+
+                        elif res == "comskip":
+                            comskip = 1
+
+                        elif res == "comskipcut":
+                            comskip = 2
+
+                        elif res.startswith("keep"):
+                            keep = int(res.lstrip("keep").rstrip("d"))
+                            keep = -keep if res.endswith("d") else keep
+
+                        elif res == "nocomskip":
+                            comskip = 0
+
+                        elif res == "repeat":
+                            repeat = True
+
+                        else:
+                            lang = res
+
+                vo = lang == "VO"
+                tss = filter(lambda ts: ts <= _last_epg + 3600, reversed(_EPGDATA[channel_id]))
+
+                if fixed_timer:
+                    # fixed timers are checked daily, so we want today's and all of last week
+                    fixed_timestamps = [fixed_timer] if fixed_timer <= _last_epg + 3600 else []
+                    fixed_timestamps += [fixed_timer - i * 24 * 3600 for i in range(1, 8)]
+
+                    found_ts = deque()
+                    for ts in tss:
+                        for fixed_ts in fixed_timestamps:
+                            if abs(ts - fixed_ts) <= 1500:
+                                if not days or days.get(datetime.fromtimestamp(ts).isoweekday()):
+                                    found_ts.append(ts)
+                                break
+                    tss = found_ts
+
+                elif days:
+                    tss = filter(lambda ts: days.get(datetime.fromtimestamp(ts).isoweekday()), tss)
+
+                log.debug("Checking timer: [%4d] [%s] [%s]%s" % (channel_id, channel_name, timer_match, msg))
+                for timestamp in _filter_recorded(tss):
+                    _title = _EPGDATA[channel_id][timestamp]["full_title"]
+                    if re.search(_clean(timer_match), _clean(_title), re.IGNORECASE):
+                        if await _record():
+                            return _exit()
 
     _exit()
 
