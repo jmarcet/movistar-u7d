@@ -8,7 +8,6 @@ import argparse
 import asyncio
 import asyncio_dgram
 import codecs
-import glob
 import gzip
 import json
 import logging
@@ -26,6 +25,7 @@ from contextlib import closing
 from datetime import date, datetime, timedelta
 from defusedxml.ElementTree import ParseError, fromstring
 from filelock import FileLock, Timeout
+from glob import iglob
 from html import escape, unescape
 from json import JSONDecodeError
 from threading import current_thread, main_thread
@@ -84,7 +84,7 @@ class Cache:
 
     @staticmethod
     def clean():
-        for file in glob.glob(os.path.join(CACHE_DIR, "programs", "*.json")):
+        for file in iglob(os.path.join(CACHE_DIR, "programs", "*.json")):
             try:
                 with open(file, encoding="utf8") as f:
                     _data = json.loads(f.read(), object_hook=keys_to_int)["data"]
