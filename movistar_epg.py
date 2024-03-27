@@ -803,7 +803,7 @@ async def timers_check(delay=0):
     await asyncio.sleep(delay)
 
     def _clean(string):
-        return unicodedata.normalize("NFKD", string).encode("ASCII", "ignore").decode("utf8")
+        return unicodedata.normalize("NFKD", string).encode("ASCII", "ignore").decode("utf8").strip()
 
     def _exit():
         global _KEEP, _t_timers_next
