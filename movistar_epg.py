@@ -418,19 +418,21 @@ async def handle_record_program(request, channel_id, url):
     )
 
 
+@app.get("/reindex_recordings", name="recordings_reindex")
+@app.get("/reload_recordings", name="recordings_reload")
+async def handle_recordings(request):
+    if not RECORDINGS:
+        return response.json({"status": "RECORDINGS not configured"}, 404)
+
+    app.add_task(reindex_recordings() if request.route.path == "reindex_recordings" else reload_recordings())
+    _m = "Reindex" if request.route.path == "reindex_recordings" else "Reload"
+    return response.json({"status": f"Recordings {_m} Queued"}, 200)
+
+
 @app.get("/reload_epg")
 async def handle_reload_epg(request):
     app.add_task(reload_epg())
     return response.json({"status": "EPG Reload Queued"}, 200)
-
-
-@app.get("/reload_recordings")
-async def handle_reload_recordings(request):
-    if not RECORDINGS:
-        return response.json({"status": "RECORDINGS not configured"}, 404)
-
-    app.add_task(reload_recordings())
-    return response.json({"status": "Recordings Reload Queued"}, 200)
 
 
 @app.get("/timers_check")
