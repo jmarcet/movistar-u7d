@@ -429,10 +429,12 @@ async def handle_recordings(request):
     return response.json({"status": f"Recordings {_m} Queued"}, 200)
 
 
-@app.get("/reload_epg")
+@app.get("/reload_epg", name="epg_reload")
+@app.get("/update_epg", name="epg_update")
 async def handle_reload_epg(request):
-    app.add_task(reload_epg())
-    return response.json({"status": "EPG Reload Queued"}, 200)
+    app.add_task(reload_epg() if request.route.path == "reload_epg" else update_epg())
+    _m = "Reload" if request.route.path == "reload_epg" else "Update"
+    return response.json({"status": f"EPG {_m} Queued"}, 200)
 
 
 @app.get("/timers_check")
@@ -456,12 +458,6 @@ async def handle_timers_check(request):
     _t_timers = app.add_task(timers_check(delay=delay))
 
     return response.json({"status": "Timers check queued"}, 200)
-
-
-@app.get("/update_epg")
-async def handle_update_epg(request):
-    app.add_task(update_epg())
-    return response.json({"status": "EPG Update Queued"}, 200)
 
 
 async def kill_vod():
