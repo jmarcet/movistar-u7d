@@ -29,7 +29,7 @@ from filelock import FileLock
 from mu7d import BUFF, CHUNK, DATEFMT, DIV_LOG, DROP_KEYS, EPG_URL, FMT
 from mu7d import NFO_EXT, UA, URL_COVER, WIN32, YEAR_SECONDS, IPTVNetworkError
 from mu7d import add_logfile, find_free_port, get_end_point, get_iptv_ip, get_safe_filename
-from mu7d import get_vod_info, glob_safe, mu7d_config, ongoing_vods, remove, utime, _version
+from mu7d import get_vod_info, glob_safe, mu7d_config, ongoing_vods, remove, rename, utime, _version
 
 
 log = logging.getLogger("VOD")
@@ -78,8 +78,7 @@ def _archive_recording():
         os.makedirs(path)
 
     if not RECORDINGS_TMP:
-        _cleanup(VID_EXT)
-        os.rename(_tmpname + TMP_EXT, _filename + VID_EXT)
+        rename(_tmpname + TMP_EXT, _filename + VID_EXT)
 
     else:
         remove(_filename + VID_EXT, _filename + ".jpg", _filename + ".png")
@@ -395,8 +394,7 @@ async def postprocess(vod_info):
             COMSKIP = None
             _cleanup(TMP_EXT2)
         else:
-            _cleanup(TMP_EXT)
-            os.rename(_tmpname + TMP_EXT2, _tmpname + TMP_EXT)
+            rename(_tmpname + TMP_EXT2, _tmpname + TMP_EXT)
 
     async def _step_3():
         global COMSKIP
@@ -478,8 +476,7 @@ async def postprocess(vod_info):
             if proc.returncode:
                 _cleanup(TMP_EXT2)
             elif os.path.exists(_tmpname + TMP_EXT2):
-                _cleanup(TMP_EXT)
-                os.rename(_tmpname + TMP_EXT2, _tmpname + TMP_EXT)
+                rename(_tmpname + TMP_EXT2, _tmpname + TMP_EXT)
 
             if _args.comskipcut or _args.mkv:
                 _cleanup(CHP_EXT)
