@@ -209,6 +209,7 @@ async def handle_flussonic(request, url, channel_id=None, channel_name=None, clo
     event = {
         "channel_id": channel_id,
         "cloud": cloud,
+        "local": local,
         "id": _start,
         "lat": 0,
         "url": url,
@@ -232,12 +233,7 @@ async def handle_flussonic(request, url, channel_id=None, channel_name=None, clo
     if local:
         if os.path.exists(program_id):
             if " Chrome/" in ua or not program_id.endswith(".ts"):
-                prom = app.add_task(send_prom_event(event))
-                try:
-                    return await transcode(request, event, filename=program_id, offset=offset)
-                finally:
-                    prom.cancel()
-                    await prom
+                return await transcode(request, event, filename=program_id, offset=offset)
 
             _stat = await aiofiles.os.stat(program_id)
             bytepos = round(offset * _stat.st_size / duration)
@@ -267,8 +263,9 @@ async def handle_flussonic(request, url, channel_id=None, channel_name=None, clo
         raise ServiceUnavailable("Network Saturated")
 
     client_port = find_free_port(_IPTV)
-    info = await get_vod_info(request.app.ctx.vod_client, request.app.ctx.ep, channel_id, cloud, program_id, log)
+    info = await get_vod_info(request.app.ctx.vod_client, request.app.ctx.ep, channel_id, cloud, program_id)
     if not info:
+        await _SESSION.post(f"{EPG_URL}/prom_event/na", json=event)
         raise NotFound(f"Requested URL {request.path} not found")
 
     args = VodArgs(channel_id, program_id, request.ip, client_port, offset, cloud)
@@ -518,16 +515,13 @@ async def network_saturated():
 
 async def send_prom_event(event):
     await asyncio.sleep(0.05)
-    event["msg"] = "%-95s%9s:" % (event["msg"], f"[{event['lat']:.4f}s]" if event["lat"] else "")
-
     try:
         try:
             await _SESSION.post(f"{EPG_URL}/prom_event/add", json={**event})
             await asyncio.sleep(YEAR_SECONDS)
         except CancelledError:
-            event["msg"] = event["msg"].replace("Playing", "Stopped")
             await _SESSION.post(
-                f"{EPG_URL}/prom_event/remove", json={**event, "offset": time.time() - event["id"]}
+                f"{EPG_URL}/prom_event/remove", json={**event, "offset": int(time.time() - event["id"])}
             )
     except (ClientConnectionError, ClientOSError, ServerDisconnectedError):
         pass

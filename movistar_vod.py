@@ -351,7 +351,7 @@ async def postprocess(vod_info):
 
         cmd = ["ffmpeg"] + RECORDINGS_TRANSCODE_INPUT + ["-i", _tmpname + TMP_EXT]
 
-        _info = await get_vod_info(_SESSION_CLOUD, _END_POINT, _args.channel, _args.cloud, _args.program, log)
+        _info = await get_vod_info(_SESSION_CLOUD, _END_POINT, _args.channel, _args.cloud, _args.program)
         if not _info:
             log.warning("POSTPROCESS #2  - Could not verify event has not shifted")
         else:
@@ -721,14 +721,17 @@ async def Vod(args=None, vod_client=None, vod_info=None):
         _args = args
 
     if not vod_info:
-        vod_info = await get_vod_info(_SESSION_CLOUD, _END_POINT, _args.channel, _args.cloud, _args.program, log)
+        vod_info = await get_vod_info(_SESSION_CLOUD, _END_POINT, _args.channel, _args.cloud, _args.program)
 
     try:
-        if vod_info:
-            log.debug("[%4s] [%d]: vod_info=%s" % (str(_args.channel), _args.program, str(vod_info)))
-            # Start the RTSP Session
-            rtsp_t = asyncio.create_task(rtsp(vod_info))
-            await rtsp_t
+        if not vod_info:
+            log.error(f"[{_args.channel:4}] [{_args.program}]: NOT AVAILABLE")
+            return
+
+        log.debug("[%4s] [%d]: vod_info=%s" % (str(_args.channel), _args.program, str(vod_info)))
+        # Start the RTSP Session
+        rtsp_t = asyncio.create_task(rtsp(vod_info))
+        await rtsp_t
 
     finally:
         if __name__ == "__main__":

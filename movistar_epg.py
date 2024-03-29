@@ -531,8 +531,11 @@ async def network_saturation():
 
 
 async def prom_event(request, method):
+    if method not in ("add", "remove", "na"):
+        return
+
     cloud = request.json.get("cloud", False)
-    local = not request.json["lat"]
+    local = request.json.get("local", False)
 
     _event = get_program_id(request.json["channel_id"], request.json.get("url"), cloud, local)
     if not local:
@@ -552,23 +555,38 @@ async def prom_event(request, method):
             request.json["id"],
         ).observe(float(request.json["lat"]))
 
-    else:
+    elif method == "remove":
+        for metric in filter(
+            lambda _metric: request.json["method"] in _metric and str(request.json["id"]) in _metric,
+            request.app.ctx.metrics["RQS_LATENCY"]._metrics,
+        ):
+            request.app.ctx.metrics["RQS_LATENCY"].remove(*metric)
+            break
+
         start, end = _event["offset"], _event["offset"] + request.json["offset"]
-        offset = "[%d-%d/%d]" % (start, end, _event["duration"])
 
-        for _metric in request.app.ctx.metrics["RQS_LATENCY"]._metrics:
-            if request.json["method"] in _metric and str(request.json["id"]) in _metric:
-                request.app.ctx.metrics["RQS_LATENCY"].remove(*_metric)
-                break
-
-        if local:
+        if not request.json["lat"] or start == end:
             return
 
-    msg = f'{request.json["msg"]} [{request.json["channel_id"]:4}] '
-    msg += f'[{_event["program_id"]}] ' if not local else "[00000000] "
-    msg += f'[{_event["start"]}] [{_event["channel"]}] "{_epg["full_title"]}" _ {offset}'
+        offset = "[%d-%d/%d]" % (start, end, _event["duration"])
+        request.json["msg"] = request.json["msg"].replace("Playing", "Stopped")
 
-    logging.getLogger("U7D").info(msg)
+    else:
+        offset = "[%d/%d]" % (_event["offset"], _event["duration"])
+        request.json["msg"] = request.json["msg"].replace("Playing", "NA     ")
+
+    msg = '%-95s%9s: [%4d] [%08d] [%d] [%s] "%s" _ %s' % (
+        request.json["msg"],
+        f'[{request.json["lat"]:.4f}s]' if request.json["lat"] else "",
+        request.json["channel_id"],
+        _event["program_id"] if not local else 0,
+        _event["start"],
+        _event["channel"],
+        _epg["full_title"],
+        offset,
+    )
+
+    logging.getLogger("U7D").info(msg) if method != "na" else logging.getLogger("U7D").error(msg)
 
 
 def prune_duplicates(channel_id, filename):

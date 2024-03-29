@@ -228,18 +228,15 @@ def get_safe_filename(filename):
     return "".join(c for c in filename if c.isalnum() or c in " ,.;_-[]@#$%€").rstrip()
 
 
-async def get_vod_info(session, endpoint, channel, cloud, program, _log):
+async def get_vod_info(session, endpoint, channel, cloud, program):
     params = {"action": "getRecordingData" if cloud else "getCatchUpUrl"}
     params.update({"extInfoID": program, "channelID": channel, "mode": 1})
 
     try:
         async with session.get(endpoint, params=params) as r:
-            res = await r.json()
-        if res.get("resultData"):
-            return res["resultData"]
-    except (ClientConnectionError, ClientOSError, ServerDisconnectedError, TypeError) as ex:
-        res = ex
-    _log.error(f"[{channel:4}] [{program}]: NOT AVAILABLE => {res}")
+            return (await r.json())["resultData"]
+    except (ClientConnectionError, ClientOSError, ServerDisconnectedError, KeyError, TypeError):
+        pass
 
 
 def glob_safe(string, recursive=False):
