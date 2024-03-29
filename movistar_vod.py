@@ -306,7 +306,7 @@ async def postprocess(vod_info):
 
         metadata = {k: v for k, v in metadata.items() if k not in DROP_KEYS}
         metadata.update({"beginTime": mtime, "duration": duration, "endTime": mtime + duration})
-        metadata.update({"expDate": int(metadata["expDate"] / 1000)})
+        metadata.update({"expDate": metadata["expDate"] // 1000})
         metadata.update({"name": os.path.basename(_args.filename)})
 
         epg_info_url = f"{EPG_URL}/epg_info/{_args.channel}/{_args.program}"
