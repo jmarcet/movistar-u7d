@@ -232,7 +232,9 @@ async def postprocess(vod_info):
                 ) as f:
                     metadata = ujson.loads(await f.read())["data"]
             except (FileNotFoundError, OSError, PermissionError, TypeError, ValueError) as ex:
-                raise RecordingError(f"Extended info not found => {repr(ex)}")
+                if _args.index:
+                    raise RecordingError(f"Extended info not found => {repr(ex)}")
+                return None, None
 
             cover = metadata["cover"]
             img_ext = os.path.splitext(cover)[1]
@@ -375,7 +377,7 @@ async def postprocess(vod_info):
             cmd.append("-sn")
 
         img_mime, img_name = await _save_metadata(get_cover=True)
-        if _args.mkv:
+        if all((_args.mkv, img_mime, img_name)):
             tags += ["-attach", img_name, "-metadata:s:t:0", f"mimetype={img_mime}"]
 
         cmd += [*tags, "-v", "error", "-y", "-f", "matroska" if _args.mkv else "mpegts", _tmpname + TMP_EXT2]
@@ -495,7 +497,8 @@ async def postprocess(vod_info):
 
         _archive_recording()
 
-        await _save_metadata(duration=duration)
+        if _args.index:
+            await _save_metadata(duration=duration)
 
         dirname = os.path.dirname(_filename)
         metadata_dir = os.path.join(dirname, "metadata")
@@ -842,7 +845,7 @@ if __name__ == "__main__":
         TMP_EXT2 = ".tmp2"
         VID_EXT = ".mkv" if _args.mkv else ".ts"
 
-        if not os.path.exists(os.path.join(CACHE_DIR, "programs", f"{_args.program}.json")):
+        if _args.index and not os.path.exists(os.path.join(CACHE_DIR, "programs", f"{_args.program}.json")):
             log.error(f"No metadata exists for [{_args.channel:4}] [{_args.program}]")
             sys.exit(1)
 
