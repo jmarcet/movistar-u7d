@@ -35,8 +35,8 @@ from sanic.exceptions import Forbidden, NotFound
 from tomli import TOMLDecodeError
 from warnings import filterwarnings
 
-from mu7d import DATEFMT, DIV_ONE, DIV_TWO, DROP_KEYS, EXT, FMT, NFO_EXT
-from mu7d import UA_U7D, VID_EXTS, WIN32, YEAR_SECONDS, IPTVNetworkError
+from mu7d import DATEFMT, DIV_ONE, DIV_TWO, DROP_KEYS, EXT, FMT
+from mu7d import NFO_EXT, VID_EXTS, WIN32, YEAR_SECONDS, IPTVNetworkError
 from mu7d import add_logfile, anchored_regex, cleanup_handler, find_free_port, get_iptv_ip, get_local_info
 from mu7d import get_safe_filename, glob_safe, keys_to_int, launch, mu7d_config, ongoing_vods, pp_xml, remove
 from mu7d import rename, utime, _version
@@ -120,6 +120,7 @@ async def before_server_stop(app=None):
 
 
 async def alive():
+    UA_U7D = f"movistar-u7d v{_version} [{sys.platform}] [{EXT}] [{_IPTV}]"
     async with aiohttp.ClientSession(headers={"User-Agent": UA_U7D}) as session:
         for _ in range(10):
             try:
