@@ -24,7 +24,7 @@ from asyncio.subprocess import DEVNULL, PIPE
 from collections import defaultdict, deque
 from datetime import date, datetime, timedelta
 from filelock import FileLock, Timeout
-from glob import glob
+from glob import glob, iglob
 from itertools import chain
 from json import JSONDecodeError
 from operator import itemgetter
@@ -139,37 +139,30 @@ async def cancel_app():
 
 
 async def create_covers_cache():
-    covers = set()
-    paths = set()
-    covers_path = os.path.join(RECORDINGS_TMP, "covers")
-    rootdir = "[0-9][0-9][0-9]. */**"
-    nfos = sorted(glob(f"{RECORDINGS}/{rootdir}/*{NFO_EXT}", recursive=True))
+    async with recordings_lock:
+        log.info("Recreating covers cache")
 
-    for nfo in nfos:
-        cover = nfo.replace(NFO_EXT, ".jpg")
-        fanart = os.path.join(
-            os.path.dirname(cover), "metadata", os.path.basename(cover).replace(".jpg", "-fanart.jpg")
-        )
+        covers_path = os.path.join(RECORDINGS_TMP, "covers")
+        if os.path.exists(covers_path):
+            shutil.rmtree(covers_path)
+        os.makedirs(covers_path)
 
-        if os.path.exists(fanart):
-            cover = fanart
-        elif not os.path.exists(cover):
-            continue
+        for nfo in iglob(f"{RECORDINGS}/[0-9][0-9][0-9]. */**/*{NFO_EXT}", recursive=True):
+            cover = nfo.replace(NFO_EXT, ".jpg")
+            fanart = os.path.join(
+                os.path.dirname(cover), "metadata", os.path.basename(cover).replace(".jpg", "-fanart.jpg")
+            )
 
-        cached_cover = cover.replace(RECORDINGS, covers_path)
-        path = os.path.dirname(cached_cover)
-        parent = os.path.split(path)[0]
+            if os.path.exists(fanart):
+                cover = fanart
+            elif not os.path.exists(cover):
+                continue
 
-        covers.add((cover, cached_cover))
-        for x in (x for x in (path, parent) if x != covers_path):
-            paths.add(x)
+            cached_cover = cover.replace(RECORDINGS, covers_path)
+            os.makedirs(os.path.dirname(cached_cover), exist_ok=True)
+            shutil.copy2(cover, cached_cover)
 
-    os.makedirs(covers_path)
-    for path in sorted(paths):
-        os.makedirs(path)
-
-    for cover, cached_cover in sorted(covers, key=lambda x: os.path.getmtime(x[0])):
-        shutil.copy2(cover, cached_cover)
+        log.info("Covers cache recreated")
 
 
 def does_recording_exist(filename):
