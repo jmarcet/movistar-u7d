@@ -673,6 +673,13 @@ async def reindex_recordings():
     log.warning("REINDEXING RECORDINGS")
     _recordings = defaultdict(dict)
 
+    async def _write_nfo(nfo_file, nfo):
+        xml = xmltodict.unparse({"metadata": dict(sorted(nfo.items()))}, pretty=True)
+        async with aiofiles.open(nfo_file + ".tmp", "w", encoding="utf8") as f:
+            await f.write(xml)
+        rename(nfo_file + ".tmp", nfo_file)
+
+    nfos_updated = 0
     for nfo_file in sorted(
         glob(f"{RECORDINGS}/[0-9][0-9][0-9]. */**/*{NFO_EXT}", recursive=True), key=os.path.getmtime
     ):
@@ -688,6 +695,7 @@ async def reindex_recordings():
             log.error(f"Cannot read {nfo_file=} => {repr(ex)}")
             continue
 
+        nfo_needs_update = False
         filename = nfo["cover"][:-4]
         channel_id, duration, timestamp = nfo["serviceUID"], nfo["duration"], nfo["beginTime"]
 
@@ -702,23 +710,45 @@ async def reindex_recordings():
                     stale = False
                     log.warning(f'Replaced channel_id [{channel_id:4}] => [{_ids[0]:4}] in "{filename}"')
                     nfo["serviceUID"] = channel_id = _ids[0]
-                    xml = xmltodict.unparse({"metadata": dict(sorted(nfo.items()))}, pretty=True)
-                    async with aiofiles.open(nfo_file + ".tmp", "w", encoding="utf8") as f:
-                        await f.write(xml)
-                    rename(nfo_file + ".tmp", nfo_file)
+                    nfo_needs_update = True
             if stale:
                 log.warning(f'Wrong channel_id [{channel_id:4}] in nfo => Skipping "{filename}"')
                 continue
 
-        utime(timestamp, *get_recording_files(filename))
+        recording_files = tuple(get_recording_files(filename))
+        covers_files = tuple(
+            x[len(RECORDINGS) + 1 :] for x in recording_files if "metadata" in x and os.path.isfile(x)
+        )
+
+        if len(covers_files) != len(nfo.get("covers", {})):
+            log.info(f'Covers mismatch in metadata: "{nfo_file}"')
+            nfo["covers"] = {}
+            for _file in covers_files:
+                kind = _file.split("-")[-1].removesuffix(".jpg").removesuffix(".png")
+                nfo["covers"][kind] = _file
+            nfo_needs_update = True
+
+        if nfo_needs_update:
+            nfos_updated += 1
+            await _write_nfo(nfo_file, nfo)
+
+        utime(timestamp, *recording_files)
         _recordings[channel_id][timestamp] = {"duration": duration, "filename": filename}
+
+    if nfos_updated:
+        log.info(f"Updated {nfos_updated} metadata files")
+    else:
+        log.info("No metadata files needed updates")
 
     if len(_recordings):
         global _RECORDINGS
+
         async with recordings_lock:
             _RECORDINGS = _recordings
 
         await update_recordings()
+        if RECORDINGS_TMP:
+            await create_covers_cache()
 
 
 async def reload_epg():
