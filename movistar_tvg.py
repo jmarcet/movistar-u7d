@@ -27,6 +27,7 @@ from defusedxml.ElementTree import ParseError, fromstring
 from filelock import FileLock, Timeout
 from glob import iglob
 from html import escape, unescape
+from itertools import combinations
 from json import JSONDecodeError
 from threading import current_thread, main_thread
 
@@ -1144,8 +1145,6 @@ async def tvg_main(args):
 
     _DEADLINE = int(datetime.combine(date.today() - timedelta(days=7), datetime.min.time()).timestamp())
 
-    if (args.cloud_m3u or args.cloud_recordings) and (args.local_m3u or args.local_recordings):
-        return
     if any((args.cloud_m3u, args.cloud_recordings, args.local_m3u, args.local_recordings)):
         refresh = False
     else:
@@ -1305,6 +1304,22 @@ if __name__ == "__main__":
 
     # Obtiene los argumentos de entrada
     args = create_args_parser().parse_args()
+
+    if any(
+        map(
+            all,
+            combinations(
+                (
+                    any((args.m3u, args.guide)),
+                    any((args.cloud_m3u, args.cloud_recordings)),
+                    any((args.local_m3u, args.local_recordings)),
+                ),
+                2,
+            ),
+        )
+    ):
+        log.critical("No es posible mezclar categorías")
+        sys.exit(1)
 
     local = "-local" if any((args.local_m3u, args.local_recordings)) else ""
     lockfile = os.path.join(_conf["TMP_DIR"], f".movistar_tvg{local}.lock")
