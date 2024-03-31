@@ -1134,7 +1134,7 @@ async def update_epg_local():
     async with recordings_lock:
         cmd = (f"movistar_tvg{EXT}", "--local_m3u", CHANNELS_LOCAL, "--local_recordings", GUIDE_LOCAL)
 
-        async with tvgrab_lock:
+        async with tvgrab_local_lock:
             await launch(cmd)
 
         log.info(f"Local Recordings Updated => {U7D_URL}/MovistarTVLocal.m3u - {U7D_URL}/local.xml")
@@ -1495,6 +1495,7 @@ if __name__ == "__main__":
     network_bw_lock = asyncio.Lock()
     recordings_lock = asyncio.Lock()
     tvgrab_lock = asyncio.Lock()
+    tvgrab_local_lock = asyncio.Lock()
 
     flussonic_regex = re.compile(r"\w*-?(\d{10})-?(\d+){0,1}\.?\w*")
 

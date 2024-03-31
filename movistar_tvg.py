@@ -1139,13 +1139,10 @@ def create_args_parser():
     return parser
 
 
-async def tvg_main():
+async def tvg_main(args):
     global _CONFIG, _END_POINT, _DEADLINE, _MIPTV, _SESSION, _XMLTV
 
     _DEADLINE = int(datetime.combine(date.today() - timedelta(days=7), datetime.min.time()).timestamp())
-
-    # Obtiene los argumentos de entrada
-    args = create_args_parser().parse_args()
 
     if (args.cloud_m3u or args.cloud_recordings) and (args.local_m3u or args.local_recordings):
         return
@@ -1306,12 +1303,16 @@ if __name__ == "__main__":
     title_1_regex = re.compile(r"(.+(?!T\d)) +T(\d+)(?: *Ep[isode.]+ (\d+))?[ -]*(.*)")
     title_2_regex = re.compile(r"(.+(?!T\d))(?: +T(\d+))? *(?:[Ee]p[isode.]+|[Cc]ap[iítulo.]*) ?(\d+)[ .-]*(.*)")
 
-    lockfile = os.path.join(_conf["TMP_DIR"], ".movistar_tvg.lock")
+    # Obtiene los argumentos de entrada
+    args = create_args_parser().parse_args()
+
+    local = "-local" if any((args.local_m3u, args.local_recordings)) else ""
+    lockfile = os.path.join(_conf["TMP_DIR"], f".movistar_tvg{local}.lock")
     del _conf
     try:
         with FileLock(lockfile, timeout=0):
             _IPTV = get_iptv_ip()
-            asyncio.run(tvg_main())
+            asyncio.run(tvg_main(args))
     except (CancelledError, KeyboardInterrupt):
         sys.exit(1)
     except IPTVNetworkError as err:
