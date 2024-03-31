@@ -8,7 +8,7 @@ attrs==23.2.0
 cx_Freeze==6.16.0.dev75
 cx_Logging==3.2.0
 defusedxml==0.7.1
-filelock==3.13.1
+filelock==3.13.3
 frozenlist==1.4.1
 httptools==0.6.1
 idna==3.6

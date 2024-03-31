@@ -5,7 +5,7 @@ asyncio==3.4.3
 asyncio-dgram==2.1.2
 attrs==23.2.0
 defusedxml==0.7.1
-filelock==3.13.1
+filelock==3.13.3
 frozenlist==1.4.1
 httptools==0.6.1
 idna==3.6
