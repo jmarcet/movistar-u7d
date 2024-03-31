@@ -1,7 +1,7 @@
 aiofiles
 aiohttp
 asyncio
-asyncio_dgram
+asyncio-dgram @ git+https://github.com/jsbronder/asyncio-dgram
 defusedxml
 filelock
 netifaces

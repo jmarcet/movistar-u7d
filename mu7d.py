@@ -7,7 +7,6 @@ import logging
 import os
 import psutil
 import re
-import socket
 import sys
 import tomli
 import ujson
@@ -22,6 +21,7 @@ from filelock import FileLock, Timeout
 from glob import glob
 from json import JSONDecodeError
 from shutil import which
+from socket import AF_INET, SOCK_DGRAM, SOCK_STREAM, socket
 from time import sleep
 from tomli import TOMLDecodeError
 
@@ -140,10 +140,9 @@ def cleanup_handler(signum=None, frame=None):
 
 
 def find_free_port(iface=""):
-    with closing(socket.socket(socket.AF_INET, socket.SOCK_DGRAM)) as s:
-        s.bind((iface, 0))
-        s.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
-        return s.getsockname()[1]
+    with closing(socket(AF_INET, SOCK_DGRAM)) as sock:
+        sock.bind((iface, 0))
+        return sock.getsockname()[1]
 
 
 async def get_end_point(home, _log):
@@ -171,19 +170,19 @@ async def get_end_point(home, _log):
 
 
 def get_iptv_ip():
-    with closing(socket.socket(socket.AF_INET, socket.SOCK_DGRAM)) as s:
-        s.settimeout(1)
+    with closing(socket(AF_INET, SOCK_DGRAM)) as sock:
+        sock.settimeout(1)
         try:
-            s.connect((IPTV_DNS, 53))
-            return s.getsockname()[0]
+            sock.connect((IPTV_DNS, 53))
+            return sock.getsockname()[0]
         except OSError:
             raise IPTVNetworkError("Imposible conectar con DNS de Movistar IPTV")
 
 
 def get_lan_ip():
-    with closing(socket.socket(socket.AF_INET, socket.SOCK_DGRAM)) as s:
-        s.connect(("8.8.8.8", 53))
-        return s.getsockname()[0]
+    with closing(socket(AF_INET, SOCK_DGRAM)) as sock:
+        sock.connect(("8.8.8.8", 53))
+        return sock.getsockname()[0]
 
 
 async def get_local_info(channel, timestamp, path, _log, extended=False):
@@ -536,12 +535,12 @@ if __name__ == "__main__":
 
     def _check_ports():
         epg_uri = urllib.parse.urlparse(EPG_URL)
-        with closing(socket.socket(socket.AF_INET, socket.SOCK_STREAM)) as s:
-            if s.connect_ex((epg_uri.hostname, epg_uri.port)) == 0:
+        with closing(socket(AF_INET, SOCK_STREAM)) as sock:
+            if sock.connect_ex((epg_uri.hostname, epg_uri.port)) == 0:
                 raise LocalNetworkError(f"El puerto {epg_uri.netloc} está ocupado")
 
-        with closing(socket.socket(socket.AF_INET, socket.SOCK_STREAM)) as s:
-            if s.connect_ex((_conf["LAN_IP"], _conf["U7D_PORT"])) == 0:
+        with closing(socket(AF_INET, SOCK_STREAM)) as sock:
+            if sock.connect_ex((_conf["LAN_IP"], _conf["U7D_PORT"])) == 0:
                 raise LocalNetworkError(f"El puerto {_conf['LAN_IP']}:{_conf['U7D_PORT']} está ocupado")
 
     def _get_iptv_iface_ip():

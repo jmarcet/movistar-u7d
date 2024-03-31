@@ -3,11 +3,9 @@
 import aiofiles
 import aiohttp
 import asyncio
-import asyncio_dgram
 import json
 import logging
 import os
-import socket
 import sys
 import time
 import ujson
@@ -16,7 +14,9 @@ import urllib.parse
 from aiohttp.client_exceptions import ClientConnectionError, ClientOSError, ServerDisconnectedError
 from asyncio.exceptions import CancelledError
 from asyncio.subprocess import DEVNULL, PIPE
+from asyncio_dgram import bind as dgram_bind
 from collections import namedtuple
+from contextlib import closing
 from datetime import datetime
 from filelock import FileLock, Timeout
 from sanic import Sanic, response
@@ -25,6 +25,7 @@ from sanic.handlers import ContentRangeHandler
 from sanic.log import error_logger
 from sanic.models.server_types import ConnInfo
 from sanic.server.protocols.http_protocol import HttpProtocol
+from socket import IPPROTO_IP, IP_ADD_MEMBERSHIP, inet_aton
 from warnings import filterwarnings
 
 from mu7d import ATOM, BUFF, CHUNK, DATEFMT, EPG_URL, FMT, MIME_M3U, MIME_WEBM, UA
@@ -146,44 +147,36 @@ async def handle_channel(request, channel_id=None, channel_name=None):
         log.warning(f"[{request.ip}] {request.path} -> Network Saturated")
         raise ServiceUnavailable("Network Saturated")
 
-    sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM, socket.IPPROTO_UDP)
-    sock.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
-    sock.bind((mc_grp if not WIN32 else "", int(mc_port)))
-    sock.setsockopt(
-        socket.IPPROTO_IP, socket.IP_ADD_MEMBERSHIP, socket.inet_aton(mc_grp) + socket.inet_aton(_IPTV)
-    )
-
     prom = None
-    stream = await asyncio_dgram.from_socket(sock)
     _response = await request.respond(content_type=MIME_WEBM)
-
     try:
-        # 1st packet on SDTV channels is bogus and breaks ffmpeg
-        if ua.startswith("Jellyfin") and " HD" not in name:
-            log.debug('UA="%s" detected, skipping first packet' % ua)
-            await stream.recv()
-        else:
-            await _response.send((await stream.recv())[0][28:])
+        with closing(await dgram_bind((mc_grp if not WIN32 else "", int(mc_port)), reuse_port=True)) as stream:
+            stream.socket.setsockopt(IPPROTO_IP, IP_ADD_MEMBERSHIP, inet_aton(mc_grp) + inet_aton(_IPTV))
 
-        prom = app.add_task(
-            send_prom_event(
-                {
-                    "channel_id": channel_id,
-                    "id": _start,
-                    "lat": time.time() - _start,
-                    "method": "live",
-                    "endpoint": f"{name} _ {request.ip} _ ",
-                    "msg": f"[{request.ip}] -> Playing {request.url}",
-                }
+            # 1st packet on SDTV channels is bogus and breaks ffmpeg
+            if ua.startswith("Jellyfin") and " HD" not in name:
+                log.debug('UA="%s" detected, skipping first packet' % ua)
+                await stream.recv()
+            else:
+                await _response.send((await stream.recv())[0][28:])
+
+            prom = app.add_task(
+                send_prom_event(
+                    {
+                        "channel_id": channel_id,
+                        "id": _start,
+                        "lat": time.time() - _start,
+                        "method": "live",
+                        "endpoint": f"{name} _ {request.ip} _ ",
+                        "msg": f"[{request.ip}] -> Playing {request.url}",
+                    }
+                )
             )
-        )
 
-        while True:
-            await _response.send((await stream.recv())[0][28:])
+            while True:
+                await _response.send((await stream.recv())[0][28:])
 
     finally:
-        stream.close()
-        sock.close()
         if prom:
             prom.cancel()
             await prom
@@ -275,24 +268,22 @@ async def handle_flussonic(request, url, channel_id=None, channel_name=None, clo
         return await transcode(request, event, channel_id=channel_id, port=client_port, vod=vod)
 
     prom = None
-    stream = await asyncio_dgram.bind((_IPTV, client_port))
     _response = await request.respond(content_type=MIME_WEBM)
-
     try:
-        # 1st packet on SDTV channels is bogus and breaks ffmpeg
-        if ua.startswith("Jellyfin") and " HD" not in _CHANNELS[channel_id]["name"]:
-            log.debug('UA="%s" detected, skipping first packet' % ua)
-            await stream.recv()
-        else:
-            await _response.send((await stream.recv())[0])
+        with closing(await dgram_bind((_IPTV, client_port))) as stream:
+            # 1st packet on SDTV channels is bogus and breaks ffmpeg
+            if ua.startswith("Jellyfin") and " HD" not in _CHANNELS[channel_id]["name"]:
+                log.debug('UA="%s" detected, skipping first packet' % ua)
+                await stream.recv()
+            else:
+                await _response.send((await stream.recv())[0])
 
-        prom = app.add_task(send_prom_event({**event, "lat": time.time() - _start}))
+            prom = app.add_task(send_prom_event({**event, "lat": time.time() - _start}))
 
-        while True:
-            await _response.send((await stream.recv())[0])
+            while True:
+                await _response.send((await stream.recv())[0])
 
     finally:
-        stream.close()
         vod.cancel()
         if prom:
             prom.cancel()

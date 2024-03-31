@@ -6,20 +6,19 @@
 import aiohttp
 import argparse
 import asyncio
-import asyncio_dgram
 import codecs
 import gzip
 import json
 import logging
 import os
 import re
-import socket
 import struct
 import sys
 import time
 
 from aiohttp.client_exceptions import ClientConnectionError, ClientOSError, ServerDisconnectedError
 from asyncio.exceptions import CancelledError
+from asyncio_dgram import bind as dgram_bind
 from collections import defaultdict, deque
 from contextlib import closing
 from datetime import date, datetime, timedelta
@@ -29,7 +28,7 @@ from glob import iglob
 from html import escape, unescape
 from itertools import combinations
 from json import JSONDecodeError
-from threading import current_thread, main_thread
+from socket import IPPROTO_IP, IP_ADD_MEMBERSHIP, inet_aton
 
 from mu7d import DATEFMT, END_POINTS_FILE, FMT, UA, WIN32, YEAR_SECONDS, IPTVNetworkError
 from mu7d import add_logfile, get_end_point, get_iptv_ip, get_local_info, keys_to_int, mu7d_config, rename
@@ -531,7 +530,7 @@ class MulticastIPTV:
         _demarcation = MulticastIPTV.get_demarcation_name()
         log.info("Buscando el Proveedor de Servicios de %s..." % _demarcation)
 
-        xml = (await MulticastIPTV.get_xml_files(_CONFIG["mcast_grp"], _CONFIG["mcast_port"]))["1_0"]
+        xml = (await MulticastIPTV.get_xml_files(_CONFIG["mcast_grp"], _CONFIG["mcast_port"], init=True))["1_0"]
         result = re.findall(
             f'DEM_{_CONFIG["demarcation"]}' + r'\..*?Address="(.*?)".*?\s*Port="(.*?)".*?',
             xml,
@@ -821,67 +820,51 @@ class MulticastIPTV:
         }
 
     @staticmethod
-    async def get_xml_files(mc_grp, mc_port):
+    async def get_xml_files(mc_grp, mc_port, init=False):
         _files = {}
         failed = 0
-        first_file = ""
+        last_file = ""
 
-        with closing(socket.socket(socket.AF_INET, socket.SOCK_DGRAM, socket.IPPROTO_UDP)) as sock:
-            sock.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
-            sock.settimeout(3)
-            sock.bind((mc_grp if not WIN32 else "", int(mc_port)))
-            sock.setsockopt(
-                socket.IPPROTO_IP,
-                socket.IP_ADD_MEMBERSHIP,
-                socket.inet_aton(mc_grp) + socket.inet_aton(_IPTV),
-            )
-            with closing(await asyncio_dgram.from_socket(sock)) as stream:
-                # Wait for an end chunk to start at the beginning
-                while True:
-                    try:
-                        chunk = MulticastIPTV.parse_chunk((await stream.recv())[0])
-                        if chunk["end"]:
-                            first_file = f'{chunk["filetype"]}_{chunk["fileid"]}'
-                            break
-                    except (AttributeError, KeyError, TimeoutError, TypeError, UnicodeError):
-                        pass
-                    except (IPTVNetworkError, OSError):
-                        if current_thread() == main_thread():
-                            msg = "Multicast IPTV de Movistar no detectado"
-                        else:
-                            msg = "Imposible descargar XML"
-                        log.error(msg)
+        with closing(await dgram_bind((mc_grp if not WIN32 else "", int(mc_port)), reuse_port=True)) as stream:
+            stream.socket.setsockopt(IPPROTO_IP, IP_ADD_MEMBERSHIP, inet_aton(mc_grp) + inet_aton(_IPTV))
+            # Wait for an end chunk to start at the beginning
+            while True:
+                try:
+                    chunk = MulticastIPTV.parse_chunk((await asyncio.wait_for(stream.recv(), timeout=3.0))[0])
+                    if chunk["end"]:
+                        last_file = f'{chunk["filetype"]}_{chunk["fileid"]}'
+                        break
+                except (AttributeError, KeyError, TypeError, UnicodeError):
+                    pass
+                except (IPTVNetworkError, OSError):
+                    if init:
+                        msg = "Multicast IPTV de Movistar no detectado"
                         failed += 1
                         if failed == 3:
                             raise IPTVNetworkError(msg)
-                # Loop until first_file
-                while True:
-                    xmldata = ""
+                        log.error(msg)
+                    else:
+                        log.debug("Timeout descargando XML")
+            # Loop until last_file
+            while True:
+                xmldata = ""
+                chunk = {"end": False}
+                while not chunk["end"]:
                     chunk = MulticastIPTV.parse_chunk((await stream.recv())[0])
-                    # Discard headers
-                    body = chunk["data"]
-                    while not chunk["end"]:
-                        xmldata += body
-                        chunk = MulticastIPTV.parse_chunk((await stream.recv())[0])
-                        body = chunk["data"]
-                    # Discard last 4bytes binary footer
-                    xmldata += body[:-4]
-                    current_file = f'{chunk["filetype"]}_{chunk["fileid"]}'
-                    _files[current_file] = xmldata
-                    if current_file == first_file:
-                        log.info(f"{mc_grp}:{mc_port} -> XML descargado")
-                        break
+                    xmldata += chunk["data"]
+                current_file = f'{chunk["filetype"]}_{chunk["fileid"]}'
+                _files[current_file] = xmldata[:-4]  # Discard last 4bytes binary footer
+                if current_file == last_file:
+                    log.info(f"{mc_grp}:{mc_port} -> XML descargado")
+                    break
         return _files
 
     @staticmethod
     def parse_chunk(data):
         return {
             "end": struct.unpack("B", data[:1])[0],
-            "size": struct.unpack(">HB", data[1:4])[0],
             "filetype": struct.unpack("B", data[4:5])[0],
             "fileid": struct.unpack(">H", data[5:7])[0] & 0x0FFF,
-            "chunk_number": struct.unpack(">H", data[8:10])[0] >> 4,
-            "chunk_total": struct.unpack("B", data[10:11])[0],
             "data": data[12:].decode("latin1"),
         }
 
