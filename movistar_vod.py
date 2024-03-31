@@ -575,7 +575,15 @@ async def record_stream(vod_info):
         _args.time = vod_info["duration"]
     else:
         if U7D_PARENT:
-            _args.time = _args.time * 7 // 6 if _args.time >= 1800 else _args.time * 4 // 3
+            if _args.time <= 300:
+                _args.time *= 3
+                _args.time //= 2
+            elif _args.time <= 1800:
+                _args.time *= 4
+                _args.time //= 3
+            else:
+                _args.time *= 7
+                _args.time //= 6
         _args.time = min(_args.time, vod_info["duration"])
 
     flags = "[COMSKIPCUT] " if _args.comskipcut else "[COMSKIP] " if _args.comskip else ""
