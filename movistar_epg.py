@@ -920,7 +920,7 @@ async def timers_check(delay=0):
             next_timers.append((title, timestamp))
             return
         log_suffix = f': [{channel_id:4}] [{pid}] [{timestamp}] "{filename}"'
-        if 0 < _time < 300:
+        if 0 < _time < 240:
             log.info(DIV_TWO % ("Skipping MATCH", f"Too short [{_time}s]", log_suffix))
             return
         if await record_program(channel_id, pid, 0, _time, cloud, comskip, True, MKV_OUTPUT, vo):
