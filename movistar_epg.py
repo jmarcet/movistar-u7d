@@ -21,7 +21,7 @@ from aiohttp.client_exceptions import ClientConnectionError, ClientConnectorErro
 from aiohttp.client_exceptions import ClientOSError, ServerDisconnectedError
 from asyncio.exceptions import CancelledError
 from asyncio.subprocess import DEVNULL, PIPE
-from collections import defaultdict, deque
+from collections import defaultdict, deque, namedtuple
 from datetime import date, datetime, timedelta
 from filelock import FileLock, Timeout
 from glob import glob, iglob
@@ -105,17 +105,18 @@ async def after_server_start(app):
         global _t_timers
 
         uptime = int(datetime.now().timestamp() - boot_time())
-        if not _t_timers and int(datetime.now().replace(minute=0, second=0).timestamp()) <= _last_epg:
-            delay = max(5, 180 - uptime)
-            if delay > 10:
-                log.info(f"Waiting {delay}s to check recording timers since the system just booted...")
-            _t_timers = app.add_task(timers_check(delay))
-        elif not _t_timers:
-            log.warning("Delaying timers_check until the EPG is updated...")
+        if not _t_timers:
+            if int(datetime.now().replace(minute=0, second=0).timestamp()) <= _last_epg:
+                delay = max(5, 180 - uptime)
+                if delay > 10:
+                    log.info(f"Waiting {delay}s to check recording timers since the system just booted...")
+                _t_timers = app.add_task(timers_check(delay))
+            else:
+                log.warning("Delaying timers_check until the EPG is updated...")
 
 
 @app.listener("before_server_stop")
-async def before_server_stop(app=None):
+async def before_server_stop(app):
     cleanup_handler()
 
 
@@ -139,30 +140,29 @@ async def cancel_app():
 
 
 async def create_covers_cache():
-    async with recordings_lock:
-        log.info("Recreating covers cache")
+    log.info("Recreating covers cache")
 
-        covers_path = os.path.join(RECORDINGS_TMP, "covers")
-        if os.path.exists(covers_path):
-            shutil.rmtree(covers_path)
-        os.makedirs(covers_path)
+    covers_path = os.path.join(RECORDINGS_TMP, "covers")
+    if os.path.exists(covers_path):
+        shutil.rmtree(covers_path)
+    os.makedirs(covers_path)
 
-        for nfo in iglob(f"{RECORDINGS}/[0-9][0-9][0-9]. */**/*{NFO_EXT}", recursive=True):
-            cover = nfo.replace(NFO_EXT, ".jpg")
-            fanart = os.path.join(
-                os.path.dirname(cover), "metadata", os.path.basename(cover).replace(".jpg", "-fanart.jpg")
-            )
+    for nfo in iglob(f"{RECORDINGS}/[0-9][0-9][0-9]. */**/*{NFO_EXT}", recursive=True):
+        cover = nfo.replace(NFO_EXT, ".jpg")
+        fanart = os.path.join(
+            os.path.dirname(cover), "metadata", os.path.basename(cover).replace(".jpg", "-fanart.jpg")
+        )
 
-            if os.path.exists(fanart):
-                cover = fanart
-            elif not os.path.exists(cover):
-                continue
+        if os.path.exists(fanart):
+            cover = fanart
+        elif not os.path.exists(cover):
+            continue
 
-            cached_cover = cover.replace(RECORDINGS, covers_path)
-            os.makedirs(os.path.dirname(cached_cover), exist_ok=True)
-            shutil.copy2(cover, cached_cover)
+        cached_cover = cover.replace(RECORDINGS, covers_path)
+        os.makedirs(os.path.dirname(cached_cover), exist_ok=True)
+        shutil.copy2(cover, cached_cover)
 
-        log.info("Covers cache recreated")
+    log.info("Covers cache recreated")
 
 
 def does_recording_exist(filename):
@@ -256,8 +256,8 @@ def get_program_name(filename):
     return os.path.split(os.path.dirname(filename))[1]
 
 
-def get_recording_files(fname):
-    absname = os.path.join(RECORDINGS, fname.removesuffix(VID_EXT))
+def get_recording_files(filename, cache=False):
+    absname = os.path.join(RECORDINGS, filename.removesuffix(VID_EXT))
     nfo = os.path.join(absname + NFO_EXT)
 
     path, basename = os.path.split(absname)
@@ -265,10 +265,16 @@ def get_recording_files(fname):
 
     files = glob_safe(f"{absname}.*")
     files += [nfo] if os.path.exists(nfo) else []
-    files += [metadata, *glob_safe(os.path.join(metadata, f"{basename}-*"))] if os.path.exists(metadata) else []
+    files += [*glob_safe(os.path.join(metadata, f"{basename}-*")), metadata] if os.path.exists(metadata) else []
     files += [path] if path != RECORDINGS else []
 
-    return filter(lambda file: os.access(file, os.W_OK), files)
+    if cache and RECORDINGS_TMP:
+        files += glob_safe(
+            os.path.join(path.replace(RECORDINGS, os.path.join(RECORDINGS_TMP, "covers")), f"**/{basename}*"),
+            recursive=True,
+        )
+
+    return tuple(filter(lambda file: os.access(file, os.W_OK), files))
 
 
 def get_recording_name(channel_id, timestamp, cloud=False):
@@ -292,11 +298,11 @@ def get_recording_name(channel_id, timestamp, cloud=False):
 
 
 def get_siblings(channel_id, filename):
-    return [
+    return tuple(
         ts
         for ts in sorted(_RECORDINGS[channel_id])
         if os.path.split(_RECORDINGS[channel_id][ts]["filename"])[0] == os.path.split(filename)[0]
-    ]
+    )
 
 
 @app.put("/archive/<channel_id:int>/<program_id:int>")
@@ -326,9 +332,6 @@ async def handle_archive(request, channel_id, program_id):
         return response.json({"status": msg}, ensure_ascii=False, status=204)
 
     async with recordings_lock:
-        if channel_id not in _RECORDINGS:
-            _RECORDINGS[channel_id] = {}
-
         prune_duplicates(channel_id, filename)
         if channel_id in _KEEP:
             prune_expired(channel_id, filename)
@@ -337,11 +340,11 @@ async def handle_archive(request, channel_id, program_id):
         # Metadata's beginTime rules since it is how the recording will be found
         _RECORDINGS[channel_id][nfo["beginTime"]] = {"duration": nfo["duration"], "filename": filename}
 
-        app.add_task(update_recordings(channel_id))
-
         msg = "Recording ARCHIVED"
         log.info(DIV_ONE % (msg, log_suffix))
-        return response.json({"status": msg}, ensure_ascii=False)
+
+    app.add_task(update_recordings(channel_id))
+    return response.json({"status": msg}, ensure_ascii=False)
 
 
 @app.get("/epg_info/<channel_id:int>/<program_id:int>")
@@ -583,12 +586,23 @@ async def prom_event(request, method):
 
 
 def prune_duplicates(channel_id, filename):
-    for ts in tuple(ts for ts in _RECORDINGS[channel_id] if _RECORDINGS[channel_id][ts]["filename"] in filename):
+    def _clean(string):
+        return re.sub(r"[^a-z0-9]", "", string.lower())
+
+    for ts in tuple(
+        ts
+        for ts in _RECORDINGS[channel_id]
+        if _clean(_RECORDINGS[channel_id][ts]["filename"]) in _clean(filename)
+    ):
         duplicate = _RECORDINGS[channel_id][ts]["filename"]
-        old_files = sorted(set(get_recording_files(duplicate)) - set(get_recording_files(filename)))
+        old_files = tuple(
+            f
+            for f in get_recording_files(duplicate, cache=True)
+            if f not in get_recording_files(filename, cache=True)
+        )
 
         remove(*old_files)
-        [log.warning(f'REMOVED DUPLICATED "{file}"') for file in old_files]
+        [log.warning(f'REMOVED DUPLICATED "{file}"') for file in old_files if not os.path.exists(file)]
 
         del _RECORDINGS[channel_id][ts]
 
@@ -604,7 +618,7 @@ def prune_expired(channel_id, filename):
 
     def _drop(ts):
         filename = _RECORDINGS[channel_id][ts]["filename"]
-        old_files = sorted(get_recording_files(filename))
+        old_files = get_recording_files(filename, cache=True)
         remove(*old_files)
         del _RECORDINGS[channel_id][ts]
         [log.warning(f'REMOVED "{file}"') for file in old_files if not os.path.exists(file)]
@@ -670,85 +684,88 @@ async def record_program(
 
 
 async def reindex_recordings():
-    log.warning("REINDEXING RECORDINGS")
-    _recordings = defaultdict(dict)
-
     async def _write_nfo(nfo_file, nfo):
         xml = xmltodict.unparse({"metadata": dict(sorted(nfo.items()))}, pretty=True)
         async with aiofiles.open(nfo_file + ".tmp", "w", encoding="utf8") as f:
             await f.write(xml)
         rename(nfo_file + ".tmp", nfo_file)
 
-    nfos_updated = 0
-    for nfo_file in sorted(
-        glob(f"{RECORDINGS}/[0-9][0-9][0-9]. */**/*{NFO_EXT}", recursive=True), key=os.path.getmtime
-    ):
-        basename = nfo_file[:-13]
-        if not does_recording_exist(basename):
-            log.error(f'No recording found: "{basename + VID_EXT}" {nfo_file=}')
-            continue
+    async with recordings_lock:
+        log.info("REINDEXING RECORDINGS")
 
-        try:
-            async with aiofiles.open(nfo_file, encoding="utf-8") as f:
-                nfo = xmltodict.parse(await f.read(), postprocessor=pp_xml)["metadata"]
-        except Exception as ex:
-            log.error(f"Cannot read {nfo_file=} => {repr(ex)}")
-            continue
+        nfos_updated = 0
+        _recordings = defaultdict(dict)
 
-        nfo_needs_update = False
-        filename = nfo["cover"][:-4]
-        channel_id, duration, timestamp = nfo["serviceUID"], nfo["duration"], nfo["beginTime"]
-
-        if channel_id not in _CHANNELS:
-            stale = True
-            dirname = filename.split(os.path.sep)[0]
-            _match = re.match(r"^(\d{3})\. (.+)$", dirname)
-            if _match:
-                channel_nr = int(_match.groups()[0])
-                _ids = tuple(filter(lambda ch: _CHANNELS[ch]["number"] == channel_nr, _CHANNELS))
-                if _ids:
-                    stale = False
-                    log.warning(f'Replaced channel_id [{channel_id:4}] => [{_ids[0]:4}] in "{filename}"')
-                    nfo["serviceUID"] = channel_id = _ids[0]
-                    nfo_needs_update = True
-            if stale:
-                log.warning(f'Wrong channel_id [{channel_id:4}] in nfo => Skipping "{filename}"')
+        for nfo_file in sorted(
+            glob(f"{RECORDINGS}/[0-9][0-9][0-9]. */**/*{NFO_EXT}", recursive=True), key=os.path.getmtime
+        ):
+            basename = nfo_file.removesuffix(NFO_EXT)
+            if not does_recording_exist(basename):
+                log.error(f'No recording found: "{basename + VID_EXT}" {nfo_file=}')
                 continue
 
-        recording_files = tuple(get_recording_files(filename))
-        covers_files = tuple(
-            x[len(RECORDINGS) + 1 :] for x in recording_files if "metadata" in x and os.path.isfile(x)
-        )
+            try:
+                async with aiofiles.open(nfo_file, encoding="utf-8") as f:
+                    nfo = xmltodict.parse(await f.read(), postprocessor=pp_xml)["metadata"]
+            except Exception as ex:
+                log.error(f"Cannot read {nfo_file=} => {repr(ex)}")
+                continue
 
-        if len(covers_files) != len(nfo.get("covers", {})):
-            log.info(f'Covers mismatch in metadata: "{nfo_file}"')
-            nfo["covers"] = {}
-            for _file in covers_files:
-                kind = _file.split("-")[-1].removesuffix(".jpg").removesuffix(".png")
-                nfo["covers"][kind] = _file
-            nfo_needs_update = True
+            nfo_needs_update = False
+            filename = nfo["cover"][:-4]
+            channel_id, duration, timestamp = nfo["serviceUID"], nfo["duration"], nfo["beginTime"]
 
-        if nfo_needs_update:
-            nfos_updated += 1
-            await _write_nfo(nfo_file, nfo)
+            if channel_id not in _CHANNELS:
+                stale = True
+                dirname = filename.split(os.path.sep)[0]
+                _match = re.match(r"^(\d{3})\. (.+)$", dirname)
+                if _match:
+                    channel_nr = int(_match.groups()[0])
+                    _ids = tuple(filter(lambda ch: _CHANNELS[ch]["number"] == channel_nr, _CHANNELS))
+                    if _ids:
+                        stale = False
+                        log.warning(f'Replaced channel_id [{channel_id:4}] => [{_ids[0]:4}] in "{filename}"')
+                        nfo["serviceUID"] = channel_id = _ids[0]
+                        nfo_needs_update = True
+                if stale:
+                    log.warning(f'Wrong channel_id [{channel_id:4}] in nfo => Skipping "{filename}"')
+                    continue
 
-        utime(timestamp, *recording_files)
-        _recordings[channel_id][timestamp] = {"duration": duration, "filename": filename}
+            recording_files = get_recording_files(filename)
+            covers_files = tuple(
+                x[len(RECORDINGS) + 1 :] for x in recording_files if "metadata" in x and os.path.isfile(x)
+            )
 
-    if nfos_updated:
-        log.info(f"Updated {nfos_updated} metadata files")
-    else:
-        log.info("No metadata files needed updates")
+            if len(covers_files) != len(nfo.get("covers", {})):
+                log.info(f'Covers mismatch in metadata: "{nfo_file}"')
+                nfo["covers"] = {}
+                for _file in covers_files:
+                    kind = _file.split("-")[-1].removesuffix(".jpg").removesuffix(".png")
+                    nfo["covers"][kind] = _file
+                nfo_needs_update = True
 
-    if len(_recordings):
-        global _RECORDINGS
+            if nfo_needs_update:
+                nfos_updated += 1
+                await _write_nfo(nfo_file, nfo)
 
-        async with recordings_lock:
+            utime(timestamp, *recording_files)
+            _recordings[channel_id][timestamp] = {"duration": duration, "filename": filename}
+
+        if nfos_updated:
+            log.info(f"Updated {nfos_updated} metadata files")
+        else:
+            log.info("No metadata files needed updates")
+
+        if len(_recordings):
+            global _RECORDINGS
+
             _RECORDINGS = _recordings
+            if RECORDINGS_TMP:
+                await create_covers_cache()
 
-        await update_recordings()
-        if RECORDINGS_TMP:
-            await create_covers_cache()
+        log.info("RECORDINGS REINDEXED")
+
+    await update_recordings()
 
 
 async def reload_epg():
@@ -812,7 +829,7 @@ async def reload_recordings():
         async with recordings_lock:
             try:
                 async with aiofiles.open(recordings_data, encoding="utf8") as f:
-                    _RECORDINGS = json.loads(await f.read(), object_hook=keys_to_int)
+                    _RECORDINGS = defaultdict(dict, json.loads(await f.read(), object_hook=keys_to_int))
             except (JSONDecodeError, TypeError, ValueError) as ex:
                 log.error(f'Failed to parse "recordings.json" => {repr(ex)}')
                 remove(CHANNELS_LOCAL, GUIDE_LOCAL)
@@ -842,24 +859,14 @@ async def reload_recordings():
 
 
 async def timers_check(delay=0):
-    await asyncio.sleep(delay)
+    global _KEEP, _t_timers_next
+
+    Record = namedtuple("Record", ("ch_id", "ts", "cloud", "comskip", "delay", "keep", "repeat", "vo"))
 
     def _clean(string):
         return unicodedata.normalize("NFKD", string).encode("ASCII", "ignore").decode("utf8").strip()
 
-    def _exit():
-        global _KEEP, _t_timers_next
-        nonlocal kept, next_timers
-        _KEEP = kept
-        if next_timers:
-            title, ts = sorted(next_timers, key=lambda x: x[1])[0]
-            if not _t_timers_next or _t_timers_next.get_name() != f"{ts}":
-                log.info(f'Adding timers_check() @ {datetime.fromtimestamp(ts + 30)} "{title}"')
-                delay = ts + 30 - datetime.now().timestamp()
-                _t_timers_next = app.add_task(timers_check(delay=delay), name=f"{ts}")
-
-    def _filter_recorded(timestamps):
-        nonlocal channel_id, stored_filenames
+    def _filter_recorded(channel_id, timestamps, stored_filenames):
         return filter(
             lambda ts: channel_id not in _RECORDINGS
             or ts not in _RECORDINGS[channel_id]
@@ -867,118 +874,33 @@ async def timers_check(delay=0):
             timestamps,
         )
 
-    async def _record(cloud=False):
-        nonlocal channel_id, comskip, keep, kept, nr_procs, ongoing, queued, repeat, timestamp, vo
+    await asyncio.sleep(delay)
 
-        if timestamp in queued[channel_id]:
+    async with epg_lock, recordings_lock:
+        log.debug("Processing timers")
+
+        if not os.path.exists(timers_data):
+            log.debug("timers_check: no timers.conf found")
             return
 
-        guide = _CLOUD if cloud else _EPGDATA
-        filename = get_recording_name(channel_id, timestamp, cloud)
-        duration, pid, title = (guide[channel_id][timestamp][t] for t in ("duration", "pid", "full_title"))
-
-        if filename in queued[channel_id].values():
-            return
-
-        if any(x in ongoing for x in (f"{channel_id} {pid} -b ", filename)):
-            vod = await ongoing_vods(filename=filename, _all=True)
-            if f"{channel_id} {pid} -b {timestamp} " in vod or f"{channel_id} {pid} -b " not in vod:
-                return
-
-        if channel_id in _RECORDINGS:
-            r = tuple(
-                filter(
-                    lambda ts: filename.startswith(_RECORDINGS[channel_id][ts]["filename"]),
-                    _RECORDINGS[channel_id],
-                )
-            )
-            # only repeat a recording when title changed
-            if r and not len(filename) > len(_RECORDINGS[channel_id][r[0]]["filename"]):
-                # or asked to and new event is more recent than the archived
-                if not repeat or timestamp <= r[0]:
-                    return
-
-        if keep:
-            program = get_program_name(filename)
-            kept[channel_id][program] = keep
-            if keep < 0:
-                if (datetime.fromtimestamp(timestamp) - datetime.now()).days < keep:
-                    log.info('Older than     %d days: SKIPPING [%d] "%s"' % (abs(keep), timestamp, filename))
-                    return
-            else:
-                current = tuple(filter(lambda x: program in x, (await ongoing_vods(_all=True)).split("|")))
-                if len(current) == keep:
-                    log.info('Recording %02d programs: SKIPPING [%d] "%s"' % (keep, timestamp, filename))
-                    return
-                siblings = get_siblings(channel_id, filename)
-                if len(current) + len(siblings) == keep and timestamp < siblings[0]:
-                    log.info('Recorded  %02d programs: SKIPPING [%d] "%s"' % (keep, timestamp, filename))
-                    return
-
-        _time = 0 if cloud else duration
-        if timestamp + 30 > round(datetime.now().timestamp()):
-            next_timers.append((title, timestamp))
-            return
-        log_suffix = f': [{channel_id:4}] [{pid}] [{timestamp}] "{filename}"'
-        if 0 < _time < 240:
-            log.info(DIV_TWO % ("Skipping MATCH", f"Too short [{_time}s]", log_suffix))
-            return
-        if await record_program(channel_id, pid, 0, _time, cloud, comskip, True, MKV_OUTPUT, vo):
-            return
-
-        log.info(DIV_ONE % (f"Found {'Cloud ' if cloud else ''}EPG MATCH", log_suffix))
-
-        queued[channel_id][timestamp] = filename
-        await asyncio.sleep(2.5 if not WIN32 else 4)
-
-        nr_procs += 1
-        if nr_procs >= RECORDINGS_PROCESSES:
+        nr_procs = len(await ongoing_vods())
+        if _NETWORK_SATURATION or nr_procs >= RECORDINGS_PROCESSES:
             await log_network_saturated(nr_procs)
-            return -1
+            return
 
-    if not os.path.exists(timers_data):
-        log.debug("timers_check: no timers.conf found")
-        return
+        try:
+            async with aiofiles.open(timers_data, encoding="utf8") as f:
+                _timers = tomli.loads(await f.read())
+        except (AttributeError, TOMLDecodeError, TypeError, ValueError) as ex:
+            log.error(f"Failed to parse timers.conf: {repr(ex)}")
+            return
+        except (FileNotFoundError, OSError, PermissionError) as ex:
+            log.error(f"Failed to read timers.conf: {repr(ex)}")
+            return
 
-    if epg_lock.locked():  # If EPG is being updated, wait until it is done
-        await epg_lock.acquire()
-        epg_lock.release()
-
-    log.debug("Processing timers")
-    try:
-        async with aiofiles.open(timers_data, encoding="utf8") as f:
-            _timers = tomli.loads(await f.read())
-    except (AttributeError, TOMLDecodeError, TypeError, ValueError) as ex:
-        log.error(f"Failed to parse timers.conf: {repr(ex)}")
-        return
-    except (FileNotFoundError, OSError, PermissionError) as ex:
-        log.error(f"Failed to read timers.conf: {repr(ex)}")
-        return
-
-    deflang = _timers.get("default_language", "")
-    sync_cloud = _timers.get("sync_cloud", False)
-
-    nr_procs = len(await ongoing_vods())
-    if _NETWORK_SATURATION or nr_procs >= RECORDINGS_PROCESSES:
-        await log_network_saturated(nr_procs)
-        return
-
-    ongoing = await ongoing_vods(_all=True)  # we want to check against all ongoing vods, also in pp
-    log.debug("Ongoing VODs: |%s|" % ongoing)
-
-    keep = repeat = False
-    kept, next_timers, queued = defaultdict(dict), [], defaultdict(dict)
-    async with recordings_lock:
-        if sync_cloud:
-            log.debug("Syncing cloud recordings")
-            vo = _timers.get("sync_cloud_language", "") == "VO"
-            for channel_id in _CLOUD:
-                stored_filenames = (program["filename"] for program in _RECORDINGS[channel_id].values())
-                channel_name = _CHANNELS[channel_id]["name"]
-                log.debug("Checking Cloud: [%4d] [%s]" % (channel_id, channel_name))
-                for timestamp in _filter_recorded(_CLOUD[channel_id]):
-                    if await _record(cloud=True):
-                        return _exit()
+        deflang = _timers.get("default_language", "")
+        sync_cloud = _timers.get("sync_cloud", False)
+        kept, curr_timers, next_timers = defaultdict(dict), defaultdict(dict), []
 
         for str_channel_id in _timers.get("match", {}):
             channel_id = int(str_channel_id)
@@ -986,14 +908,19 @@ async def timers_check(delay=0):
                 log.warning(f"Channel [{channel_id}] in timers.conf not found in EPG")
                 continue
             channel_name = _CHANNELS[channel_id]["name"]
-            log.debug("Checking EPG  : [%4d] [%s]" % (channel_id, channel_name))
 
+            log.debug("Checking EPG  : [%4d] [%s]" % (channel_id, channel_name))
             stored_filenames = (program["filename"] for program in _RECORDINGS[channel_id].values())
+
             for timer_match in _timers["match"][str_channel_id]:
                 comskip = 2 if _timers.get("comskipcut") else 1 if _timers.get("comskip") else 0
-                days = delayed = fixed_timer = fresh = keep = repeat = None
+                days = {}
+                delay = keep = 0
+                fresh = repeat = False
+                fixed_timer = None
                 lang = deflang
                 msg = ""
+
                 if " ## " in timer_match:
                     match_split = timer_match.split(" ## ")
                     timer_match = match_split[0]
@@ -1019,7 +946,7 @@ async def timers_check(delay=0):
                             comskip = 2
 
                         elif res.startswith("delay"):
-                            delayed = True
+                            delay = 3600 * 12
 
                         elif res == "fresh":
                             fresh = True
@@ -1038,41 +965,139 @@ async def timers_check(delay=0):
                             lang = res
 
                 vo = lang == "VO"
-                if delayed:
-                    tss = filter(lambda ts: ts <= _last_epg - 3600 * 12, reversed(_EPGDATA[channel_id].keys()))
-                elif fresh:
+                msg = f"[{comskip=}] [{delay=}] [{fresh=}] [{keep=}] [{repeat=}] [{days=}]{msg}"
+                log.debug("Checking timer: [%4d] [%s] [%s] %s" % (channel_id, channel_name, timer_match, msg))
+
+                if fresh:
                     tss = filter(
                         lambda ts: ts <= _last_epg + 3600 and _EPGDATA[channel_id][ts]["end"] > int(time.time()),
-                        reversed(_EPGDATA[channel_id].keys()),
+                        _EPGDATA[channel_id],
                     )
                 else:
-                    tss = filter(lambda ts: ts <= _last_epg + 3600, reversed(_EPGDATA[channel_id].keys()))
+                    tss = filter(lambda ts: ts <= _last_epg + 3600 - delay, _EPGDATA[channel_id])
 
                 if fixed_timer:
                     # fixed timers are checked daily, so we want today's and all of last week
-                    fixed_timestamps = [fixed_timer] if fixed_timer <= _last_epg + 3600 else []
-                    fixed_timestamps += [fixed_timer - i * 24 * 3600 for i in range(1, 8)]
-
-                    found_ts = deque()
-                    for ts in tss:
-                        for fixed_ts in fixed_timestamps:
-                            if abs(ts - fixed_ts) <= 1500:
-                                if not days or days.get(datetime.fromtimestamp(ts).isoweekday()):
-                                    found_ts.append(ts)
-                                break
-                    tss = found_ts
-
+                    fixed_timestamps = tuple(
+                        int((datetime.fromtimestamp(fixed_timer) - timedelta(days=i)).timestamp())
+                        for i in range(8)
+                    )
+                    tss = filter(
+                        lambda ts: any(map(lambda fixed_ts: abs(ts - fixed_ts) <= 1500, fixed_timestamps))
+                        and (not days or days.get(datetime.fromtimestamp(ts).isoweekday())),
+                        tss,
+                    )
                 elif days:
                     tss = filter(lambda ts: days.get(datetime.fromtimestamp(ts).isoweekday()), tss)
 
-                log.debug("Checking timer: [%4d] [%s] [%s]%s" % (channel_id, channel_name, timer_match, msg))
-                for timestamp in _filter_recorded(tss):
-                    _title = _EPGDATA[channel_id][timestamp]["full_title"]
-                    if re.search(_clean(timer_match), _clean(_title), re.IGNORECASE):
-                        if await _record():
-                            return _exit()
+                tss = tuple(tss)
 
-    _exit()
+                if keep:
+                    for ts in filter(
+                        lambda ts: re.search(
+                            _clean(timer_match), _clean(_EPGDATA[channel_id][ts]["full_title"]), re.IGNORECASE
+                        ),
+                        tss,
+                    ):
+                        kept[channel_id][get_program_name(get_recording_name(channel_id, ts))] = keep
+                        break
+
+                for timestamp in filter(
+                    lambda ts: re.search(
+                        _clean(timer_match), _clean(_EPGDATA[channel_id][ts]["full_title"]), re.IGNORECASE
+                    ),
+                    _filter_recorded(channel_id, tss, stored_filenames),
+                ):
+                    _b, _f = "norml" if not fresh else "fresh", get_recording_name(channel_id, timestamp)
+                    curr_timers[_b][_f] = Record(channel_id, timestamp, False, comskip, delay, keep, repeat, vo)
+
+        if sync_cloud:
+            comskip = 2 if _timers.get("comskipcut") else 1 if _timers.get("comskip") else 0
+            vo = _timers.get("sync_cloud_language", "") == "VO"
+
+            for channel_id in _CLOUD:
+                log.debug("Checking Cloud: [%4d] [%s]" % (channel_id, _CHANNELS[channel_id]["name"]))
+                stored_filenames = (program["filename"] for program in _RECORDINGS[channel_id].values())
+
+                for timestamp in _filter_recorded(channel_id, _CLOUD[channel_id].keys(), stored_filenames):
+                    _f = get_recording_name(channel_id, timestamp, cloud=True)
+                    curr_timers["cloud"][_f] = Record(channel_id, timestamp, True, comskip, 0, 0, False, vo)
+
+        _KEEP = kept
+        ongoing = await ongoing_vods(_all=True)  # we want to check against all ongoing vods, also in pp
+
+        log.debug("_KEEP=%s" % str(_KEEP))
+        log.debug("Ongoing VODs: |%s|" % ongoing)
+
+        for filename, r in chain(
+            sorted(curr_timers["fresh"].items(), key=lambda x: _EPGDATA[x[1].ch_id][x[1].ts]["end"]),
+            sorted(curr_timers["norml"].items(), key=lambda x: x[1].ts),
+            sorted(curr_timers["cloud"].items(), key=lambda x: x[1].ts),
+        ):
+            guide = _EPGDATA if not r.cloud else _CLOUD
+            pid = guide[r.ch_id][r.ts]["pid"]
+            duration = guide[r.ch_id][r.ts]["duration"] if not r.cloud else 0
+            log_suffix = f': [{r.ch_id:4}] [{pid}] [{r.ts}] "{filename}"'
+
+            if 0 < duration < 240:
+                log.info(DIV_TWO % ("Skipping MATCH", f"Too short [{duration}s]", log_suffix))
+                continue
+
+            if f"{r.ch_id} {pid} -b " in ongoing or filename in ongoing:
+                continue
+
+            _x = filter(lambda x: filename.startswith(_RECORDINGS[r.ch_id][x]["filename"]), _RECORDINGS[r.ch_id])
+            recs = tuple(_x)
+            # only repeat a recording when title changed
+            if recs and not len(filename) > len(_RECORDINGS[r.ch_id][recs[0]]["filename"]):
+                # or asked to and new event is more recent than the archived
+                if not r.repeat or r.ts <= recs[0]:
+                    continue
+
+            if r.keep:
+                if r.keep < 0:
+                    if (datetime.fromtimestamp(r.ts) - datetime.now()).days < r.keep:
+                        log.info('Older than     %d days: SKIPPING [%d] "%s"' % (abs(r.keep), r.ts, filename))
+                        continue
+                else:
+                    program = get_program_name(filename)
+
+                    current = tuple(filter(lambda x: program in x, (await ongoing_vods(_all=True)).split("|")))
+                    if len(current) == r.keep:
+                        log.info('Recording %02d programs: SKIPPING [%d] "%s"' % (r.keep, r.ts, filename))
+                        continue
+
+                    siblings = get_siblings(r.ch_id, filename)
+                    if len(current) + len(siblings) == r.keep and r.ts < siblings[0]:
+                        log.info('Recorded  %02d programs: SKIPPING [%d] "%s"' % (r.keep, r.ts, filename))
+                        continue
+
+            if r.ts + r.delay + 30 > round(datetime.now().timestamp()):
+                next_timers.append((guide[r.ch_id][r.ts]["full_title"], r.ts + r.delay + 30))
+                continue
+
+            if await record_program(r.ch_id, pid, 0, duration, r.cloud, r.comskip, True, MKV_OUTPUT, r.vo):
+                continue
+
+            log.info(DIV_ONE % (f"Found {'Cloud ' if r.cloud else ''}EPG MATCH", log_suffix))
+
+            nr_procs += 1
+            if nr_procs >= RECORDINGS_PROCESSES:
+                await log_network_saturated(nr_procs)
+                break
+
+            await asyncio.sleep(2.5 if not WIN32 else 4)
+
+        next_title, next_ts = sorted(next_timers, key=itemgetter(1))[0] if next_timers else ("", 0)
+
+        if _t_timers_next and (not next_ts or _t_timers_next.get_name() != f"{next_ts}"):
+            if not _t_timers_next.done():
+                _t_timers_next.cancel()
+            _t_timers_next = None
+
+        if next_ts and not _t_timers_next:
+            log.info(f'Adding timers_check() @ {datetime.fromtimestamp(next_ts)} "{next_title}"')
+            _t_timers_next = app.add_task(timers_check(delay=next_ts - time.time()), name=f"{next_ts}")
 
 
 async def update_cloud():
@@ -1285,7 +1310,7 @@ async def upgrade_recording_channels():
             if not os.path.exists(new_channel_path):
                 continue
 
-            files = tuple(get_recording_files(nfo_file[:-13]))
+            files = get_recording_files(nfo_file.removesuffix(NFO_EXT))
             old_files = (f for f in files if os.path.splitext(f)[-1] in (*VID_EXTS, ".jpg", ".nfo", ".png"))
             new_files = (f.replace(old_channel_name, new_channel_name) for f in old_files)
 
@@ -1430,8 +1455,8 @@ if __name__ == "__main__":
     _CHANNELS = {}
     _CLOUD = {}
     _EPGDATA = {}
-    _KEEP = {}
-    _RECORDINGS = {}
+    _KEEP = defaultdict(dict)
+    _RECORDINGS = defaultdict(dict)
 
     _last_bw_warning = _last_epg = _t_timers = _t_timers_next = None
 

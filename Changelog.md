@@ -72,7 +72,7 @@
   - `ComSkipCut`: detectar anuncios y eliminarlos.
   - `NoComSkip`: no hacer detección de anuncios cuando está activo de forma global.
   - `Delay`: sólo realiza grabaciones de programas emitidos hace por los menos 12 horas, con la intención de que la EPG haya sido ajustada a los cambios horarios. Útil para realizar grabaciones en canales de dibujos animados como Boing o Clan TVE.
-  - `Fresh`: sólo grabar programas durante su emisión. Útil para programar grabaciones de programas que una vez emitidos dejan de estar disponibles. Incompatible con la opción anterior, que tiene preferencia.
+  - `Fresh`: sólo grabar programas durante su emisión. Útil para programar grabaciones de programas que una vez emitidos dejan de estar disponibles. Incompatible con la opción anterior, sobre la que tiene preferencia.
   - `Keep#`: conserva las # últimas grabaciones.
   - `Keep#d`: conserva las grabaciones de los últimos # días.
   - `Repeat`: repetir grabación aunque ya esté almacenada, eliminando la anterior.
