@@ -37,7 +37,7 @@ COPY requirements.txt .
 
 RUN --mount=type=cache,target=${HOME}/.cache \
     pip install --disable-pip-version-check --root-user-action ignore --use-pep517 uv \
-    && VIRTUAL_ENV=/usr/local uv pip install -r requirements.txt
+    && uv pip install --system -r requirements.txt
 
 # http://stackoverflow.com/questions/48162574/ddg#49462622
 ARG APT_KEY_DONT_WARN_ON_DANGEROUS_USAGE=DontWarn
@@ -121,13 +121,13 @@ COPY . .
 
 RUN --mount=type=cache,target=${HOME}/.cache \
     if [ "${BUILD_TYPE}" = "full" ] && [ "$TARGETARCH" = "amd64" ]; then \
-        VIRTUAL_ENV=/usr/local uv pip install bandit pycodestyle pylint ruff 2>&1 | tee /tmp/lint-install.txt \
+        uv pip install --system bandit pycodestyle pylint ruff 2>&1 | tee /tmp/lint-install.txt \
         && bandit -v *.py \
         && pycodestyle -v *.py \
         && pylint --rcfile pyproject.toml -v *.py \
         && ruff check --config pyproject.toml --diff --no-cache --no-fix-only -v *.py \
         && ruff format --config pyproject.toml --diff --no-cache -v *.py \
-        && VIRTUAL_ENV=/usr/local uv pip uninstall $( awk '/==/ { print $2 }' /tmp/lint-install.txt ); \
+        && uv pip uninstall --system $( awk '/==/ { print $2 }' /tmp/lint-install.txt ); \
     fi
 
 RUN --mount=type=cache,target=${HOME}/.cache \
