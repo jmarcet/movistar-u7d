@@ -312,8 +312,8 @@ async def postprocess(vod_info):
         metadata.update({"expDate": metadata["expDate"] // 1000})
         metadata.update({"name": os.path.basename(_args.filename)})
 
-        epg_info_url = f"{EPG_URL}/epg_info/{_args.channel}/{_args.program}"
-        async with _SESSION.get(epg_info_url, params={"cloud": 1} if _args.cloud else {}) as resp:
+        program_title_url = f"{EPG_URL}/program_title/{_args.channel}/{_args.program}"
+        async with _SESSION.get(program_title_url, params={"cloud": 1} if _args.cloud else {}) as resp:
             if resp.status == 200:
                 _meta = await resp.json()
                 if metadata["name"] != _meta["full_title"]:

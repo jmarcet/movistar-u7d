@@ -31,8 +31,7 @@ from json import JSONDecodeError
 from socket import IPPROTO_IP, IP_ADD_MEMBERSHIP, inet_aton
 
 from mu7d import DATEFMT, END_POINTS_FILE, FMT, UA, WIN32, YEAR_SECONDS, IPTVNetworkError
-from mu7d import add_logfile, get_end_point, get_iptv_ip, get_local_info, keys_to_int, mu7d_config, rename
-from mu7d import _version
+from mu7d import add_logfile, get_end_point, get_iptv_ip, get_local_info, mu7d_config, rename, _version
 
 
 log = logging.getLogger("TVG")
@@ -87,7 +86,7 @@ class Cache:
         for file in iglob(os.path.join(CACHE_DIR, "programs", "*.json")):
             try:
                 with open(file, encoding="utf8") as f:
-                    _data = json.loads(f.read(), object_hook=keys_to_int)["data"]
+                    _data = json.loads(f.read(), object_hook=Cache.keys_to_int)["data"]
                 if _data["endTime"] // 1000 < _DEADLINE:
                     log.debug('Eliminando "%s" caducado' % os.path.basename(file))
                     os.remove(file)
@@ -95,10 +94,14 @@ class Cache:
                 pass
 
     @staticmethod
+    def keys_to_int(data):
+        return {int(k) if k.isdigit() else k: v for k, v in data.items()}
+
+    @staticmethod
     def load(cfile):
         try:
             with open(os.path.join(CACHE_DIR, cfile), "r", encoding="utf8") as f:
-                return json.loads(f.read(), object_hook=keys_to_int)["data"]
+                return json.loads(f.read(), object_hook=Cache.keys_to_int)["data"]
         except (FileNotFoundError, JSONDecodeError, OSError, PermissionError, TypeError, ValueError):
             return {}
 
@@ -118,23 +121,9 @@ class Cache:
     def load_epg_local():
         try:
             with open(os.path.join(HOME, "recordings.json"), "r", encoding="utf8") as f:
-                local_epg = json.loads(f.read(), object_hook=keys_to_int)
+                return json.loads(f.read(), object_hook=Cache.keys_to_int)
         except (FileNotFoundError, JSONDecodeError, OSError, PermissionError, ValueError):
             return
-
-        # Recordings can overlap, so we need to shorten the duration when they do
-        for channel in local_epg:
-            sorted_channel = sorted(local_epg[channel])
-            for i in range(len(sorted_channel) - 1):
-                ts = sorted_channel[i]
-                _next = sorted_channel[i + 1]
-                _end = ts + local_epg[channel][ts]["duration"]
-
-                if _end >= _next:
-                    _end = _next - 1
-                    local_epg[channel][ts]["duration"] = _end - ts
-
-        return local_epg
 
     @staticmethod
     def load_epg_metadata():
@@ -197,7 +186,7 @@ class Cache:
 
 class MovistarTV:
     @staticmethod
-    async def get_epg_extended_info(channel_id, program):
+    async def get_epg_extended_info(channel_id, ts, program):
         def _fill_data(data):
             if data and any(
                 (program.get(t[0]) and program.get(t[0], "") != data.get(t[1], "") for t in EPG_EXTINFO_PAIRS)
@@ -209,7 +198,7 @@ class MovistarTV:
                 Cache.save_epg_extended_info(data)
                 return True
 
-        pid, ts = program["pid"], program["start"]
+        pid = program["pid"]
         data = Cache.load_epg_extended_info(pid)
         _fill_data(data)
 
@@ -314,25 +303,18 @@ class MulticastIPTV:
     def __expire_epg(self):
         epg = self.__cached_epg
         for channel in epg:
-            _expired = tuple(filter(lambda ts: epg[channel][ts]["end"] < _DEADLINE, epg[channel]))
+            _expired = tuple(filter(lambda ts: ts + epg[channel][ts]["duration"] < _DEADLINE, epg[channel]))
             tuple(map(epg[channel].pop, _expired))
             self.__expired += len(_expired)
 
     @staticmethod
-    def __fill_cloud_event(data, meta, pid, timestamp, year):
+    def __fill_cloud_event(data, meta, pid):  # timestamp, year):
         return {
+            "pid": pid,
             "duration": data["duration"],
-            "end": data["endTime"] // 1000,
-            "episode": meta["episode"] or data.get("episode"),
             "full_title": meta["full_title"],
             "genre": data["theme"],
-            "is_serie": meta["is_serie"],
-            "pid": pid,
-            "season": meta["season"] or data.get("season"),
-            "start": timestamp,
-            "year": year,
             "serie": meta["serie"] or data.get("seriesName"),
-            "serie_id": data.get("seriesID"),
         }
 
     def __fix_edges(self, channel, sorted_channel, new_epg=False):
@@ -347,8 +329,8 @@ class MulticastIPTV:
 
         for i in range(len(sorted_channel) - 1):
             ts = sorted_channel[i]
-            _end = epg[channel][ts]["end"]
-            _next = epg[channel][sorted_channel[i + 1]]["start"]
+            _end = ts + epg[channel][ts]["duration"]
+            _next = sorted_channel[i + 1]
             __ts, __end, __next = map(time.ctime, (ts, _end, _next))
 
             if _end < _next:
@@ -358,7 +340,6 @@ class MulticastIPTV:
                     self.__new_gaps[channel].append((_end, _next))
                 elif ts < now:
                     if _next - ts < 1500:
-                        epg[channel][ts]["end"] = _next
                         epg[channel][ts]["duration"] = _next - ts
                         log.warning(msg.replace(" GAP    ", " EXTEND "))
                         fixed += 1
@@ -368,7 +349,6 @@ class MulticastIPTV:
 
             elif _end > _next:
                 if ts < now:
-                    epg[channel][ts]["end"] = _next
                     epg[channel][ts]["duration"] = _next - ts
                     msg = f"{chan}{name} SHORTEN ->  END:[{__end}] [{_end}] - TO:[{__next}] [{_next}]"
                     log.warning(msg)
@@ -395,7 +375,7 @@ class MulticastIPTV:
 
             for ts in _new:
                 _duration = self.__epg[channel][ts]["duration"]
-                _end = self.__epg[channel][ts]["end"]
+                _end = ts + _duration
 
                 if _duration != _end - ts:
                     self.__epg[channel][ts]["duration"] = _end - ts
@@ -436,7 +416,7 @@ class MulticastIPTV:
             channel_list[channel_id] = {
                 "id": channel_id,
                 "address": svc[0][0].attrib["Address"],
-                "port": svc[0][0].attrib["Port"],
+                "port": int(svc[0][0].attrib["Port"]),
                 "name": svc[2][0].text.encode("latin1").decode("utf8").strip(" .*"),
                 "shortname": svc[2][1].text.encode("latin1").decode("utf8"),
                 "genre": svc[2][3][0].text.encode("latin1").decode("utf8"),
@@ -562,7 +542,7 @@ class MulticastIPTV:
             if channel in self.__cached_epg:
                 merged_epg = {}
                 _new = sorted(self.__epg[channel])
-                new_start, new_end = _new[0], self.__epg[channel][_new[-1]]["end"]
+                new_start, new_end = _new[0], _new[-1] + self.__epg[channel][_new[-1]]["duration"]
                 for ts in sorted(self.__cached_epg[channel]):
                     if (
                         ts < new_start
@@ -587,36 +567,27 @@ class MulticastIPTV:
     @staticmethod
     def __parse_bin_epg_body(data, service_id):
         programs = {}
-        epg_dt = data[:-4]
-        while epg_dt:
-            start = struct.unpack(">I", epg_dt[4:8])[0]
-            duration = struct.unpack(">H", epg_dt[8:10])[0]
-            title_end = struct.unpack("B", epg_dt[31:32])[0] + 32
-            genre = "{:02X}".format(struct.unpack("B", epg_dt[20:21])[0])
-            episode = struct.unpack("B", epg_dt[title_end + 8 : title_end + 9])[0]
-            season = struct.unpack("B", epg_dt[title_end + 11 : title_end + 12])[0]
-            full_title = MulticastIPTV.decode_string(epg_dt[32:title_end])
-            serie_id = struct.unpack(">H", epg_dt[title_end + 5 : title_end + 7])[0]
+        while data:
+            start = struct.unpack(">I", data[4:8])[0]
+            duration = struct.unpack(">H", data[8:10])[0]
+            title_end = struct.unpack("B", data[31:32])[0] + 32
+            genre = "{:02X}".format(struct.unpack("B", data[20:21])[0])
+            full_title = MulticastIPTV.decode_string(data[32:title_end])
+            serie_id = struct.unpack(">H", data[title_end + 5 : title_end + 7])[0]
             meta_data = MulticastIPTV.get_title_meta(full_title, serie_id, service_id, genre)
+            # episode = struct.unpack("B", data[title_end + 8 : title_end + 9])[0]
+            # season = struct.unpack("B", data[title_end + 11 : title_end + 12])[0]
+            # year = struct.unpack(">H", epg_dt[title_end + 9 : title_end + 11])[0]
             programs[start] = {
-                "pid": struct.unpack(">I", epg_dt[:4])[0],
-                "start": start,
+                "pid": struct.unpack(">I", data[:4])[0],
                 "duration": duration,
-                "end": start + duration,
-                "genre": genre,
                 "full_title": meta_data["full_title"],
-                "serie_id": serie_id,
-                "episode": meta_data["episode"] or episode,
-                "year": str(struct.unpack(">H", epg_dt[title_end + 9 : title_end + 11])[0]),
+                "genre": genre,
                 "serie": meta_data["serie"],
-                "season": meta_data["season"] or season,
-                "is_serie": meta_data["is_serie"],
             }
-            if meta_data["episode_title"]:
-                programs[start]["episode_title"] = meta_data["episode_title"]
-            pr_title_end = struct.unpack("B", epg_dt[title_end + 12 : title_end + 13])[0] + title_end + 13
+            pr_title_end = struct.unpack("B", data[title_end + 12 : title_end + 13])[0] + title_end + 13
             cut = pr_title_end or title_end
-            epg_dt = epg_dt[struct.unpack("B", epg_dt[cut + 3 : cut + 4])[0] + cut + 4 :]
+            data = data[struct.unpack("B", data[cut + 3 : cut + 4])[0] + cut + 4 :]
         return programs
 
     async def __parse_bin_epg_day(self, bin_epg_day):
@@ -637,13 +608,10 @@ class MulticastIPTV:
     def __parse_bin_epg_header(data):
         data = data.encode("latin1")
         body = struct.unpack("B", data[6:7])[0] + 7
-        return {
-            "size": struct.unpack(">H", data[1:3])[0],
-            "service_id": struct.unpack(">H", data[3:5])[0],
-            "service_version": struct.unpack("B", data[5:6])[0],
-            "service_url": data[7:body],
-            "data": data[body:],
-        }
+        # "service_url": data[7:body],
+        # "service_version": struct.unpack("B", data[5:6])[0],
+        # "size": struct.unpack(">H", data[1:3])[0],
+        return {"data": data[body:-4], "service_id": struct.unpack(">H", data[3:5])[0]}
 
     def __sort_epg(self):
         epg = self.__cached_epg
@@ -717,7 +685,6 @@ class MulticastIPTV:
             timestamp = program["beginTime"] // 1000
 
             data = await MovistarTV.get_service_data(f"epgInfov2&productID={pid}&channelID={channel_id}")
-            year = data.get("productionDate")
 
             data = await MovistarTV.get_service_data(f"getRecordingData&extInfoID={pid}&channelID={channel_id}")
             if not data:  # There can be events with no data sometimes
@@ -726,9 +693,7 @@ class MulticastIPTV:
             service_id = _channels[channel_id].get("replacement", channel_id)
             meta = MulticastIPTV.get_title_meta(data["name"], data.get("seriesID"), service_id, data["theme"])
 
-            self.__cached_epg[channel_id][timestamp] = self.__fill_cloud_event(data, meta, pid, timestamp, year)
-            if meta["episode_title"]:
-                self.__cached_epg[channel_id][timestamp]["episode_title"] = meta["episode_title"]
+            self.__cached_epg[channel_id][timestamp] = self.__fill_cloud_event(data, meta, pid)
 
         self.__sort_epg()
         Cache.save_epg_cloud(self.__cached_epg)
@@ -758,7 +723,6 @@ class MulticastIPTV:
         else:
             x = title_2_regex.search(full_title)
 
-        is_serie = False
         season = episode = 0
         serie = episode_title = ""
 
@@ -769,7 +733,6 @@ class MulticastIPTV:
             episode = int(_x[2] or episode)
             episode_title = _x[3] or episode_title
 
-            is_serie = bool(serie and episode)
             serie, episode_title = (x.strip(":-/ ") for x in (serie, episode_title))
             serie = re.sub(r"([^,.])[,.]$", r"\1", serie)
             if serie.lower() == episode_title.lower():
@@ -784,7 +747,6 @@ class MulticastIPTV:
                         full_title += f" - {episode_title}"
 
         elif serie_id:
-            is_serie = True
             if " - " in full_title:
                 serie, episode_title = full_title.split(" - ", 1)
             else:
@@ -794,30 +756,18 @@ class MulticastIPTV:
         if all((service_id in (578, 2863), ": " in full_title, not episode_title, genre[0] != "1")):
             _match = re.match(r"^([^/]+): ([^a-z].+)", full_title)
             if _match:
-                is_serie = True
                 serie, episode_title = (x.strip(":-/ ") for x in _match.groups())
                 serie = re.sub(r"([^,.])[,.]$", r"\1", serie)
                 if season and episode:
                     episode_title = re.sub(r" S\d+E\d+$", "", episode_title)
                     full_title = "%s S%02dE%02d - %s" % (serie, season, episode, episode_title)
                 else:
-                    if not episode:
-                        _match = episode_regex.match(episode_title)
-                        if _match:
-                            episode = int(_match.groups()[0])
                     full_title = "%s - %s" % (serie, episode_title)
 
-        for item in (episode_title, full_title, serie):
+        for item in (full_title, serie):
             item = re.sub(r"\s+", " ", item)
 
-        return {
-            "full_title": full_title,
-            "serie": serie,
-            "season": season,
-            "episode": episode,
-            "episode_title": episode_title,
-            "is_serie": is_serie,
-        }
+        return {"full_title": full_title, "serie": serie}
 
     @staticmethod
     async def get_xml_files(mc_grp, mc_port, init=False):
@@ -825,7 +775,7 @@ class MulticastIPTV:
         failed = 0
         last_file = ""
 
-        with closing(await dgram_bind((mc_grp if not WIN32 else "", int(mc_port)), reuse_port=True)) as stream:
+        with closing(await dgram_bind((mc_grp if not WIN32 else "", mc_port), reuse_port=True)) as stream:
             stream.socket.setsockopt(IPPROTO_IP, IP_ADD_MEMBERSHIP, inet_aton(mc_grp) + inet_aton(_IPTV))
             # Wait for an end chunk to start at the beginning
             while True:
@@ -879,8 +829,11 @@ class XmlTV:
     async def __add_programmes_tags(self, channel_id, programs, local, tz_offset):
         if not local:
             ext_infos = await asyncio.gather(
-                *(MovistarTV.get_epg_extended_info(channel_id, programs[ts]) for ts in programs)
+                *(MovistarTV.get_epg_extended_info(channel_id, ts, programs[ts]) for ts in programs)
             )
+        else:
+            tss = tuple(programs)
+            last_idx = len(tss) - 1
 
         for idx, ts in enumerate(programs):
             program = programs[ts]
@@ -892,13 +845,14 @@ class XmlTV:
                 ext_info = await get_local_info(channel_id, ts, filename, log, extended=True)
                 if not ext_info:
                     continue
-                ext_info["end"] = ts + program["duration"]  # Use the corrected duration to avoid overlaps
                 program = ext_info
+                if idx < last_idx and ts + program["duration"] > tss[idx + 1]:
+                    program["duration"] = tss[idx + 1] - ts  # Fix overlapping between recordings
 
-            dst_start = time.localtime(program["start"]).tm_isdst
-            dst_stop = time.localtime(program["end"]).tm_isdst
-            start = datetime.fromtimestamp(program["start"]).strftime("%Y%m%d%H%M%S")
-            stop = datetime.fromtimestamp(program["end"]).strftime("%Y%m%d%H%M%S")
+            dst_start = time.localtime(ts).tm_isdst
+            dst_stop = time.localtime(ts + program["duration"]).tm_isdst
+            start = datetime.fromtimestamp(ts).strftime("%Y%m%d%H%M%S")
+            stop = datetime.fromtimestamp(ts + program["duration"]).strftime("%Y%m%d%H%M%S")
 
             self.__append_elem(
                 "programme",
@@ -911,8 +865,8 @@ class XmlTV:
                 child=True,
             )
 
-            is_serie = program["is_serie"]
-            title = program["serie"] if is_serie else program["full_title"]
+            is_serie = bool(program["serie"])
+            title = program["serie"] or program["full_title"]
             subtitle = desc = ""
             _match = None
 
@@ -1270,14 +1224,7 @@ if __name__ == "__main__":
     U7D_URL = _conf["U7D_URL"]
 
     AGE_RATING = ("0", "0", "0", "7", "12", "16", "17", "18")
-    EPG_EXTINFO_PAIRS = (
-        ("episode", "episode"),
-        ("episode_title", "episodeName"),
-        ("full_title", "name"),
-        ("season", "season"),
-        ("serie", "seriesName"),
-        ("year", "productionDate"),
-    )
+    EPG_EXTINFO_PAIRS = (("full_title", "name"), ("serie", "seriesName"))
 
     episode_regex = re.compile(r"^.*(?:Ep[isode.]+) (\d+)$")
     series_regex = re.compile(r"^(S\d+E\d+|Ep[isode]*\.)(?:.*)")

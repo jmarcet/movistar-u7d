@@ -193,30 +193,9 @@ async def get_local_info(channel, timestamp, path, _log, extended=False):
         async with aiofiles.open(nfo_file, encoding="utf-8") as f:
             nfo = xmltodict.parse(await f.read(), postprocessor=pp_xml)["metadata"]
         if extended:
-            _match = re.search(r"^(.+) (?:S(\d+)E(\d+)|Ep[isode.]+ (\d+))", nfo.get("originalName", nfo["name"]))
-            if _match:
-                is_serie = True
-                serie = _match.groups()[0]
-                season = int(_match.groups()[1] or nfo.get("season", 0))
-                episode = int(_match.groups()[2] or _match.groups()[3] or nfo.get("episode", 0))
-            else:
-                is_serie = bool(nfo.get("seriesID") or nfo.get("episodeName"))
-                serie = nfo.get("seriesName", "")
-                season = int(nfo.get("season", 0))
-                episode = int(nfo.get("episode", 0))
-            nfo.update(
-                {
-                    "start": nfo["beginTime"],
-                    "end": nfo["endTime"],
-                    "full_title": nfo.get("originalName", nfo["name"]),
-                    "description": nfo.get("description") or nfo.get("synopsis") or "",
-                    "is_serie": is_serie,
-                    "serie": serie,
-                    "season": season,
-                    "episode": episode,
-                    "serie_id": int(nfo.get("seriesID", 0)),
-                }
-            )
+            _match = re.search(r"^(.+) (?:S\d+E\d+|Ep[isode.]+ \d+)", nfo.get("originalName", nfo["name"]))
+            serie = _match.groups()[0] if _match else nfo.get("seriesName", "")
+            nfo.update({"full_title": nfo.get("originalName", nfo["name"]), "serie": serie})
         return nfo
     except Exception as ex:
         _log.error(f'Cannot get extended local metadata: [{channel}] [{timestamp}] "{path=}" => {repr(ex)}')
@@ -240,10 +219,6 @@ async def get_vod_info(session, endpoint, channel, cloud, program):
 
 def glob_safe(string, recursive=False):
     return glob(f"{string.replace('[', '?').replace(']', '?')}", recursive=recursive)
-
-
-def keys_to_int(dictionary):
-    return {int(k) if k.isdigit() else k: v for k, v in dictionary.items()}
 
 
 async def launch(cmd):
@@ -416,7 +391,7 @@ async def ongoing_vods(channel_id="", program_id="", filename="", _all=False, _f
 
 
 def pp_xml(path, key, value):
-    return key, int(value) if key in XML_INT_KEYS else value
+    return key, int(value) if key in XML_INT_KEYS else value if value else ""
 
 
 def proc_grep(proc, regex):

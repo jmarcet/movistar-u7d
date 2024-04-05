@@ -31,7 +31,8 @@ from warnings import filterwarnings
 from mu7d import ATOM, BUFF, CHUNK, DATEFMT, EPG_URL, FMT, MIME_M3U, MIME_WEBM, UA
 from mu7d import URL_COVER, URL_FANART, URL_LOGO, VID_EXTS, WIN32, YEAR_SECONDS, IPTVNetworkError
 from mu7d import add_logfile, cleanup_handler, find_free_port, get_end_point, get_iptv_ip
-from mu7d import get_vod_info, keys_to_int, mu7d_config, ongoing_vods, _version
+from mu7d import get_vod_info, mu7d_config, ongoing_vods, _version
+from movistar_epg import parse_channels
 from movistar_vod import Vod
 
 
@@ -110,9 +111,9 @@ async def before_server_stop(app):
 
 def get_channel_id(channel_name):
     res = [
-        chan
-        for chan in _CHANNELS
-        if channel_name.lower() in _CHANNELS[chan]["name"].lower().replace(" ", "").replace(".", "")
+        channel_id
+        for channel_id in _CHANNELS
+        if channel_name.lower() in _CHANNELS[channel_id].name.lower().replace(" ", "").replace(".", "")
     ]
     return res[0] if len(res) == 1 else None
 
@@ -135,11 +136,6 @@ async def handle_channel(request, channel_id=None, channel_name=None):
     if " Chrome/" in ua:
         return await handle_flussonic(request, f"{int(datetime.now().timestamp())}.ts", channel_id)
 
-    try:
-        name, mc_grp, mc_port = (_CHANNELS[channel_id][t] for t in ("name", "address", "port"))
-    except (AttributeError, KeyError):
-        raise NotFound(f"Requested URL {request.path} not found")
-
     if request.method == "HEAD":
         return response.HTTPResponse(content_type=MIME_WEBM, status=200)
 
@@ -147,14 +143,14 @@ async def handle_channel(request, channel_id=None, channel_name=None):
         log.warning(f"[{request.ip}] {request.path} -> Network Saturated")
         raise ServiceUnavailable("Network Saturated")
 
-    prom = None
+    ch, prom = _CHANNELS[channel_id], None
     _response = await request.respond(content_type=MIME_WEBM)
     try:
-        with closing(await dgram_bind((mc_grp if not WIN32 else "", int(mc_port)), reuse_port=True)) as stream:
-            stream.socket.setsockopt(IPPROTO_IP, IP_ADD_MEMBERSHIP, inet_aton(mc_grp) + inet_aton(_IPTV))
+        with closing(await dgram_bind((ch.address if not WIN32 else "", ch.port), reuse_port=True)) as stream:
+            stream.socket.setsockopt(IPPROTO_IP, IP_ADD_MEMBERSHIP, inet_aton(ch.address) + inet_aton(_IPTV))
 
             # 1st packet on SDTV channels is bogus and breaks ffmpeg
-            if ua.startswith("Jellyfin") and " HD" not in name:
+            if ua.startswith("Jellyfin") and " HD" not in ch.name:
                 log.debug('UA="%s" detected, skipping first packet' % ua)
                 await stream.recv()
             else:
@@ -167,7 +163,7 @@ async def handle_channel(request, channel_id=None, channel_name=None):
                         "id": _start,
                         "lat": time.time() - _start,
                         "method": "live",
-                        "endpoint": f"{name} _ {request.ip} _ ",
+                        "endpoint": f"{ch.name} _ {request.ip} _ ",
                         "msg": f"[{request.ip}] -> Playing {request.url}",
                     }
                 )
@@ -208,7 +204,7 @@ async def handle_flussonic(request, url, channel_id=None, channel_name=None, clo
         "url": url,
         "method": "catchup",
         "msg": f"[{request.ip}] -> Playing {request.url}",
-        "endpoint": _CHANNELS[channel_id]["name"] + f" _ {request.ip} _ ",
+        "endpoint": _CHANNELS[channel_id].name + f" _ {request.ip} _ ",
     }
 
     try:
@@ -272,7 +268,7 @@ async def handle_flussonic(request, url, channel_id=None, channel_name=None, clo
     try:
         with closing(await dgram_bind((_IPTV, client_port))) as stream:
             # 1st packet on SDTV channels is bogus and breaks ffmpeg
-            if ua.startswith("Jellyfin") and " HD" not in _CHANNELS[channel_id]["name"]:
+            if ua.startswith("Jellyfin") and " HD" not in _CHANNELS[channel_id].name:
                 log.debug('UA="%s" detected, skipping first packet' % ua)
                 await stream.recv()
             else:
@@ -381,7 +377,7 @@ async def handle_m3u_files(request, m3u_file):
     else:
         channel_id = get_channel_id(m3u)
         if channel_id in _CHANNELS:
-            channel_tag = "%03d. %s" % (_CHANNELS[channel_id]["number"], _CHANNELS[channel_id]["name"])
+            channel_tag = "%03d. %s" % (_CHANNELS[channel_id].number, _CHANNELS[channel_id].name)
             m3u_matched = os.path.join(os.path.join(RECORDINGS, channel_tag), f"{channel_tag}.m3u")
 
     if os.path.exists(m3u_matched):
@@ -474,7 +470,7 @@ async def handle_recording(request):
 async def handle_update_channels(request):
     global _CHANNELS
 
-    _CHANNELS = json.loads(request.body, object_hook=keys_to_int)["data"]
+    _CHANNELS = json.loads(request.body, object_hook=parse_channels)["data"]
 
     return response.empty(200)
 
@@ -533,7 +529,7 @@ async def transcode(request, event, channel_id=0, filename="", offset=0, port=0,
     if filename:
         cmd += ["-ss", f"{offset}", "-i", filename]
     else:
-        cmd += ["-skip_initial_bytes", f"{CHUNK}"] if " HD" not in _CHANNELS[channel_id]["name"] else []
+        cmd += ["-skip_initial_bytes", f"{CHUNK}"] if " HD" not in _CHANNELS[channel_id].name else []
         cmd += ["-i", f"udp://@{_IPTV}:{port}"]
     cmd += ["-map", "0:v", *lang_channel, "-c:v:0", "copy", "-c:a:0", "libfdk_aac", "-b:a", "128k"]
     cmd += ["-f", "matroska", "-v", "fatal", "-"]
@@ -632,7 +628,7 @@ if __name__ == "__main__":
     U7D_PORT = _conf["U7D_PORT"]
     U7D_PROCESSES = _conf["U7D_PROCESSES"]
 
-    VodArgs = namedtuple("Vod", ["channel", "program", "client_ip", "client_port", "start", "cloud"])
+    VodArgs = namedtuple("Vod", "channel, program, client_ip, client_port, start, cloud")
 
     lockfile = os.path.join(_conf["TMP_DIR"], ".movistar_u7d.lock")
     del _conf
