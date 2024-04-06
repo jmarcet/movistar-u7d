@@ -26,7 +26,7 @@ from time import sleep
 from tomli import TOMLDecodeError
 
 
-_version = "6.0alpha"
+_version = "6.0"
 
 log = logging.getLogger("INI")
 
