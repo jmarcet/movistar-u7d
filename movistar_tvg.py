@@ -189,10 +189,10 @@ class MovistarTV:
     async def get_epg_extended_info(channel_id, ts, program):
         def _fill_data(data):
             if data and any(
-                (program.get(t[0]) and program.get(t[0], "") != data.get(t[1], "") for t in EPG_EXTINFO_PAIRS)
+                program[t[0]] and program[t[0]] not in (data.get(t[1], ""), "Cine") for t in EPG_EXTINFO_PAIRS
             ):
                 for src, dst in EPG_EXTINFO_PAIRS:
-                    if program.get(src) and program.get(src, "") != data.get(dst, ""):
+                    if program[src] and program[src] not in (data.get(dst, ""), "Cine"):
                         # log.debug('%s="%s" => %s="%s"' % (src, program.get(src, ""), dst, data.get(dst, "")))
                         data[dst] = program[src]
                 Cache.save_epg_extended_info(data)
@@ -876,6 +876,9 @@ class XmlTV:
                     subtitle = ""
 
             if ext_info:
+                if ext_info["theme"] == "Cine" and title == "Cine" and ext_info["name"] != "Cine":
+                    title = ext_info["name"]
+
                 orig_title = ext_info.get("originalTitle", "")
                 orig_title = "" if orig_title.lower().lstrip().startswith("episod") else orig_title
 
