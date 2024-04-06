@@ -281,17 +281,17 @@ def get_recording_files(filename, cache=False):
 def get_recording_name(channel_id, timestamp, cloud=False):
     guide = _CLOUD if cloud else _EPGDATA
 
-    _program = guide[channel_id][timestamp]
-    anchor = _program.genre[0] == "0" and not _program.serie
+    epg = guide[channel_id][timestamp]
+    anchor = epg.genre[0] == "0" and not epg.serie
 
     path = os.path.join(RECORDINGS, get_channel_dir(channel_id))
-    if _program.serie:
-        path = os.path.join(path, get_safe_filename(_program.serie))
+    if epg.serie:
+        path = os.path.join(path, get_safe_filename(epg.serie))
     elif anchor:
-        path = os.path.join(path, get_safe_filename(_program.full_title))
+        path = os.path.join(path, get_safe_filename(epg.full_title))
     path = path.rstrip(".").rstrip(",")
 
-    filename = os.path.join(path, get_safe_filename(_program.full_title))
+    filename = os.path.join(path, get_safe_filename(epg.full_title))
     if anchor:
         filename += f' - {datetime.fromtimestamp(timestamp).strftime("%Y%m%d_%H%M")}'
 
