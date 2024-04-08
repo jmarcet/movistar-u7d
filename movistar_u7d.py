@@ -3,8 +3,6 @@
 import aiofiles
 import aiohttp
 import asyncio
-import json
-import logging
 import os
 import sys
 import time
@@ -15,53 +13,72 @@ from aiohttp.client_exceptions import ClientConnectionError, ClientOSError, Serv
 from asyncio.exceptions import CancelledError
 from asyncio.subprocess import DEVNULL, PIPE
 from asyncio_dgram import bind as dgram_bind
-from collections import namedtuple
+from collections import defaultdict, namedtuple
 from contextlib import closing
 from datetime import datetime
 from filelock import FileLock, Timeout
-from sanic import Sanic, response
-from sanic.exceptions import HeaderNotFound, NotFound, ServiceUnavailable
+from psutil import AccessDenied, Process, boot_time
+from sanic import response
+from sanic_prometheus import monitor
+from sanic.exceptions import Forbidden, HeaderNotFound, NotFound, ServiceUnavailable
 from sanic.handlers import ContentRangeHandler
 from sanic.log import error_logger
 from sanic.models.server_types import ConnInfo
 from sanic.server.protocols.http_protocol import HttpProtocol
+from signal import SIGINT, SIGTERM, SIG_IGN, signal
 from socket import IPPROTO_IP, IP_ADD_MEMBERSHIP, inet_aton
-from warnings import filterwarnings
+from socket import AF_INET, SOCK_STREAM, socket
+from time import sleep
 
-from mu7d import ATOM, BUFF, CHUNK, DATEFMT, EPG_URL, FMT, MIME_M3U, MIME_WEBM, UA
-from mu7d import URL_COVER, URL_FANART, URL_LOGO, VID_EXTS, WIN32, YEAR_SECONDS, IPTVNetworkError
-from mu7d import add_logfile, cleanup_handler, find_free_port, get_end_point, get_iptv_ip
-from mu7d import get_vod_info, mu7d_config, ongoing_vods, _version
-from movistar_epg import parse_channels
+from movistar_cfg import ATOM, BUFF, CHUNK, CONF, DIV_ONE, LINUX, MIME_GUIDE, MIME_M3U
+from movistar_cfg import MIME_WEBM, UA, URL_COVER, URL_FANART, URL_LOGO, VID_EXTS, WIN32
+
+from movistar_lib import add_prom_event, alive, create_covers_cache, does_recording_exist, find_free_port
+from movistar_lib import get_channel_id, get_end_point, get_epg, get_iptv_ip, get_local_info, get_path
+from movistar_lib import get_program_vod, get_recording_name, get_vod_info, log_network_saturated
+from movistar_lib import network_saturation, ongoing_vods, prom_event, prune_duplicates, prune_expired, reaper
+from movistar_lib import record_program, recordings_lock, reload_epg, reload_recordings, reindex_recordings
+from movistar_lib import timers_check, update_epg, update_epg_cron, update_recordings, upgrade_recordings
+from movistar_lib import IPTVNetworkError, LocalNetworkError, PromEvent, Recording, app, log, _g, _version
+
 from movistar_vod import Vod
-
-
-app = Sanic("movistar_u7d")
-
-log = logging.getLogger("U7D")
 
 
 @app.listener("before_server_start")
 async def before_server_start(app):
-    global _IPTV, _SESSION, _SESSION_LOGOS
-
     app.config.FALLBACK_ERROR_FORMAT = "json"
     app.config.GRACEFUL_SHUTDOWN_TIMEOUT = 0
     app.config.REQUEST_TIMEOUT = 1
-    # app.config.RESPONSE_TIMEOUT = 1
 
-    if WIN32:
+
+@app.listener("after_server_start")
+async def after_server_start(app):
+    if not WIN32:
+
+        def cleanup_handler(signum, frame):
+            [signal(sig, SIG_IGN) for sig in (SIGINT, SIGTERM)]
+            app.stop()
+            os.killpg(0, SIGTERM)
+            time.sleep(0.5)
+            while True:
+                try:
+                    os.waitpid(-1, 0)
+                except ChildProcessError:
+                    break
+
+        [signal(sig, cleanup_handler) for sig in (SIGINT, SIGTERM)]
+
+    else:
         import win32api  # pylint: disable=import-error
         import win32con  # pylint: disable=import-error
 
-        global _loop
+        _loop = asyncio.get_event_loop()
 
-        _loop = asyncio.get_running_loop()
-
-        def cancel_handler(event):
-            log.debug("cancel_handler(event=%d)" % event)
-            if _loop and event in (
+        def close_handler(event):
+            log.debug("close_handler(event=%d)" % event)
+            if _loop.is_running() and event in (
                 win32con.CTRL_BREAK_EVENT,
+                win32con.CTRL_C_EVENT,
                 win32con.CTRL_CLOSE_EVENT,
                 win32con.CTRL_LOGOFF_EVENT,
                 win32con.CTRL_SHUTDOWN_EVENT,
@@ -69,53 +86,124 @@ async def before_server_start(app):
                 _loop.stop()
                 while _loop.is_running():
                     time.sleep(0.05)
+            log.debug("close_handler(event=%d) -> GOOD BYE" % event)
+            return True
 
-        win32api.SetConsoleCtrlHandler(cancel_handler, 1)
+        win32api.SetConsoleCtrlHandler(close_handler, True)
 
-    _IPTV = get_iptv_ip()
+    _g._NETWORK_SATURATED = False
+    _g._NETWORK_SATURATION = 0
 
-    _SESSION = aiohttp.ClientSession(
-        connector=aiohttp.TCPConnector(keepalive_timeout=YEAR_SECONDS, limit_per_host=1),
-        json_serialize=ujson.dumps,
-    )
-    _SESSION_LOGOS = aiohttp.ClientSession(
-        connector=aiohttp.TCPConnector(keepalive_timeout=YEAR_SECONDS),
-        headers={"User-Agent": UA},
-        json_serialize=ujson.dumps,
-    )
+    _g._CHANNELS = {}
+    _g._CLOUD = {}
+    _g._EPGDATA = {}
+    _g._KEEP = defaultdict(dict)
+    _g._RECORDINGS = defaultdict(dict)
 
-    app.ctx.ep = await get_end_point(HOME, log)
-    app.ctx.vod_client = aiohttp.ClientSession(
-        connector=aiohttp.TCPConnector(keepalive_timeout=YEAR_SECONDS),
-        headers={"User-Agent": UA},
-        json_serialize=ujson.dumps,
-    )
+    _g._IPTV = get_iptv_ip()
 
-    banner = f"Movistar U7D - U7D v{_version}"
-    if U7D_PROCESSES > 1:
-        log.info(f"*** {banner} ***")
-    else:
-        log.info("-" * len(banner))
-        log.info(banner)
-        log.info("-" * len(banner))
+    _g._SESSION = aiohttp.ClientSession(headers={"User-Agent": UA}, json_serialize=ujson.dumps)
+    _g.vod_client = aiohttp.ClientSession(headers={"User-Agent": UA}, json_serialize=ujson.dumps)
 
-    if IPTV_BW_SOFT:
-        app.add_task(network_saturated())
-        log.info(f"BW: {IPTV_BW_SOFT}-{IPTV_BW_HARD} kbps / {IPTV_IFACE}")
+    _g.ep = await get_end_point()
+    if not _g.ep:
+        return sys.exit(1)
+
+    _g._last_bw_warning = None
+    _g._last_epg = None
+    _g._t_timers = None
+    _g._t_timers_next = None
+
+    app.add_task(alive())
+
+    if _g.IPTV_BW_SOFT:
+        app.add_task(network_saturation())
+        _msg = " => Ignoring RECORDINGS_PROCESSES" if _g.RECORDINGS else ""
+        log.info(f"BW: {_g.IPTV_BW_SOFT}-{_g.IPTV_BW_HARD} kbps / {_g.IPTV_IFACE}{_msg}")
+
+    await reload_epg()
+
+    if not _g._last_epg:
+        if not os.path.exists(_g.GUIDE):
+            return sys.exit(1)
+        _g._last_epg = int(os.path.getmtime(_g.GUIDE))
+
+    if _g.RECORDINGS:
+        if not os.path.exists(_g.RECORDINGS):
+            os.makedirs(_g.RECORDINGS)
+        else:
+            if _g.RECORDINGS_UPGRADE:
+                await upgrade_recordings()
+            elif _g.RECORDINGS_REINDEX:
+                await reindex_recordings()
+            else:
+                await reload_recordings()
+            if (
+                _g.RECORDINGS_TMP
+                and _g._RECORDINGS
+                and not os.path.exists(os.path.join(_g.RECORDINGS_TMP, "covers"))
+            ):
+                await create_covers_cache()
+
+        uptime = int(datetime.now().timestamp() - boot_time())
+        if not _g._t_timers:
+            if int(datetime.now().replace(minute=0, second=0).timestamp()) <= _g._last_epg:
+                delay = max(5, 180 - uptime)
+                if delay > 10:
+                    log.info(f"Waiting {delay}s to check recording timers since the system just booted...")
+                _g._t_timers = app.add_task(timers_check(delay))
+            else:
+                log.warning("Delaying timers_check until the EPG is updated...")
+
+    app.add_task(reaper())
+    app.add_task(update_epg_cron())
 
 
 @app.listener("before_server_stop")
 async def before_server_stop(app):
-    cleanup_handler()
+    [task.cancel() for task in asyncio.all_tasks()]
 
 
-def get_channel_id(channel_name):
-    res = [
-        channel_id
-        for channel_id in _CHANNELS
-        if channel_name.lower() in _CHANNELS[channel_id].name.lower().replace(" ", "").replace(".", "")
-    ]
-    return res[0] if len(res) == 1 else None
+@app.put("/archive/<channel_id:int>/<program_id:int>")
+async def handle_archive(request, channel_id, program_id):
+    if not _g.RECORDINGS:
+        raise NotFound(f"Requested URL {request.path} not found")
+
+    cloud = request.args.get("cloud") == "1"
+
+    timestamp = get_epg(channel_id, program_id, cloud)[0]
+    if not timestamp:
+        raise NotFound(f"Requested URL {request.path} not found")
+
+    filename = get_recording_name(channel_id, timestamp, cloud)
+
+    log_suffix = f': [{channel_id:4}] [{program_id}] [{timestamp}] "{filename}"'
+
+    if not _g._t_timers or _g._t_timers.done():
+        _g._t_timers = app.add_task(timers_check(delay=3))
+
+    log.debug('Checking for "%s"' % filename)
+    if not does_recording_exist(filename):
+        msg = "Recording NOT ARCHIVED"
+        log.error(DIV_ONE % (msg, log_suffix))
+        return response.json({"status": msg}, ensure_ascii=False, status=204)
+
+    async with recordings_lock:
+        prune_duplicates(channel_id, filename)
+        if channel_id in _g._KEEP:
+            prune_expired(channel_id, filename)
+
+        nfo = await get_local_info(channel_id, timestamp, get_path(filename, bare=True))
+        if not nfo:
+            raise NotFound(f"Requested URL {request.path} not found")
+        # Metadata's beginTime rules since it is how the recording will be found
+        _g._RECORDINGS[channel_id][nfo["beginTime"]] = Recording(filename, nfo["duration"])
+
+        msg = "Recording ARCHIVED"
+        log.info(DIV_ONE % (msg, log_suffix))
+
+    app.add_task(update_recordings(channel_id))
+    return response.json({"status": msg}, ensure_ascii=False)
 
 
 @app.route("/<channel_id:int>/live", methods=["GET", "HEAD"], name="channel_live")
@@ -129,7 +217,7 @@ async def handle_channel(request, channel_id=None, channel_name=None):
     if channel_name:
         channel_id = get_channel_id(channel_name)
 
-    if channel_id not in _CHANNELS:
+    if channel_id not in _g._CHANNELS:
         raise NotFound(f"Requested URL {request.path} not found")
 
     ua = request.headers.get("user-agent", "")
@@ -139,15 +227,14 @@ async def handle_channel(request, channel_id=None, channel_name=None):
     if request.method == "HEAD":
         return response.HTTPResponse(content_type=MIME_WEBM, status=200)
 
-    if _NETWORK_SATURATED and not await ongoing_vods(_fast=True):
+    if _g._NETWORK_SATURATED and not await ongoing_vods(_fast=True):
         log.warning(f"[{request.ip}] {request.path} -> Network Saturated")
         raise ServiceUnavailable("Network Saturated")
 
-    ch, prom = _CHANNELS[channel_id], None
-    _response = await request.respond(content_type=MIME_WEBM)
+    _response, ch, prom = await request.respond(content_type=MIME_WEBM), _g._CHANNELS[channel_id], None
     try:
         with closing(await dgram_bind((ch.address if not WIN32 else "", ch.port), reuse_port=True)) as stream:
-            stream.socket.setsockopt(IPPROTO_IP, IP_ADD_MEMBERSHIP, inet_aton(ch.address) + inet_aton(_IPTV))
+            stream.socket.setsockopt(IPPROTO_IP, IP_ADD_MEMBERSHIP, inet_aton(ch.address) + inet_aton(_g._IPTV))
 
             # 1st packet on SDTV channels is bogus and breaks ffmpeg
             if ua.startswith("Jellyfin") and " HD" not in ch.name:
@@ -157,15 +244,15 @@ async def handle_channel(request, channel_id=None, channel_name=None):
                 await _response.send((await stream.recv())[0][28:])
 
             prom = app.add_task(
-                send_prom_event(
-                    {
-                        "channel_id": channel_id,
-                        "id": _start,
-                        "lat": time.time() - _start,
-                        "method": "live",
-                        "endpoint": f"{ch.name} _ {request.ip} _ ",
-                        "msg": f"[{request.ip}] -> Playing {request.url}",
-                    }
+                add_prom_event(
+                    PromEvent(
+                        ch_id=channel_id,
+                        endpoint=f"{ch.name} _ {request.ip}",
+                        id=_start,
+                        lat=time.time() - _start,
+                        method="live",
+                        msg=f"[{request.ip}] -> Playing {request.url}",
+                    )
                 )
             )
 
@@ -175,7 +262,6 @@ async def handle_channel(request, channel_id=None, channel_name=None):
     finally:
         if prom:
             prom.cancel()
-            await prom
         await _response.eof()
 
 
@@ -192,47 +278,42 @@ async def handle_flussonic(request, url, channel_id=None, channel_name=None, clo
     if channel_name:
         channel_id = get_channel_id(channel_name)
 
-    if channel_id not in _CHANNELS:
+    if channel_id not in _g._CHANNELS:
         raise NotFound(f"Requested URL {request.path} not found")
 
-    event = {
-        "channel_id": channel_id,
-        "cloud": cloud,
-        "local": local,
-        "id": _start,
-        "lat": 0,
-        "url": url,
-        "method": "catchup",
-        "msg": f"[{request.ip}] -> Playing {request.url}",
-        "endpoint": _CHANNELS[channel_id].name + f" _ {request.ip} _ ",
-    }
-
-    try:
-        params = {"cloud": int(cloud), "local": int(local)}
-        async with _SESSION.get(f"{EPG_URL}/program_id/{channel_id}/{url}", params=params) as r:
-            _, program_id, _, duration, offset = (await r.json()).values()
-    except (AttributeError, KeyError, ValueError, ClientConnectionError, ClientOSError, ServerDisconnectedError):
+    p_vod = get_program_vod(channel_id, url, cloud, local)
+    if not p_vod:
         raise NotFound(f"Requested URL {request.path} not found")
 
     if request.method == "HEAD":
         return response.HTTPResponse(content_type=MIME_WEBM, status=200)
 
+    event = PromEvent(
+        ch_id=channel_id,
+        endpoint=f"{p_vod.ch_name} _ {request.ip}",
+        id=_start,
+        lat=0,
+        method="catchup",
+        msg=f"[{request.ip}] -> Playing {request.url}",
+        url=url,
+    )
+
     ua = request.headers.get("user-agent", "")
 
     if local:
-        if os.path.exists(program_id):
-            if " Chrome/" in ua or not program_id.endswith(".ts"):
-                return await transcode(request, event, filename=program_id, offset=offset)
+        if os.path.exists(p_vod.pid):
+            if " Chrome/" in ua or not p_vod.pid.endswith(".ts"):
+                return await transcode(request, event, p_vod, filename=p_vod.pid, offset=p_vod.offset)
 
-            _stat = await aiofiles.os.stat(program_id)
-            bytepos = round(offset * _stat.st_size / duration)
+            _stat = await aiofiles.os.stat(p_vod.pid)
+            bytepos = round(p_vod.offset * _stat.st_size / p_vod.duration)
             bytepos -= bytepos % CHUNK
             to_send = _stat.st_size - bytepos
 
-            async with aiofiles.open(program_id, mode="rb") as f:
+            async with aiofiles.open(p_vod.pid, mode="rb") as f:
                 await f.seek(bytepos)
                 _response = await request.respond(content_type=MIME_WEBM)
-                prom = app.add_task(send_prom_event(event))
+                prom = app.add_task(add_prom_event(event, cloud, local, p_vod))
 
                 try:
                     while to_send >= CHUNK:
@@ -240,41 +321,42 @@ async def handle_flussonic(request, url, channel_id=None, channel_name=None, clo
                         await _response.send(content)
                         to_send -= len(content)
                 finally:
-                    prom.cancel()
-                    await prom
+                    if prom:
+                        prom.cancel()
                     await _response.eof()
 
             return
         raise NotFound(f"Requested URL {request.path} not found")
 
-    if _NETWORK_SATURATED and not await ongoing_vods(_fast=True):
+    if _g._NETWORK_SATURATED and not await ongoing_vods(_fast=True):
         log.warning(f"[{request.ip}] {request.path} -> Network Saturated")
         raise ServiceUnavailable("Network Saturated")
 
-    client_port = find_free_port(_IPTV)
-    info = await get_vod_info(request.app.ctx.vod_client, request.app.ctx.ep, channel_id, cloud, program_id)
+    client_port = find_free_port(_g._IPTV)
+    info = await get_vod_info(_g.vod_client, _g.ep, channel_id, cloud, p_vod.pid)
     if not info:
-        await _SESSION.post(f"{EPG_URL}/prom_event/na", json=event)
+        await prom_event(event, "na", cloud, p_vod=p_vod)
         raise NotFound(f"Requested URL {request.path} not found")
 
-    args = VodArgs(channel_id, program_id, request.ip, client_port, offset, cloud)
-    vod = app.add_task(Vod(args, request.app.ctx.vod_client, info))
+    args = VodArgs(channel_id, p_vod.pid, request.ip, client_port, p_vod.offset, cloud)
+    vod = app.add_task(Vod(args, _g.vod_client, info))
+    if not vod:
+        raise NotFound(f"Requested URL {request.path} not found")
 
     if " Chrome/" in ua:
-        return await transcode(request, event, channel_id=channel_id, port=client_port, vod=vod)
+        return await transcode(request, event, p_vod, channel_id=channel_id, port=client_port, vod=vod)
 
-    prom = None
-    _response = await request.respond(content_type=MIME_WEBM)
+    _response, prom = await request.respond(content_type=MIME_WEBM), None
     try:
-        with closing(await dgram_bind((_IPTV, client_port))) as stream:
+        with closing(await dgram_bind((_g._IPTV, client_port))) as stream:
             # 1st packet on SDTV channels is bogus and breaks ffmpeg
-            if ua.startswith("Jellyfin") and " HD" not in _CHANNELS[channel_id].name:
+            if ua.startswith("Jellyfin") and " HD" not in _g._CHANNELS[channel_id].name:
                 log.debug('UA="%s" detected, skipping first packet' % ua)
                 await stream.recv()
             else:
                 await _response.send((await stream.recv())[0])
 
-            prom = app.add_task(send_prom_event({**event, "lat": time.time() - _start}))
+            prom = app.add_task(add_prom_event(event._replace(lat=time.time() - _start), cloud, local, p_vod))
 
             while True:
                 await _response.send((await stream.recv())[0])
@@ -283,7 +365,6 @@ async def handle_flussonic(request, url, channel_id=None, channel_name=None, clo
         vod.cancel()
         if prom:
             prom.cancel()
-            await prom
         await _response.eof()
 
 
@@ -294,8 +375,7 @@ async def handle_flussonic(request, url, channel_id=None, channel_name=None, clo
 async def handle_flussonic_extra(request, url, channel_id=None, channel_name=None):
     if url in ("live", "mpegts"):
         return await handle_channel(request, channel_id, channel_name)
-    cloud = request.route.path.startswith("cloud")
-    local = request.route.path.startswith("local")
+    cloud, local = (request.route.path.startswith(x) for x in ("cloud", "local"))
     return await handle_flussonic(request, url, channel_id, channel_name, cloud=cloud, local=local)
 
 
@@ -308,13 +388,13 @@ async def handle_flussonic_extra(request, url, channel_id=None, channel_name=Non
 @app.get("/nube.xml", name="xml_nube")
 async def handle_guides(request):
     guide = {
-        "cloud.xml": GUIDE_CLOUD,
-        "guia.xml": GUIDE,
-        "guia.xml.gz": GUIDE + ".gz",
-        "guide.xml": GUIDE,
-        "guide.xml.gz": GUIDE + ".gz",
-        "local.xml": GUIDE_LOCAL,
-        "nube.xml": GUIDE_CLOUD,
+        "cloud.xml": _g.GUIDE_CLOUD,
+        "guia.xml": _g.GUIDE,
+        "guia.xml.gz": _g.GUIDE + ".gz",
+        "guide.xml": _g.GUIDE,
+        "guide.xml.gz": _g.GUIDE + ".gz",
+        "local.xml": _g.GUIDE_LOCAL,
+        "nube.xml": _g.GUIDE_CLOUD,
     }[request.route.path]
     pad = 10 if request.route.path.endswith(".xml") else 7
 
@@ -322,7 +402,7 @@ async def handle_guides(request):
         raise NotFound(f"Requested URL {request.path} not found")
 
     log.info(f'[{request.ip}] {request.method} {request.url}{" " * pad} => "{guide}"')
-    return await response.file(guide)
+    return await response.file(guide, mime_type=MIME_GUIDE)
 
 
 @app.route("/Covers/<path:int>/<cover>", methods=["GET", "HEAD"], name="images_covers")
@@ -338,11 +418,13 @@ async def handle_images(request, cover=None, logo=None, path=None):
         raise NotFound(f"Requested URL {request.path} not found")
 
     if request.method == "HEAD":
-        return response.HTTPResponse(content_type="image/jpeg", status=200)
+        return response.HTTPResponse(
+            content_type="image/jpeg" if not urls[0].endswith(".png") else "image/png", status=200
+        )
 
     for url in urls:
         try:
-            async with _SESSION_LOGOS.get(url) as r:
+            async with _g._SESSION.get(url) as r:
                 if r.status == 200:
                     logo_data = await r.read()
                     if logo_data:
@@ -365,20 +447,20 @@ async def handle_m3u_files(request, m3u_file):
 
     m3u = m3u_file.lower()
     if m3u in ("movistartv", "canales", "channels", "playlist"):
-        m3u_matched = CHANNELS
+        m3u_matched = _g.CHANNELS
         pad = " " * 5
     elif m3u in ("movistartvcloud", "cloud", "nube"):
-        m3u_matched = CHANNELS_CLOUD
+        m3u_matched = _g.CHANNELS_CLOUD
     elif m3u in ("movistartvlocal", "local"):
-        m3u_matched = CHANNELS_LOCAL
+        m3u_matched = _g.CHANNELS_LOCAL
     elif m3u in ("grabaciones", "recordings"):
-        m3u_matched = os.path.join(RECORDINGS, "Recordings.m3u")
+        m3u_matched = os.path.join(_g.RECORDINGS, "Recordings.m3u")
         pad = " " * 5
     else:
         channel_id = get_channel_id(m3u)
-        if channel_id in _CHANNELS:
-            channel_tag = "%03d. %s" % (_CHANNELS[channel_id].number, _CHANNELS[channel_id].name)
-            m3u_matched = os.path.join(os.path.join(RECORDINGS, channel_tag), f"{channel_tag}.m3u")
+        if channel_id in _g._CHANNELS:
+            channel_tag = "%03d. %s" % (_g._CHANNELS[channel_id].number, _g._CHANNELS[channel_id].name)
+            m3u_matched = os.path.join(os.path.join(_g.RECORDINGS, channel_tag), f"{channel_tag}.m3u")
 
     if os.path.exists(m3u_matched):
         log.info(f'[{request.ip}] {request.method} {request.url}{pad} => "{m3u_matched}"')
@@ -387,74 +469,100 @@ async def handle_m3u_files(request, m3u_file):
     raise NotFound(f"Requested URL {request.path} not found")
 
 
-@app.get("/favicon.ico")
+@app.get("/favicon.ico", name="favicon")
 async def handle_notfound(request):
     return response.empty(404)
 
 
-@app.get("/metrics")
-async def handle_prometheus(request):
-    try:
-        async with _SESSION.get(f"{EPG_URL}/metrics") as r:
-            return response.text(await r.text())
-    except (ClientConnectionError, ClientOSError, ServerDisconnectedError):
-        raise ServiceUnavailable("Not available")
-
-
-@app.get("/timers_check", name="proxied_timers_check")
-@app.get("/update_epg", name="proxied_update_epg")
-async def handle_proxied(request):
-    try:
-        async with _SESSION.get(f"{EPG_URL}/{request.route.path}") as r:
-            return response.json(await r.json())
-    except (ClientConnectionError, ClientOSError, ServerDisconnectedError):
-        raise ServiceUnavailable("Not available")
+@app.get("/program_title/<channel_id:int>/<program_id:int>", name="program_title")
+async def handle_program_title(request, channel_id, program_id):
+    cloud = request.args.get("cloud", "") == "1"
+    epg = get_epg(channel_id, program_id, cloud)[1]
+    if epg:
+        return response.json({"full_title": epg.full_title})
+    raise NotFound(f"Requested URL {request.path} not found")
 
 
 @app.get("/record/<channel_id:int>/<url>", name="record_program_id")
 @app.get(r"/record/<channel_name:([A-Za-z1-9]+)>/<url>", name="record_program_name")
 async def handle_record_program(request, url, channel_id=None, channel_name=None):
+    if not _g.RECORDINGS:
+        raise NotFound(f"Requested URL {request.path} not found")
+
     if not url:
         log.warning("Cannot record live channels! Use wget for that.")
-        return response.empty(404)
+        raise NotFound(f"Requested URL {request.path} not found")
 
     if channel_name:
         channel_id = get_channel_id(channel_name)
 
-    if channel_id not in _CHANNELS:
+    if channel_id not in _g._CHANNELS:
         raise NotFound(f"Requested URL {request.path} not found")
 
-    try:
-        async with _SESSION.get(f"{EPG_URL}/record/{channel_id}/{url}", params=request.args) as r:
-            return response.json(await r.json())
-    except (ClientConnectionError, ClientOSError, ServerDisconnectedError):
-        raise ServiceUnavailable("Not available")
+    cloud = request.args.get("cloud") == "1"
+    comskip = int(request.args.get("comskip", "0"))
+    index = request.args.get("index", "1") == "1"
+    mkv = request.args.get("mkv") == "1"
+    record_time = int(request.args.get("time", "0"))
+    vo = request.args.get("vo") == "1"
+
+    if comskip not in (0, 1, 2):
+        raise NotFound(f"Requested URL {request.path} not found")
+
+    p_vod = get_program_vod(channel_id, url, cloud)
+    if not p_vod:
+        raise NotFound(f"Requested URL {request.path} not found")
+
+    if not record_time:
+        record_time = p_vod.duration - p_vod.offset
+
+    msg = await record_program(channel_id, p_vod.pid, p_vod.offset, record_time, cloud, comskip, index, mkv, vo)
+    if msg:
+        raise Forbidden(msg)
+
+    return response.json(
+        {
+            "status": "OK",
+            "channel": p_vod.ch_name,
+            "channel_id": channel_id,
+            "pid": p_vod.pid,
+            "start": p_vod.start,
+            "offset": p_vod.offset,
+            "time": record_time,
+            "cloud": cloud,
+            "comskip": comskip,
+            "index": index,
+            "mkv": mkv,
+            "vo": vo,
+        }
+    )
 
 
-@app.route("/recording/", methods=["GET", "HEAD"])
+@app.route("/recording/", methods=["GET", "HEAD"], name="recording")
 async def handle_recording(request):
-    if not RECORDINGS:
+    if not _g.RECORDINGS:
         raise NotFound(f"Requested URL {request.path} not found")
 
     _path = urllib.parse.unquote(request.url).split("/recording/")[1][1:]
     ext = os.path.splitext(_path)[1]
+    mime_img = "image/jpeg" if ext == ".jpg" else "image/png" if ext == ".png" else None
 
-    if RECORDINGS_TMP and ext in (".jpg", ".png"):
-        cached_cover = os.path.join(RECORDINGS_TMP, "covers", _path)
+    if _g.RECORDINGS_TMP and ext in (".jpg", ".png"):
+        cached_cover = os.path.join(_g.RECORDINGS_TMP, "covers", _path)
         if os.path.exists(cached_cover):
             if request.method == "HEAD":
-                return response.HTTPResponse(status=200)
+                return response.HTTPResponse(content_type=mime_img, status=200)
 
-            return await response.file(cached_cover)
+            return await response.file(cached_cover, mime_type=mime_img)
         log.warning(f'Cover not found in cache: "{_path}"')
 
-    file = os.path.join(RECORDINGS, _path)
+    file = os.path.join(_g.RECORDINGS, _path)
     if os.path.exists(file):
         if request.method == "HEAD":
             return response.HTTPResponse(status=200)
 
         if ext in (".jpg", ".png"):
-            return await response.file(file)
+            return await response.file(file, mime_type=mime_img)
 
         if ext in VID_EXTS:
             try:
@@ -466,55 +574,47 @@ async def handle_recording(request):
     raise NotFound(f"Requested URL {request.path} not found")
 
 
-@app.post("/update_channels")
-async def handle_update_channels(request):
-    global _CHANNELS
+@app.get("/reindex_recordings", name="recordings_reindex")
+@app.get("/reload_recordings", name="recordings_reload")
+async def handle_recordings(request):
+    if not _g.RECORDINGS:
+        raise NotFound(f"Requested URL {request.path} not found")
 
-    _CHANNELS = json.loads(request.body, object_hook=parse_channels)["data"]
-
-    return response.empty(200)
-
-
-async def network_saturated():
-    global _NETWORK_SATURATED
-    iface_rx = f"/sys/class/net/{IPTV_IFACE}/statistics/rx_bytes"
-    before = last = 0
-    cutpoint = IPTV_BW_SOFT + (IPTV_BW_HARD - IPTV_BW_SOFT) / 2
-
-    while True:
-        if not os.path.exists(iface_rx):
-            last = 0
-            log.error(f"{IPTV_IFACE} NOT ACCESSIBLE")
-            while not os.path.exists(iface_rx):
-                await asyncio.sleep(1)
-            log.info(f"{IPTV_IFACE} IS now ACCESSIBLE")
-
-        async with aiofiles.open(iface_rx) as f:
-            now, cur = time.time(), int((await f.read())[:-1])
-
-        if last:
-            tp = (cur - last) * 0.008 / (now - before)
-            _NETWORK_SATURATED = tp > cutpoint
-
-        before, last = now, cur
-        await asyncio.sleep(1)
+    app.add_task(reindex_recordings() if request.route.path == "reindex_recordings" else reload_recordings())
+    _m = "Reindex" if request.route.path == "reindex_recordings" else "Reload"
+    return response.json({"status": f"Recordings {_m} Queued"}, 200)
 
 
-async def send_prom_event(event):
-    await asyncio.sleep(0.05)
-    try:
-        try:
-            await _SESSION.post(f"{EPG_URL}/prom_event/add", json={**event})
-            await asyncio.sleep(YEAR_SECONDS)
-        except CancelledError:
-            await _SESSION.post(
-                f"{EPG_URL}/prom_event/remove", json={**event, "offset": int(time.time() - event["id"])}
-            )
-    except (ClientConnectionError, ClientOSError, ServerDisconnectedError):
-        pass
+@app.get("/reload_epg", name="epg_reload")
+@app.get("/update_epg", name="epg_update")
+async def handle_reload_epg(request):
+    app.add_task(reload_epg() if request.route.path == "reload_epg" else update_epg())
+    _m = "Reload" if request.route.path == "reload_epg" else "Update"
+    return response.json({"status": f"EPG {_m} Queued"}, 200)
 
 
-async def transcode(request, event, channel_id=0, filename="", offset=0, port=0, vod=None):
+@app.get("/timers_check", name="timers_check")
+async def handle_timers_check(request):
+    if not _g.RECORDINGS:
+        raise NotFound(f"Requested URL {request.path} not found")
+
+    if _g._NETWORK_SATURATION:
+        return response.json({"status": await log_network_saturated()}, 404)
+
+    delay = int(request.args.get("delay", 0))
+
+    if _g._t_timers and not _g._t_timers.done():
+        if delay:
+            _g._t_timers.cancel()
+        else:
+            raise Forbidden("Already processing timers")
+
+    _g._t_timers = app.add_task(timers_check(delay=delay))
+
+    return response.json({"status": "Timers check queued"}, 200)
+
+
+async def transcode(request, event, p_vod, channel_id=0, filename="", offset=0, port=0, vod=None):
     log.debug(
         'transcode(): channel_id=%s port=%s vod=%s offset=%s filename="%s"'
         % tuple(map(str, (channel_id, port, vod, offset, filename)))
@@ -529,8 +629,8 @@ async def transcode(request, event, channel_id=0, filename="", offset=0, port=0,
     if filename:
         cmd += ["-ss", f"{offset}", "-i", filename]
     else:
-        cmd += ["-skip_initial_bytes", f"{CHUNK}"] if " HD" not in _CHANNELS[channel_id].name else []
-        cmd += ["-i", f"udp://@{_IPTV}:{port}"]
+        cmd += ["-skip_initial_bytes", f"{CHUNK}"] if " HD" not in _g._CHANNELS[channel_id].name else []
+        cmd += ["-i", f"udp://@{_g._IPTV}:{port}"]
     cmd += ["-map", "0:v", *lang_channel, "-c:v:0", "copy", "-c:a:0", "libfdk_aac", "-b:a", "128k"]
     cmd += ["-f", "matroska", "-v", "fatal", "-"]
 
@@ -538,7 +638,7 @@ async def transcode(request, event, channel_id=0, filename="", offset=0, port=0,
     _response = await request.respond(content_type=MIME_WEBM)
 
     await _response.send(await proc.stdout.read(BUFF))
-    prom = app.add_task(send_prom_event({**event, "lat": time.time() - event["id"]}))
+    prom = app.add_task(add_prom_event(event._replace(lat=time.time() - event.id), p_vod=p_vod))
 
     try:
         while True:
@@ -551,8 +651,8 @@ async def transcode(request, event, channel_id=0, filename="", offset=0, port=0,
         proc.kill()
         if vod:
             vod.cancel()
-        prom.cancel()
-        await prom
+        if prom:
+            prom.cancel()
         await proc.wait()
         await _response.eof()
 
@@ -579,72 +679,129 @@ if __name__ == "__main__":
 
         setproctitle("movistar_u7d")
 
-    _IPTV = _NETWORK_SATURATED = _SESSION = _SESSION_LOGOS = _loop = None
+    else:
+        from psutil import ABOVE_NORMAL_PRIORITY_CLASS
 
-    _CHANNELS = {}
+    try:
+        Process().nice(-10 if not WIN32 else ABOVE_NORMAL_PRIORITY_CLASS)
+    except AccessDenied:
+        pass
 
-    _conf = mu7d_config()
+    def _check_iptv():
+        iptv_iface_ip = _get_iptv_iface_ip()
+        while True:
+            uptime = int(datetime.now().timestamp() - boot_time())
+            try:
+                iptv_ip = get_iptv_ip()
+                if not CONF["IPTV_IFACE"] or WIN32 or iptv_iface_ip and iptv_iface_ip == iptv_ip:
+                    log.info(f"IPTV address: {iptv_ip}")
+                    break
+                log.info("IPTV address: waiting for interface to be routed...")
+            except IPTVNetworkError as err:
+                if uptime < 180:
+                    log.info(err)
+                else:
+                    raise
+            sleep(5)
 
-    logging.getLogger("asyncio").setLevel(logging.FATAL)
-    logging.getLogger("filelock").setLevel(logging.FATAL)
-    logging.getLogger("sanic.error").setLevel(logging.FATAL)
-    logging.getLogger("sanic.root").disabled = True
+    def _check_ports():
+        with closing(socket(AF_INET, SOCK_STREAM)) as sock:
+            if sock.connect_ex((CONF["LAN_IP"], CONF["U7D_PORT"])) == 0:
+                raise LocalNetworkError(f"El puerto {CONF['LAN_IP']}:{CONF['U7D_PORT']} está ocupado")
 
-    logging.basicConfig(datefmt=DATEFMT, format=FMT, level=_conf.get("DEBUG") and logging.DEBUG or logging.INFO)
+    def _get_iptv_iface_ip():
+        iptv_iface = CONF["IPTV_IFACE"]
+        if iptv_iface:
+            import netifaces
 
-    if not _conf:
+            while True:
+                uptime = int(datetime.now().timestamp() - boot_time())
+                try:
+                    iptv = netifaces.ifaddresses(iptv_iface)[2][0]["addr"]
+                    log.info(f"IPTV interface: {iptv_iface}")
+                    return iptv
+                except (KeyError, ValueError):
+                    if uptime < 180:
+                        log.info("IPTV interface: waiting for it...")
+                        sleep(5)
+                    else:
+                        raise LocalNetworkError(f"Unable to get address from interface {iptv_iface}...")
+
+    if not CONF:
         log.critical("Imposible parsear fichero de configuración")
         sys.exit(1)
 
-    if _conf["LOG_TO_FILE"]:
-        add_logfile(log, _conf["LOG_TO_FILE"], _conf["DEBUG"] and logging.DEBUG or logging.INFO)
+    banner = f"Movistar U7D v{_version}"
+    log.info("=" * len(banner))
+    log.info(banner)
+    log.info("=" * len(banner))
 
-    # Ths happens when u7d is killed while on before_server_start
-    filterwarnings(
-        action="ignore",
-        category=RuntimeWarning,
-        message=r"coroutine '\w+.create_server' was never awaited",
-        module="sys",
-    )
+    if LINUX and any(("UID" in CONF, "GID" in CONF)):
+        log.info("Dropping privileges...")
+        if "GID" in CONF:
+            try:
+                os.setgid(CONF["GID"])
+            except PermissionError:
+                log.warning(f"Could not drop privileges to UID {CONF['UID']}")
+        if "UID" in CONF:
+            try:
+                os.setuid(CONF["UID"])
+            except PermissionError:
+                log.warning(f"Could not drop privileges to GID {CONF['GID']}")
 
-    if not os.getenv("U7D_PARENT"):
-        log.critical("Must be run with mu7d")
-        sys.exit(1)
+    os.environ["PATH"] = "%s;%s" % (os.path.dirname(__file__), os.getenv("PATH"))
+    os.environ["PYTHONOPTIMIZE"] = "0" if CONF["DEBUG"] else "2"
+    os.environ["U7D_PARENT"] = str(os.getpid())
 
-    CHANNELS = _conf["CHANNELS"]
-    CHANNELS_CLOUD = _conf["CHANNELS_CLOUD"]
-    CHANNELS_LOCAL = _conf["CHANNELS_LOCAL"]
-    DEBUG = _conf["DEBUG"]
-    GUIDE = _conf["GUIDE"]
-    GUIDE_CLOUD = _conf["GUIDE_CLOUD"]
-    GUIDE_LOCAL = _conf["GUIDE_LOCAL"]
-    HOME = _conf["HOME"]
-    IPTV_BW_HARD = _conf["IPTV_BW_HARD"]
-    IPTV_BW_SOFT = _conf["IPTV_BW_SOFT"]
-    IPTV_IFACE = _conf["IPTV_IFACE"]
-    LAN_IP = _conf["LAN_IP"]
-    RECORDINGS = _conf["RECORDINGS"]
-    RECORDINGS_TMP = _conf["RECORDINGS_TMP"]
-    U7D_PORT = _conf["U7D_PORT"]
-    U7D_PROCESSES = _conf["U7D_PROCESSES"]
+    _g.CHANNELS = CONF["CHANNELS"]
+    _g.CHANNELS_CLOUD = CONF["CHANNELS_CLOUD"]
+    _g.CHANNELS_LOCAL = CONF["CHANNELS_LOCAL"]
+    _g.DEBUG = CONF["DEBUG"]
+    _g.GUIDE = CONF["GUIDE"]
+    _g.GUIDE_CLOUD = CONF["GUIDE_CLOUD"]
+    _g.GUIDE_LOCAL = CONF["GUIDE_LOCAL"]
+    _g.IPTV_BW_HARD = CONF["IPTV_BW_HARD"]
+    _g.IPTV_BW_SOFT = CONF["IPTV_BW_SOFT"]
+    _g.IPTV_IFACE = CONF["IPTV_IFACE"]
+    _g.LAN_IP = CONF["LAN_IP"]
+    _g.MKV_OUTPUT = CONF["MKV_OUTPUT"]
+    _g.RECORDINGS = CONF["RECORDINGS"]
+    _g.RECORDINGS_M3U = CONF["RECORDINGS_M3U"]
+    _g.RECORDINGS_REINDEX = CONF["RECORDINGS_REINDEX"]
+    _g.RECORDINGS_PROCESSES = CONF["RECORDINGS_PROCESSES"]
+    _g.RECORDINGS_TMP = CONF["RECORDINGS_TMP"]
+    _g.RECORDINGS_UPGRADE = CONF["RECORDINGS_UPGRADE"]
+    _g.U7D_PORT = CONF["U7D_PORT"]
+    _g.U7D_URL = CONF["U7D_URL"]
+    _g.VID_EXT = ".mkv" if CONF["MKV_OUTPUT"] else ".ts"
 
     VodArgs = namedtuple("Vod", "channel, program, client_ip, client_port, start, cloud")
 
-    lockfile = os.path.join(_conf["TMP_DIR"], ".movistar_u7d.lock")
-    del _conf
+    monitor(
+        app,
+        is_middleware=False,
+        latency_buckets=[1.0],
+        mmc_period_sec=None,
+        multiprocess_mode="livesum",
+    ).expose_endpoint()
+
+    lockfile = os.path.join(CONF["TMP_DIR"], ".movistar_u7d.lock")
     try:
         with FileLock(lockfile, timeout=0):
+            _check_iptv()
+            _check_ports()
+            del CONF
             app.run(
-                host=LAN_IP,
-                port=U7D_PORT,
+                host=_g.LAN_IP,
+                port=_g.U7D_PORT,
                 protocol=VodHttpProtocol,
                 access_log=False,
                 auto_reload=False,
-                debug=DEBUG,
-                workers=U7D_PROCESSES if not WIN32 else 1,
+                debug=_g.DEBUG,
+                workers=1,
             )
-    except (AttributeError, CancelledError, KeyboardInterrupt):
-        sys.exit(1)
+    except (CancelledError, KeyboardInterrupt):
+        sys.exit(0)
     except IPTVNetworkError as err:
         log.critical(err)
         sys.exit(1)

@@ -13,7 +13,6 @@ import os
 import psutil
 import re
 import shutil
-import signal
 import sys
 import time
 import ujson
@@ -26,11 +25,13 @@ from asyncio.subprocess import DEVNULL as NULL, PIPE, STDOUT as OUT
 from contextlib import closing
 from datetime import timedelta
 from filelock import FileLock
+from signal import SIGINT, SIGTERM, signal
 
-from mu7d import BUFF, CHUNK, DATEFMT, DIV_LOG, DROP_KEYS, EPG_URL, FMT
-from mu7d import NFO_EXT, UA, URL_COVER, WIN32, YEAR_SECONDS, IPTVNetworkError
-from mu7d import add_logfile, find_free_port, get_end_point, get_iptv_ip, get_safe_filename
-from mu7d import get_vod_info, glob_safe, mu7d_config, ongoing_vods, remove, rename, utime, _version
+from movistar_cfg import BUFF, CHUNK, CONF, DATEFMT, DIV_LOG, DROP_KEYS, FMT, LINUX, NFO_EXT, UA, URL_COVER
+from movistar_cfg import WIN32, add_logfile
+
+from movistar_lib import IPTVNetworkError, find_free_port, get_end_point, get_iptv_ip, get_safe_filename
+from movistar_lib import get_vod_info, glob_safe, ongoing_vods, remove, rename, utime, _version
 
 
 log = logging.getLogger("VOD")
@@ -140,7 +141,7 @@ async def _cleanup_recording(exception, start=None):
             remove(parent)
 
         try:
-            await _SESSION.get(f"{EPG_URL}/timers_check?delay=3")
+            await _SESSION.get(f"{U7D_URL}/timers_check?delay=3")
         except (ClientConnectionError, ClientOSError, ServerDisconnectedError):
             pass
 
@@ -148,17 +149,10 @@ async def _cleanup_recording(exception, start=None):
 async def _open_sessions():
     global _SESSION, _SESSION_CLOUD
 
-    _SESSION_CLOUD = aiohttp.ClientSession(
-        connector=aiohttp.TCPConnector(keepalive_timeout=YEAR_SECONDS),
-        headers={"User-Agent": UA},
-        json_serialize=ujson.dumps,
-    )
+    _SESSION_CLOUD = aiohttp.ClientSession(headers={"User-Agent": UA}, json_serialize=ujson.dumps)
 
     if _args.write_to_file:
-        _SESSION = aiohttp.ClientSession(
-            connector=aiohttp.TCPConnector(keepalive_timeout=YEAR_SECONDS),
-            json_serialize=ujson.dumps,
-        )
+        _SESSION = aiohttp.ClientSession(json_serialize=ujson.dumps)
 
 
 async def postprocess(vod_info):
@@ -167,7 +161,8 @@ async def postprocess(vod_info):
 
         process = psutil.Process(proc.pid)
         process.nice(15 if not WIN32 else psutil.IDLE_PRIORITY_CLASS)
-        process.ionice(psutil.IOPRIO_CLASS_IDLE if not WIN32 else psutil.IOPRIO_VERYLOW)
+        if LINUX or WIN32:
+            process.ionice(psutil.IOPRIO_CLASS_IDLE if LINUX else psutil.IOPRIO_VERYLOW)
 
         await proc.wait()
 
@@ -312,7 +307,7 @@ async def postprocess(vod_info):
         metadata.update({"expDate": metadata["expDate"] // 1000})
         metadata.update({"name": os.path.basename(_args.filename)})
 
-        program_title_url = f"{EPG_URL}/program_title/{_args.channel}/{_args.program}"
+        program_title_url = f"{U7D_URL}/program_title/{_args.channel}/{_args.program}"
         async with _SESSION.get(program_title_url, params={"cloud": 1} if _args.cloud else {}) as resp:
             if resp.status == 200:
                 _meta = await resp.json()
@@ -512,7 +507,7 @@ async def postprocess(vod_info):
         utime(newest_ts, dirname)
 
         if _args.index:
-            archive_url = f"{EPG_URL}/archive/{_args.channel}/{_args.program}"
+            archive_url = f"{U7D_URL}/archive/{_args.channel}/{_args.program}"
             resp = await _SESSION.put(archive_url, params={"cloud": 1} if _args.cloud else {})
             if resp.status != 200:
                 log.error("Failed indexing recording")
@@ -699,13 +694,13 @@ async def rtsp(vod_info):
 
 async def Vod(args=None, vod_client=None, vod_info=None):
     if __name__ == "__main__":
-        global _END_POINT, _SESSION_CLOUD
+        global _END_POINT, _SESSION_CLOUD, _loop
 
-        if WIN32:
-            global _loop
-            _loop = asyncio.get_running_loop()
+        _loop = asyncio.get_running_loop()
 
-        _END_POINT = await get_end_point(HOME, log)
+        _END_POINT = await get_end_point()
+        if not _END_POINT:
+            return
 
         await _open_sessions()
 
@@ -745,16 +740,17 @@ if __name__ == "__main__":
         setproctitle("movistar_vod     %s" % " ".join(sys.argv[1:]))
 
         def cancel_handler(signum, frame):
-            raise CancelledError
+            if _loop:
+                [task.cancel() for task in asyncio.all_tasks(_loop)]
 
-        [signal.signal(sig, cancel_handler) for sig in (signal.SIGHUP, signal.SIGINT, signal.SIGTERM)]
+        [signal(sig, cancel_handler) for sig in (SIGINT, SIGTERM)]
 
     else:
         import win32api  # pylint: disable=import-error
         import win32con  # pylint: disable=import-error
 
-        def cancel_handler(event):
-            log.debug("cancel_handler(event=%d)" % event)
+        def close_handler(event):
+            log.debug("close_handler(event=%d)" % event)
             if _loop and event in (
                 win32con.CTRL_BREAK_EVENT,
                 win32con.CTRL_C_EVENT,
@@ -764,7 +760,7 @@ if __name__ == "__main__":
             ):
                 for child in psutil.Process().children():
                     while child.is_running():
-                        log.debug("cancel_handler(event=%d): Killing '%s'" % (event, child.name()))
+                        log.debug("close_handler(event=%d): Killing '%s'" % (event, child.name()))
                         child.kill()
                         time.sleep(0.01)
 
@@ -773,24 +769,25 @@ if __name__ == "__main__":
                 while not all((task.done() for task in asyncio.all_tasks(_loop))):
                     [task.cancel() for task in asyncio.all_tasks(_loop)]
                     time.sleep(0.05)
+            return True
 
-        win32api.SetConsoleCtrlHandler(cancel_handler, 1)
+        win32api.SetConsoleCtrlHandler(close_handler, True)
 
     _END_POINT = _IPTV = _SESSION = _SESSION_CLOUD = _filename = _loop = _tmpname = None
 
-    _conf = mu7d_config()
+    if not CONF:
+        log.critical("Imposible parsear fichero de configuración")
+        sys.exit(1)
+
+    DEBUG = CONF["DEBUG"]
 
     logging.getLogger("asyncio").setLevel(logging.FATAL)
     logging.getLogger("filelock").setLevel(logging.FATAL)
 
-    logging.basicConfig(datefmt=DATEFMT, format=FMT, level=_conf.get("DEBUG") and logging.DEBUG or logging.INFO)
+    logging.basicConfig(datefmt=DATEFMT, format=FMT, level=DEBUG and logging.DEBUG or logging.INFO)
 
-    if not _conf:
-        log.critical("Imposible parsear fichero de configuración")
-        sys.exit(1)
-
-    if _conf["LOG_TO_FILE"]:
-        add_logfile(log, _conf["LOG_TO_FILE"], _conf["DEBUG"] and logging.DEBUG or logging.INFO)
+    if CONF["LOG_TO_FILE"]:
+        add_logfile(log, CONF["LOG_TO_FILE"], DEBUG and logging.DEBUG or logging.INFO)
 
     parser = argparse.ArgumentParser(f"Movistar U7D - VOD v{_version}")
     parser.add_argument("channel", help="channel id", type=int)
@@ -815,7 +812,7 @@ if __name__ == "__main__":
 
     _args = parser.parse_args()
 
-    _conf["DEBUG"] = _args.debug or _conf["DEBUG"]
+    DEBUG = _args.debug or DEBUG
 
     try:
         _IPTV = get_iptv_ip()
@@ -827,19 +824,20 @@ if __name__ == "__main__":
         _args.client_port = find_free_port(get_iptv_ip())
 
     if _args.write_to_file:
-        if not _conf["RECORDINGS"]:
+        if not CONF["RECORDINGS"]:
             log.error("RECORDINGS path not set")
             sys.exit(1)
 
-        CACHE_DIR = _conf["CACHE_DIR"]
-        COMSKIP = (_args.comskip or _args.comskipcut) and _conf["COMSKIP"]
-        COMSKIP_LOG = os.path.join(_conf["HOME"], "comskip.log") if COMSKIP else None
-        NO_SUBS = _conf["NO_SUBS"]
-        RECORDINGS = _conf["RECORDINGS"]
-        RECORDINGS_TMP = _conf["RECORDINGS_TMP"]
-        RECORDINGS_TRANSCODE_INPUT = _conf["RECORDINGS_TRANSCODE_INPUT"]
-        RECORDINGS_TRANSCODE_OUTPUT = _conf["RECORDINGS_TRANSCODE_OUTPUT"]
-        TMP_DIR = _conf["TMP_DIR"]
+        CACHE_DIR = CONF["CACHE_DIR"]
+        COMSKIP = (_args.comskip or _args.comskipcut) and CONF["COMSKIP"]
+        COMSKIP_LOG = os.path.join(CONF["HOME"], "comskip.log") if COMSKIP else None
+        NO_SUBS = CONF["NO_SUBS"]
+        RECORDINGS = CONF["RECORDINGS"]
+        RECORDINGS_TMP = CONF["RECORDINGS_TMP"]
+        RECORDINGS_TRANSCODE_INPUT = CONF["RECORDINGS_TRANSCODE_INPUT"]
+        RECORDINGS_TRANSCODE_OUTPUT = CONF["RECORDINGS_TRANSCODE_OUTPUT"]
+        TMP_DIR = CONF["TMP_DIR"]
+        U7D_URL = CONF["U7D_URL"]
 
         CHP_EXT = ".ffmeta"
         TMP_EXT = ".tmp"
@@ -850,13 +848,11 @@ if __name__ == "__main__":
             log.error(f"No metadata exists for [{_args.channel:4}] [{_args.program}]")
             sys.exit(1)
 
-    HOME = _conf["HOME"]
-
     U7D_PARENT = os.getenv("U7D_PARENT")
 
-    del _conf
+    del CONF
 
     try:
         asyncio.run(Vod())
-    except (CancelledError, KeyboardInterrupt, RuntimeError):
-        sys.exit(1)
+    except (CancelledError, KeyboardInterrupt):
+        sys.exit(0)

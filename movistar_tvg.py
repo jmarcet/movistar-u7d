@@ -30,8 +30,9 @@ from itertools import combinations
 from json import JSONDecodeError
 from socket import IPPROTO_IP, IP_ADD_MEMBERSHIP, inet_aton
 
-from mu7d import DATEFMT, END_POINTS_FILE, FMT, UA, WIN32, YEAR_SECONDS, IPTVNetworkError
-from mu7d import add_logfile, get_end_point, get_iptv_ip, get_local_info, mu7d_config, rename, _version
+from movistar_cfg import CONF, DATEFMT, END_POINTS_FILE, FMT, UA, WIN32, add_logfile
+
+from movistar_lib import IPTVNetworkError, get_end_point, get_iptv_ip, get_local_info, rename, _version
 
 
 log = logging.getLogger("TVG")
@@ -110,7 +111,7 @@ class Cache:
         return Cache.load("config.json")
 
     @staticmethod
-    async def load_epg():
+    def load_epg():
         return Cache.load("epg.json")
 
     @staticmethod
@@ -494,7 +495,7 @@ class MulticastIPTV:
             source = segments.attrib["Source"]
             segment_list[source] = {
                 "Source": source,
-                "Port": segments.attrib["Port"],
+                "Port": int(segments.attrib["Port"]),
                 "Address": segments.attrib["Address"],
                 "Segments": {segment.attrib["ID"]: segment.attrib["Version"] for segment in segments[0]},
             }
@@ -516,7 +517,7 @@ class MulticastIPTV:
             xml,
             re.DOTALL,
         )[0]
-        data = {"mcast_grp": result[0], "mcast_port": result[1]}
+        data = {"mcast_grp": result[0], "mcast_port": int(result[1])}
         Cache.save_service_provider_data(data)
 
         log.info("Proveedor de Servicios de %s: %s" % (_demarcation, data["mcast_grp"]))
@@ -627,7 +628,7 @@ class MulticastIPTV:
         return DEMARCATIONS.get(str(_CONFIG["demarcation"]), f'la demarcación {_CONFIG["demarcation"]}')
 
     async def get_epg(self):
-        self.__cached_epg = await Cache.load_epg()
+        self.__cached_epg = Cache.load_epg()
 
         skipped = 0
         _channels = self.__xml_data["channels"]
@@ -1097,17 +1098,15 @@ async def tvg_main(args):
 
     Cache(full=bool(args.m3u or args.guide))  # Inicializa la caché
 
-    _SESSION = aiohttp.ClientSession(
-        connector=aiohttp.TCPConnector(keepalive_timeout=YEAR_SECONDS),
-        headers={"User-Agent": UA},
-        json_serialize=json.dumps,
-    )
+    _SESSION = aiohttp.ClientSession(headers={"User-Agent": UA}, json_serialize=json.dumps)
 
     epg = {}
 
     try:
+        _END_POINT = await get_end_point()
+        if not _END_POINT:
+            return
         # Descarga la configuración del servicio Web de MovistarTV
-        _END_POINT = await get_end_point(HOME, log)
         _CONFIG = await MovistarTV.get_service_config(refresh)
 
         # Busca el Proveedor de Servicios y descarga los archivos XML: canales, paquetes y segmentos
@@ -1182,12 +1181,11 @@ if __name__ == "__main__":
         setproctitle("movistar_tvg %s" % " ".join(sys.argv[1:]))
 
     else:
-        import psutil
         import win32api  # pylint: disable=import-error
         import win32con  # pylint: disable=import-error
+        from psutil import Process
 
-        def cancel_handler(event):
-            log.debug("cancel_handler(event=%d)" % event)
+        def close_handler(event):
             if event in (
                 win32con.CTRL_BREAK_EVENT,
                 win32con.CTRL_C_EVENT,
@@ -1195,36 +1193,30 @@ if __name__ == "__main__":
                 win32con.CTRL_LOGOFF_EVENT,
                 win32con.CTRL_SHUTDOWN_EVENT,
             ):
-                psutil.Process().terminate()
+                Process().terminate()
+            return True
 
-        win32api.SetConsoleCtrlHandler(cancel_handler, 1)
+        win32api.SetConsoleCtrlHandler(close_handler, True)
 
     _time_start = time.time()
 
-    _conf = mu7d_config()
-
-    logging.getLogger("asyncio").setLevel(logging.FATAL)
-    logging.getLogger("filelock").setLevel(logging.FATAL)
-
-    logging.basicConfig(datefmt=DATEFMT, format=FMT, level=_conf.get("DEBUG") and logging.DEBUG or logging.INFO)
-
-    if not _conf:
+    if not CONF:
         log.critical("Imposible parsear fichero de configuración")
         sys.exit(1)
 
-    if _conf["LOG_TO_FILE"]:
-        add_logfile(log, _conf["LOG_TO_FILE"], _conf["DEBUG"] and logging.DEBUG or logging.INFO)
+    DEBUG = CONF["DEBUG"]
 
-    DEBUG = _conf["DEBUG"]
+    if CONF["LOG_TO_FILE"]:
+        add_logfile(log, CONF["LOG_TO_FILE"], DEBUG and logging.DEBUG or logging.INFO)
 
     _CONFIG = _DEADLINE = _END_POINT = _IPTV = _MIPTV = _SESSION = _XMLTV = None
 
-    CACHE_DIR = _conf["CACHE_DIR"]
-    EPG_CHANNELS = _conf["EPG_CHANNELS"]
-    HOME = _conf["HOME"]
-    RECORDINGS = _conf["RECORDINGS"]
-    OTT_HACK = _conf["OTT_HACK"]
-    U7D_URL = _conf["U7D_URL"]
+    CACHE_DIR = CONF["CACHE_DIR"]
+    EPG_CHANNELS = CONF["EPG_CHANNELS"]
+    HOME = CONF["HOME"]
+    OTT_HACK = CONF["OTT_HACK"]
+    RECORDINGS = CONF["RECORDINGS"]
+    U7D_URL = CONF["U7D_URL"]
 
     AGE_RATING = ("0", "0", "0", "7", "12", "16", "17", "18")
     EPG_EXTINFO_PAIRS = (("full_title", "name"), ("serie", "seriesName"))
@@ -1234,6 +1226,11 @@ if __name__ == "__main__":
     title_select_regex = re.compile(r".+ T\d+ .+")
     title_1_regex = re.compile(r"(.+(?!T\d)) +T(\d+)(?: *Ep[isode.]+ (\d+))?[ -]*(.*)")
     title_2_regex = re.compile(r"(.+(?!T\d))(?: +T(\d+))? *(?:[Ee]p[isode.]+|[Cc]ap[iítulo.]*) ?(\d+)[ .-]*(.*)")
+
+    logging.getLogger("asyncio").setLevel(logging.FATAL)
+    logging.getLogger("filelock").setLevel(logging.FATAL)
+
+    logging.basicConfig(datefmt=DATEFMT, format=FMT, level=DEBUG and logging.DEBUG or logging.INFO)
 
     # Obtiene los argumentos de entrada
     args = create_args_parser().parse_args()
@@ -1255,14 +1252,14 @@ if __name__ == "__main__":
         sys.exit(1)
 
     local = "-local" if any((args.local_m3u, args.local_recordings)) else ""
-    lockfile = os.path.join(_conf["TMP_DIR"], f".movistar_tvg{local}.lock")
-    del _conf
+    lockfile = os.path.join(CONF["TMP_DIR"], f".movistar_tvg{local}.lock")
+    del CONF
     try:
         with FileLock(lockfile, timeout=0):
             _IPTV = get_iptv_ip()
             asyncio.run(tvg_main(args))
     except (CancelledError, KeyboardInterrupt):
-        sys.exit(1)
+        sys.exit(0)
     except IPTVNetworkError as err:
         log.critical(err)
         sys.exit(1)

@@ -3,7 +3,7 @@ from glob import glob
 
 import sanic
 
-from mu7d import _version
+from movistar_lib import _version
 
 
 ffmpeg = ["ffmpeg.exe", "ffprobe.exe"] + glob("*.dll")
@@ -15,11 +15,9 @@ build_exe_options = {
 }
 
 executables = [
-    Executable("movistar_epg.py"),
-    Executable("movistar_tvg.py"),
     Executable("movistar_u7d.py"),
+    Executable("movistar_tvg.py"),
     Executable("movistar_vod.py"),
-    Executable("mu7d.py"),
 ]
 
 setup(

@@ -139,4 +139,4 @@ RUN chown nobody:nogroup /home && chmod g+s /home
 
 WORKDIR /home
 
-CMD ["/app/mu7d.py"]
+CMD ["/app/movistar_u7d.py"]
