@@ -781,13 +781,12 @@ async def reload_recordings():
             except (JSONDecodeError, TypeError, ValueError) as ex:
                 log.error(f'Failed to parse "recordings.json" => {repr(ex)}')
                 remove(_g.CHANNELS_LOCAL, _g.GUIDE_LOCAL)
+                await reindex_recordings()
             except (FileNotFoundError, OSError, PermissionError):
                 remove(_g.CHANNELS_LOCAL, _g.GUIDE_LOCAL)
 
         if not _g._RECORDINGS:
-            await reindex_recordings()
-            if not _g._RECORDINGS:
-                return
+            return
 
         async with recordings_lock:
             for channel_id in _g._RECORDINGS:
