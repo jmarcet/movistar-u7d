@@ -59,7 +59,7 @@ recordings_lock = asyncio.Lock()
 tvgrab_lock = asyncio.Lock()
 tvgrab_local_lock = asyncio.Lock()
 
-anchored_regex = re.compile(r"^(.+ - \d{8}_)\d{4}$")
+anchored_regex = re.compile(r"^(.+) - \d{8}_\d{4}$")
 flussonic_regex = re.compile(r"\w*-?(\d{10})-?(\d+){0,1}\.?\w*")
 
 log = logging.getLogger("U7D")
@@ -287,6 +287,9 @@ def get_program_vod(channel_id, url=None, cloud=False, local=False):
             full_title = _g._RECORDINGS[channel_id][start].filename
             pid = get_path(full_title)
 
+            _match = anchored_regex.match(full_title)
+            if _match:
+                full_title = _match.groups()[0]
             full_title = os.path.basename(full_title).translate(str.maketrans("_;[]", "/:()"))
 
     return ProgramVOD(channel, pid, full_title, start, duration, offset=new_start - start if new_start else 0)
@@ -360,7 +363,7 @@ async def get_vod_info(session, endpoint, channel, cloud, program):
 
 
 def glob_safe(string, recursive=False):
-    return glob(f"{string.replace('[', '?').replace(']', '?')}", recursive=recursive)
+    return glob(f"{string.translate(str.maketrans('[]', '??'))}", recursive=recursive)
 
 
 async def kill_vod():
@@ -457,11 +460,7 @@ async def ongoing_vods(channel_id="", program_id="", filename="", _all=False, _f
     else:
         regex = "^%smovistar_vod%s" % ((sys.executable.replace("\\", "\\\\") + " ") if EXT == ".py" else "", EXT)
 
-    if filename:
-        filename = filename.translate(str.maketrans("[]", ".."))
-        _match = anchored_regex.match(filename)
-        if _match:
-            filename = _match.groups()[0]
+    filename = filename.translate(str.maketrans("[]", ".."))
 
     regex += "(" if filename and program_id else ""
     regex += f" {channel_id:4} {program_id}" if program_id else ""
