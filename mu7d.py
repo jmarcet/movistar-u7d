@@ -30,18 +30,18 @@ from socket import IPPROTO_IP, IP_ADD_MEMBERSHIP, inet_aton
 from socket import AF_INET, SOCK_STREAM, socket
 from time import sleep
 
-from movistar_cfg import ATOM, BUFF, CHUNK, CONF, DIV_ONE, LINUX, MIME_GUIDE, MIME_M3U
-from movistar_cfg import MIME_WEBM, UA, URL_COVER, URL_FANART, URL_LOGO, VID_EXTS, WIN32
+from mu7d_cfg import ATOM, BUFF, CHUNK, CONF, DIV_ONE, LINUX, MIME_GUIDE, MIME_M3U
+from mu7d_cfg import MIME_WEBM, UA, URL_COVER, URL_FANART, URL_LOGO, VID_EXTS, WIN32
 
-from movistar_lib import add_prom_event, alive, create_covers_cache, does_recording_exist, find_free_port
-from movistar_lib import get_channel_id, get_end_point, get_epg, get_iptv_ip, get_local_info, get_path
-from movistar_lib import get_program_vod, get_recording_name, get_vod_info, log_network_saturated
-from movistar_lib import network_saturation, ongoing_vods, prom_event, prune_duplicates, prune_expired, reaper
-from movistar_lib import record_program, recordings_lock, reload_epg, reload_recordings, reindex_recordings
-from movistar_lib import timers_check, update_epg, update_epg_cron, update_recordings, upgrade_recordings
-from movistar_lib import IPTVNetworkError, LocalNetworkError, PromEvent, Recording, app, log, _g, _version
+from mu7d_lib import add_prom_event, alive, create_covers_cache, does_recording_exist, find_free_port
+from mu7d_lib import get_channel_id, get_end_point, get_epg, get_iptv_ip, get_local_info, get_path
+from mu7d_lib import get_program_vod, get_recording_name, get_vod_info, log_network_saturated, network_saturation
+from mu7d_lib import ongoing_vods, prom_event, prune_duplicates, prune_expired, reaper, record_program
+from mu7d_lib import recordings_lock, reload_epg, reload_recordings, reindex_recordings, timers_check, update_epg
+from mu7d_lib import update_epg_cron, update_recordings, upgrade_recordings
+from mu7d_lib import IPTVNetworkError, LocalNetworkError, PromEvent, Recording, app, log, _g, _version
 
-from movistar_vod import Vod
+from mu7d_vod import Vod
 
 
 @app.listener("before_server_start")
@@ -677,7 +677,7 @@ if __name__ == "__main__":
     if not WIN32:
         from setproctitle import setproctitle
 
-        setproctitle("movistar_u7d")
+        setproctitle("mu7d")
 
     else:
         from psutil import ABOVE_NORMAL_PRIORITY_CLASS
@@ -785,7 +785,7 @@ if __name__ == "__main__":
         multiprocess_mode="livesum",
     ).expose_endpoint()
 
-    lockfile = os.path.join(CONF["TMP_DIR"], ".movistar_u7d.lock")
+    lockfile = os.path.join(CONF["TMP_DIR"], ".mu7d.lock")
     try:
         with FileLock(lockfile, timeout=0):
             _check_iptv()

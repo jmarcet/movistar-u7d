@@ -31,9 +31,8 @@ from sanic import Sanic
 from socket import AF_INET, SOCK_DGRAM, socket
 from tomli import TOMLDecodeError
 
-from movistar_cfg import CONF, DATEFMT, DIV_ONE, DIV_TWO, DROP_KEYS, END_POINTS, END_POINTS_FILE, EXT, FMT
-from movistar_cfg import IPTV_DNS, NFO_EXT, UA, VID_EXTS, VID_EXTS_KEEP, WIN32, XML_INT_KEYS, YEAR_SECONDS
-from movistar_cfg import add_logfile
+from mu7d_cfg import CONF, DATEFMT, DIV_ONE, DIV_TWO, DROP_KEYS, END_POINTS, END_POINTS_FILE, EXT, FMT, IPTV_DNS
+from mu7d_cfg import NFO_EXT, UA, VID_EXTS, VID_EXTS_KEEP, WIN32, XML_INT_KEYS, YEAR_SECONDS, add_logfile
 
 app = Sanic("movistar-u7d")
 _g = app.ctx
@@ -453,12 +452,12 @@ async def ongoing_vods(channel_id="", program_id="", filename="", _all=False, _f
     family = Process(int(parent)).children(recursive=True) if parent else process_iter()
 
     if _fast:  # For U7D we just want to know if there are recordings in place
-        return "movistar_vod RE" in str(family)
+        return "mu7d_vod REC " in str(family)
 
     if not WIN32:
-        regex = "^movistar_vod REC" if not _all else "^movistar_vod .*"
+        regex = "^mu7d_vod REC " if not _all else "^mu7d_vod .*"
     else:
-        regex = "^%smovistar_vod%s" % ((sys.executable.replace("\\", "\\\\") + " ") if EXT == ".py" else "", EXT)
+        regex = "^%smu7d_vod%s" % ((sys.executable.replace("\\", "\\\\") + " ") if EXT == ".py" else "", EXT)
 
     filename = filename.translate(str.maketrans("[]", ".."))
 
@@ -635,7 +634,7 @@ async def record_program(ch_id, pid, offset=0, time=0, cloud=False, comskip=0, i
         return await log_network_saturated()
 
     port = find_free_port(_g._IPTV)
-    cmd = [f"movistar_vod{EXT}", f"{ch_id:4}", str(pid), "-b", str(timestamp), "-p", f"{port:5}", "-w"]
+    cmd = [f"mu7d_vod{EXT}", f"{ch_id:4}", str(pid), "-b", str(timestamp), "-p", f"{port:5}", "-w"]
     cmd += ["-o", filename]
     cmd += ["-s", str(offset)] if offset else []
     cmd += ["-t", str(time)] if time else []
@@ -738,7 +737,7 @@ async def reload_epg():
     ):
         log.warning("Missing channel list! Need to download it. Please be patient...")
 
-        cmd = (f"movistar_tvg{EXT}", "--m3u", _g.CHANNELS)
+        cmd = (f"mu7d_tvg{EXT}", "--m3u", _g.CHANNELS)
         async with tvgrab_lock:
             await launch(cmd)
 
@@ -1076,7 +1075,7 @@ async def timers_check(delay=0):
 
 async def update_cloud():
     async with epg_lock:
-        cmd = (f"movistar_tvg{EXT}", "--cloud_m3u", _g.CHANNELS_CLOUD, "--cloud_recordings", _g.GUIDE_CLOUD)
+        cmd = (f"mu7d_tvg{EXT}", "--cloud_m3u", _g.CHANNELS_CLOUD, "--cloud_recordings", _g.GUIDE_CLOUD)
         async with tvgrab_lock:
             if await launch(cmd):
                 return
@@ -1093,7 +1092,7 @@ async def update_cloud():
 
 
 async def update_epg():
-    cmd = (f"movistar_tvg{EXT}", "--m3u", _g.CHANNELS, "--guide", _g.GUIDE)
+    cmd = (f"mu7d_tvg{EXT}", "--m3u", _g.CHANNELS, "--guide", _g.GUIDE)
     for i in range(3):
         async with tvgrab_lock:
             retcode = await launch(cmd)
@@ -1129,7 +1128,7 @@ async def update_epg_cron():
 
 async def update_epg_local():
     async with recordings_lock:
-        cmd = (f"movistar_tvg{EXT}", "--local_m3u", _g.CHANNELS_LOCAL, "--local_recordings", _g.GUIDE_LOCAL)
+        cmd = (f"mu7d_tvg{EXT}", "--local_m3u", _g.CHANNELS_LOCAL, "--local_recordings", _g.GUIDE_LOCAL)
 
         async with tvgrab_local_lock:
             if await launch(cmd):

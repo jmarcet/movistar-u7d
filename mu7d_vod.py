@@ -27,11 +27,11 @@ from datetime import timedelta
 from filelock import FileLock
 from signal import SIGINT, SIGTERM, signal
 
-from movistar_cfg import BUFF, CHUNK, CONF, DATEFMT, DIV_LOG, DROP_KEYS, FMT, LINUX, NFO_EXT, UA, URL_COVER
-from movistar_cfg import WIN32, add_logfile
+from mu7d_cfg import BUFF, CHUNK, CONF, DATEFMT, DIV_LOG, DROP_KEYS, FMT, LINUX, NFO_EXT, UA, URL_COVER, WIN32
+from mu7d_cfg import add_logfile
 
-from movistar_lib import IPTVNetworkError, find_free_port, get_end_point, get_iptv_ip, get_safe_filename
-from movistar_lib import get_vod_info, glob_safe, ongoing_vods, remove, rename, utime, _version
+from mu7d_lib import IPTVNetworkError, find_free_port, get_end_point, get_iptv_ip, get_safe_filename
+from mu7d_lib import get_vod_info, glob_safe, ongoing_vods, remove, rename, utime, _version
 
 
 log = logging.getLogger("VOD")
@@ -520,7 +520,7 @@ async def postprocess(vod_info):
     tags += ["-metadata", 'service_provider="Movistar IPTV"']
     tags += ["-metadata:s:v", f"title={os.path.basename(_args.filename)}"] if _args.mkv else []
 
-    lockfile = os.path.join(TMP_DIR, ".movistar_vod.lock")
+    lockfile = os.path.join(TMP_DIR, ".mu7d_vod.lock")
     pp_lock = FileLock(lockfile)
 
     try:
@@ -659,7 +659,7 @@ async def rtsp(vod_info):
                 rec_t = asyncio.create_task(record_stream(vod_info))
 
                 if not WIN32:
-                    setproctitle(getproctitle().replace("movistar_vod     ", "movistar_vod REC "))
+                    setproctitle(getproctitle().replace("mu7d_vod     ", "mu7d_vod REC "))
             else:
                 log.info(f'The VOD stream can be accesed at: f"udp://@{_IPTV}:{_args.client_port}"')
 
@@ -737,7 +737,7 @@ if __name__ == "__main__":
     if not WIN32:
         from setproctitle import getproctitle, setproctitle
 
-        setproctitle("movistar_vod     %s" % " ".join(sys.argv[1:]))
+        setproctitle("mu7d_vod      # %s" % " ".join(sys.argv[1:]))
 
         def cancel_handler(signum, frame):
             if _loop:

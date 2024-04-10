@@ -30,9 +30,9 @@ from itertools import combinations
 from json import JSONDecodeError
 from socket import IPPROTO_IP, IP_ADD_MEMBERSHIP, inet_aton
 
-from movistar_cfg import CONF, DATEFMT, END_POINTS_FILE, FMT, UA, WIN32, add_logfile
+from mu7d_cfg import CONF, DATEFMT, END_POINTS_FILE, FMT, UA, WIN32, add_logfile
 
-from movistar_lib import IPTVNetworkError, get_end_point, get_iptv_ip, get_local_info, rename, _version
+from mu7d_lib import IPTVNetworkError, get_end_point, get_iptv_ip, get_local_info, rename, _version
 
 
 log = logging.getLogger("TVG")
@@ -1002,7 +1002,7 @@ class XmlTV:
             "date": datetime.now().strftime("%Y%m%d%H%M%S"),
             "source-info-name": "Movistar IPTV Spain",
             "source-info-url": "https://www.movistar.es/",
-            "generator-info-name": "Movistar U7D's movistar_tvg",
+            "generator-info-name": "Movistar U7D's mu7d_tvg",
             "generator-info-url": "https://github.com/jmarcet/movistar-u7d/",
         }
         self.__append_elem("tv", attr=attr, pad=4, child=True)
@@ -1178,7 +1178,7 @@ if __name__ == "__main__":
     if not WIN32:
         from setproctitle import setproctitle
 
-        setproctitle("movistar_tvg %s" % " ".join(sys.argv[1:]))
+        setproctitle("mu7d_tvg      # %s" % " ".join(sys.argv[1:]))
 
     else:
         import win32api  # pylint: disable=import-error
@@ -1252,7 +1252,7 @@ if __name__ == "__main__":
         sys.exit(1)
 
     local = "-local" if any((args.local_m3u, args.local_recordings)) else ""
-    lockfile = os.path.join(CONF["TMP_DIR"], f".movistar_tvg{local}.lock")
+    lockfile = os.path.join(CONF["TMP_DIR"], f".mu7d_tvg{local}.lock")
     del CONF
     try:
         with FileLock(lockfile, timeout=0):
