@@ -18,7 +18,7 @@ import time
 
 from aiohttp.client_exceptions import ClientConnectionError, ClientOSError, ServerDisconnectedError
 from asyncio.exceptions import CancelledError
-from asyncio_dgram import bind as dgram_bind
+from asyncio_dgram import from_socket as dgram_from_socket
 from collections import defaultdict, deque
 from contextlib import closing
 from datetime import date, datetime, timedelta
@@ -28,7 +28,8 @@ from glob import iglob
 from html import escape, unescape
 from itertools import combinations
 from json import JSONDecodeError
-from socket import IPPROTO_IP, IP_ADD_MEMBERSHIP, inet_aton
+from socket import AF_INET, IPPROTO_IP, IPPROTO_UDP, IP_ADD_MEMBERSHIP, SO_REUSEADDR, SOCK_DGRAM, SOL_SOCKET
+from socket import inet_aton, socket
 
 from mu7d_cfg import CONF, DATEFMT, END_POINTS_FILE, FMT, UA, WIN32, add_logfile
 
@@ -776,38 +777,41 @@ class MulticastIPTV:
         failed = 0
         last_file = ""
 
-        with closing(await dgram_bind((mc_grp if not WIN32 else "", mc_port), reuse_port=True)) as stream:
-            stream.socket.setsockopt(IPPROTO_IP, IP_ADD_MEMBERSHIP, inet_aton(mc_grp) + inet_aton(_IPTV))
-            # Wait for an end chunk to start at the beginning
-            while True:
-                try:
-                    chunk = MulticastIPTV.parse_chunk((await asyncio.wait_for(stream.recv(), timeout=3.0))[0])
-                    if chunk["end"]:
-                        last_file = f'{chunk["filetype"]}_{chunk["fileid"]}'
+        with closing(socket(AF_INET, SOCK_DGRAM, IPPROTO_UDP)) as sock:
+            sock.setsockopt(SOL_SOCKET, SO_REUSEADDR, 1)
+            sock.bind((mc_grp if not WIN32 else "", mc_port))
+            sock.setsockopt(IPPROTO_IP, IP_ADD_MEMBERSHIP, inet_aton(mc_grp) + inet_aton(_IPTV))
+            with closing(await dgram_from_socket(sock)) as stream:
+                # Wait for an end chunk to start at the beginning
+                while True:
+                    try:
+                        chunk = MulticastIPTV.parse_chunk((await asyncio.wait_for(stream.recv(), timeout=3))[0])
+                        if chunk["end"]:
+                            last_file = f'{chunk["filetype"]}_{chunk["fileid"]}'
+                            break
+                    except (AttributeError, KeyError, TypeError, UnicodeError):
+                        pass
+                    except (IPTVNetworkError, OSError):
+                        if init:
+                            msg = "Multicast IPTV de Movistar no detectado"
+                            failed += 1
+                            if failed == 3:
+                                raise IPTVNetworkError(msg)
+                            log.error(msg)
+                        else:
+                            log.debug("Timeout descargando XML")
+                # Loop until last_file
+                while True:
+                    xmldata = ""
+                    chunk = {"end": False}
+                    while not chunk["end"]:
+                        chunk = MulticastIPTV.parse_chunk((await stream.recv())[0])
+                        xmldata += chunk["data"]
+                    current_file = f'{chunk["filetype"]}_{chunk["fileid"]}'
+                    _files[current_file] = xmldata[:-4]  # Discard last 4bytes binary footer
+                    if current_file == last_file:
+                        log.info(f"{mc_grp}:{mc_port} -> XML descargado")
                         break
-                except (AttributeError, KeyError, TypeError, UnicodeError):
-                    pass
-                except (IPTVNetworkError, OSError):
-                    if init:
-                        msg = "Multicast IPTV de Movistar no detectado"
-                        failed += 1
-                        if failed == 3:
-                            raise IPTVNetworkError(msg)
-                        log.error(msg)
-                    else:
-                        log.debug("Timeout descargando XML")
-            # Loop until last_file
-            while True:
-                xmldata = ""
-                chunk = {"end": False}
-                while not chunk["end"]:
-                    chunk = MulticastIPTV.parse_chunk((await stream.recv())[0])
-                    xmldata += chunk["data"]
-                current_file = f'{chunk["filetype"]}_{chunk["fileid"]}'
-                _files[current_file] = xmldata[:-4]  # Discard last 4bytes binary footer
-                if current_file == last_file:
-                    log.info(f"{mc_grp}:{mc_port} -> XML descargado")
-                    break
         return _files
 
     @staticmethod

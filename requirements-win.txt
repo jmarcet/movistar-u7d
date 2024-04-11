@@ -1,7 +1,7 @@
 aiofiles
 aiohttp
 asyncio
-asyncio-dgram @ git+https://github.com/jsbronder/asyncio-dgram
+asyncio-dgram
 cx_Freeze>=6.16.0.dev25
 defusedxml
 filelock
