@@ -28,11 +28,19 @@ from json import JSONDecodeError
 from operator import itemgetter
 from psutil import AccessDenied, NoSuchProcess, Process, process_iter
 from sanic import Sanic
+from sanic.mixins.startup import StartupMixin
 from socket import AF_INET, SOCK_DGRAM, socket
 from tomli import TOMLDecodeError
+from warnings import filterwarnings
 
 from mu7d_cfg import CONF, DATEFMT, DIV_ONE, DIV_TWO, DROP_KEYS, END_POINTS, END_POINTS_FILE, EXT, FMT, IPTV_DNS
 from mu7d_cfg import NFO_EXT, UA, VID_EXTS, VID_EXTS_KEEP, WIN32, XML_INT_KEYS, YEAR_SECONDS, add_logfile
+
+
+if WIN32:
+    # Disable forced WindowsSelectorEventLoopPolicy, which is non compatible w/create_subprocess_exec()
+    def _setup_loop(self) -> None: ...
+    StartupMixin.setup_loop = _setup_loop
 
 app = Sanic("movistar-u7d")
 _g = app.ctx
@@ -61,12 +69,15 @@ tvgrab_local_lock = asyncio.Lock()
 anchored_regex = re.compile(r"^(.+) - \d{8}_\d{4}$")
 flussonic_regex = re.compile(r"\w*-?(\d{10})-?(\d+){0,1}\.?\w*")
 
+filterwarnings(action="ignore", category=DeprecationWarning, module="sanic")
+
 log = logging.getLogger("U7D")
 
 logging.getLogger("asyncio").setLevel(logging.FATAL)
 logging.getLogger("filelock").setLevel(logging.FATAL)
 logging.getLogger("sanic.error").setLevel(logging.FATAL)
 logging.getLogger("sanic.root").disabled = True
+logging.getLogger("sanic.server").disabled = True
 
 logging.basicConfig(datefmt=DATEFMT, format=FMT, level=CONF.get("DEBUG", True) and logging.DEBUG or logging.INFO)
 

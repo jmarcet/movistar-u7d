@@ -402,7 +402,7 @@ async def handle_guides(request):
         raise NotFound(f"Requested URL {request.path} not found")
 
     log.info(f'[{request.ip}] {request.method} {request.url}{" " * pad} => "{guide}"')
-    return await response.file(guide, mime_type=MIME_GUIDE)
+    return await response.file(guide, validate_when_requested=False, mime_type=MIME_GUIDE)
 
 
 @app.route("/Covers/<path:int>/<cover>", methods=["GET", "HEAD"], name="images_covers")
@@ -464,7 +464,7 @@ async def handle_m3u_files(request, m3u_file):
 
     if os.path.exists(m3u_matched):
         log.info(f'[{request.ip}] {request.method} {request.url}{pad} => "{m3u_matched}"')
-        return await response.file(m3u_matched, mime_type=MIME_M3U)
+        return await response.file(m3u_matched, validate_when_requested=False, mime_type=MIME_M3U)
 
     raise NotFound(f"Requested URL {request.path} not found")
 
@@ -553,7 +553,7 @@ async def handle_recording(request):
             if request.method == "HEAD":
                 return response.HTTPResponse(content_type=mime_img, status=200)
 
-            return await response.file(cached_cover, mime_type=mime_img)
+            return await response.file(cached_cover, validate_when_requested=False, mime_type=mime_img)
         log.warning(f'Cover not found in cache: "{_path}"')
 
     file = os.path.join(_g.RECORDINGS, _path)
@@ -562,7 +562,7 @@ async def handle_recording(request):
             return response.HTTPResponse(status=200)
 
         if ext in (".jpg", ".png"):
-            return await response.file(file, mime_type=mime_img)
+            return await response.file(file, validate_when_requested=False, mime_type=mime_img)
 
         if ext in VID_EXTS:
             try:
@@ -794,10 +794,13 @@ if __name__ == "__main__":
             app.run(
                 host=_g.LAN_IP,
                 port=_g.U7D_PORT,
-                protocol=VodHttpProtocol,
                 access_log=False,
                 auto_reload=False,
+                backlog=0,
                 debug=_g.DEBUG,
+                protocol=VodHttpProtocol,
+                register_sys_signals=False,
+                single_process=True,
                 workers=1,
             )
     except (CancelledError, KeyboardInterrupt):
