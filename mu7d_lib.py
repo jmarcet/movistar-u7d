@@ -3,6 +3,8 @@
 import aiofiles
 import aiohttp
 import asyncio
+import ctypes
+import gc
 import json
 import logging
 import os
@@ -148,6 +150,12 @@ def find_free_port(iface=""):
     with closing(socket(AF_INET, SOCK_DGRAM)) as sock:
         sock.bind((iface, 0))
         return sock.getsockname()[1]
+
+
+def freemem():
+    gc.collect()
+    if not WIN32:
+        ctypes.CDLL("libc.so.6").malloc_trim(0)
 
 
 def get_channel_dir(channel_id):
@@ -740,6 +748,7 @@ async def reindex_recordings():
         log.info("RECORDINGS REINDEXED")
 
     await update_recordings()
+    freemem()
 
 
 async def reload_epg():
@@ -778,6 +787,7 @@ async def reload_epg():
         log.info(f"Total: {len(_g._EPGDATA):2} Channels & {nr_epg:5} EPG entries")
 
     await update_cloud()
+    freemem()
 
 
 async def reload_recordings():
@@ -813,6 +823,7 @@ async def reload_recordings():
                         log.warning(f'Archived Cloud Recording "{filename}" not found on disk')
 
     await update_epg_local()
+    freemem()
 
 
 def remove(*items):
