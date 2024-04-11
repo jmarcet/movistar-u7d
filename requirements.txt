@@ -7,7 +7,7 @@ filelock
 netifaces
 psutil
 sanic
-sanic-prometheus @ git+https://github.com/jmarcet/sanic-prometheus
+sanic-prometheus @ git+https://github.com/AltanAlpay/sanic-prometheus
 setproctitle
 tomli
 ujson

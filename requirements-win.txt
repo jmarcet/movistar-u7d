@@ -7,7 +7,7 @@ defusedxml
 filelock
 psutil
 sanic
-sanic-prometheus @ git+https://github.com/jmarcet/sanic-prometheus
+sanic-prometheus @ git+https://github.com/AltanAlpay/sanic-prometheus
 tomli
 ujson
 wmi
