@@ -69,6 +69,7 @@ tvgrab_lock = asyncio.Lock()
 tvgrab_local_lock = asyncio.Lock()
 
 anchored_regex = re.compile(r"^(.+) - \d{8}_\d{4}$")
+channeldir_regex = re.compile(r"^(\d{3})\. (.+)$")
 flussonic_regex = re.compile(r"\w*-?(\d{10})-?(\d+){0,1}\.?\w*")
 
 filterwarnings(action="ignore", category=DeprecationWarning, module="sanic")
@@ -241,7 +242,14 @@ def get_path(filename, bare=False):
 
 
 def get_program_name(filename):
-    return os.path.split(os.path.dirname(filename))[1]
+    name = os.path.split(os.path.dirname(filename))[1]
+    if not channeldir_regex.match(name):
+        return name
+    name = os.path.basename(filename)
+    _match = anchored_regex.match(name)
+    if _match:
+        return _match.groups()[0]
+    return name
 
 
 def get_program_vod(channel_id, url=None, cloud=False, local=False):
@@ -1262,7 +1270,7 @@ async def upgrade_recording_channels():
     numbers = tuple(_g._CHANNELS[x].number for x in _g._CHANNELS)
 
     dirs = filter(lambda _dir: os.path.isdir(os.path.join(_g.RECORDINGS, _dir)), os.listdir(_g.RECORDINGS))
-    pairs = (r.groups() for r in (re.match(r"^(\d{3})\. (.+)$", _dir) for _dir in dirs) if r)
+    pairs = (r.groups() for r in (channeldir_regex.match(_dir) for _dir in dirs) if r)
 
     for nr, name in pairs:
         nr = int(nr)
