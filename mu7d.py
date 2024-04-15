@@ -130,7 +130,11 @@ async def after_server_start(app):
 
     if _g.RECORDINGS:
         if not os.path.exists(_g.RECORDINGS):
-            os.makedirs(_g.RECORDINGS)
+            try:
+                os.makedirs(_g.RECORDINGS)
+            except PermissionError:
+                log.error(f'Cannot access "{_g.RECORDINGS}" => RECORDINGS disabled')
+                _g.RECORDINGS = None
         else:
             if _g.RECORDINGS_UPGRADE:
                 await upgrade_recordings()
