@@ -26,7 +26,7 @@ from defusedxml.ElementTree import ParseError, fromstring
 from filelock import FileLock, Timeout
 from glob import iglob
 from html import escape, unescape
-from itertools import combinations
+from itertools import batched, combinations
 from json import JSONDecodeError
 from socket import AF_INET, IPPROTO_IP, IPPROTO_UDP, IP_ADD_MEMBERSHIP, SO_REUSEADDR, SOCK_DGRAM, SOL_SOCKET
 from socket import inet_aton, socket
@@ -833,9 +833,11 @@ class XmlTV:
 
     async def __add_programmes_tags(self, channel_id, programs, local, tz_offset):
         if not local:
-            ext_infos = await asyncio.gather(
-                *(MovistarTV.get_epg_extended_info(channel_id, ts, programs[ts]) for ts in programs)
-            )
+            ext_infos = []
+            for batch in batched(programs.keys(), n=max(8, 2 * (os.cpu_count() or 1))):
+                ext_infos += await asyncio.gather(
+                    *(MovistarTV.get_epg_extended_info(channel_id, ts, programs[ts]) for ts in batch)
+                )
         else:
             tss = tuple(programs)
             last_idx = len(tss) - 1
