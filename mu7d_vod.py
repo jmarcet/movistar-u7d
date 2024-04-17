@@ -3,36 +3,59 @@
 # Started from MovistarU7D by XXLuigiMario:
 # Source: https://github.com/XXLuigiMario/MovistarU7D
 
-import aiofiles
-import aiohttp
 import argparse
 import asyncio
 import logging
 import os
-import psutil
 import re
 import shutil
 import sys
 import time
-import ujson
 import urllib.parse
-import xmltodict
-
-from aiohttp.client_exceptions import ClientConnectionError, ClientOSError, ServerDisconnectedError
 from asyncio.exceptions import CancelledError
 from asyncio.subprocess import DEVNULL as NULL, PIPE, STDOUT as OUT
-from asyncio_dgram import TransportClosed, bind as dgram_bind
 from contextlib import closing
 from datetime import timedelta
-from filelock import FileLock
 from signal import SIGINT, SIGTERM, signal
 
-from mu7d_cfg import BUFF, CHUNK, CONF, DATEFMT, DIV_LOG, DROP_KEYS, FMT, LINUX, NFO_EXT, UA, URL_COVER, WIN32
-from mu7d_cfg import add_logfile
+import aiofiles
+import aiohttp
+import psutil
+import ujson
+import xmltodict
+from aiohttp.client_exceptions import ClientConnectionError, ClientOSError, ServerDisconnectedError
+from asyncio_dgram import TransportClosed, bind as dgram_bind
+from filelock import FileLock
 
-from mu7d_lib import IPTVNetworkError, find_free_port, get_end_point, get_iptv_ip, get_safe_filename
-from mu7d_lib import get_vod_info, glob_safe, ongoing_vods, remove, rename, utime, _version
-
+from mu7d_cfg import (
+    BUFF,
+    CHUNK,
+    CONF,
+    DATEFMT,
+    DIV_LOG,
+    DROP_KEYS,
+    FMT,
+    LINUX,
+    NFO_EXT,
+    UA,
+    URL_COVER,
+    VERSION,
+    WIN32,
+    add_logfile,
+)
+from mu7d_lib import (
+    IPTVNetworkError,
+    find_free_port,
+    get_end_point,
+    get_iptv_ip,
+    get_safe_filename,
+    get_vod_info,
+    glob_safe,
+    ongoing_vods,
+    remove,
+    rename,
+    utime,
+)
 
 log = logging.getLogger("VOD")
 
@@ -56,8 +79,8 @@ class RtspClient:
         self.writer.write(req.encode())
         resp = (await self.reader.read(4096)).decode().splitlines()
 
-        # log.debug("[%d]: Req  = [%s]" % (self.cseq, "|".join(resp)))
-        # log.debug("[%d]: Resp = [%s]" % (self.cseq, "|".join(resp)))
+        # log.debug("[%d]: Req  = [%s]", self.cseq, "|".join(resp))
+        # log.debug("[%d]: Resp = [%s]", self.cseq, "|".join(resp))
 
         self.cseq += 1
 
@@ -76,7 +99,7 @@ class RtspClient:
 def _archive_recording():
     path = os.path.dirname(_filename)
     if not os.path.exists(path):
-        log.debug('Making dir "%s"' % path)
+        log.debug('Making dir "%s"', path)
         os.makedirs(path)
 
     if not RECORDINGS_TMP:
@@ -113,7 +136,7 @@ async def _cleanup_recording(exception, start=None):
         msg = "Cancelled"
         if start:
             msg += " @ [%6ss] / [%5ss]" % ("~" + str(int(time.time() - start)), str(_args.time))
-        log.error("%-17s%87s" % ("Recording FAILED", msg))
+        log.error("%-17s%87s", "Recording FAILED", msg)
     else:
         log.error(f'Recording FAILED: {str(exception).split(" - ", 1)[-1]}')
 
@@ -134,10 +157,10 @@ async def _cleanup_recording(exception, start=None):
     if U7D_PARENT:
         path = os.path.dirname(_tmpname)
         parent = os.path.split(path)[0]
-        log.debug("Removing path=%s" % path)
+        log.debug("Removing path=%s", path)
         remove(path)
         if parent not in (RECORDINGS, RECORDINGS_TMP):
-            log.debug("Removing parent=%s" % parent)
+            log.debug("Removing parent=%s", parent)
             remove(parent)
 
         try:
@@ -155,7 +178,7 @@ async def _open_sessions():
         _SESSION = aiohttp.ClientSession(json_serialize=ujson.dumps)
 
 
-async def postprocess(vod_info):
+async def postprocess(vod_info):  # pylint: disable=too-many-statements
     async def _check_process(msg=""):
         nonlocal proc
 
@@ -212,9 +235,9 @@ async def postprocess(vod_info):
             cached_cover = cover.replace(RECORDINGS, os.path.join(RECORDINGS_TMP, "covers"))
             dirname = os.path.dirname(cached_cover)
             if not os.path.exists(dirname):
-                log.debug('Making dir "%s"' % dirname)
+                log.debug('Making dir "%s"', dirname)
                 os.makedirs(dirname)
-            log.debug('Saving cover cache "%s"' % cached_cover)
+            log.debug('Saving cover cache "%s"', cached_cover)
             shutil.copy2(cover, cached_cover)
 
     async def _save_metadata(duration=None, get_cover=False):
@@ -229,21 +252,21 @@ async def postprocess(vod_info):
                     metadata = ujson.loads(await f.read())["data"]
             except (FileNotFoundError, OSError, PermissionError, TypeError, ValueError) as ex:
                 if _args.index:
-                    raise RecordingError(f"Extended info not found => {repr(ex)}")
+                    raise RecordingError(f"Extended info not found => {repr(ex)}") from ex
                 return None, None
 
             cover = metadata["cover"]
             img_ext = os.path.splitext(cover)[1]
             img_name, archival_img_name = _tmpname + img_ext, _filename + img_ext
             metadata["cover"] = archival_img_name[len(RECORDINGS) + 1 :]
-            log.debug('Getting cover "%s"' % cover)
+            log.debug('Getting cover "%s"', cover)
             for x in range(2):
                 try:
                     async with _SESSION_CLOUD.get(f"{URL_COVER}/{cover}") as resp:
                         if resp.status == 200:
                             img_data = await resp.read()
                             if img_data:
-                                log.debug('Got cover "%s"' % cover)
+                                log.debug('Got cover "%s"', cover)
                                 async with aiofiles.open(img_name, "wb") as f:
                                     await f.write(await resp.read())
                                 utime(mtime, img_name)
@@ -252,14 +275,14 @@ async def postprocess(vod_info):
                 except (ClientConnectionError, ClientOSError, ServerDisconnectedError) as ex:
                     resp = ex
 
-                log.warning('Failed to get cover "%s" => %s' % (cover, str(resp).splitlines()[0]))
+                log.warning('Failed to get cover "%s" => %s', cover, str(resp).splitlines()[0])
                 if x == 0:
                     await asyncio.sleep(2)
 
             raise RecordingError("Failed to get cover")
 
         # Save all the available metadata
-        log.debug('metadata="%s"' % metadata)
+        log.debug('metadata="%s"', metadata)
 
         if metadata.get("covers"):
             covers = {}
@@ -273,13 +296,13 @@ async def postprocess(vod_info):
                 img_ext = os.path.splitext(cover)[1]
                 img_rel = f"{os.path.basename(_filename)}-{img}" + img_ext
                 img_name = os.path.join(metadata_dir, img_rel)
-                log.debug('Getting cover "%s"' % img)
+                log.debug('Getting cover "%s"', img)
                 for x in range(1 if img == "brand" else 2):  # "brand" covers seem to never be available
                     async with _SESSION_CLOUD.get(cover) as resp:
                         if resp.status == 200:
                             img_data = await resp.read()
                             if img_data:
-                                log.debug('Got cover "%s"' % img)
+                                log.debug('Got cover "%s"', img)
                                 async with aiofiles.open(img_name, "wb") as f:
                                     await f.write(img_data)
                                 covers[img] = img_name[len(RECORDINGS) + 1 :]
@@ -445,7 +468,7 @@ async def postprocess(vod_info):
 
                     ch = chr(idx + 64)
                     msg1, msg2 = f"POSTPROCESS #4{ch} - Cutting Chapter [{idx:02}]", f"({start} - {end})"
-                    log.info(DIV_LOG % (msg1, msg2))
+                    log.info(DIV_LOG, msg1, msg2)
                     proc = await asyncio.create_subprocess_exec(*cmd, stdin=NULL, stdout=PIPE, stderr=OUT)
 
                     await _check_process(f"Failed Cutting Chapter [{idx:02}]")
@@ -489,7 +512,7 @@ async def postprocess(vod_info):
         if COMSKIP and _args.time != duration:
             cmrcls = f"{str(timedelta(seconds=_args.time - duration))}s]"
             length = f" [{str(timedelta(seconds=_args.time))}s - {cmrcls} = {length}"
-        log.info(DIV_LOG % ("POSTPROCESS #5  - Archiving recording", length))
+        log.info(DIV_LOG, "POSTPROCESS #5  - Archiving recording", length)
 
         _archive_recording()
 
@@ -593,7 +616,7 @@ async def record_stream(vod_info):
 
     path = os.path.dirname(_tmpname)
     if not os.path.exists(path):
-        log.debug('Making dir "%s"' % path)
+        log.debug('Making dir "%s"', path)
         os.makedirs(path)
 
     buflen = BUFF // CHUNK
@@ -605,7 +628,7 @@ async def record_stream(vod_info):
         return buffer
 
     end = _args.time + time.time()
-    log.info(DIV_LOG % ("Recording STARTED", log_start))
+    log.info(DIV_LOG, "Recording STARTED", log_start)
     try:
         with closing(await dgram_bind((_IPTV, _args.client_port))) as stream:
             async with aiofiles.open(_tmpname + TMP_EXT, "wb") as f:
@@ -623,7 +646,7 @@ async def record_stream(vod_info):
         log.debug("TIMED OUT")
 
     record_time = int(time.time() - end + _args.time)
-    log.info(DIV_LOG % ("Recording ENDED", "[%6ss] / [%5ss]" % (f"~{record_time}", f"{_args.time}")))
+    log.info(DIV_LOG, "Recording ENDED", "[%6ss] / [%5ss]" % (f"~{record_time}", f"{_args.time}"))
 
     if not U7D_PARENT:
         return _archive_recording()
@@ -676,7 +699,7 @@ async def rtsp(vod_info):
         # Close the RTSP session, reducing bandwith
         await client.send_request("TEARDOWN", session)
         client.close_connection()
-        log.debug("[%4s] [%d]: RTSP loop ended" % (str(_args.channel), _args.program))
+        log.debug("[%4s] [%d]: RTSP loop ended", str(_args.channel), _args.program)
 
     if rec_t:
         if not rec_t.done():
@@ -690,7 +713,7 @@ async def rtsp(vod_info):
             await pp_t
 
 
-async def Vod(args=None, vod_client=None, vod_info=None):
+async def Vod(args=None, vod_client=None, vod_info=None):  # pylint: disable=invalid-name
     if __name__ == "__main__":
         global _END_POINT, _SESSION_CLOUD, _loop
 
@@ -719,7 +742,7 @@ async def Vod(args=None, vod_client=None, vod_info=None):
             log.error(f"[{_args.channel:4}] [{_args.program}]: NOT AVAILABLE")
             return
 
-        log.debug("[%4s] [%d]: vod_info=%s" % (str(_args.channel), _args.program, str(vod_info)))
+        log.debug("[%4s] [%d]: vod_info=%s", str(_args.channel), _args.program, str(vod_info))
         # Launch the RTSP Session
         await rtsp(vod_info)
 
@@ -736,7 +759,7 @@ if __name__ == "__main__":
 
         setproctitle("mu7d_vod      # %s" % " ".join(sys.argv[1:]))
 
-        def cancel_handler(signum, frame):
+        def cancel_handler(signum, frame):  # pylint: disable=unused-argument
             if _loop:
                 [task.cancel() for task in asyncio.all_tasks(_loop)]
 
@@ -747,7 +770,7 @@ if __name__ == "__main__":
         import win32con  # pylint: disable=import-error
 
         def close_handler(event):
-            log.debug("close_handler(event=%d)" % event)
+            log.debug("close_handler(event=%d)", event)
             if _loop and event in (
                 win32con.CTRL_BREAK_EVENT,
                 win32con.CTRL_C_EVENT,
@@ -757,7 +780,7 @@ if __name__ == "__main__":
             ):
                 for child in psutil.Process().children():
                     while child.is_running():
-                        log.debug("close_handler(event=%d): Killing '%s'" % (event, child.name()))
+                        log.debug("close_handler(event=%d): Killing '%s'", event, child.name())
                         child.kill()
                         time.sleep(0.01)
 
@@ -770,6 +793,7 @@ if __name__ == "__main__":
 
         win32api.SetConsoleCtrlHandler(close_handler, True)
 
+    # pylint: disable=invalid-name
     _END_POINT = _IPTV = _SESSION = _SESSION_CLOUD = _filename = _loop = _tmpname = None
 
     if not CONF:
@@ -786,7 +810,7 @@ if __name__ == "__main__":
     if CONF["LOG_TO_FILE"]:
         add_logfile(log, CONF["LOG_TO_FILE"], DEBUG and logging.DEBUG or logging.INFO)
 
-    parser = argparse.ArgumentParser(f"Movistar U7D - VOD v{_version}")
+    parser = argparse.ArgumentParser(f"Movistar U7D - VOD v{VERSION}")
     parser.add_argument("channel", help="channel id", type=int)
     parser.add_argument("program", help="program id", type=int)
 

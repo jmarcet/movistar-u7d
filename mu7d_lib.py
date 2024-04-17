@@ -1,7 +1,5 @@
 #!/usr/bin/env python3
 
-import aiofiles
-import aiohttp
 import asyncio
 import ctypes
 import gc
@@ -12,13 +10,8 @@ import re
 import shutil
 import sys
 import time
-import tomli
-import ujson
 import unicodedata
 import urllib.parse
-import xmltodict
-
-from aiohttp.client_exceptions import ClientConnectionError, ClientOSError, ServerDisconnectedError
 from asyncio.exceptions import CancelledError
 from asyncio.subprocess import DEVNULL, PIPE
 from collections import defaultdict, deque, namedtuple
@@ -28,26 +21,51 @@ from glob import glob, iglob
 from itertools import chain
 from json import JSONDecodeError
 from operator import itemgetter
+from socket import AF_INET, SOCK_DGRAM, socket
+from warnings import filterwarnings
+
+import aiofiles
+import aiohttp
+import tomli
+import ujson
+import xmltodict
+from aiohttp.client_exceptions import ClientConnectionError, ClientOSError, ServerDisconnectedError
 from psutil import AccessDenied, NoSuchProcess, Process, process_iter
 from sanic import Sanic
 from sanic.mixins.startup import StartupMixin
-from socket import AF_INET, SOCK_DGRAM, socket
 from tomli import TOMLDecodeError
-from warnings import filterwarnings
+from xmltodict import ParsingInterrupted
 
-from mu7d_cfg import CONF, DATEFMT, DIV_ONE, DIV_TWO, DROP_KEYS, END_POINTS, END_POINTS_FILE, EXT, FMT, IPTV_DNS
-from mu7d_cfg import NFO_EXT, UA, VID_EXTS, VID_EXTS_KEEP, WIN32, XML_INT_KEYS, YEAR_SECONDS, add_logfile
-
+from mu7d_cfg import (
+    CONF,
+    DATEFMT,
+    DIV_ONE,
+    DIV_TWO,
+    DROP_KEYS,
+    END_POINTS,
+    END_POINTS_FILE,
+    EXT,
+    FMT,
+    IPTV_DNS,
+    NFO_EXT,
+    UA,
+    VERSION,
+    VID_EXTS,
+    VID_EXTS_KEEP,
+    WIN32,
+    XML_INT_KEYS,
+    YEAR_SECONDS,
+    add_logfile,
+)
 
 if WIN32:
     # Disable forced WindowsSelectorEventLoopPolicy, which is non compatible w/create_subprocess_exec()
-    def _setup_loop(self) -> None: ...
+    def _setup_loop(self) -> None: ...  # pylint: disable=unused-argument
+
     StartupMixin.setup_loop = _setup_loop
 
 app = Sanic("movistar-u7d")
 _g = app.ctx
-
-_version = "7.0alpha"
 
 Channel = namedtuple("Channel", "address, name, number, port")
 Program = namedtuple("Program", "pid, duration, full_title, genre, serie")
@@ -107,8 +125,8 @@ async def add_prom_event(event, cloud=False, local=False, p_vod=None):
 
 
 async def alive():
-    UA_U7D = f"movistar-u7d v{_version} [{sys.platform}] [{EXT}] [{_g._IPTV}]"
-    async with aiohttp.ClientSession(headers={"User-Agent": UA_U7D}) as session:
+    ua_u7d = f"movistar-u7d v{VERSION} [{sys.platform}] [{EXT}] [{_g._IPTV}]"
+    async with aiohttp.ClientSession(headers={"User-Agent": ua_u7d}) as session:
         for _ in range(10):
             try:
                 await session.get("https://openwrt.marcet.info/u7d/alive")
@@ -214,15 +232,15 @@ def get_iptv_ip():
         try:
             sock.connect((IPTV_DNS, 53))
             return sock.getsockname()[0]
-        except OSError:
-            raise IPTVNetworkError("Imposible conectar con DNS de Movistar IPTV")
+        except OSError as ex:
+            raise IPTVNetworkError("Imposible conectar con DNS de Movistar IPTV") from ex
 
 
 async def get_local_info(channel, timestamp, path, _log=None, extended=False):
     nfo_file = path + NFO_EXT
+    if not os.path.exists(nfo_file):
+        return {}
     try:
-        if not os.path.exists(nfo_file):
-            return {}
         async with aiofiles.open(nfo_file, encoding="utf-8") as f:
             nfo = xmltodict.parse(await f.read(), postprocessor=pp_xml)["metadata"]
         if extended:
@@ -230,7 +248,7 @@ async def get_local_info(channel, timestamp, path, _log=None, extended=False):
             serie = _match.groups()[0] if _match else nfo.get("seriesName", "")
             nfo.update({"full_title": nfo.get("originalName", nfo["name"]), "serie": serie})
         return nfo
-    except Exception as ex:
+    except (FileNotFoundError, ParsingInterrupted, OSError, PermissionError, TypeError, ValueError) as ex:
         (_log or log).error(
             f'Cannot get extended local metadata: [{channel}] [{timestamp}] "{nfo_file=}" => {repr(ex)}'
         )
@@ -405,7 +423,7 @@ async def kill_vod():
         log_suffix = f': [{channel_id:4}] [{pid}] [{timestamp}] "{filename}"'
     else:
         log_suffix = f": [{proc.pid}]"
-    log.warning(DIV_ONE % ("Recording KILLED", log_suffix))
+    log.warning(DIV_ONE, "Recording KILLED", log_suffix)
 
 
 async def launch(cmd):
@@ -516,7 +534,7 @@ def parse_recordings(data):
     }
 
 
-def pp_xml(path, key, value):
+def pp_xml(path, key, value):  # pylint: disable=unused-argument
     return key, int(value) if key in XML_INT_KEYS else value if value else ""
 
 
@@ -648,7 +666,7 @@ async def record_program(ch_id, pid, offset=0, time=0, cloud=False, comskip=0, i
         prev_ts = int(r.groups()[0])
         begin_time = f"beginTime=[{timestamp - prev_ts:+}s]"
         if timestamp < prev_ts:
-            log.warning(DIV_TWO % ("Event CHANGED => KILL", begin_time, log_suffix))
+            log.warning(DIV_TWO, "Event CHANGED => KILL", begin_time, log_suffix)
             ongoing = await ongoing_vods(ch_id, pid, filename)
             ongoing[0].terminate()
             await asyncio.sleep(5)
@@ -671,7 +689,7 @@ async def record_program(ch_id, pid, offset=0, time=0, cloud=False, comskip=0, i
     cmd += ["--mkv"] if mkv else []
     cmd += ["--vo"] if vo else []
 
-    log.debug('Launching: "%s"' % " ".join(cmd))
+    log.debug('Launching: "%s"', " ".join(cmd))
     app.add_task(launch(cmd))
 
 
@@ -699,8 +717,8 @@ async def reindex_recordings():
             try:
                 async with aiofiles.open(nfo_file, encoding="utf-8") as f:
                     nfo = xmltodict.parse(await f.read(), postprocessor=pp_xml)["metadata"]
-            except Exception as ex:
-                log.error(f"Cannot read {nfo_file=} => {repr(ex)}")
+            except (FileNotFoundError, ParsingInterrupted, OSError, PermissionError, TypeError, ValueError) as x:
+                log.error(f"Cannot read {nfo_file=} => {repr(x)}")
                 continue
 
             nfo_needs_update = False
@@ -858,7 +876,7 @@ def rename(src, dst):
     os.rename(src, dst)
 
 
-async def timers_check(delay=0):
+async def timers_check(delay=0):  # pylint: disable=too-many-branches,too-many-locals,too-many-statements
     def _clean(string):
         return unicodedata.normalize("NFKD", string).encode("ASCII", "ignore").decode("utf8").strip()
 
@@ -905,7 +923,7 @@ async def timers_check(delay=0):
                 continue
             channel_name = _g._CHANNELS[channel_id].name
 
-            log.debug("Checking EPG  : [%4d] [%s]" % (channel_id, channel_name))
+            log.debug("Checking EPG  : [%4d] [%s]", channel_id, channel_name)
             stored_filenames = (program.filename for program in _g._RECORDINGS[channel_id].values())
 
             for timer_match in _timers["match"][str_channel_id]:
@@ -962,7 +980,7 @@ async def timers_check(delay=0):
 
                 vo = lang == "VO"
                 msg = f"[{comskip=}] [{delay=}] [{fresh=}] [{keep=}] [{repeat=}] [{days=}]{msg}"
-                log.debug("Checking timer: [%4d] [%s] [%s] %s" % (channel_id, channel_name, timer_match, msg))
+                log.debug("Checking timer: [%4d] [%s] [%s] %s", channel_id, channel_name, timer_match, msg)
 
                 if fresh:
                     tss = filter(
@@ -1013,7 +1031,7 @@ async def timers_check(delay=0):
             vo = _timers.get("sync_cloud_language", "") == "VO"
 
             for channel_id in _g._CLOUD:
-                log.debug("Checking Cloud: [%4d] [%s]" % (channel_id, _g._CHANNELS[channel_id].name))
+                log.debug("Checking Cloud: [%4d] [%s]", channel_id, _g._CHANNELS[channel_id].name)
                 stored_filenames = (program.filename for program in _g._RECORDINGS[channel_id].values())
 
                 for timestamp in _filter_recorded(channel_id, _g._CLOUD[channel_id].keys(), stored_filenames):
@@ -1023,8 +1041,8 @@ async def timers_check(delay=0):
         _g._KEEP = kept
         ongoing = await ongoing_vods(_all=True)  # we want to check against all ongoing vods, also in pp
 
-        log.debug("_KEEP=%s" % str(_g._KEEP))
-        log.debug("Ongoing VODs: |%s|" % ongoing)
+        log.debug("_KEEP=%s", str(_g._KEEP))
+        log.debug("Ongoing VODs: |%s|", ongoing)
 
         for filename, ti in chain(
             sorted(
@@ -1039,7 +1057,7 @@ async def timers_check(delay=0):
             log_suffix = f': [{ti.ch_id:4}] [{pid}] [{ti.ts}] "{filename}"'
 
             if 0 < duration < 240:
-                log.info(DIV_TWO % ("Skipping MATCH", f"Too short [{duration}s]", log_suffix))
+                log.info(DIV_TWO, "Skipping MATCH", f"Too short [{duration}s]", log_suffix)
                 continue
 
             if f"{ti.ch_id} {pid} -b " in ongoing or filename in ongoing:
@@ -1058,19 +1076,19 @@ async def timers_check(delay=0):
             if ti.keep:
                 if ti.keep < 0:
                     if (datetime.fromtimestamp(ti.ts) - datetime.now()).days < ti.keep:
-                        log.info('Older than     %d days: SKIPPING [%d] "%s"' % (abs(ti.keep), ti.ts, filename))
+                        log.info('Older than     %d days: SKIPPING [%d] "%s"', abs(ti.keep), ti.ts, filename)
                         continue
                 else:
                     program = get_program_name(filename)
 
                     current = tuple(filter(lambda x: program in x, (await ongoing_vods(_all=True)).split("|")))
                     if len(current) == ti.keep:
-                        log.info('Recording %02d programs: SKIPPING [%d] "%s"' % (ti.keep, ti.ts, filename))
+                        log.info('Recording %02d programs: SKIPPING [%d] "%s"', ti.keep, ti.ts, filename)
                         continue
 
                     siblings = get_siblings(ti.ch_id, filename)
                     if len(current) + len(siblings) == ti.keep and ti.ts < siblings[0]:
-                        log.info('Recorded  %02d programs: SKIPPING [%d] "%s"' % (ti.keep, ti.ts, filename))
+                        log.info('Recorded  %02d programs: SKIPPING [%d] "%s"', ti.keep, ti.ts, filename)
                         continue
 
             if ti.ts + ti.delay + 30 > round(datetime.now().timestamp()):
@@ -1082,7 +1100,7 @@ async def timers_check(delay=0):
             ):
                 continue
 
-            log.info(DIV_ONE % (f"Found {'Cloud ' if ti.cloud else ''}EPG MATCH", log_suffix))
+            log.info(DIV_ONE, f"Found {'Cloud ' if ti.cloud else ''}EPG MATCH", log_suffix)
 
             nr_procs += 1
             if nr_procs >= _g.RECORDINGS_PROCESSES:
@@ -1366,14 +1384,12 @@ async def upgrade_recordings():
 
         mtime = int(os.path.getmtime(recording))
 
-        async with aiofiles.open(nfo_file, encoding="utf-8") as f:
-            xml = await f.read()
-
-        xml = "\n".join([line for line in xml.splitlines() if "5S_signLanguage" not in line])
-
         try:
+            async with aiofiles.open(nfo_file, encoding="utf-8") as f:
+                xml = await f.read()
+            xml = "\n".join(line for line in xml.splitlines() if "5S_signLanguage" not in line)
             nfo = xmltodict.parse(xml, postprocessor=pp_xml)["metadata"]
-        except Exception as ex:
+        except (FileNotFoundError, ParsingInterrupted, OSError, PermissionError, TypeError, ValueError) as ex:
             log.error(f"Metadata malformed: {nfo_file=} => {repr(ex)}")
             continue
 
@@ -1411,7 +1427,7 @@ async def upgrade_recordings():
             nfo["cover"] = basename[len(_g.RECORDINGS) + 1 :] + ".jpg"
             covers += 1
         if not os.path.exists(basename + ".jpg"):
-            log.warning('Cover not found: "%s"' % basename[len(_g.RECORDINGS) + 1 :] + ".jpg")
+            log.warning('Cover not found: "%s"', basename[len(_g.RECORDINGS) + 1 :] + ".jpg")
 
         drop_covers, new_covers = [], {}
         if nfo.get("covers"):
@@ -1421,7 +1437,7 @@ async def upgrade_recordings():
                 covers += 1
                 cover_path = os.path.join(os.path.dirname(basename), nfo["covers"][cover])
                 if not os.path.exists(cover_path):
-                    log.warning('Cover not found: "%s"' % cover_path[len(_g.RECORDINGS) + 1 :])
+                    log.warning('Cover not found: "%s"', cover_path[len(_g.RECORDINGS) + 1 :])
                     drop_covers.append(cover)
                     continue
                 new_covers[cover] = cover_path[len(_g.RECORDINGS) + 1 :]

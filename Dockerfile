@@ -125,6 +125,7 @@ RUN --mount=type=cache,target=${HOME}/.cache \
         && bandit -v *.py \
         && pycodestyle -v *.py \
         && pylint --rcfile pyproject.toml -v *.py \
+        && ruff check --config pyproject.toml --no-cache -v *.py \
         && ruff check --config pyproject.toml --diff --no-cache --no-fix-only -v *.py \
         && ruff format --config pyproject.toml --diff --no-cache -v *.py \
         && uv pip uninstall --system $( awk '/==/ { print $2 }' /tmp/lint-install.txt ); \

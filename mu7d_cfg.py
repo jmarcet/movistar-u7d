@@ -3,12 +3,14 @@
 import logging
 import os
 import sys
-import tomli
-
 from contextlib import closing
 from shutil import which
 from socket import AF_INET, SOCK_DGRAM, socket
+
+import tomli
 from tomli import TOMLDecodeError
+
+VERSION = "7.0alpha"
 
 EXT = ".exe" if getattr(sys, "frozen", False) else ".py"
 LINUX = sys.platform == "linux"
@@ -110,7 +112,7 @@ def _get_lan_ip():
         return sock.getsockname()[0]
 
 
-def _mu7d_config():
+def _mu7d_config():  # pylint: disable=too-many-branches
     confname = "mu7d.conf"
     fileconf = os.path.join(os.path.dirname(__file__), confname)
 

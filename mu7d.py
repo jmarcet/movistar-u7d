@@ -1,46 +1,103 @@
 #!/usr/bin/env python3
 
-import aiofiles
-import aiohttp
 import asyncio
 import os
 import sys
 import time
-import ujson
 import urllib.parse
-
-from aiohttp.client_exceptions import ClientConnectionError, ClientOSError, ServerDisconnectedError
 from asyncio.exceptions import CancelledError
 from asyncio.subprocess import DEVNULL, PIPE
-from asyncio_dgram import bind as dgram_bind, from_socket as dgram_from_socket
 from collections import defaultdict, namedtuple
 from contextlib import closing
 from datetime import datetime
+from signal import SIG_IGN, SIGINT, SIGTERM, signal
+from socket import (
+    AF_INET,
+    IP_ADD_MEMBERSHIP,
+    IPPROTO_IP,
+    IPPROTO_UDP,
+    SO_REUSEADDR,
+    SOCK_DGRAM,
+    SOCK_STREAM,
+    SOL_SOCKET,
+    inet_aton,
+    socket,
+)
+from time import sleep
+
+import aiofiles
+import aiohttp
+import ujson
+from aiohttp.client_exceptions import ClientConnectionError, ClientOSError, ServerDisconnectedError
+from asyncio_dgram import bind as dgram_bind, from_socket as dgram_from_socket
 from filelock import FileLock, Timeout
 from psutil import AccessDenied, Process, boot_time
 from sanic import response
-from sanic_prometheus import monitor
 from sanic.exceptions import Forbidden, HeaderNotFound, NotFound, ServiceUnavailable
 from sanic.handlers import ContentRangeHandler
 from sanic.log import error_logger
 from sanic.models.server_types import ConnInfo
 from sanic.server.protocols.http_protocol import HttpProtocol
-from signal import SIGINT, SIGTERM, SIG_IGN, signal
-from socket import IPPROTO_IP, IPPROTO_UDP, IP_ADD_MEMBERSHIP, SO_REUSEADDR, SOCK_DGRAM, SOL_SOCKET, inet_aton
-from socket import AF_INET, SOCK_STREAM, socket
-from time import sleep
+from sanic_prometheus import monitor
 
-from mu7d_cfg import ATOM, BUFF, CHUNK, CONF, DIV_ONE, LINUX, MIME_GUIDE, MIME_M3U
-from mu7d_cfg import MIME_WEBM, UA, URL_COVER, URL_FANART, URL_LOGO, VID_EXTS, WIN32
-
-from mu7d_lib import add_prom_event, alive, create_covers_cache, does_recording_exist, find_free_port
-from mu7d_lib import get_channel_id, get_end_point, get_epg, get_iptv_ip, get_local_info, get_path
-from mu7d_lib import get_program_vod, get_recording_name, get_vod_info, log_network_saturated, network_saturation
-from mu7d_lib import ongoing_vods, prom_event, prune_duplicates, prune_expired, reaper, record_program
-from mu7d_lib import recordings_lock, reload_epg, reload_recordings, reindex_recordings, timers_check, update_epg
-from mu7d_lib import update_epg_cron, update_recordings, upgrade_recordings
-from mu7d_lib import IPTVNetworkError, LocalNetworkError, PromEvent, Recording, app, log, _g, _version
-
+from mu7d_cfg import (
+    ATOM,
+    BUFF,
+    CHUNK,
+    CONF,
+    DIV_ONE,
+    LINUX,
+    MIME_GUIDE,
+    MIME_M3U,
+    MIME_WEBM,
+    UA,
+    URL_COVER,
+    URL_FANART,
+    URL_LOGO,
+    VERSION,
+    VID_EXTS,
+    WIN32,
+)
+from mu7d_lib import (
+    IPTVNetworkError,
+    LocalNetworkError,
+    PromEvent,
+    Recording,
+    _g,
+    add_prom_event,
+    alive,
+    app,
+    create_covers_cache,
+    does_recording_exist,
+    find_free_port,
+    get_channel_id,
+    get_end_point,
+    get_epg,
+    get_iptv_ip,
+    get_local_info,
+    get_path,
+    get_program_vod,
+    get_recording_name,
+    get_vod_info,
+    log,
+    log_network_saturated,
+    network_saturation,
+    ongoing_vods,
+    prom_event,
+    prune_duplicates,
+    prune_expired,
+    reaper,
+    record_program,
+    recordings_lock,
+    reindex_recordings,
+    reload_epg,
+    reload_recordings,
+    timers_check,
+    update_epg,
+    update_epg_cron,
+    update_recordings,
+    upgrade_recordings,
+)
 from mu7d_vod import Vod
 
 
@@ -55,7 +112,7 @@ async def before_server_start(app):
 async def after_server_start(app):
     if not WIN32:
 
-        def cleanup_handler(signum, frame):
+        def cleanup_handler(signum, frame):  # pylint: disable=unused-argument
             [signal(sig, SIG_IGN) for sig in (SIGINT, SIGTERM)]
             app.stop()
             os.killpg(0, SIGTERM)
@@ -75,7 +132,7 @@ async def after_server_start(app):
         _loop = asyncio.get_event_loop()
 
         def close_handler(event):
-            log.debug("close_handler(event=%d)" % event)
+            log.debug("close_handler(event=%d)", event)
             if _loop.is_running() and event in (
                 win32con.CTRL_BREAK_EVENT,
                 win32con.CTRL_C_EVENT,
@@ -86,7 +143,7 @@ async def after_server_start(app):
                 _loop.stop()
                 while _loop.is_running():
                     time.sleep(0.05)
-            log.debug("close_handler(event=%d) -> GOOD BYE" % event)
+            log.debug("close_handler(event=%d) -> GOOD BYE", event)
             return True
 
         win32api.SetConsoleCtrlHandler(close_handler, True)
@@ -164,7 +221,7 @@ async def after_server_start(app):
 
 
 @app.listener("before_server_stop")
-async def before_server_stop(app):
+async def before_server_stop(app):  # pylint: disable=unused-argument
     [task.cancel() for task in asyncio.all_tasks()]
 
 
@@ -186,10 +243,10 @@ async def handle_archive(request, channel_id, program_id):
     if not _g._t_timers or _g._t_timers.done():
         _g._t_timers = app.add_task(timers_check(delay=3))
 
-    log.debug('Checking for "%s"' % filename)
+    log.debug('Checking for "%s"', filename)
     if not does_recording_exist(filename):
         msg = "Recording NOT ARCHIVED"
-        log.error(DIV_ONE % (msg, log_suffix))
+        log.error(DIV_ONE, msg, log_suffix)
         return response.json({"status": msg}, ensure_ascii=False, status=204)
 
     async with recordings_lock:
@@ -204,7 +261,7 @@ async def handle_archive(request, channel_id, program_id):
         _g._RECORDINGS[channel_id][nfo["beginTime"]] = Recording(filename, nfo["duration"])
 
         msg = "Recording ARCHIVED"
-        log.info(DIV_ONE % (msg, log_suffix))
+        log.info(DIV_ONE, msg, log_suffix)
 
     app.add_task(update_recordings(channel_id))
     return response.json({"status": msg}, ensure_ascii=False)
@@ -214,7 +271,7 @@ async def handle_archive(request, channel_id, program_id):
 @app.route("/<channel_id:int>/mpegts", methods=["GET", "HEAD"], name="channel_mpegts")
 @app.route(r"/<channel_name:([A-Za-z1-9]+)\.ts$>", methods=["GET", "HEAD"], name="channel_name")
 async def handle_channel(request, channel_id=None, channel_name=None):
-    log.debug("%s %s %s" % tuple(map(str, (request, request.args, request.headers))))
+    log.debug("%s %s %s", *map(str, (request, request.args, request.headers)))
 
     _start = time.time()
 
@@ -244,7 +301,7 @@ async def handle_channel(request, channel_id=None, channel_name=None):
             with closing(await dgram_from_socket(sock)) as stream:
                 # 1st packet on SDTV channels is bogus and breaks ffmpeg
                 if ua.startswith("Jellyfin") and " HD" not in ch.name:
-                    log.debug('UA="%s" detected, skipping first packet' % ua)
+                    log.debug('UA="%s" detected, skipping first packet', ua)
                     await stream.recv()
                 else:
                     await _response.send((await stream.recv())[0][28:])
@@ -274,7 +331,7 @@ async def handle_channel(request, channel_id=None, channel_name=None):
 @app.route("/<channel_id:int>/<url>", methods=["GET", "HEAD"], name="flussonic_id")
 @app.route(r"/<channel_name:([A-Za-z1-9]+)>/<url>", methods=["GET", "HEAD"], name="flussonic_name")
 async def handle_flussonic(request, url, channel_id=None, channel_name=None, cloud=False, local=False):
-    log.debug("%s %s %s" % tuple(map(str, (request, request.args, request.headers))))
+    log.debug("%s %s %s", *map(str, (request, request.args, request.headers)))
 
     _start = time.time()
 
@@ -357,7 +414,7 @@ async def handle_flussonic(request, url, channel_id=None, channel_name=None, clo
         with closing(await dgram_bind((_g._IPTV, client_port))) as stream:
             # 1st packet on SDTV channels is bogus and breaks ffmpeg
             if ua.startswith("Jellyfin") and " HD" not in _g._CHANNELS[channel_id].name:
-                log.debug('UA="%s" detected, skipping first packet' % ua)
+                log.debug('UA="%s" detected, skipping first packet', ua)
                 await stream.recv()
             else:
                 await _response.send((await stream.recv())[0])
@@ -414,7 +471,7 @@ async def handle_guides(request):
 @app.route("/Covers/<path:int>/<cover>", methods=["GET", "HEAD"], name="images_covers")
 @app.route("/Logos/<logo>", methods=["GET", "HEAD"], name="images_logos")
 async def handle_images(request, cover=None, logo=None, path=None):
-    log.debug("[%s] %s %s" % (request.ip, request.method, request.url))
+    log.debug("[%s] %s %s", request.ip, request.method, request.url)
     if path and cover:
         urls = (f'{URL_FANART}/{request.args.get("fanart")}',) if "?fanart=" in request.url else ()
         urls += (f"{URL_COVER}/{path}/{cover}",)
@@ -439,11 +496,11 @@ async def handle_images(request, cover=None, logo=None, path=None):
                             content_type="image/jpeg" if not url.endswith(".png") else "image/png",
                             headers={"Content-Disposition": f'attachment; filename="{os.path.basename(url)}"'},
                         )
-                    log.warning("Got empty image => %s" % str(r).splitlines()[0])
+                    log.warning("Got empty image => %s", str(r).splitlines()[0])
                 else:
-                    log.warning("Could not get image => %s" % str(r).splitlines()[0])
+                    log.warning("Could not get image => %s", str(r).splitlines()[0])
         except (ClientConnectionError, ClientOSError, ServerDisconnectedError) as ex:
-            log.warning("Could not get image => %s" % str(ex))
+            log.warning("Could not get image => %s", str(ex))
     raise NotFound(f"Requested URL {request.path} not found")
 
 
@@ -476,7 +533,7 @@ async def handle_m3u_files(request, m3u_file):
 
 
 @app.get("/favicon.ico", name="favicon")
-async def handle_notfound(request):
+async def handle_notfound(request):  # pylint: disable=unused-argument
     return response.empty(404)
 
 
@@ -622,8 +679,8 @@ async def handle_timers_check(request):
 
 async def transcode(request, event, p_vod, channel_id=0, filename="", offset=0, port=0, vod=None):
     log.debug(
-        'transcode(): channel_id=%s port=%s vod=%s offset=%s filename="%s"'
-        % tuple(map(str, (channel_id, port, vod, offset, filename)))
+        'transcode(): channel_id=%s port=%s vod=%s offset=%s filename="%s"',
+        *map(str, (channel_id, port, vod, offset, filename)),
     )
 
     if request.args.get("vo") == "1":
@@ -673,9 +730,9 @@ class VodHttpProtocol(HttpProtocol):
             self.connections.add(self)
             self.transport = transport
             self._task = self.loop.create_task(self.connection_task())
-            self.recv_buffer = bytearray()
+            self.recv_buffer = bytearray()  # pylint: disable=attribute-defined-outside-init
             self.conn_info = ConnInfo(self.transport, unix=self._unix)
-        except Exception:
+        except Exception:  # pylint: disable=broad-exception-caught
             error_logger.exception("protocol.connect_made")
 
 
@@ -686,9 +743,10 @@ if __name__ == "__main__":
         setproctitle("mu7d")
 
     else:
-        from psutil import ABOVE_NORMAL_PRIORITY_CLASS
+        from psutil import ABOVE_NORMAL_PRIORITY_CLASS  # pylint: disable=ungrouped-imports
 
     try:
+        # pylint: disable=used-before-assignment
         Process().nice(-10 if not WIN32 else ABOVE_NORMAL_PRIORITY_CLASS)
     except AccessDenied:
         pass
@@ -726,18 +784,18 @@ if __name__ == "__main__":
                     iptv = netifaces.ifaddresses(iptv_iface)[2][0]["addr"]
                     log.info(f"IPTV interface: {iptv_iface}")
                     return iptv
-                except (KeyError, ValueError):
+                except (KeyError, ValueError) as ex:
                     if uptime < 180:
                         log.info("IPTV interface: waiting for it...")
                         sleep(5)
                     else:
-                        raise LocalNetworkError(f"Unable to get address from interface {iptv_iface}...")
+                        raise LocalNetworkError(f"Unable to get address from interface {iptv_iface}...") from ex
 
     if not CONF:
         log.critical("Imposible parsear fichero de configuración")
         sys.exit(1)
 
-    banner = f"Movistar U7D v{_version}"
+    banner = f"Movistar U7D v{VERSION}"
     log.info("=" * len(banner))
     log.info(banner)
     log.info("=" * len(banner))

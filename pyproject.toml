@@ -41,7 +41,7 @@ Source = "https://github.com/jmarcet/movistar-u7d"
 # A comma-separated list of package or module names from where C extensions may
 # be loaded. Extensions are loading into the active Python interpreter and may
 # run arbitrary code.
-# extension-pkg-allow-list =
+extension-pkg-allow-list = ["netifaces", "ujson"]
 
 # A comma-separated list of package or module names from where C extensions may
 # be loaded. Extensions are loading into the active Python interpreter and may
@@ -259,7 +259,7 @@ valid-metaclass-classmethod-first-arg = ["cls"]
 # ignored-parents =
 
 # Maximum number of arguments for function / method.
-max-args = 5
+max-args = 9
 
 # Maximum number of attributes for a class (see R0902).
 max-attributes = 7
@@ -268,10 +268,10 @@ max-attributes = 7
 max-bool-expr = 5
 
 # Maximum number of branch for function / method body.
-max-branches = 12
+max-branches = 25
 
 # Maximum number of locals for function / method body.
-max-locals = 15
+max-locals = 50
 
 # Maximum number of parents for a class (see R0901).
 max-parents = 7
@@ -280,10 +280,10 @@ max-parents = 7
 max-public-methods = 20
 
 # Maximum number of return / yield for function / method body.
-max-returns = 6
+max-returns = 8
 
 # Maximum number of statements in function / method body.
-max-statements = 50
+max-statements = 100
 
 # Minimum number of public methods for a class (see R0903).
 min-public-methods = 2
@@ -310,7 +310,7 @@ indent-string = "    "
 max-line-length = 113
 
 # Maximum number of lines in a module.
-max-module-lines = 1000
+max-module-lines = 1500
 
 # Allow the body of a class to be on the same line as the declaration if body
 # contains single statement.
@@ -374,7 +374,22 @@ confidence = ["HIGH", "CONTROL_FLOW", "INFERENCE", "INFERENCE_FAILURE", "UNDEFIN
 # --enable=similarities". If you want to run only the classes checker, but have
 # no Warning level messages displayed, use "--disable=all --enable=classes
 # --disable=W".
-disable = ["attribute-defined-outside-init", "broad-except", "c-extension-no-member", "cell-var-from-loop", "consider-using-dict-items", "consider-using-f-string", "dangerous-default-value", "expression-not-assigned", "global-statement", "import-outside-toplevel", "inconsistent-return-statements", "invalid-name", "logging-fstring-interpolation", "logging-not-lazy", "lost-exception", "missing-class-docstring", "missing-function-docstring", "missing-module-docstring", "no-name-in-module", "protected-access", "raise-missing-from", "redefined-outer-name", "too-many-arguments", "too-many-branches", "too-many-lines", "too-many-locals", "too-many-nested-blocks", "too-many-return-statements", "too-many-statements", "ungrouped-imports", "unnecessary-lambda-assignment", "unsubscriptable-object", "unused-argument", "used-before-assignment", "useless-suppression", "wrong-import-order", "wrong-import-position"]
+disable = [
+    "cell-var-from-loop",
+    "consider-using-f-string",
+    "dangerous-default-value",
+    "expression-not-assigned",
+    "global-statement",
+    "import-outside-toplevel",
+    "inconsistent-return-statements",
+    "logging-fstring-interpolation",
+    "logging-too-many-args",
+    "missing-class-docstring",
+    "missing-function-docstring",
+    "missing-module-docstring",
+    "protected-access",
+    "redefined-outer-name",
+]
 
 # Enable the message, report, category or checker with the given id(s). You can
 # either give multiple identifier separated by comma (,) or put this option
@@ -396,7 +411,7 @@ notes = ["FIXME", "XXX", "TODO"]
 
 [tool.pylint.refactoring]
 # Maximum number of nested blocks for function / method body
-max-nested-blocks = 5
+max-nested-blocks = 7
 
 # Complete name of functions that never returns. When checking for inconsistent-
 # return-statements if a never returning function is called then it will be
@@ -440,7 +455,7 @@ ignore-imports = true
 ignore-signatures = true
 
 # Minimum lines number of a similarity.
-min-similarity-lines = 16
+min-similarity-lines = 8
 
 [tool.pylint.spelling]
 # Limits count of emitted suggestions for spelling mistakes.
@@ -553,18 +568,6 @@ ignored-argument-names = "_.*|^ignored_|^unused_"
 # builtins.
 redefining-builtins-modules = ["six.moves", "past.builtins", "future.builtins", "builtins", "io"]
 
-[tool.lint]
-# Enable pycodestyle (`E`) and Pyflakes (`F`) codes by default.
-select = ["E", "F"]
-ignore = []
-
-# Allow autofix for all enabled rules (when `--fix`) is provided.
-fixable = ["A", "B", "C", "D", "E", "F", "G", "I", "N", "Q", "S", "T", "W", "ANN", "ARG", "BLE", "COM", "DJ", "DTZ", "EM", "ERA", "EXE", "FBT", "ICN", "INP", "ISC", "NPY", "PD", "PGH", "PIE", "PL", "PT", "PTH", "PYI", "RET", "RSE", "RUF", "SIM", "SLF", "TCH", "TID", "TRY", "UP", "YTT"]
-unfixable = []
-
-# Allow unused variables when underscore-prefixed.
-dummy-variable-rgx = "^(_+|(_+[a-zA-Z0-9_]*[a-zA-Z0-9]+?))$"
-
 [tool.ruff]
 # Exclude a variety of commonly ignored directories.
 exclude = [
@@ -572,24 +575,85 @@ exclude = [
     ".direnv",
     ".eggs",
     ".git",
+    ".git-rewrite",
     ".hg",
+    ".ipynb_checkpoints",
     ".mypy_cache",
     ".nox",
     ".pants.d",
+    ".pyenv",
+    ".pytest_cache",
     ".pytype",
     ".ruff_cache",
     ".svn",
     ".tox",
     ".venv",
+    ".vscode",
     "__pypackages__",
     "_build",
     "buck-out",
     "build",
     "dist",
     "node_modules",
+    "site-packages",
     "venv",
 ]
 
+# Same as Black.
 line-length = 113
+indent-width = 4
+
+# Assume Python 3.12
 target-version = "py312"
 
+# Group violations by containing file.
+output-format = "full"
+
+[tool.ruff.lint]
+# Enable Pyflakes (`F`) and a subset of the pycodestyle (`E`)  codes by default.
+# Unlike Flake8, Ruff doesn't enable pycodestyle warnings (`W`) or
+# McCabe complexity (`C901`) by default.
+# select = ["E4", "E7", "E9", "F", "B"]
+select = ["A", "ASYNC", "E", "F", "I", "PL", "S", "TID", "W"]
+ignore = ["PLR0911", "PLR0912", "PLR0913", "PLR0915", "PLR2004", "PLW0603", "PLW2901", "S108"]
+
+# Allow fix for all enabled rules (when `--fix`) is provided.
+fixable = ["ALL"]
+unfixable = []
+
+# Allow unused variables when underscore-prefixed.
+dummy-variable-rgx = "^(_+|(_+[a-zA-Z0-9_]*[a-zA-Z0-9]+?))$"
+
+[tool.ruff.format]
+# Like Black, use double quotes for strings.
+quote-style = "double"
+
+# Like Black, indent with spaces, rather than tabs.
+indent-style = "space"
+
+# Like Black, respect magic trailing commas.
+skip-magic-trailing-comma = false
+
+# Like Black, automatically detect the appropriate line ending.
+line-ending = "auto"
+
+# Enable auto-formatting of code examples in docstrings. Markdown,
+# reStructuredText code/literal blocks and doctests are all supported.
+#
+# This is currently disabled by default, but it is planned for this
+# to be opt-out in the future.
+docstring-code-format = true
+
+# Set the line length limit used when formatting code snippets in
+# docstrings.
+#
+# This only has an effect when the `docstring-code-format` setting is
+# enabled.
+docstring-code-line-length = "dynamic"
+
+[tool.ruff.lint.flake8-bandit]
+hardcoded-tmp-directory = ["/tmp"]
+
+[tool.ruff.lint.isort]
+combine-as-imports = true
+# force-single-line = true

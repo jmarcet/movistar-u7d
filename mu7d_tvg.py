@@ -3,7 +3,6 @@
 # Based on tv_grab_es_movistartv by Willow:
 # Source: https://github.com/MovistarTV/tv_grab_es_movistartv
 
-import aiohttp
 import argparse
 import asyncio
 import codecs
@@ -15,26 +14,34 @@ import re
 import struct
 import sys
 import time
-
-from aiohttp.client_exceptions import ClientConnectionError, ClientOSError, ServerDisconnectedError
 from asyncio.exceptions import CancelledError
-from asyncio_dgram import from_socket as dgram_from_socket
 from collections import defaultdict, deque
 from contextlib import closing
 from datetime import date, datetime, timedelta
-from defusedxml.ElementTree import ParseError, fromstring
-from filelock import FileLock, Timeout
 from glob import iglob
 from html import escape, unescape
 from itertools import batched, combinations
 from json import JSONDecodeError
-from socket import AF_INET, IPPROTO_IP, IPPROTO_UDP, IP_ADD_MEMBERSHIP, SO_REUSEADDR, SOCK_DGRAM, SOL_SOCKET
-from socket import inet_aton, socket
+from socket import (
+    AF_INET,
+    IP_ADD_MEMBERSHIP,
+    IPPROTO_IP,
+    IPPROTO_UDP,
+    SO_REUSEADDR,
+    SOCK_DGRAM,
+    SOL_SOCKET,
+    inet_aton,
+    socket,
+)
 
-from mu7d_cfg import CONF, DATEFMT, END_POINTS_FILE, FMT, UA, WIN32, add_logfile
+import aiohttp
+from aiohttp.client_exceptions import ClientConnectionError, ClientOSError, ServerDisconnectedError
+from asyncio_dgram import from_socket as dgram_from_socket
+from defusedxml.ElementTree import ParseError, fromstring
+from filelock import FileLock, Timeout
 
-from mu7d_lib import IPTVNetworkError, get_end_point, get_iptv_ip, get_local_info, rename, _version
-
+from mu7d_cfg import CONF, DATEFMT, END_POINTS_FILE, FMT, UA, VERSION, WIN32, add_logfile
+from mu7d_lib import IPTVNetworkError, get_end_point, get_iptv_ip, get_local_info, rename
 
 log = logging.getLogger("TVG")
 
@@ -90,7 +97,7 @@ class Cache:
                 with open(file, encoding="utf8") as f:
                     _data = json.loads(f.read(), object_hook=Cache.keys_to_int)["data"]
                 if _data["endTime"] // 1000 < _DEADLINE:
-                    log.debug('Eliminando "%s" caducado' % os.path.basename(file))
+                    log.debug('Eliminando "%s" caducado', os.path.basename(file))
                     os.remove(file)
             except (FileNotFoundError, JSONDecodeError, OSError, PermissionError, TypeError, ValueError):
                 pass
@@ -195,7 +202,7 @@ class MovistarTV:
             ):
                 for src, dst in EPG_EXTINFO_PAIRS:
                     if program[src] and program[src] not in (data.get(dst, ""), "Cine"):
-                        # log.debug('%s="%s" => %s="%s"' % (src, program.get(src, ""), dst, data.get(dst, "")))
+                        # log.debug('%s="%s" => %s="%s"', src, program.get(src, ""), dst, data.get(dst, ""))
                         data[dst] = program[src]
                 Cache.save_epg_extended_info(data)
                 return True
@@ -220,12 +227,12 @@ class MovistarTV:
             if not _data:
                 if data:
                     return data
-                log.debug("Información extendida no encontrada: [%04d] [%d] [%d] " % (channel_id, pid, ts))
+                log.debug("Información extendida no encontrada: [%04d] [%d] [%d] ", channel_id, pid, ts)
                 return
             if _data["beginTime"] // 1000 != ts and data and data["beginTime"] // 1000 != ts:
                 log.debug(
-                    "Event mismatch STILL BROKEN: [%4s] [%d] beginTime=[%+d]"
-                    % (str(channel_id), pid, _data["beginTime"] // 1000 - ts)
+                    "Event mismatch STILL BROKEN: [%4s] [%d] beginTime=[%+d]",
+                    *(str(channel_id), pid, _data["beginTime"] // 1000 - ts),
                 )
             if not _fill_data(_data):
                 Cache.save_epg_extended_info(_data)
@@ -402,7 +409,7 @@ class MulticastIPTV:
 
         self.__fixed = fixed_diff + fixed_over
 
-        log.debug("__fix_epg(): %s" % str(self.__epg.keys()))
+        log.debug("__fix_epg(): %s", str(self.__epg.keys()))
 
     async def __get_bin_epg(self):
         segments = self.__xml_data["segments"]
@@ -459,12 +466,12 @@ class MulticastIPTV:
                 log.info(f"{_msg} => Completos y correctos")
                 break
             except (AttributeError, IndexError, ParseError, KeyError, TypeError, UnicodeError) as ex:
-                log.debug("%s" % repr(ex))
+                log.debug("%s", repr(ex))
                 log.warning(f"{_msg} => Incorrectos. Reintentando...")
 
         self.__xml_data["services"] = self.__get_services()
         stats = tuple(len(self.__xml_data[x]) for x in ("segments", "channels", "packages", "services"))
-        log.info("Días de EPG: %i _ Canales: %i _ Paquetes: %i _ Servicios contratados: %i" % stats)
+        log.info("Días de EPG: %i _ Canales: %i _ Paquetes: %i _ Servicios contratados: %i", *stats)
 
         Cache.save_epg_metadata(self.__xml_data)
         del self.__xml_data["packages"]
@@ -510,7 +517,7 @@ class MulticastIPTV:
                 return data
 
         _demarcation = MulticastIPTV.get_demarcation_name()
-        log.info("Buscando el Proveedor de Servicios de %s..." % _demarcation)
+        log.info("Buscando el Proveedor de Servicios de %s...", _demarcation)
 
         xml = (await MulticastIPTV.get_xml_files(_CONFIG["mcast_grp"], _CONFIG["mcast_port"], init=True))["1_0"]
         result = re.findall(
@@ -521,7 +528,7 @@ class MulticastIPTV:
         data = {"mcast_grp": result[0], "mcast_port": int(result[1])}
         Cache.save_service_provider_data(data)
 
-        log.info("Proveedor de Servicios de %s: %s" % (_demarcation, data["mcast_grp"]))
+        log.info("Proveedor de Servicios de %s: %s", _demarcation, data["mcast_grp"])
 
         return data
 
@@ -563,7 +570,7 @@ class MulticastIPTV:
             self.__fixed += _fixed
             gaps += _gaps
 
-        log.debug("__merge_epg(): %s" % str(self.__cached_epg.keys()))
+        log.debug("__merge_epg(): %s", str(self.__cached_epg.keys()))
         return gaps
 
     @staticmethod
@@ -604,7 +611,7 @@ class MulticastIPTV:
                     **self.__epg[key],
                     **self.__parse_bin_epg_body(head["data"], head["service_id"]),
                 }
-        log.debug("__parse_bin_epg(): %s" % str(self.__epg.keys()))
+        log.debug("__parse_bin_epg(): %s", str(self.__epg.keys()))
 
     @staticmethod
     def __parse_bin_epg_header(data):
@@ -661,8 +668,8 @@ class MulticastIPTV:
                     del self.__epg, self.__xml_data["segments"]
                     break
                 log.warning(f"EPG con huecos de [{str(timedelta(seconds=gaps))}s]. Descargando de nuevo...")
-            except Exception as ex:
-                log.debug("%s" % repr(ex))
+            except Exception as ex:  # pylint: disable=broad-exception-caught
+                log.debug("%s", repr(ex))
                 log.warning("Error descargando la EPG. Reintentando...")
 
         log.info(f"Eventos en Caché: Arreglados = {self.__fixed} _ Caducados = {self.__expired}")
@@ -791,12 +798,12 @@ class MulticastIPTV:
                             break
                     except (AttributeError, KeyError, TypeError, UnicodeError):
                         pass
-                    except (IPTVNetworkError, OSError):
+                    except (IPTVNetworkError, OSError) as ex:
                         if init:
                             msg = "Multicast IPTV de Movistar no detectado"
                             failed += 1
                             if failed == 3:
-                                raise IPTVNetworkError(msg)
+                                raise IPTVNetworkError(msg) from ex
                             log.error(msg)
                         else:
                             log.debug("Timeout descargando XML")
@@ -831,6 +838,7 @@ class XmlTV:
         self.__services = data["services"]
         self.__trans = str.maketrans("()!?", "❨❩ᴉ‽")
 
+    # pylint: disable=too-many-branches,too-many-statements
     async def __add_programmes_tags(self, channel_id, programs, local, tz_offset):
         if not local:
             ext_infos = []
@@ -897,11 +905,10 @@ class XmlTV:
                             se, _stitle = subtitle.split(" - ", 1)
                             if _clean_origt.startswith(self.__clean(_stitle)):
                                 subtitle = f"{se} - {orig_title}"
-                    else:
-                        if ext_info["theme"] in ("Cine", "Documentales") and " (" in program["full_title"]:
-                            _match = re.match(r"([^()]+) \((.+)\)", program["full_title"])
-                            if _match and orig_title == _match.groups()[1]:
-                                title = _match.groups()[0]
+                    elif ext_info["theme"] in ("Cine", "Documentales") and " (" in program["full_title"]:
+                        _match = re.match(r"([^()]+) \((.+)\)", program["full_title"])
+                        if _match and orig_title == _match.groups()[1]:
+                            title = _match.groups()[0]
 
                     if ext_info["theme"] == "Cine":
                         subtitle = f"«{orig_title}»"
@@ -1096,11 +1103,11 @@ async def tvg_main(args):
         refresh = False
     else:
         refresh = True
-        banner = f"Movistar U7D - TVG v{_version}"
+        banner = f"Movistar U7D - TVG v{VERSION}"
         log.info("-" * len(banner))
         log.info(banner)
         log.info("-" * len(banner))
-        log.debug("%s" % " ".join(sys.argv[1:]))
+        log.debug("%s", " ".join(sys.argv[1:]))
 
     Cache(full=bool(args.m3u or args.guide))  # Inicializa la caché
 
@@ -1257,9 +1264,9 @@ if __name__ == "__main__":
         log.critical("No es posible mezclar categorías")
         sys.exit(1)
 
-    local = "-local" if any((args.local_m3u, args.local_recordings)) else ""
-    lockfile = os.path.join(CONF["TMP_DIR"], f".mu7d_tvg{local}.lock")
-    del CONF
+    LOCAL = "-local" if any((args.local_m3u, args.local_recordings)) else ""
+    lockfile = os.path.join(CONF["TMP_DIR"], f".mu7d_tvg{LOCAL}.lock")
+    del CONF, LOCAL
     try:
         with FileLock(lockfile, timeout=0):
             _IPTV = get_iptv_ip()
