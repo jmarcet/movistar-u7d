@@ -1,7 +1,9 @@
 aiofiles
 aiohttp
+async-files
 asyncio
 asyncio-dgram
+asyncstdlib
 defusedxml
 filelock
 netifaces

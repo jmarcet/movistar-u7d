@@ -24,11 +24,12 @@ from operator import itemgetter
 from socket import AF_INET, SOCK_DGRAM, socket
 from warnings import filterwarnings
 
-import aiofiles
 import aiohttp
+import asyncstdlib as a
 import tomli
 import ujson
 import xmltodict
+from aiofiles import open as async_open, os as aio_os
 from aiohttp.client_exceptions import ClientConnectionError, ClientOSError, ServerDisconnectedError
 from psutil import AccessDenied, NoSuchProcess, Process, process_iter
 from sanic import Sanic
@@ -139,9 +140,9 @@ async def create_covers_cache():
     log.info("Recreating covers cache")
 
     covers_path = os.path.join(_g.RECORDINGS_TMP, "covers")
-    if os.path.exists(covers_path):
+    if await aio_os.path.exists(covers_path):
         shutil.rmtree(covers_path)
-    os.makedirs(covers_path)
+    await aio_os.makedirs(covers_path)
 
     for nfo in iglob(f"{_g.RECORDINGS}/[0-9][0-9][0-9]. */**/*{NFO_EXT}", recursive=True):
         cover = nfo.replace(NFO_EXT, ".jpg")
@@ -149,20 +150,20 @@ async def create_covers_cache():
             os.path.dirname(cover), "metadata", os.path.basename(cover).replace(".jpg", "-fanart.jpg")
         )
 
-        if os.path.exists(fanart):
+        if await aio_os.path.exists(fanart):
             cover = fanart
-        elif not os.path.exists(cover):
+        elif not await aio_os.path.exists(cover):
             continue
 
         cached_cover = cover.replace(_g.RECORDINGS, covers_path)
-        os.makedirs(os.path.dirname(cached_cover), exist_ok=True)
+        await aio_os.makedirs(os.path.dirname(cached_cover), exist_ok=True)
         shutil.copy2(cover, cached_cover)
 
     log.info("Covers cache recreated")
 
 
-def does_recording_exist(filename):
-    return os.path.exists(os.path.join(_g.RECORDINGS, filename + _g.VID_EXT))
+async def does_recording_exist(filename):
+    return await aio_os.path.exists(os.path.join(_g.RECORDINGS, filename + _g.VID_EXT))
 
 
 def find_free_port(iface=""):
@@ -193,9 +194,9 @@ def get_channel_id(channel_name):
 async def get_end_point():
     end_points = END_POINTS
     ep_path = os.path.join(CONF["HOME"], ".xmltv", "cache", END_POINTS_FILE)
-    if os.path.exists(ep_path):
+    if await aio_os.path.exists(ep_path):
         try:
-            async with aiofiles.open(ep_path) as f:
+            async with async_open(ep_path) as f:
                 end_points = ujson.loads(await f.read())["data"]
         except (FileNotFoundError, JSONDecodeError, OSError, PermissionError, TypeError, ValueError):
             pass
@@ -238,10 +239,10 @@ def get_iptv_ip():
 
 async def get_local_info(channel, timestamp, path, _log=None, extended=False):
     nfo_file = path + NFO_EXT
-    if not os.path.exists(nfo_file):
+    if not await aio_os.path.exists(nfo_file):
         return {}
     try:
-        async with aiofiles.open(nfo_file, encoding="utf-8") as f:
+        async with async_open(nfo_file, encoding="utf-8") as f:
             nfo = xmltodict.parse(await f.read(), postprocessor=pp_xml)["metadata"]
         if extended:
             _match = re.search(r"^(.+) (?:S\d+E\d+|Ep[isode.]+ \d+)", nfo.get("originalName", nfo["name"]))
@@ -339,7 +340,7 @@ def get_program_vod(channel_id, url=None, cloud=False, local=False):
     return ProgramVOD(channel, pid, full_title, start, duration, offset=new_start - start if new_start else 0)
 
 
-def get_recording_files(filename, cache=False):
+async def get_recording_files(filename, cache=False):
     absname = os.path.join(_g.RECORDINGS, filename.removesuffix(_g.VID_EXT))
     nfo = os.path.join(absname + NFO_EXT)
 
@@ -347,8 +348,9 @@ def get_recording_files(filename, cache=False):
     metadata = os.path.join(path, "metadata")
 
     files = glob_safe(f"{absname}.*")
-    files += [nfo] if os.path.exists(nfo) else []
-    files += [*glob_safe(os.path.join(metadata, f"{basename}-*")), metadata] if os.path.exists(metadata) else []
+    files += [nfo] if await aio_os.path.exists(nfo) else []
+    if await aio_os.path.exists(metadata):
+        files += [*glob_safe(os.path.join(metadata, f"{basename}-*")), metadata]
     files += [path] if path != _g.RECORDINGS else []
 
     if cache and _g.RECORDINGS_TMP:
@@ -359,7 +361,7 @@ def get_recording_files(filename, cache=False):
             recursive=True,
         )
 
-    return tuple(filter(lambda file: os.access(file, os.W_OK), files))
+    return [f for f in files if await aio_os.access(f, os.W_OK)]
 
 
 def get_recording_name(channel_id, timestamp, cloud=False):
@@ -466,14 +468,14 @@ async def network_saturation():
     cutpoint = _g.IPTV_BW_SOFT + (_g.IPTV_BW_HARD - _g.IPTV_BW_SOFT) / 2
 
     while True:
-        if not os.path.exists(iface_rx):
+        if not await aio_os.path.exists(iface_rx):
             last = 0
             log.error(f"{_g.IPTV_IFACE} NOT ACCESSIBLE")
-            while not os.path.exists(iface_rx):
+            while not await aio_os.path.exists(iface_rx):
                 await asyncio.sleep(1)
             log.info(f"{_g.IPTV_IFACE} IS now ACCESSIBLE")
 
-        async with aiofiles.open(iface_rx) as f:
+        async with async_open(iface_rx) as f:
             now, cur = time.time(), int((await f.read())[:-1])
 
         if last:
@@ -585,7 +587,7 @@ async def prom_event(event, method, cloud=False, local=False, p_vod=None):
     log.info(msg) if method != "na" else log.error(msg)
 
 
-def prune_duplicates(channel_id, filename):
+async def prune_duplicates(channel_id, filename):
     def _clean(string):
         return re.sub(r"[^a-z0-9]", "", string.lower())
 
@@ -595,19 +597,19 @@ def prune_duplicates(channel_id, filename):
         if _clean(_g._RECORDINGS[channel_id][ts].filename) in _clean(filename)
     ):
         duplicate = _g._RECORDINGS[channel_id][ts].filename
-        old_files = tuple(
+        old_files = [
             f
-            for f in get_recording_files(duplicate, cache=True)
-            if f not in get_recording_files(filename, cache=True)
-        )
+            for f in await get_recording_files(duplicate, cache=True)
+            if f not in await get_recording_files(filename, cache=True)
+        ]
 
-        remove(*old_files)
-        [log.warning(f'REMOVED DUPLICATED "{file}"') for file in old_files if not os.path.exists(file)]
+        await remove(*old_files)
+        [log.warning(f'REMOVED DUPLICATED "{file}"') for file in old_files if not await aio_os.path.exists(file)]
 
         del _g._RECORDINGS[channel_id][ts]
 
 
-def prune_expired(channel_id, filename):
+async def prune_expired(channel_id, filename):
     program = get_program_name(filename)
     if program not in _g._KEEP[channel_id]:
         return
@@ -616,20 +618,20 @@ def prune_expired(channel_id, filename):
     if not siblings:
         return
 
-    def _drop(ts):
+    async def _drop(ts):
         filename = _g._RECORDINGS[channel_id][ts].filename
-        old_files = get_recording_files(filename, cache=True)
-        remove(*old_files)
+        old_files = await get_recording_files(filename, cache=True)
+        await remove(*old_files)
         del _g._RECORDINGS[channel_id][ts]
-        [log.warning(f'REMOVED "{file}"') for file in old_files if not os.path.exists(file)]
+        [log.warning(f'REMOVED "{file}"') for file in old_files if not await aio_os.path.exists(file)]
 
     if _g._KEEP[channel_id][program] < 0:
         max_days = abs(_g._KEEP[channel_id][program])
-        newest = date.fromtimestamp(max(siblings[-1], os.path.getmtime(get_path(filename))))
-        [_drop(ts) for ts in siblings if (newest - date.fromtimestamp(ts)).days > max_days]
+        newest = date.fromtimestamp(max(siblings[-1], await aio_os.path.getmtime(get_path(filename))))
+        [await _drop(ts) for ts in siblings if (newest - date.fromtimestamp(ts)).days > max_days]
 
     elif len(siblings) >= _g._KEEP[channel_id][program]:
-        [_drop(ts) for ts in siblings[0 : len(siblings) - _g._KEEP[channel_id][program] + 1]]
+        [await _drop(ts) for ts in siblings[0 : len(siblings) - _g._KEEP[channel_id][program] + 1]]
 
 
 async def reaper():
@@ -696,9 +698,9 @@ async def record_program(ch_id, pid, offset=0, time=0, cloud=False, comskip=0, i
 async def reindex_recordings():
     async def _write_nfo(nfo_file, nfo):
         xml = xmltodict.unparse({"metadata": dict(sorted(nfo.items()))}, pretty=True)
-        async with aiofiles.open(nfo_file + ".tmp", "w", encoding="utf8") as f:
+        async with async_open(nfo_file + ".tmp", "w", encoding="utf8") as f:
             await f.write(xml)
-        rename(nfo_file + ".tmp", nfo_file)
+        await rename(nfo_file + ".tmp", nfo_file)
 
     async with recordings_lock:
         log.info("REINDEXING RECORDINGS")
@@ -710,12 +712,12 @@ async def reindex_recordings():
             glob(f"{_g.RECORDINGS}/[0-9][0-9][0-9]. */**/*{NFO_EXT}", recursive=True), key=os.path.getmtime
         ):
             basename = nfo_file.removesuffix(NFO_EXT)
-            if not does_recording_exist(basename):
+            if not await does_recording_exist(basename):
                 log.error(f'No recording found: "{basename + _g.VID_EXT}" {nfo_file=}')
                 continue
 
             try:
-                async with aiofiles.open(nfo_file, encoding="utf-8") as f:
+                async with async_open(nfo_file, encoding="utf-8") as f:
                     nfo = xmltodict.parse(await f.read(), postprocessor=pp_xml)["metadata"]
             except (FileNotFoundError, ParsingInterrupted, OSError, PermissionError, TypeError, ValueError) as x:
                 log.error(f"Cannot read {nfo_file=} => {repr(x)}")
@@ -741,10 +743,12 @@ async def reindex_recordings():
                     log.warning(f'Wrong channel_id [{channel_id:4}] in nfo => Skipping "{filename}"')
                     continue
 
-            recording_files = get_recording_files(filename)
-            covers_files = tuple(
-                x[len(_g.RECORDINGS) + 1 :] for x in recording_files if "metadata" in x and os.path.isfile(x)
-            )
+            recording_files = await get_recording_files(filename)
+            covers_files = [
+                x[len(_g.RECORDINGS) + 1 :]
+                for x in recording_files
+                if "metadata" in x and await aio_os.path.isfile(x)
+            ]
 
             if len(covers_files) != len(nfo.get("covers", {})):
                 log.info(f'Covers mismatch in metadata: "{nfo_file}"')
@@ -758,7 +762,7 @@ async def reindex_recordings():
                 nfos_updated += 1
                 await _write_nfo(nfo_file, nfo)
 
-            utime(timestamp, *recording_files)
+            await utime(timestamp, *recording_files)
             _recordings[channel_id][timestamp] = Recording(filename, duration)
 
         if nfos_updated:
@@ -778,8 +782,8 @@ async def reindex_recordings():
 
 
 async def reload_epg():
-    if not any(map(os.path.exists, (_g.CHANNELS, channels_data))) and all(
-        map(os.path.exists, (epg_data, _g.GUIDE, _g.GUIDE + ".gz"))
+    if not await a.any(a.map(aio_os.path.exists, (_g.CHANNELS, channels_data))) and await a.all(
+        a.map(aio_os.path.exists, (epg_data, _g.GUIDE, _g.GUIDE + ".gz"))
     ):
         log.warning("Missing channel list! Need to download it. Please be patient...")
 
@@ -787,25 +791,27 @@ async def reload_epg():
         async with tvgrab_lock:
             await launch(cmd)
 
-    if not all(map(os.path.exists, (_g.CHANNELS, channels_data, epg_data, _g.GUIDE, _g.GUIDE + ".gz"))):
+    if not await a.all(
+        a.map(aio_os.path.exists, (_g.CHANNELS, channels_data, epg_data, _g.GUIDE, _g.GUIDE + ".gz"))
+    ):
         log.warning("Missing EPG data! Need to download it. Please be patient...")
         return await update_epg()
 
     async with epg_lock:
         try:
-            async with aiofiles.open(channels_data, encoding="utf8") as f:
+            async with async_open(channels_data, encoding="utf8") as f:
                 _g._CHANNELS = json.loads(await f.read(), object_hook=parse_channels)["data"]
         except (FileNotFoundError, JSONDecodeError, OSError, PermissionError, TypeError, ValueError) as ex:
             log.error(f"Failed to load Channels metadata {repr(ex)}")
-            remove(channels_data, epg_data)
+            await remove(channels_data, epg_data)
             return await reload_epg()
 
         try:
-            async with aiofiles.open(epg_data, encoding="utf8") as f:
+            async with async_open(epg_data, encoding="utf8") as f:
                 _g._EPGDATA = json.loads(await f.read(), object_hook=parse_epg)["data"]
         except (FileNotFoundError, JSONDecodeError, OSError, PermissionError, TypeError, ValueError) as ex:
             log.error(f"Failed to load EPG data {repr(ex)}")
-            remove(epg_data)
+            await remove(epg_data)
             return await reload_epg()
 
         log.info(f"Channels  &  EPG Updated => {_g.U7D_URL}/MovistarTV.m3u      - {_g.U7D_URL}/guide.xml.gz")
@@ -822,14 +828,14 @@ async def reload_recordings():
     else:
         async with recordings_lock:
             try:
-                async with aiofiles.open(recordings_data, encoding="utf8") as f:
+                async with async_open(recordings_data, encoding="utf8") as f:
                     _g._RECORDINGS = defaultdict(dict, json.loads(await f.read(), object_hook=parse_recordings))
             except (JSONDecodeError, TypeError, ValueError) as ex:
                 log.error(f'Failed to parse "recordings.json" => {repr(ex)}')
-                remove(_g.CHANNELS_LOCAL, _g.GUIDE_LOCAL)
+                await remove(_g.CHANNELS_LOCAL, _g.GUIDE_LOCAL)
                 await reindex_recordings()
             except (FileNotFoundError, OSError, PermissionError):
-                remove(_g.CHANNELS_LOCAL, _g.GUIDE_LOCAL)
+                await remove(_g.CHANNELS_LOCAL, _g.GUIDE_LOCAL)
 
         if not _g._RECORDINGS:
             return
@@ -837,11 +843,11 @@ async def reload_recordings():
         async with recordings_lock:
             for channel_id in _g._RECORDINGS:
                 oldest_epg = min(_g._EPGDATA[channel_id].keys())
-                for timestamp in (
+                for timestamp in [
                     ts
                     for ts in _g._RECORDINGS[channel_id]
-                    if not does_recording_exist(_g._RECORDINGS[channel_id][ts].filename)
-                ):
+                    if not await does_recording_exist(_g._RECORDINGS[channel_id][ts].filename)
+                ]:
                     filename = _g._RECORDINGS[channel_id][timestamp].filename
                     if timestamp > oldest_epg:
                         log.warning(f'Archived Local Recording "{filename}" not found on disk')
@@ -852,28 +858,28 @@ async def reload_recordings():
     freemem()
 
 
-def remove(*items):
+async def remove(*items):
     for item in items:
         try:
-            if os.path.isfile(item):
-                os.remove(item)
-            elif os.path.isdir(item):
-                if not os.listdir(item):
-                    os.rmdir(item)
+            if await aio_os.path.isfile(item):
+                await aio_os.remove(item)
+            elif await aio_os.path.isdir(item):
+                if not await aio_os.listdir(item):
+                    await aio_os.rmdir(item)
                 elif os.path.split(item)[1] != "metadata":
                     _glob = sorted(glob(f"{item}/**/*", recursive=True), reverse=True)
                     if not any(filter(lambda file: any(file.endswith(ext) for ext in VID_EXTS_KEEP), _glob)):
-                        [os.remove(x) for x in filter(os.path.isfile, _glob)]
-                        [os.rmdir(x) for x in filter(os.path.isdir, _glob)]
-                        os.rmdir(item)
+                        [await aio_os.remove(x) async for x in a.filter(aio_os.path.isfile, _glob)]
+                        [await aio_os.rmdir(x) async for x in a.filter(aio_os.path.isdir, _glob)]
+                        await aio_os.rmdir(item)
         except (FileNotFoundError, OSError, PermissionError):
             pass
 
 
-def rename(src, dst):
-    if WIN32 and os.path.exists(dst):
-        os.remove(dst)
-    os.rename(src, dst)
+async def rename(src, dst):
+    if WIN32 and await aio_os.path.exists(dst):
+        await aio_os.remove(dst)
+    await aio_os.rename(src, dst)
 
 
 async def timers_check(delay=0):  # pylint: disable=too-many-branches,too-many-locals,too-many-statements
@@ -893,7 +899,7 @@ async def timers_check(delay=0):  # pylint: disable=too-many-branches,too-many-l
     async with epg_lock, recordings_lock:
         log.debug("Processing timers")
 
-        if not os.path.exists(timers_data):
+        if not await aio_os.path.exists(timers_data):
             log.debug("timers_check: no timers.conf found")
             return
 
@@ -903,7 +909,7 @@ async def timers_check(delay=0):  # pylint: disable=too-many-branches,too-many-l
             return
 
         try:
-            async with aiofiles.open(timers_data, encoding="utf8") as f:
+            async with async_open(timers_data, encoding="utf8") as f:
                 _timers = tomli.loads(await f.read())
         except (AttributeError, TOMLDecodeError, TypeError, ValueError) as ex:
             log.error(f"Failed to parse timers.conf: {repr(ex)}")
@@ -1129,7 +1135,7 @@ async def update_cloud():
                 return
 
         try:
-            async with aiofiles.open(cloud_data, encoding="utf8") as f:
+            async with async_open(cloud_data, encoding="utf8") as f:
                 _g._CLOUD = json.loads(await f.read(), object_hook=parse_epg)["data"]
         except (FileNotFoundError, JSONDecodeError, OSError, PermissionError, TypeError, ValueError):
             return await update_cloud()
@@ -1166,7 +1172,7 @@ async def update_epg():
 
 async def update_epg_cron():
     last_datetime = datetime.now().replace(minute=0, second=0, microsecond=0)
-    if os.path.getmtime(_g.GUIDE) < last_datetime.timestamp():
+    if await aio_os.path.getmtime(_g.GUIDE) < last_datetime.timestamp():
         log.warning("EPG too old. Updating it...")
         await update_epg()
     await asyncio.sleep((last_datetime + timedelta(hours=1) - datetime.now()).total_seconds())
@@ -1196,28 +1202,30 @@ async def update_recordings(channel_id=None):
             ch: dict(sorted({k: v._asdict() for k, v in _g._RECORDINGS[ch].items()}.items()))
             for ch in (k for k in _g._CHANNELS if k in _g._RECORDINGS)
         }
-        async with aiofiles.open(recordings_data + ".tmp", "w", encoding="utf8") as f:
+        async with async_open(recordings_data + ".tmp", "w", encoding="utf8") as f:
             await f.write(ujson.dumps(sorted_recordings, ensure_ascii=False, indent=4))
-        rename(recordings_data + ".tmp", recordings_data)
+        await rename(recordings_data + ".tmp", recordings_data)
 
     await update_epg_local()
 
     if not _g.RECORDINGS_M3U:
         if channel_id:
-            utime(
+            await utime(
                 max(_g._RECORDINGS[channel_id].keys()), os.path.join(_g.RECORDINGS, get_channel_dir(channel_id))
             )
         else:
             for ch_id in _g._RECORDINGS:
-                utime(max(_g._RECORDINGS[ch_id].keys()), os.path.join(_g.RECORDINGS, get_channel_dir(ch_id)))
-        utime(max(max(_g._RECORDINGS[channel].keys()) for channel in _g._RECORDINGS), _g.RECORDINGS)
+                await utime(
+                    max(_g._RECORDINGS[ch_id].keys()), os.path.join(_g.RECORDINGS, get_channel_dir(ch_id))
+                )
+        await utime(max(max(_g._RECORDINGS[channel].keys()) for channel in _g._RECORDINGS), _g.RECORDINGS)
         return
 
     translation = str.maketrans("_;[]", "/:()")
 
-    def _dump_files(files, channel=False, latest=False):
+    async def _dump_files(files, channel=False, latest=False):
         m3u = deque()
-        for file in filter(lambda f: os.path.exists(f + _g.VID_EXT), files):
+        async for file in (f async for f in files if await aio_os.path.exists(f + _g.VID_EXT)):
             path, name = (urllib.parse.quote(x.translate(translation)) for x in os.path.split(file))
             _m3u = '#EXTINF:-1 group-title="'
             _m3u += '# Recientes"' if latest else f'{path}"' if path else '#"'
@@ -1259,19 +1267,19 @@ async def update_recordings(channel_id=None):
         else:
             m3u_file = os.path.join(_g.RECORDINGS, "Recordings.m3u")
 
-        async with aiofiles.open(m3u_file + ".tmp", "w", encoding="utf8") as f:
+        async with async_open(m3u_file + ".tmp", "w", encoding="utf8") as f:
             await f.write(header)
             if ch_id:
-                await f.write("\n".join(_dump_files(_get_files(ch_id), channel=True)))
+                await f.write("\n".join(await _dump_files(_get_files(ch_id), channel=True)))
             else:
-                await f.write("\n".join(_dump_files(_get_files_reversed(), latest=True)) + "\n")
-                await f.write("\n".join(_dump_files(_get_files())))
-        rename(m3u_file + ".tmp", m3u_file)
+                await f.write("\n".join(await _dump_files(_get_files_reversed(), latest=True)) + "\n")
+                await f.write("\n".join(await _dump_files(_get_files())))
+        await rename(m3u_file + ".tmp", m3u_file)
 
         if ch_id:
-            utime(max(_g._RECORDINGS[ch_id].keys()), *(m3u_file, os.path.join(_g.RECORDINGS, _dir)))
+            await utime(max(_g._RECORDINGS[ch_id].keys()), *(m3u_file, os.path.join(_g.RECORDINGS, _dir)))
         else:
-            utime(
+            await utime(
                 max(max(_g._RECORDINGS[channel].keys()) for channel in _g._RECORDINGS),
                 *(m3u_file, _g.RECORDINGS),
             )
@@ -1287,10 +1295,12 @@ async def upgrade_recording_channels():
     names = tuple(_g._CHANNELS[x].name for x in _g._CHANNELS)
     numbers = tuple(_g._CHANNELS[x].number for x in _g._CHANNELS)
 
-    dirs = filter(lambda _dir: os.path.isdir(os.path.join(_g.RECORDINGS, _dir)), os.listdir(_g.RECORDINGS))
-    pairs = (r.groups() for r in (channeldir_regex.match(_dir) for _dir in dirs) if r)
+    dirs = a.filter(
+        lambda _dir: aio_os.path.isdir(os.path.join(_g.RECORDINGS, _dir)), await aio_os.listdir(_g.RECORDINGS)
+    )
+    pairs = (r.groups() async for r in a.map(channeldir_regex.match, dirs) if r)
 
-    for nr, name in pairs:
+    async for nr, name in pairs:
         nr = int(nr)
         if nr not in numbers and name in names:
             _f = filter(lambda x: _g._CHANNELS[x].name == name and _g._CHANNELS[x].number != nr, _g._CHANNELS)
@@ -1311,7 +1321,9 @@ async def upgrade_recording_channels():
             log.warning(f'Channel "{old_channel_name}" has changed its name')
         else:
             log.warning(f'Recording dir "{old_channel_name}" not recognized')
-        os.rename(os.path.join(_g.RECORDINGS, old_channel_name), os.path.join(_g.RECORDINGS, new_channel_name))
+        await aio_os.rename(
+            os.path.join(_g.RECORDINGS, old_channel_name), os.path.join(_g.RECORDINGS, new_channel_name)
+        )
         log.warning(f'RENAMING channel folder: "{old_channel_name}" => "{new_channel_name}"')
 
     changed_pairs = deque()
@@ -1325,51 +1337,51 @@ async def upgrade_recording_channels():
 
         for nfo_file in sorted(glob(f"{old_channel_path}/**/*{NFO_EXT}", recursive=True)):
             new_nfo_file = nfo_file.replace(old_channel_name, new_channel_name)
-            if os.path.exists(new_nfo_file):
+            if await aio_os.path.exists(new_nfo_file):
                 log.warning(f'SKIPPING existing "{new_nfo_file[len(_g.RECORDINGS) + 1 :]}"')
                 continue
 
-            async with aiofiles.open(nfo_file, encoding="utf-8") as f:
+            async with async_open(nfo_file, encoding="utf-8") as f:
                 data = await f.read()
 
             data = data.replace(f">{old_nr:03}. ", f">{new_nr:03}. ").replace(f">{old_nr}<", f">{new_nr}<")
 
-            async with aiofiles.open(nfo_file, "w", encoding="utf8") as f:
+            async with async_open(nfo_file, "w", encoding="utf8") as f:
                 await f.write(data)
 
-            if not os.path.exists(new_channel_path):
+            if not await aio_os.path.exists(new_channel_path):
                 continue
 
-            files = get_recording_files(nfo_file.removesuffix(NFO_EXT))
+            files = await get_recording_files(nfo_file.removesuffix(NFO_EXT))
             old_files = (f for f in files if os.path.splitext(f)[-1] in (*VID_EXTS, ".jpg", ".nfo", ".png"))
             new_files = (f.replace(old_channel_name, new_channel_name) for f in old_files)
 
             old_dir = os.path.dirname(files[0])
             new_dir = old_dir.replace(old_channel_name, new_channel_name)
 
-            if not os.path.exists(new_dir):
-                os.mkdir(new_dir)
+            if not await aio_os.path.exists(new_dir):
+                await aio_os.mkdir(new_dir)
 
             if "/metadata/" in str(files):
                 meta_dir = os.path.join(new_dir, "metadata")
-                if not os.path.exists(meta_dir):
-                    os.mkdir(meta_dir)
+                if not await aio_os.path.exists(meta_dir):
+                    await aio_os.mkdir(meta_dir)
 
             for old_file, new_file in zip(old_files, new_files):
-                if os.path.exists(new_file):
+                if await aio_os.path.exists(new_file):
                     log.warning(f'SKIPPING existing "{new_file[len(_g.RECORDINGS) + 1 :]}"')
                 else:
-                    os.rename(old_file, new_file)
+                    await aio_os.rename(old_file, new_file)
 
-        if os.path.exists(new_channel_path):
+        if await aio_os.path.exists(new_channel_path):
             changed_channel_name = f'OLD_{datetime.now().strftime("%Y%m%dT%H%M%S")}_{old_nr:03}_{name}'
             changed_channel_path = os.path.join(_g.RECORDINGS, changed_channel_name)
 
             log.warning(f'RENAMING channel folder: "{old_channel_name}" => "{changed_channel_name}"')
-            os.rename(old_channel_path, changed_channel_path)
+            await aio_os.rename(old_channel_path, changed_channel_path)
         else:
             log.warning(f'RENAMING channel folder: "{old_channel_name}" => "{new_channel_name}"')
-            os.rename(old_channel_path, new_channel_path)
+            await aio_os.rename(old_channel_path, new_channel_path)
 
     return True
 
@@ -1382,10 +1394,10 @@ async def upgrade_recordings():
         basename = nfo_file.split(NFO_EXT)[0]
         recording = basename + _g.VID_EXT
 
-        mtime = int(os.path.getmtime(recording))
+        mtime = int(await aio_os.path.getmtime(recording))
 
         try:
-            async with aiofiles.open(nfo_file, encoding="utf-8") as f:
+            async with async_open(nfo_file, encoding="utf-8") as f:
                 xml = await f.read()
             xml = "\n".join(line for line in xml.splitlines() if "5S_signLanguage" not in line)
             nfo = xmltodict.parse(xml, postprocessor=pp_xml)["metadata"]
@@ -1426,7 +1438,7 @@ async def upgrade_recordings():
         if not nfo.get("cover", "") == basename[len(_g.RECORDINGS) + 1 :] + ".jpg":
             nfo["cover"] = basename[len(_g.RECORDINGS) + 1 :] + ".jpg"
             covers += 1
-        if not os.path.exists(basename + ".jpg"):
+        if not await aio_os.path.exists(basename + ".jpg"):
             log.warning('Cover not found: "%s"', basename[len(_g.RECORDINGS) + 1 :] + ".jpg")
 
         drop_covers, new_covers = [], {}
@@ -1436,7 +1448,7 @@ async def upgrade_recordings():
                     continue
                 covers += 1
                 cover_path = os.path.join(os.path.dirname(basename), nfo["covers"][cover])
-                if not os.path.exists(cover_path):
+                if not await aio_os.path.exists(cover_path):
                     log.warning('Cover not found: "%s"', cover_path[len(_g.RECORDINGS) + 1 :])
                     drop_covers.append(cover)
                     continue
@@ -1451,10 +1463,10 @@ async def upgrade_recordings():
 
         if _g.RECORDINGS_UPGRADE > 0:
             xml = xmltodict.unparse({"metadata": dict(sorted(nfo.items()))}, pretty=True)
-            async with aiofiles.open(nfo_file + ".tmp", "w", encoding="utf8") as f:
+            async with async_open(nfo_file + ".tmp", "w", encoding="utf8") as f:
                 await f.write(xml)
-            rename(nfo_file + ".tmp", nfo_file)
-            utime(mtime, nfo_file)
+            await rename(nfo_file + ".tmp", nfo_file)
+            await utime(mtime, nfo_file)
 
     if any((covers, items, names, wrong)):
         msg = ("Would update", "Would fix") if _g.RECORDINGS_UPGRADE < 0 else ("Updated", "Fixed")
@@ -1468,5 +1480,5 @@ async def upgrade_recordings():
         await update_recordings()
 
 
-def utime(timestamp, *items):
-    [os.utime(item, (-1, timestamp)) for item in items if os.access(item, os.W_OK)]
+async def utime(timestamp, *items):
+    [await a.sync(os.utime)(item, (-1, timestamp)) for item in items if await aio_os.access(item, os.W_OK)]

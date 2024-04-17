@@ -18,11 +18,12 @@ from contextlib import closing
 from datetime import timedelta
 from signal import SIGINT, SIGTERM, signal
 
-import aiofiles
 import aiohttp
+import asyncstdlib as a
 import psutil
 import ujson
 import xmltodict
+from aiofiles import open as async_open, os as aio_os
 from aiohttp.client_exceptions import ClientConnectionError, ClientOSError, ServerDisconnectedError
 from asyncio_dgram import TransportClosed, bind as dgram_bind
 from filelock import FileLock
@@ -96,39 +97,39 @@ class RtspClient:
         return "\r\n".join(map(lambda x: "{0}: {1}".format(*x), headers.items()))
 
 
-def _archive_recording():
+async def _archive_recording():
     path = os.path.dirname(_filename)
-    if not os.path.exists(path):
+    if not await aio_os.path.exists(path):
         log.debug('Making dir "%s"', path)
-        os.makedirs(path)
+        await aio_os.makedirs(path)
 
     if not RECORDINGS_TMP:
-        rename(_tmpname + TMP_EXT, _filename + VID_EXT)
+        await rename(_tmpname + TMP_EXT, _filename + VID_EXT)
 
     else:
-        remove(_filename + VID_EXT, _filename + ".jpg", _filename + ".png")
+        await remove(_filename + VID_EXT, _filename + ".jpg", _filename + ".png")
 
         covers = [x for x in glob_safe(f"{_tmpname}.*") if x.endswith((".jpg", ".png"))]
         if covers:
             tmpcover = covers[0]
             cover_ext = os.path.splitext(tmpcover)[1]
             shutil.copy2(tmpcover, _filename + cover_ext)
-            remove(tmpcover)
+            await remove(tmpcover)
 
         shutil.copy2(_tmpname + TMP_EXT, _filename + VID_EXT)
-        _cleanup(TMP_EXT)
+        await _cleanup(TMP_EXT)
 
         path = os.path.dirname(_tmpname)
         parent = os.path.split(path)[0]
-        remove(path)
+        await remove(path)
         if parent != RECORDINGS_TMP:
-            remove(parent)
+            await remove(parent)
 
 
-def _cleanup(*exts):
+async def _cleanup(*exts):
     for ext in exts:
-        if os.path.exists(_tmpname + ext):
-            remove(_tmpname + ext)
+        if await aio_os.path.exists(_tmpname + ext):
+            await remove(_tmpname + ext)
 
 
 async def _cleanup_recording(exception, start=None):
@@ -140,17 +141,17 @@ async def _cleanup_recording(exception, start=None):
     else:
         log.error(f'Recording FAILED: {str(exception).split(" - ", 1)[-1]}')
 
-    remove(*glob_safe(os.path.join(os.path.dirname(_tmpname), f"??_show_segment{VID_EXT}")))
-    if RECORDINGS_TMP or any((os.path.exists(x) for x in (_tmpname + TMP_EXT, _tmpname + TMP_EXT2))):
+    await remove(*glob_safe(os.path.join(os.path.dirname(_tmpname), f"??_show_segment{VID_EXT}")))
+    if RECORDINGS_TMP or await a.any(a.map(aio_os.path.exists, (_tmpname + TMP_EXT, _tmpname + TMP_EXT2))):
         log.debug("_cleanup_recording: cleaning only TMP files")
-        _cleanup(TMP_EXT, TMP_EXT2, ".log", ".logo.txt", ".txt")
+        await _cleanup(TMP_EXT, TMP_EXT2, ".log", ".logo.txt", ".txt")
         if RECORDINGS_TMP:
-            _cleanup(".jpg", ".png")
+            await _cleanup(".jpg", ".png")
     else:
         log.debug("_cleanup_recording: cleaning everything")
-        _cleanup(NFO_EXT)
-        remove(*(set(glob_safe(f"{_tmpname}.*")) | set(glob_safe(f"{_filename}.*"))))
-        remove(
+        await _cleanup(NFO_EXT)
+        await remove(*(set(glob_safe(f"{_tmpname}.*")) | set(glob_safe(f"{_filename}.*"))))
+        await remove(
             *glob_safe(os.path.join(os.path.dirname(_filename), "metadata", os.path.basename(_filename) + "-*"))
         )
 
@@ -158,10 +159,10 @@ async def _cleanup_recording(exception, start=None):
         path = os.path.dirname(_tmpname)
         parent = os.path.split(path)[0]
         log.debug("Removing path=%s", path)
-        remove(path)
+        await remove(path)
         if parent not in (RECORDINGS, RECORDINGS_TMP):
             log.debug("Removing parent=%s", parent)
-            remove(parent)
+            await remove(parent)
 
         try:
             await _SESSION.get(f"{U7D_URL}/timers_check?delay=3")
@@ -225,18 +226,18 @@ async def postprocess(vod_info):  # pylint: disable=too-many-statements
                 tags[0], tags[1] = tags[1].replace("s:a:1", "s:a:0"), tags[0].replace("s:a:0", "s:a:1")
         return " ".join(tags).split()
 
-    def _save_cover_cache(metadata):
+    async def _save_cover_cache(metadata):
         if metadata.get("covers", {}).get("fanart"):
             cover = os.path.join(RECORDINGS, metadata["covers"]["fanart"])
         else:
             cover = os.path.join(RECORDINGS, metadata["cover"])
 
-        if os.path.exists(cover):
+        if await aio_os.path.exists(cover):
             cached_cover = cover.replace(RECORDINGS, os.path.join(RECORDINGS_TMP, "covers"))
             dirname = os.path.dirname(cached_cover)
-            if not os.path.exists(dirname):
+            if not await aio_os.path.exists(dirname):
                 log.debug('Making dir "%s"', dirname)
-                os.makedirs(dirname)
+                await aio_os.makedirs(dirname)
             log.debug('Saving cover cache "%s"', cached_cover)
             shutil.copy2(cover, cached_cover)
 
@@ -246,7 +247,7 @@ async def postprocess(vod_info):  # pylint: disable=too-many-statements
         # Only the main cover, to embed in the video file
         if get_cover:
             try:
-                async with aiofiles.open(
+                async with async_open(
                     os.path.join(CACHE_DIR, "programs", f"{_args.program}.json"), encoding="utf8"
                 ) as f:
                     metadata = ujson.loads(await f.read())["data"]
@@ -267,9 +268,9 @@ async def postprocess(vod_info):  # pylint: disable=too-many-statements
                             img_data = await resp.read()
                             if img_data:
                                 log.debug('Got cover "%s"', cover)
-                                async with aiofiles.open(img_name, "wb") as f:
+                                async with async_open(img_name, "wb") as f:
                                     await f.write(await resp.read())
-                                utime(mtime, img_name)
+                                await utime(mtime, img_name)
                                 img_mime = "image/png" if img_ext == ".png" else "image/jpeg"
                                 return img_mime, img_name
                 except (ClientConnectionError, ClientOSError, ServerDisconnectedError) as ex:
@@ -288,8 +289,8 @@ async def postprocess(vod_info):  # pylint: disable=too-many-statements
             covers = {}
             metadata_dir = os.path.join(os.path.dirname(_filename), "metadata")
 
-            if not os.path.exists(metadata_dir):
-                os.mkdir(metadata_dir)
+            if not await aio_os.path.exists(metadata_dir):
+                await aio_os.mkdir(metadata_dir)
 
             for img in metadata["covers"]:
                 cover = metadata["covers"][img]
@@ -303,10 +304,10 @@ async def postprocess(vod_info):  # pylint: disable=too-many-statements
                             img_data = await resp.read()
                             if img_data:
                                 log.debug('Got cover "%s"', img)
-                                async with aiofiles.open(img_name, "wb") as f:
+                                async with async_open(img_name, "wb") as f:
                                     await f.write(img_data)
                                 covers[img] = img_name[len(RECORDINGS) + 1 :]
-                                utime(mtime, img_name)
+                                await utime(mtime, img_name)
                                 break
 
                     msg = 'Failed to get cover "%s" => %s' % (img, str(resp).splitlines()[0])
@@ -318,12 +319,12 @@ async def postprocess(vod_info):  # pylint: disable=too-many-statements
                 metadata["covers"] = covers
             else:
                 del metadata["covers"]
-                remove(metadata_dir)
+                await remove(metadata_dir)
         else:
             log.debug("No extended covers in metadata")
 
         if RECORDINGS_TMP:
-            _save_cover_cache(metadata)
+            await _save_cover_cache(metadata)
 
         metadata = {k: v for k, v in metadata.items() if k not in DROP_KEYS}
         metadata.update({"beginTime": mtime, "duration": duration, "endTime": mtime + duration})
@@ -340,11 +341,11 @@ async def postprocess(vod_info):  # pylint: disable=too-many-statements
                 log.warning(f'Could not verify "full_title" => {await resp.text()}')
 
         xml = xmltodict.unparse({"metadata": dict(sorted(metadata.items()))}, pretty=True)
-        async with aiofiles.open(_filename + NFO_EXT, "w", encoding="utf8") as f:
+        async with async_open(_filename + NFO_EXT, "w", encoding="utf8") as f:
             log.debug("Writing XML Metadata")
             await f.write(xml)
 
-        utime(mtime, _filename + NFO_EXT)
+        await utime(mtime, _filename + NFO_EXT)
         log.debug("XML Metadata saved")
 
     async def _step_1():
@@ -413,9 +414,9 @@ async def postprocess(vod_info):  # pylint: disable=too-many-statements
 
         if proc.returncode:
             COMSKIP = None
-            _cleanup(TMP_EXT2)
+            await _cleanup(TMP_EXT2)
         else:
-            rename(_tmpname + TMP_EXT2, _tmpname + TMP_EXT)
+            await rename(_tmpname + TMP_EXT2, _tmpname + TMP_EXT)
 
     async def _step_3():
         global COMSKIP
@@ -424,7 +425,7 @@ async def postprocess(vod_info):  # pylint: disable=too-many-statements
         cmd = ("comskip", *COMSKIP, "--ts", _tmpname + TMP_EXT)
 
         log.info("POSTPROCESS #3A - COMSKIP - Checking recording for commercials")
-        async with aiofiles.open(COMSKIP_LOG, "ab") as f:
+        async with async_open(COMSKIP_LOG, "ab") as f:
             start = time.time()
             proc = await asyncio.create_subprocess_exec(*cmd, stdin=NULL, stdout=f, stderr=f)
             await _check_process()
@@ -439,18 +440,18 @@ async def postprocess(vod_info):  # pylint: disable=too-many-statements
     async def _step_4():
         nonlocal proc, tags
 
-        if COMSKIP and os.path.exists(_tmpname + CHP_EXT):
+        if COMSKIP and await aio_os.path.exists(_tmpname + CHP_EXT):
             intervals = []
             pieces = []
 
-            async with aiofiles.open(_tmpname + CHP_EXT) as f:
+            async with async_open(_tmpname + CHP_EXT) as f:
                 c = await f.read()
 
             _s = filter(lambda x: "Show Segment" in x, (" ".join(c.splitlines()).split("[CHAPTER]"))[1:])
             segments = tuple(_s)
             if not segments:
                 log.warning("POSTPROCESS #4  - COMSKIP - Could not find any Show Segment")
-                _cleanup(CHP_EXT, ".log", ".logo.txt", ".txt")
+                await _cleanup(CHP_EXT, ".log", ".logo.txt", ".txt")
                 return
 
             if _args.comskipcut and not _args.mkv:
@@ -495,14 +496,14 @@ async def postprocess(vod_info):  # pylint: disable=too-many-statements
                 shutil.copy2(_tmpname + CHP_EXT, _filename + CHP_EXT)
 
             if proc.returncode:
-                _cleanup(TMP_EXT2)
-            elif os.path.exists(_tmpname + TMP_EXT2):
-                rename(_tmpname + TMP_EXT2, _tmpname + TMP_EXT)
+                await _cleanup(TMP_EXT2)
+            elif await aio_os.path.exists(_tmpname + TMP_EXT2):
+                await rename(_tmpname + TMP_EXT2, _tmpname + TMP_EXT)
 
             if _args.comskipcut or _args.mkv:
-                _cleanup(CHP_EXT)
-            _cleanup(".log", ".logo.txt", ".txt")
-            remove(*pieces)
+                await _cleanup(CHP_EXT)
+            await _cleanup(".log", ".logo.txt", ".txt")
+            await remove(*pieces)
 
     async def _step_5():
         nonlocal mtime
@@ -514,7 +515,7 @@ async def postprocess(vod_info):  # pylint: disable=too-many-statements
             length = f" [{str(timedelta(seconds=_args.time))}s - {cmrcls} = {length}"
         log.info(DIV_LOG, "POSTPROCESS #5  - Archiving recording", length)
 
-        _archive_recording()
+        await _archive_recording()
 
         if _args.index:
             await _save_metadata(duration=duration)
@@ -522,12 +523,16 @@ async def postprocess(vod_info):  # pylint: disable=too-many-statements
         dirname = os.path.dirname(_filename)
         metadata_dir = os.path.join(dirname, "metadata")
 
-        utime(mtime, _filename + VID_EXT)
-        if os.path.exists(metadata_dir):
-            newest_ts = os.path.getmtime(sorted(glob_safe(f"{metadata_dir}/*"), key=os.path.getmtime)[-1])
-            utime(newest_ts, metadata_dir)
-        newest_ts = os.path.getmtime(sorted(glob_safe(f"{dirname}/*{VID_EXT}"), key=os.path.getmtime)[-1])
-        utime(newest_ts, dirname)
+        await utime(mtime, _filename + VID_EXT)
+        if await aio_os.path.exists(metadata_dir):
+            newest_ts = await aio_os.path.getmtime(
+                sorted(glob_safe(f"{metadata_dir}/*"), key=os.path.getmtime)[-1]
+            )
+            await utime(newest_ts, metadata_dir)
+        newest_ts = await aio_os.path.getmtime(
+            sorted(glob_safe(f"{dirname}/*{VID_EXT}"), key=os.path.getmtime)[-1]
+        )
+        await utime(newest_ts, dirname)
 
         if _args.index:
             archive_url = f"{U7D_URL}/archive/{_args.channel}/{_args.program}"
@@ -615,9 +620,9 @@ async def record_stream(vod_info):
         _tmpname = os.path.join(RECORDINGS_TMP, _args.filename)
 
     path = os.path.dirname(_tmpname)
-    if not os.path.exists(path):
+    if not await aio_os.path.exists(path):
         log.debug('Making dir "%s"', path)
-        os.makedirs(path)
+        await aio_os.makedirs(path)
 
     buflen = BUFF // CHUNK
 
@@ -631,7 +636,7 @@ async def record_stream(vod_info):
     log.info(DIV_LOG, "Recording STARTED", log_start)
     try:
         with closing(await dgram_bind((_IPTV, _args.client_port))) as stream:
-            async with aiofiles.open(_tmpname + TMP_EXT, "wb") as f:
+            async with async_open(_tmpname + TMP_EXT, "wb") as f:
                 if not vod_info.get("isHdtv"):
                     # 1st packet on SDTV channels is bogus and breaks ffmpeg
                     await asyncio.wait_for(stream.recv(), timeout=1.0)
@@ -649,8 +654,7 @@ async def record_stream(vod_info):
     log.info(DIV_LOG, "Recording ENDED", "[%6ss] / [%5ss]" % (f"~{record_time}", f"{_args.time}"))
 
     if not U7D_PARENT:
-        return _archive_recording()
-        return
+        return await _archive_recording()
 
     return asyncio.create_task(postprocess(vod_info))
 

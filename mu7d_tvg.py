@@ -6,7 +6,6 @@
 import argparse
 import asyncio
 import codecs
-import gzip
 import json
 import logging
 import os
@@ -35,7 +34,9 @@ from socket import (
 )
 
 import aiohttp
+from aiofiles import open as async_open, os as aio_os
 from aiohttp.client_exceptions import ClientConnectionError, ClientOSError, ServerDisconnectedError
+from async_files.gzip import open as async_gzip_open
 from asyncio_dgram import from_socket as dgram_from_socket
 from defusedxml.ElementTree import ParseError, fromstring
 from filelock import FileLock, Timeout
@@ -79,26 +80,27 @@ THEME_MAP = {
 
 
 class Cache:
-    def __init__(self, full=True):
-        self.check_dirs()
+    @staticmethod
+    async def cache(full=True):
+        await Cache.check_dirs()
         if full and datetime.now().hour < 1:
-            self.clean()
+            await Cache.clean()
 
     @staticmethod
-    def check_dirs():
+    async def check_dirs():
         progs_path = os.path.join(CACHE_DIR, "programs")
-        if not os.path.exists(progs_path):
-            os.makedirs(progs_path)
+        if not await aio_os.path.exists(progs_path):
+            await aio_os.makedirs(progs_path)
 
     @staticmethod
-    def clean():
+    async def clean():
         for file in iglob(os.path.join(CACHE_DIR, "programs", "*.json")):
             try:
-                with open(file, encoding="utf8") as f:
-                    _data = json.loads(f.read(), object_hook=Cache.keys_to_int)["data"]
+                async with async_open(file, encoding="utf8") as f:
+                    _data = json.loads(await f.read(), object_hook=Cache.keys_to_int)["data"]
                 if _data["endTime"] // 1000 < _DEADLINE:
                     log.debug('Eliminando "%s" caducado', os.path.basename(file))
-                    os.remove(file)
+                    await aio_os.remove(file)
             except (FileNotFoundError, JSONDecodeError, OSError, PermissionError, TypeError, ValueError):
                 pass
 
@@ -107,50 +109,50 @@ class Cache:
         return {int(k) if k.isdigit() else k: v for k, v in data.items()}
 
     @staticmethod
-    def load(cfile):
+    async def load(cfile):
         try:
-            with open(os.path.join(CACHE_DIR, cfile), "r", encoding="utf8") as f:
-                return json.loads(f.read(), object_hook=Cache.keys_to_int)["data"]
+            async with async_open(os.path.join(CACHE_DIR, cfile), "r", encoding="utf8") as f:
+                return json.loads(await f.read(), object_hook=Cache.keys_to_int)["data"]
         except (FileNotFoundError, JSONDecodeError, OSError, PermissionError, TypeError, ValueError):
             return {}
 
     @staticmethod
-    def load_config():
-        return Cache.load("config.json")
+    async def load_config():
+        return await Cache.load("config.json")
 
     @staticmethod
-    def load_epg():
-        return Cache.load("epg.json")
+    async def load_epg():
+        return await Cache.load("epg.json")
 
     @staticmethod
-    def load_epg_extended_info(pid):
-        return Cache.load(os.path.join("programs", f"{pid}.json"))
+    async def load_epg_extended_info(pid):
+        return await Cache.load(os.path.join("programs", f"{pid}.json"))
 
     @staticmethod
-    def load_epg_local():
+    async def load_epg_local():
         try:
-            with open(os.path.join(HOME, "recordings.json"), "r", encoding="utf8") as f:
-                return json.loads(f.read(), object_hook=Cache.keys_to_int)
+            async with async_open(os.path.join(HOME, "recordings.json"), "r", encoding="utf8") as f:
+                return json.loads(await f.read(), object_hook=Cache.keys_to_int)
         except (FileNotFoundError, JSONDecodeError, OSError, PermissionError, ValueError):
             return
 
     @staticmethod
-    def load_epg_metadata():
-        return Cache.load("epg_metadata.json")
+    async def load_epg_metadata():
+        return await Cache.load("epg_metadata.json")
 
     @staticmethod
-    def load_service_provider_data():
-        return Cache.load("provider.json")
+    async def load_service_provider_data():
+        return await Cache.load("provider.json")
 
     @staticmethod
-    def save(cfile, data, sort_keys=False):
+    async def save(cfile, data, sort_keys=False):
         _file = os.path.join(CACHE_DIR, cfile)
-        with open(_file + ".tmp", "w", encoding="utf8") as f:
-            json.dump({"data": data}, f, ensure_ascii=False, indent=4, sort_keys=sort_keys)
-        rename(_file + ".tmp", _file)
+        async with async_open(_file + ".tmp", "w", encoding="utf8") as f:
+            await f.write(json.dumps({"data": data}, ensure_ascii=False, indent=4, sort_keys=sort_keys))
+        await rename(_file + ".tmp", _file)
 
     @staticmethod
-    def save_channels_data(xdata):
+    async def save_channels_data(xdata):
         channels, services = xdata["channels"], xdata["services"]
 
         clean_channels = {}
@@ -162,41 +164,41 @@ class Cache:
                 "port": channels[channel]["port"],
             }
 
-        Cache.save("channels.json", clean_channels)
+        await Cache.save("channels.json", clean_channels)
 
     @staticmethod
-    def save_config(data):
-        Cache.save("config.json", data)
+    async def save_config(data):
+        await Cache.save("config.json", data)
 
     @staticmethod
-    def save_end_points(data):
-        Cache.save(END_POINTS_FILE, data)
+    async def save_end_points(data):
+        await Cache.save(END_POINTS_FILE, data)
 
     @staticmethod
-    def save_epg(data):
-        Cache.save("epg.json", data)
+    async def save_epg(data):
+        await Cache.save("epg.json", data)
 
     @staticmethod
-    def save_epg_cloud(data):
-        Cache.save("cloud.json", data)
+    async def save_epg_cloud(data):
+        await Cache.save("cloud.json", data)
 
     @staticmethod
-    def save_epg_metadata(data):
-        Cache.save("epg_metadata.json", data)
+    async def save_epg_metadata(data):
+        await Cache.save("epg_metadata.json", data)
 
     @staticmethod
-    def save_epg_extended_info(data):
-        Cache.save(os.path.join("programs", f'{data["productID"]}.json'), data, sort_keys=True)
+    async def save_epg_extended_info(data):
+        await Cache.save(os.path.join("programs", f'{data["productID"]}.json'), data, sort_keys=True)
 
     @staticmethod
-    def save_service_provider_data(data):
-        Cache.save("provider.json", data)
+    async def save_service_provider_data(data):
+        await Cache.save("provider.json", data)
 
 
 class MovistarTV:
     @staticmethod
     async def get_epg_extended_info(channel_id, ts, program):
-        def _fill_data(data):
+        async def _fill_data(data):
             if data and any(
                 program[t[0]] and program[t[0]] not in (data.get(t[1], ""), "Cine") for t in EPG_EXTINFO_PAIRS
             ):
@@ -204,12 +206,12 @@ class MovistarTV:
                     if program[src] and program[src] not in (data.get(dst, ""), "Cine"):
                         # log.debug('%s="%s" => %s="%s"', src, program.get(src, ""), dst, data.get(dst, ""))
                         data[dst] = program[src]
-                Cache.save_epg_extended_info(data)
+                await Cache.save_epg_extended_info(data)
                 return True
 
         pid = program["pid"]
-        data = Cache.load_epg_extended_info(pid)
-        _fill_data(data)
+        data = await Cache.load_epg_extended_info(pid)
+        await _fill_data(data)
 
         if not data or any(
             (
@@ -234,8 +236,8 @@ class MovistarTV:
                     "Event mismatch STILL BROKEN: [%4s] [%d] beginTime=[%+d]",
                     *(str(channel_id), pid, _data["beginTime"] // 1000 - ts),
                 )
-            if not _fill_data(_data):
-                Cache.save_epg_extended_info(_data)
+            if not await _fill_data(_data):
+                await Cache.save_epg_extended_info(_data)
             return _data
 
         return data
@@ -247,7 +249,7 @@ class MovistarTV:
     @staticmethod
     async def get_service_config(refresh):
         if not refresh or datetime.now().hour > 0:
-            cfg = Cache.load_config()
+            cfg = await Cache.load_config()
             if cfg:
                 if refresh:
                     log.info(f'Demarcación: {DEMARCATIONS.get(str(cfg["demarcation"]), cfg["demarcation"])}')
@@ -280,8 +282,8 @@ class MovistarTV:
             % (uri, params["tvCoversPath"], params["landscapeSubPath"], params["bigSubpath"]),
             "genres": await MovistarTV.get_genres(client["tvWholesaler"]),
         }
-        Cache.save_config(conf)
-        MovistarTV.update_end_points(platform["endPoints"])
+        await Cache.save_config(conf)
+        await MovistarTV.update_end_points(platform["endPoints"])
         return conf
 
     @staticmethod
@@ -294,9 +296,9 @@ class MovistarTV:
             pass
 
     @staticmethod
-    def update_end_points(end_points):
+    async def update_end_points(end_points):
         end_points = dict(sorted(end_points.items(), key=lambda x: int(re.sub(r"[A-Za-z]+", "", x[0])))).values()
-        Cache.save_end_points(tuple(dict.fromkeys(end_points)))
+        await Cache.save_end_points(tuple(dict.fromkeys(end_points)))
 
 
 class MulticastIPTV:
@@ -473,7 +475,7 @@ class MulticastIPTV:
         stats = tuple(len(self.__xml_data[x]) for x in ("segments", "channels", "packages", "services"))
         log.info("Días de EPG: %i _ Canales: %i _ Paquetes: %i _ Servicios contratados: %i", *stats)
 
-        Cache.save_epg_metadata(self.__xml_data)
+        await Cache.save_epg_metadata(self.__xml_data)
         del self.__xml_data["packages"]
 
     async def __get_epg_day(self, mcast_grp, mcast_port, source):
@@ -512,7 +514,7 @@ class MulticastIPTV:
     @staticmethod
     async def __get_service_provider_ip():
         if datetime.now().hour > 0:
-            data = Cache.load_service_provider_data()
+            data = await Cache.load_service_provider_data()
             if data:
                 return data
 
@@ -526,7 +528,7 @@ class MulticastIPTV:
             re.DOTALL,
         )[0]
         data = {"mcast_grp": result[0], "mcast_port": int(result[1])}
-        Cache.save_service_provider_data(data)
+        await Cache.save_service_provider_data(data)
 
         log.info("Proveedor de Servicios de %s: %s", _demarcation, data["mcast_grp"])
 
@@ -636,7 +638,7 @@ class MulticastIPTV:
         return DEMARCATIONS.get(str(_CONFIG["demarcation"]), f'la demarcación {_CONFIG["demarcation"]}')
 
     async def get_epg(self):
-        self.__cached_epg = Cache.load_epg()
+        self.__cached_epg = await Cache.load_epg()
 
         skipped = 0
         _channels = self.__xml_data["channels"]
@@ -663,7 +665,7 @@ class MulticastIPTV:
                 gaps = self.__merge_epg()
                 self.__expire_epg()
                 self.__sort_epg()
-                Cache.save_epg(self.__cached_epg)
+                await Cache.save_epg(self.__cached_epg)
                 if not gaps:
                     del self.__epg, self.__xml_data["segments"]
                     break
@@ -705,12 +707,12 @@ class MulticastIPTV:
             self.__cached_epg[channel_id][timestamp] = self.__fill_cloud_event(data, meta, pid)
 
         self.__sort_epg()
-        Cache.save_epg_cloud(self.__cached_epg)
+        await Cache.save_epg_cloud(self.__cached_epg)
         return self.__cached_epg
 
     async def get_service_provider_data(self, refresh):
         if not refresh:
-            data = Cache.load_epg_metadata()
+            data = await Cache.load_epg_metadata()
             if data:
                 self.__xml_data = data
                 return data
@@ -1109,7 +1111,7 @@ async def tvg_main(args):
         log.info("-" * len(banner))
         log.debug("%s", " ".join(sys.argv[1:]))
 
-    Cache(full=bool(args.m3u or args.guide))  # Inicializa la caché
+    await Cache.cache(full=bool(args.m3u or args.guide))  # Inicializa la caché
 
     _SESSION = aiohttp.ClientSession(headers={"User-Agent": UA}, json_serialize=json.dumps)
 
@@ -1130,7 +1132,7 @@ async def tvg_main(args):
         _XMLTV = XmlTV(xdata)
 
         if args.m3u:
-            Cache.save_channels_data(xdata)
+            await Cache.save_channels_data(xdata)
             _XMLTV.write_m3u(args.m3u)
             if not args.guide:
                 return
@@ -1145,7 +1147,7 @@ async def tvg_main(args):
             if any((args.cloud_m3u, args.cloud_recordings)):
                 epg = await _MIPTV.get_epg_cloud()
             else:
-                epg = Cache.load_epg_local()
+                epg = await Cache.load_epg_local()
             if not epg:
                 return
             if any((args.cloud_m3u, args.local_m3u)):
@@ -1161,22 +1163,21 @@ async def tvg_main(args):
 
         # Genera el árbol XMLTV de los paquetes contratados
         if args.guide:
-            with (
-                open(args.guide + ".tmp", "w", encoding="utf8") as f,
-                gzip.open(args.guide + ".gz" + ".tmp", "wt", encoding="utf8") as f_z,
+            async with (
+                async_open(args.guide + ".tmp", "w", encoding="utf8") as f,
+                async_gzip_open(args.guide + ".gz" + ".tmp", "wt", encoding="utf8") as f_z,
             ):
                 async for dom in _XMLTV.generate_xml(epg, bool(args.local_m3u or args.local_recordings)):
                     block = "\n".join(dom) + "\n"
-                    f.write(block)
-                    f_z.write(block)
-            rename(args.guide + ".tmp", args.guide)
-            rename(args.guide + ".gz" + ".tmp", args.guide + ".gz")
+                    await asyncio.gather(f.write(block), f_z.write(block))
+            await rename(args.guide + ".tmp", args.guide)
+            await rename(args.guide + ".gz" + ".tmp", args.guide + ".gz")
         elif any((args.cloud_recordings, args.local_recordings)):
             xml_file = args.cloud_recordings or args.local_recordings
-            with open(xml_file + ".tmp", "w", encoding="utf8") as f:
+            async with async_open(xml_file + ".tmp", "w", encoding="utf8") as f:
                 async for dom in _XMLTV.generate_xml(epg, bool(args.local_m3u or args.local_recordings)):
-                    f.write("\n".join(dom) + "\n")
-            rename(xml_file + ".tmp", xml_file)
+                    await f.write("\n".join(dom) + "\n")
+            await rename(xml_file + ".tmp", xml_file)
 
         if not any((args.cloud_recordings, args.local_recordings)):
             _t = str(timedelta(seconds=round(time.time() - _time_start)))

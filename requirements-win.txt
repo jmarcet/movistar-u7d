@@ -1,7 +1,9 @@
 aiofiles
 aiohttp
+async-files
 asyncio
 asyncio-dgram
+asyncstdlib
 cx_Freeze>=6.16.0.dev25
 defusedxml
 filelock

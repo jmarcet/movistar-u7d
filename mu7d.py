@@ -25,9 +25,9 @@ from socket import (
 )
 from time import sleep
 
-import aiofiles
 import aiohttp
 import ujson
+from aiofiles import open as async_open, os as aio_os
 from aiohttp.client_exceptions import ClientConnectionError, ClientOSError, ServerDisconnectedError
 from asyncio_dgram import bind as dgram_bind, from_socket as dgram_from_socket
 from filelock import FileLock, Timeout
@@ -181,14 +181,14 @@ async def after_server_start(app):
     await reload_epg()
 
     if not _g._last_epg:
-        if not os.path.exists(_g.GUIDE):
+        if not await aio_os.path.exists(_g.GUIDE):
             return sys.exit(1)
-        _g._last_epg = int(os.path.getmtime(_g.GUIDE))
+        _g._last_epg = int(await aio_os.path.getmtime(_g.GUIDE))
 
     if _g.RECORDINGS:
-        if not os.path.exists(_g.RECORDINGS):
+        if not await aio_os.path.exists(_g.RECORDINGS):
             try:
-                os.makedirs(_g.RECORDINGS)
+                await aio_os.makedirs(_g.RECORDINGS)
             except PermissionError:
                 log.error(f'Cannot access "{_g.RECORDINGS}" => RECORDINGS disabled')
                 _g.RECORDINGS = None
@@ -202,7 +202,7 @@ async def after_server_start(app):
             if (
                 _g.RECORDINGS_TMP
                 and _g._RECORDINGS
-                and not os.path.exists(os.path.join(_g.RECORDINGS_TMP, "covers"))
+                and not await aio_os.path.exists(os.path.join(_g.RECORDINGS_TMP, "covers"))
             ):
                 await create_covers_cache()
 
@@ -244,15 +244,15 @@ async def handle_archive(request, channel_id, program_id):
         _g._t_timers = app.add_task(timers_check(delay=3))
 
     log.debug('Checking for "%s"', filename)
-    if not does_recording_exist(filename):
+    if not await does_recording_exist(filename):
         msg = "Recording NOT ARCHIVED"
         log.error(DIV_ONE, msg, log_suffix)
         return response.json({"status": msg}, ensure_ascii=False, status=204)
 
     async with recordings_lock:
-        prune_duplicates(channel_id, filename)
+        await prune_duplicates(channel_id, filename)
         if channel_id in _g._KEEP:
-            prune_expired(channel_id, filename)
+            await prune_expired(channel_id, filename)
 
         nfo = await get_local_info(channel_id, timestamp, get_path(filename, bare=True))
         if not nfo:
@@ -364,16 +364,16 @@ async def handle_flussonic(request, url, channel_id=None, channel_name=None, clo
     ua = request.headers.get("user-agent", "")
 
     if local:
-        if os.path.exists(p_vod.pid):
+        if await aio_os.path.exists(p_vod.pid):
             if " Chrome/" in ua or not p_vod.pid.endswith(".ts"):
                 return await transcode(request, event, p_vod, filename=p_vod.pid, offset=p_vod.offset)
 
-            _stat = await aiofiles.os.stat(p_vod.pid)
+            _stat = await aio_os.stat(p_vod.pid)
             bytepos = round(p_vod.offset * _stat.st_size / p_vod.duration)
             bytepos -= bytepos % CHUNK
             to_send = _stat.st_size - bytepos
 
-            async with aiofiles.open(p_vod.pid, mode="rb") as f:
+            async with async_open(p_vod.pid, mode="rb") as f:
                 await f.seek(bytepos)
                 _response = await request.respond(content_type=MIME_WEBM)
                 prom = app.add_task(add_prom_event(event, cloud, local, p_vod))
@@ -461,7 +461,7 @@ async def handle_guides(request):
     }[request.route.path]
     pad = 10 if request.route.path.endswith(".xml") else 7
 
-    if not os.path.exists(guide):
+    if not await aio_os.path.exists(guide):
         raise NotFound(f"Requested URL {request.path} not found")
 
     log.info(f'[{request.ip}] {request.method} {request.url}{" " * pad} => "{guide}"')
@@ -525,7 +525,7 @@ async def handle_m3u_files(request, m3u_file):
             channel_tag = "%03d. %s" % (_g._CHANNELS[channel_id].number, _g._CHANNELS[channel_id].name)
             m3u_matched = os.path.join(os.path.join(_g.RECORDINGS, channel_tag), f"{channel_tag}.m3u")
 
-    if os.path.exists(m3u_matched):
+    if await aio_os.path.exists(m3u_matched):
         log.info(f'[{request.ip}] {request.method} {request.url}{pad} => "{m3u_matched}"')
         return await response.file(m3u_matched, validate_when_requested=False, mime_type=MIME_M3U)
 
@@ -612,7 +612,7 @@ async def handle_recording(request):
 
     if _g.RECORDINGS_TMP and ext in (".jpg", ".png"):
         cached_cover = os.path.join(_g.RECORDINGS_TMP, "covers", _path)
-        if os.path.exists(cached_cover):
+        if await aio_os.path.exists(cached_cover):
             if request.method == "HEAD":
                 return response.HTTPResponse(content_type=mime_img, status=200)
 
@@ -620,7 +620,7 @@ async def handle_recording(request):
         log.warning(f'Cover not found in cache: "{_path}"')
 
     file = os.path.join(_g.RECORDINGS, _path)
-    if os.path.exists(file):
+    if await aio_os.path.exists(file):
         if request.method == "HEAD":
             return response.HTTPResponse(status=200)
 
@@ -629,7 +629,7 @@ async def handle_recording(request):
 
         if ext in VID_EXTS:
             try:
-                _range = ContentRangeHandler(request, await aiofiles.os.stat(file))
+                _range = ContentRangeHandler(request, await aio_os.stat(file))
                 return await response.file_stream(file, mime_type=MIME_WEBM, _range=_range)
             except HeaderNotFound:
                 pass
