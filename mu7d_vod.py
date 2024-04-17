@@ -7,7 +7,6 @@ import aiofiles
 import aiohttp
 import argparse
 import asyncio
-import asyncio_dgram
 import logging
 import os
 import psutil
@@ -22,6 +21,7 @@ import xmltodict
 from aiohttp.client_exceptions import ClientConnectionError, ClientOSError, ServerDisconnectedError
 from asyncio.exceptions import CancelledError
 from asyncio.subprocess import DEVNULL as NULL, PIPE, STDOUT as OUT
+from asyncio_dgram import TransportClosed, bind as dgram_bind
 from contextlib import closing
 from datetime import timedelta
 from filelock import FileLock
@@ -559,8 +559,7 @@ async def record_stream(vod_info):
     log.addHandler(handler)
     log.propagate = False
     formatter = logging.Formatter(fmt=f"{FMT[:-1]}-104s{log_suffix}", datefmt=DATEFMT)
-    for handler in log.handlers:
-        handler.setFormatter(formatter)
+    tuple(handler.setFormatter(formatter) for handler in log.handlers)
 
     ongoing = await ongoing_vods(filename=_args.filename)
     if len(ongoing) > 1:
@@ -608,7 +607,7 @@ async def record_stream(vod_info):
     end = _args.time + time.time()
     log.info(DIV_LOG % ("Recording STARTED", log_start))
     try:
-        with closing(await asyncio_dgram.bind((_IPTV, _args.client_port))) as stream:
+        with closing(await dgram_bind((_IPTV, _args.client_port))) as stream:
             async with aiofiles.open(_tmpname + TMP_EXT, "wb") as f:
                 if not vod_info.get("isHdtv"):
                     # 1st packet on SDTV channels is bogus and breaks ffmpeg
@@ -617,9 +616,8 @@ async def record_stream(vod_info):
                 while time.time() < end:
                     await f.write(await asyncio.wait_for(_buffer(), timeout=1.0))
 
-    except (CancelledError, asyncio_dgram.TransportClosed):
-        await asyncio.shield(_cleanup_recording(CancelledError(), end - _args.time))
-        return
+    except (CancelledError, TransportClosed):
+        return await asyncio.shield(_cleanup_recording(CancelledError(), end - _args.time))
 
     except TimeoutError:
         log.debug("TIMED OUT")
@@ -628,7 +626,7 @@ async def record_stream(vod_info):
     log.info(DIV_LOG % ("Recording ENDED", "[%6ss] / [%5ss]" % (f"~{record_time}", f"{_args.time}")))
 
     if not U7D_PARENT:
-        _archive_recording()
+        return _archive_recording()
         return
 
     return asyncio.create_task(postprocess(vod_info))
@@ -652,20 +650,20 @@ async def rtsp(vod_info):
         client.close_connection()
         return
 
+    rec_t = None
+    if __name__ == "__main__":
+        if _args.write_to_file:
+            if not WIN32:
+                setproctitle(getproctitle().replace("mu7d_vod     ", "mu7d_vod REC "))
+            # Start recording the VOD stream
+            rec_t = asyncio.create_task(record_stream(vod_info))
+        else:
+            log.info(f'The VOD stream can be accesed at: f"udp://@{_IPTV}:{_args.client_port}"')
+
     try:
-        if __name__ == "__main__":
-            if _args.write_to_file:
-                # Start recording the VOD stream
-                rec_t = asyncio.create_task(record_stream(vod_info))
-
-                if not WIN32:
-                    setproctitle(getproctitle().replace("mu7d_vod     ", "mu7d_vod REC "))
-            else:
-                log.info(f'The VOD stream can be accesed at: f"udp://@{_IPTV}:{_args.client_port}"')
-
         # Start the RTSP keep alive loop
         while True:
-            if __name__ == "__main__" and _args.write_to_file:
+            if rec_t:
                 done, _ = await asyncio.wait({rec_t}, timeout=30)
                 if rec_t in done:
                     break
@@ -680,12 +678,12 @@ async def rtsp(vod_info):
         client.close_connection()
         log.debug("[%4s] [%d]: RTSP loop ended" % (str(_args.channel), _args.program))
 
-    if __name__ == "__main__" and _args.write_to_file:
-        if U7D_PARENT and not WIN32:
-            setproctitle(getproctitle().replace(" REC ", "     "))
-
+    if rec_t:
         if not rec_t.done():
             await rec_t
+
+        if not WIN32:
+            setproctitle(getproctitle().replace(" REC ", "     "))
 
         pp_t = rec_t.result()
         if pp_t:
@@ -722,9 +720,8 @@ async def Vod(args=None, vod_client=None, vod_info=None):
             return
 
         log.debug("[%4s] [%d]: vod_info=%s" % (str(_args.channel), _args.program, str(vod_info)))
-        # Start the RTSP Session
-        rtsp_t = asyncio.create_task(rtsp(vod_info))
-        await rtsp_t
+        # Launch the RTSP Session
+        await rtsp(vod_info)
 
     finally:
         if __name__ == "__main__":
