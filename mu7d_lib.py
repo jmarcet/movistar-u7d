@@ -1171,11 +1171,11 @@ async def update_epg():
 
 
 async def update_epg_cron():
-    last_datetime = datetime.now().replace(minute=0, second=0, microsecond=0)
-    if await aio_os.path.getmtime(_g.GUIDE) < last_datetime.timestamp():
+    last_datetime = datetime.now().replace(minute=0, second=0, microsecond=0).timestamp()
+    if await aio_os.path.getmtime(_g.GUIDE) < last_datetime:
         log.warning("EPG too old. Updating it...")
         await update_epg()
-    await asyncio.sleep((last_datetime + timedelta(hours=1) - datetime.now()).total_seconds())
+    await asyncio.sleep(last_datetime + 3600 - 0.25 - time.time())
     while True:
         await asyncio.gather(asyncio.sleep(3600), update_epg())
 
