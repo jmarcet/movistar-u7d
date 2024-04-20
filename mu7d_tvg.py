@@ -81,7 +81,7 @@ THEME_MAP = {
 
 class Cache:
     @staticmethod
-    async def cache(full=True):
+    async def cache(full):
         await Cache.check_dirs()
         if full and datetime.now().hour < 1:
             await Cache.clean()
@@ -243,10 +243,6 @@ class MovistarTV:
         return data
 
     @staticmethod
-    async def get_genres(tv_wholesaler):
-        return await MovistarTV.get_service_data(f"getEpgSubGenres&tvWholesaler={tv_wholesaler}")
-
-    @staticmethod
     async def get_service_config(refresh):
         if not refresh or datetime.now().hour > 0:
             cfg = await Cache.load_config()
@@ -269,7 +265,8 @@ class MovistarTV:
         log.info(f'Paquete contratado: {client["tvPackages"]}')
 
         dvb_entry_point = platform["dvbConfig"]["dvbipiEntryPoint"].split(":")
-        uri = platform[tuple(filter(lambda f: re.search("base.*uri", f, re.IGNORECASE), platform.keys()))[0]]
+        genres = await MovistarTV.get_service_data(f'getEpgSubGenres&tvWholesaler={client["tvWholesaler"]}')
+        uri = platform[next(filter(lambda f: re.search("base.*uri", f, re.IGNORECASE), platform.keys()))]
         conf = {
             "tvPackages": client["tvPackages"],
             "demarcation": client["demarcation"],
@@ -280,7 +277,7 @@ class MovistarTV:
             "tvCoversPath": "%s%s%s290x429/" % (uri, params["tvCoversPath"], params["portraitSubPath"]),
             "tvCoversLandscapePath": "%s%s%s%s"
             % (uri, params["tvCoversPath"], params["landscapeSubPath"], params["bigSubpath"]),
-            "genres": await MovistarTV.get_genres(client["tvWholesaler"]),
+            "genres": genres,
         }
         await Cache.save_config(conf)
         await MovistarTV.update_end_points(platform["endPoints"])
@@ -1096,20 +1093,10 @@ def create_args_parser():
     return parser
 
 
-async def tvg_main(args):
+async def tvg_main(args, refresh, time_start):
     global _CONFIG, _END_POINT, _DEADLINE, _MIPTV, _SESSION, _XMLTV
 
     _DEADLINE = int(datetime.combine(date.today() - timedelta(days=7), datetime.min.time()).timestamp())
-
-    if any((args.cloud_m3u, args.cloud_recordings, args.local_m3u, args.local_recordings)):
-        refresh = False
-    else:
-        refresh = True
-        banner = f"Movistar U7D - TVG v{VERSION}"
-        log.info("-" * len(banner))
-        log.info(banner)
-        log.info("-" * len(banner))
-        log.debug("%s", " ".join(sys.argv[1:]))
 
     await Cache.cache(full=bool(args.m3u or args.guide))  # Inicializa la caché
 
@@ -1180,7 +1167,7 @@ async def tvg_main(args):
             await rename(xml_file + ".tmp", xml_file)
 
         if not any((args.cloud_recordings, args.local_recordings)):
-            _t = str(timedelta(seconds=round(time.time() - _time_start)))
+            _t = str(timedelta(seconds=round(time.time() - time_start)))
             log.info(f"EPG de {epg_nr_channels} canales y {epg_nr_days} días generada en {_t}s")
             log.info(f"Fecha de caducidad: [{time.ctime(_DEADLINE)}] [{_DEADLINE}]")
 
@@ -1212,16 +1199,45 @@ if __name__ == "__main__":
 
         win32api.SetConsoleCtrlHandler(close_handler, True)
 
-    _time_start = time.time()
+    logging.getLogger("asyncio").setLevel(logging.FATAL)
+    logging.getLogger("filelock").setLevel(logging.FATAL)
+
+    logging.basicConfig(datefmt=DATEFMT, format=FMT, level=CONF["DEBUG"] and logging.DEBUG or logging.INFO)
 
     if not CONF:
         log.critical("Imposible parsear fichero de configuración")
         sys.exit(1)
 
-    DEBUG = CONF["DEBUG"]
-
     if CONF["LOG_TO_FILE"]:
-        add_logfile(log, CONF["LOG_TO_FILE"], DEBUG and logging.DEBUG or logging.INFO)
+        add_logfile(log, CONF["LOG_TO_FILE"], CONF["DEBUG"] and logging.DEBUG or logging.INFO)
+
+    args = create_args_parser().parse_args()
+
+    if any((args.cloud_m3u, args.cloud_recordings, args.local_m3u, args.local_recordings)):
+        refresh = False  # pylint: disable=invalid-name
+    else:
+        refresh = True  # pylint: disable=invalid-name
+        banner = f"Movistar U7D - TVG v{VERSION}"
+        log.info("-" * len(banner))
+        log.info(banner)
+        log.info("-" * len(banner))
+        log.debug("%s", " ".join(sys.argv[1:]))
+
+    if any(
+        map(
+            all,
+            combinations(
+                (
+                    any((args.m3u, args.guide)),
+                    any((args.cloud_m3u, args.cloud_recordings)),
+                    any((args.local_m3u, args.local_recordings)),
+                ),
+                2,
+            ),
+        )
+    ):
+        log.critical("No es posible mezclar categorías")
+        sys.exit(1)
 
     _CONFIG = _DEADLINE = _END_POINT = _IPTV = _MIPTV = _SESSION = _XMLTV = None
 
@@ -1241,37 +1257,13 @@ if __name__ == "__main__":
     title_1_regex = re.compile(r"(.+(?!T\d)) +T(\d+)(?: *Ep[isode.]+ (\d+))?[ -]*(.*)")
     title_2_regex = re.compile(r"(.+(?!T\d))(?: +T(\d+))? *(?:[Ee]p[isode.]+|[Cc]ap[iítulo.]*) ?(\d+)[ .-]*(.*)")
 
-    logging.getLogger("asyncio").setLevel(logging.FATAL)
-    logging.getLogger("filelock").setLevel(logging.FATAL)
-
-    logging.basicConfig(datefmt=DATEFMT, format=FMT, level=DEBUG and logging.DEBUG or logging.INFO)
-
-    # Obtiene los argumentos de entrada
-    args = create_args_parser().parse_args()
-
-    if any(
-        map(
-            all,
-            combinations(
-                (
-                    any((args.m3u, args.guide)),
-                    any((args.cloud_m3u, args.cloud_recordings)),
-                    any((args.local_m3u, args.local_recordings)),
-                ),
-                2,
-            ),
-        )
-    ):
-        log.critical("No es posible mezclar categorías")
-        sys.exit(1)
-
-    LOCAL = "-local" if any((args.local_m3u, args.local_recordings)) else ""
-    lockfile = os.path.join(CONF["TMP_DIR"], f".mu7d_tvg{LOCAL}.lock")
-    del CONF, LOCAL
+    local = "-local" if any((args.local_m3u, args.local_recordings)) else ""  # pylint: disable=invalid-name
+    lockfile = os.path.join(CONF["TMP_DIR"], f".mu7d_tvg{local}.lock")
+    del CONF, local
     try:
         with FileLock(lockfile, timeout=0):
             _IPTV = get_iptv_ip()
-            asyncio.run(tvg_main(args))
+            asyncio.run(tvg_main(args, refresh, time.time()))
     except (CancelledError, KeyboardInterrupt):
         sys.exit(0)
     except IPTVNetworkError as err:
