@@ -93,6 +93,7 @@ from mu7d_lib import (
     reload_epg,
     reload_recordings,
     timers_check,
+    timers_lock,
     update_epg,
     update_epg_cron,
     update_recordings,
@@ -183,7 +184,7 @@ async def after_server_start(app):
     if not _g._last_epg:
         if not await aio_os.path.exists(_g.GUIDE):
             return sys.exit(1)
-        _g._last_epg = int(await aio_os.path.getmtime(_g.GUIDE))
+        _g._last_epg = await aio_os.path.getmtime(_g.GUIDE)
 
     if _g.RECORDINGS:
         if not await aio_os.path.exists(_g.RECORDINGS):
@@ -206,13 +207,12 @@ async def after_server_start(app):
             ):
                 await create_covers_cache()
 
-        uptime = int(datetime.now().timestamp() - boot_time())
         if not _g._t_timers:
-            if int(datetime.now().replace(minute=0, second=0).timestamp()) <= _g._last_epg:
-                delay = max(5, 180 - uptime)
+            if datetime.now().replace(minute=0, second=0).timestamp() <= _g._last_epg:
+                delay = int(max(5, 180 - datetime.now().timestamp() - boot_time()))
                 if delay > 10:
                     log.info(f"Waiting {delay}s to check recording timers since the system just booted...")
-                _g._t_timers = app.add_task(timers_check(delay))
+                app.add_task(timers_check(delay))
             else:
                 log.warning("Delaying timers_check until the EPG is updated...")
 
@@ -240,8 +240,9 @@ async def handle_archive(request, channel_id, program_id):
 
     log_suffix = f': [{channel_id:4}] [{program_id}] [{timestamp}] "{filename}"'
 
-    if not _g._t_timers or _g._t_timers.done():
-        _g._t_timers = app.add_task(timers_check(delay=3))
+    if timers_lock.locked():
+        _g._t_timers.cancel()
+    app.add_task(timers_check(delay=3))
 
     log.debug('Checking for "%s"', filename)
     if not await does_recording_exist(filename):
@@ -666,13 +667,10 @@ async def handle_timers_check(request):
 
     delay = int(request.args.get("delay", 0))
 
-    if _g._t_timers and not _g._t_timers.done():
-        if delay:
-            _g._t_timers.cancel()
-        else:
-            raise Forbidden("Already processing timers")
+    if timers_lock.locked() and not delay:
+        raise Forbidden("Already processing timers")
 
-    _g._t_timers = app.add_task(timers_check(delay=delay))
+    app.add_task(timers_check(delay=delay))
 
     return response.json({"status": "Timers check queued"}, 200)
 

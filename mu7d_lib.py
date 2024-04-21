@@ -84,6 +84,7 @@ timers_data = os.path.join(CONF["HOME"], "timers.conf")
 epg_lock = asyncio.Lock()
 network_bw_lock = asyncio.Lock()
 recordings_lock = asyncio.Lock()
+timers_lock = asyncio.Lock()
 tvgrab_lock = asyncio.Lock()
 tvgrab_local_lock = asyncio.Lock()
 
@@ -484,7 +485,7 @@ async def network_saturation():
             _g._NETWORK_SATURATION = 2 if tp > _g.IPTV_BW_HARD else 1 if tp > _g.IPTV_BW_SOFT else 0
 
             if _g._NETWORK_SATURATION:
-                if _g._t_timers and not _g._t_timers.done():
+                if timers_lock.locked():
                     _g._t_timers.cancel()
                     app.add_task(log_network_saturated(_wait=True))
                 if _g._NETWORK_SATURATION == 2 and not network_bw_lock.locked():
@@ -896,7 +897,12 @@ async def timers_check(delay=0):  # pylint: disable=too-many-branches,too-many-l
 
     await asyncio.sleep(delay)
 
-    async with epg_lock, recordings_lock:
+    if timers_lock.locked():
+        return
+
+    async with epg_lock, recordings_lock, timers_lock:
+        _g._t_timers = asyncio.current_task()
+
         log.debug("Processing timers")
 
         if not await aio_os.path.exists(timers_data):
@@ -1161,9 +1167,9 @@ async def update_epg():
             await reload_epg()
             _g._last_epg = int(datetime.now().replace(minute=0, second=0).timestamp())
             if _g.RECORDINGS:
-                if _g._t_timers and not _g._t_timers.done():
+                if timers_lock.locked():
                     _g._t_timers.cancel()
-                _g._t_timers = app.add_task(timers_check(delay=3))
+                app.add_task(timers_check(delay=3))
             break
 
     if _g.RECORDINGS and _g._RECORDINGS and await upgrade_recording_channels():
