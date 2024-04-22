@@ -31,7 +31,7 @@ import ujson
 import xmltodict
 from aiofiles import open as async_open, os as aio_os
 from aiohttp.client_exceptions import ClientConnectionError, ClientOSError, ServerDisconnectedError
-from psutil import AccessDenied, NoSuchProcess, Process, process_iter
+from psutil import AccessDenied, NoSuchProcess, Process, boot_time, process_iter
 from sanic import Sanic
 from sanic.mixins.startup import StartupMixin
 from tomli import TOMLDecodeError
@@ -438,6 +438,47 @@ async def launch(cmd):
         with suppress(CancelledError):
             proc.terminate()
             return await proc.wait()
+
+
+async def load_epg():
+    await reload_epg()
+
+    if not _g._last_epg:
+        if not await aio_os.path.exists(_g.GUIDE):
+            return sys.exit(1)
+        _g._last_epg = await aio_os.path.getmtime(_g.GUIDE)
+
+    if _g.RECORDINGS:
+        if not await aio_os.path.exists(_g.RECORDINGS):
+            try:
+                await aio_os.makedirs(_g.RECORDINGS)
+            except PermissionError:
+                log.error(f'Cannot access "{_g.RECORDINGS}" => RECORDINGS disabled')
+                _g.RECORDINGS = None
+        else:
+            if _g.RECORDINGS_UPGRADE:
+                await upgrade_recordings()
+            elif _g.RECORDINGS_REINDEX:
+                await reindex_recordings()
+            else:
+                await reload_recordings()
+            if (
+                _g.RECORDINGS_TMP
+                and _g._RECORDINGS
+                and not await aio_os.path.exists(os.path.join(_g.RECORDINGS_TMP, "covers"))
+            ):
+                await create_covers_cache()
+
+        if not _g._t_timers:
+            if datetime.now().replace(minute=0, second=0).timestamp() <= _g._last_epg:
+                delay = int(max(5, boot_time() + 180 - time.time()))
+                if delay > 10:
+                    log.info(f"Waiting {delay}s to check recording timers since the system just booted...")
+                app.add_task(timers_check(delay))
+            else:
+                log.warning("Delaying timers_check until the EPG is updated...")
+
+    app.add_task(update_epg_cron())
 
 
 async def log_network_saturated(nr_procs=None, _wait=False):

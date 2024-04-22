@@ -67,7 +67,6 @@ from mu7d_lib import (
     add_prom_event,
     alive,
     app,
-    create_covers_cache,
     does_recording_exist,
     find_free_port,
     get_channel_id,
@@ -79,6 +78,7 @@ from mu7d_lib import (
     get_program_vod,
     get_recording_name,
     get_vod_info,
+    load_epg,
     log,
     log_network_saturated,
     network_saturation,
@@ -95,9 +95,7 @@ from mu7d_lib import (
     timers_check,
     timers_lock,
     update_epg,
-    update_epg_cron,
     update_recordings,
-    upgrade_recordings,
 )
 from mu7d_vod import Vod
 
@@ -173,51 +171,14 @@ async def after_server_start(app):
     _g._t_timers_next = None
 
     app.add_task(alive())
+    app.add_task(reaper())
 
     if _g.IPTV_BW_SOFT:
         app.add_task(network_saturation())
         _msg = " => Ignoring RECORDINGS_PROCESSES" if _g.RECORDINGS else ""
         log.info(f"BW: {_g.IPTV_BW_SOFT}-{_g.IPTV_BW_HARD} kbps / {_g.IPTV_IFACE}{_msg}")
 
-    await reload_epg()
-
-    if not _g._last_epg:
-        if not await aio_os.path.exists(_g.GUIDE):
-            return sys.exit(1)
-        _g._last_epg = await aio_os.path.getmtime(_g.GUIDE)
-
-    if _g.RECORDINGS:
-        if not await aio_os.path.exists(_g.RECORDINGS):
-            try:
-                await aio_os.makedirs(_g.RECORDINGS)
-            except PermissionError:
-                log.error(f'Cannot access "{_g.RECORDINGS}" => RECORDINGS disabled')
-                _g.RECORDINGS = None
-        else:
-            if _g.RECORDINGS_UPGRADE:
-                await upgrade_recordings()
-            elif _g.RECORDINGS_REINDEX:
-                await reindex_recordings()
-            else:
-                await reload_recordings()
-            if (
-                _g.RECORDINGS_TMP
-                and _g._RECORDINGS
-                and not await aio_os.path.exists(os.path.join(_g.RECORDINGS_TMP, "covers"))
-            ):
-                await create_covers_cache()
-
-        if not _g._t_timers:
-            if datetime.now().replace(minute=0, second=0).timestamp() <= _g._last_epg:
-                delay = int(max(5, 180 - datetime.now().timestamp() - boot_time()))
-                if delay > 10:
-                    log.info(f"Waiting {delay}s to check recording timers since the system just booted...")
-                app.add_task(timers_check(delay))
-            else:
-                log.warning("Delaying timers_check until the EPG is updated...")
-
-    app.add_task(reaper())
-    app.add_task(update_epg_cron())
+    app.add_task(load_epg())
 
 
 @app.listener("before_server_stop")
