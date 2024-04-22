@@ -10,7 +10,7 @@ from asyncio.subprocess import DEVNULL, PIPE
 from collections import defaultdict, namedtuple
 from contextlib import closing
 from datetime import datetime
-from signal import SIG_IGN, SIGINT, SIGTERM, signal
+from signal import SIGINT, SIGTERM
 from socket import (
     AF_INET,
     IP_ADD_MEMBERSHIP,
@@ -92,6 +92,7 @@ from mu7d_lib import (
     reindex_recordings,
     reload_epg,
     reload_recordings,
+    shutdown,
     timers_check,
     timers_lock,
     update_epg,
@@ -103,49 +104,16 @@ from mu7d_vod import Vod
 @app.listener("before_server_start")
 async def before_server_start(app):
     app.config.FALLBACK_ERROR_FORMAT = "json"
-    app.config.GRACEFUL_SHUTDOWN_TIMEOUT = 0
+    app.config.GRACEFUL_SHUTDOWN_TIMEOUT = 0.5
     app.config.REQUEST_TIMEOUT = 1
 
 
 @app.listener("after_server_start")
 async def after_server_start(app):
     if not WIN32:
-
-        def cleanup_handler(signum, frame):  # pylint: disable=unused-argument
-            [signal(sig, SIG_IGN) for sig in (SIGINT, SIGTERM)]
-            app.stop()
-            os.killpg(0, SIGTERM)
-            time.sleep(0.5)
-            while True:
-                try:
-                    os.waitpid(-1, 0)
-                except ChildProcessError:
-                    break
-
-        [signal(sig, cleanup_handler) for sig in (SIGINT, SIGTERM)]
-
-    else:
-        import win32api  # pylint: disable=import-error
-        import win32con  # pylint: disable=import-error
-
-        _loop = asyncio.get_event_loop()
-
-        def close_handler(event):
-            log.debug("close_handler(event=%d)", event)
-            if _loop.is_running() and event in (
-                win32con.CTRL_BREAK_EVENT,
-                win32con.CTRL_C_EVENT,
-                win32con.CTRL_CLOSE_EVENT,
-                win32con.CTRL_LOGOFF_EVENT,
-                win32con.CTRL_SHUTDOWN_EVENT,
-            ):
-                _loop.stop()
-                while _loop.is_running():
-                    time.sleep(0.05)
-            log.debug("close_handler(event=%d) -> GOOD BYE", event)
-            return True
-
-        win32api.SetConsoleCtrlHandler(close_handler, True)
+        loop = asyncio.get_running_loop()
+        loop.add_signal_handler(SIGINT, lambda: asyncio.create_task(shutdown(loop, log, app)))
+        loop.add_signal_handler(SIGTERM, lambda: asyncio.create_task(shutdown(loop, log, app)))
 
     _g._NETWORK_SATURATED = False
     _g._NETWORK_SATURATION = 0
@@ -179,11 +147,6 @@ async def after_server_start(app):
         log.info(f"BW: {_g.IPTV_BW_SOFT}-{_g.IPTV_BW_HARD} kbps / {_g.IPTV_IFACE}{_msg}")
 
     app.add_task(load_epg())
-
-
-@app.listener("before_server_stop")
-async def before_server_stop(app):  # pylint: disable=unused-argument
-    [task.cancel() for task in asyncio.all_tasks()]
 
 
 @app.put("/archive/<channel_id:int>/<program_id:int>")
@@ -822,7 +785,7 @@ if __name__ == "__main__":
                 backlog=0,
                 debug=_g.DEBUG,
                 protocol=VodHttpProtocol,
-                register_sys_signals=False,
+                register_sys_signals=WIN32,
                 single_process=True,
                 workers=1,
             )

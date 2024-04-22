@@ -16,7 +16,7 @@ from asyncio.exceptions import CancelledError
 from asyncio.subprocess import DEVNULL as NULL, PIPE, STDOUT as OUT
 from contextlib import closing
 from datetime import timedelta
-from signal import SIGINT, SIGTERM, signal
+from signal import SIGINT, SIGTERM
 
 import aiohttp
 import asyncstdlib as a
@@ -55,6 +55,7 @@ from mu7d_lib import (
     ongoing_vods,
     remove,
     rename,
+    shutdown,
     utime,
 )
 
@@ -656,7 +657,7 @@ async def record_stream(vod_info):
     if not U7D_PARENT:
         return await _archive_recording()
 
-    return asyncio.create_task(postprocess(vod_info))
+    return await postprocess(vod_info)
 
 
 async def rtsp(vod_info):
@@ -683,7 +684,7 @@ async def rtsp(vod_info):
             if not WIN32:
                 setproctitle(getproctitle().replace("mu7d_vod     ", "mu7d_vod REC "))
             # Start recording the VOD stream
-            rec_t = asyncio.create_task(record_stream(vod_info))
+            rec_t = asyncio.create_task(record_stream(vod_info), name="recording")
         else:
             log.info(f'The VOD stream can be accesed at: f"udp://@{_IPTV}:{_args.client_port}"')
 
@@ -705,23 +706,24 @@ async def rtsp(vod_info):
         client.close_connection()
         log.debug("[%4s] [%d]: RTSP loop ended", str(_args.channel), _args.program)
 
-    if rec_t:
-        if not rec_t.done():
-            await rec_t
+        if not WIN32 and rec_t:
+            if not rec_t.done():
+                await asyncio.shield(rec_t)
 
-        if not WIN32:
             setproctitle(getproctitle().replace(" REC ", "     "))
-
-        pp_t = rec_t.result()
-        if pp_t:
-            await pp_t
 
 
 async def Vod(args=None, vod_client=None, vod_info=None):  # pylint: disable=invalid-name
     if __name__ == "__main__":
-        global _END_POINT, _SESSION_CLOUD, _loop
+        global _END_POINT, _SESSION_CLOUD
 
-        _loop = asyncio.get_running_loop()
+        loop = asyncio.get_running_loop()
+
+        if not WIN32:
+            loop.add_signal_handler(SIGINT, lambda: asyncio.create_task(shutdown(loop, log)))
+            loop.add_signal_handler(SIGTERM, lambda: asyncio.create_task(shutdown(loop, log)))
+        else:
+            add_exit_handler(loop)
 
         _END_POINT = await get_end_point()
         if not _END_POINT:
@@ -763,42 +765,36 @@ if __name__ == "__main__":
 
         setproctitle("mu7d_vod      # %s" % " ".join(sys.argv[1:]))
 
-        def cancel_handler(signum, frame):  # pylint: disable=unused-argument
-            if _loop:
-                [task.cancel() for task in asyncio.all_tasks(_loop)]
-
-        [signal(sig, cancel_handler) for sig in (SIGINT, SIGTERM)]
-
     else:
         import win32api  # pylint: disable=import-error
         import win32con  # pylint: disable=import-error
 
-        def close_handler(event):
-            log.debug("close_handler(event=%d)", event)
-            if _loop and event in (
-                win32con.CTRL_BREAK_EVENT,
-                win32con.CTRL_C_EVENT,
-                win32con.CTRL_CLOSE_EVENT,
-                win32con.CTRL_LOGOFF_EVENT,
-                win32con.CTRL_SHUTDOWN_EVENT,
-            ):
-                for child in psutil.Process().children():
-                    while child.is_running():
-                        log.debug("close_handler(event=%d): Killing '%s'", event, child.name())
-                        child.kill()
-                        time.sleep(0.01)
+        def add_exit_handler(loop):
+            def close_handler(event):
+                log.debug("close_handler(event=%d)", event)
+                if event in (
+                    win32con.CTRL_BREAK_EVENT,
+                    win32con.CTRL_C_EVENT,
+                    win32con.CTRL_CLOSE_EVENT,
+                    win32con.CTRL_LOGOFF_EVENT,
+                    win32con.CTRL_SHUTDOWN_EVENT,
+                ):
+                    tasks = [t for t in asyncio.all_tasks(loop)]
+                    if tasks:
+                        log.debug("Cancelling vod tasks...")
+                        [task.cancel() for task in tasks]
+                        while not all(task.done() for task in tasks):
+                            log.debug("Waiting for vod tasks...")
+                            time.sleep(0.1)
+                        log.debug("vod tasks done")
 
-                time.sleep(0.05)
-                log.debug("Cancelling tasks")
-                while not all((task.done() for task in asyncio.all_tasks(_loop))):
-                    [task.cancel() for task in asyncio.all_tasks(_loop)]
-                    time.sleep(0.05)
-            return True
+                log.debug("close_handler(event=%d) -> GOOD BYE", event)
+                return True
 
-        win32api.SetConsoleCtrlHandler(close_handler, True)
+            win32api.SetConsoleCtrlHandler(close_handler, True)
 
     # pylint: disable=invalid-name
-    _END_POINT = _IPTV = _SESSION = _SESSION_CLOUD = _filename = _loop = _tmpname = None
+    _END_POINT = _IPTV = _SESSION = _SESSION_CLOUD = _filename = _tmpname = None
 
     if not CONF:
         log.critical("Imposible parsear fichero de configuración")

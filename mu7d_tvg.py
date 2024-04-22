@@ -1181,24 +1181,6 @@ if __name__ == "__main__":
 
         setproctitle("mu7d_tvg      # %s" % " ".join(sys.argv[1:]))
 
-    else:
-        import win32api  # pylint: disable=import-error
-        import win32con  # pylint: disable=import-error
-        from psutil import Process
-
-        def close_handler(event):
-            if event in (
-                win32con.CTRL_BREAK_EVENT,
-                win32con.CTRL_C_EVENT,
-                win32con.CTRL_CLOSE_EVENT,
-                win32con.CTRL_LOGOFF_EVENT,
-                win32con.CTRL_SHUTDOWN_EVENT,
-            ):
-                Process().terminate()
-            return True
-
-        win32api.SetConsoleCtrlHandler(close_handler, True)
-
     logging.getLogger("asyncio").setLevel(logging.FATAL)
     logging.getLogger("filelock").setLevel(logging.FATAL)
 
