@@ -8,9 +8,8 @@ import urllib.parse
 from asyncio.exceptions import CancelledError
 from asyncio.subprocess import DEVNULL, PIPE
 from collections import defaultdict, namedtuple
-from contextlib import closing
+from contextlib import closing, suppress
 from datetime import datetime
-from signal import SIGINT, SIGTERM
 from socket import (
     AF_INET,
     IP_ADD_MEMBERSHIP,
@@ -92,7 +91,6 @@ from mu7d_lib import (
     reindex_recordings,
     reload_epg,
     reload_recordings,
-    shutdown,
     timers_check,
     timers_lock,
     update_epg,
@@ -110,11 +108,6 @@ async def before_server_start(app):
 
 @app.listener("after_server_start")
 async def after_server_start(app):
-    if not WIN32:
-        loop = asyncio.get_running_loop()
-        loop.add_signal_handler(SIGINT, lambda: asyncio.create_task(shutdown(loop, log, app)))
-        loop.add_signal_handler(SIGTERM, lambda: asyncio.create_task(shutdown(loop, log, app)))
-
     _g._NETWORK_SATURATED = False
     _g._NETWORK_SATURATION = 0
 
@@ -147,6 +140,19 @@ async def after_server_start(app):
         log.info(f"BW: {_g.IPTV_BW_SOFT}-{_g.IPTV_BW_HARD} kbps / {_g.IPTV_IFACE}{_msg}")
 
     app.add_task(load_epg())
+
+
+@app.listener("before_server_stop")
+async def before_server_stop(app):  # pylint: disable=unused-argument
+    # Required to not leave _vod processes behind whne mu7d dies
+    tasks = tuple(task for task in asyncio.all_tasks() if task is not asyncio.current_task())
+    log.debug("Cancelling tasks...")
+    tuple(task.cancel() for task in tasks)
+    # Wait for vod tasks to end so _vod processes do not stay alive after mu7d dies
+    with suppress(CancelledError):
+        log.debug("Gathering vods...")
+        await asyncio.gather(*(t for t in tasks if t.get_name() == "vod"))
+    log.info("BYE")
 
 
 @app.put("/archive/<channel_id:int>/<program_id:int>")
@@ -785,7 +791,7 @@ if __name__ == "__main__":
                 backlog=0,
                 debug=_g.DEBUG,
                 protocol=VodHttpProtocol,
-                register_sys_signals=WIN32,
+                register_sys_signals=True,
                 single_process=True,
                 workers=1,
             )

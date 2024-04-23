@@ -21,7 +21,6 @@ from glob import glob, iglob
 from itertools import chain
 from json import JSONDecodeError
 from operator import itemgetter
-from signal import SIG_IGN, SIGINT, SIGTERM, signal
 from socket import AF_INET, SOCK_DGRAM, socket
 from warnings import filterwarnings
 
@@ -735,7 +734,7 @@ async def record_program(ch_id, pid, offset=0, time=0, cloud=False, comskip=0, i
     cmd += ["--vo"] if vo else []
 
     log.debug('Launching: "%s"', " ".join(cmd))
-    asyncio.create_task(launch(cmd), name="vod")
+    asyncio.create_task(launch(cmd), name="vod")  # required to not leave _vod processes behind whne mu7d dies
 
 
 async def reindex_recordings():
@@ -923,31 +922,6 @@ async def rename(src, dst):
     if WIN32 and await aio_os.path.exists(dst):
         await aio_os.remove(dst)
     await aio_os.rename(src, dst)
-
-
-async def shutdown(loop, _log, app=None):
-    [signal(sig, SIG_IGN) for sig in (SIGINT, SIGTERM)]
-    if app is None:
-        tasks = [t for t in asyncio.all_tasks(loop)]
-        if tasks:
-            _log.debug(f"Cancelling vod {tasks=}...")
-            [task.cancel() for task in tasks]
-            _log.debug(f"Waiting for vod {tasks=}...")
-            await asyncio.gather(*tasks)
-            _log.debug("vod tasks done")
-    else:
-        vods = [t for t in asyncio.all_tasks(loop) if t.get_name() == "vod"]
-        if vods:
-            _log.debug(f"Cancelling {vods=}...")
-            [vod.cancel() for vod in vods]
-            _log.debug(f"Waiting for {vods=}...")
-            await asyncio.gather(*vods)
-            os.sync()
-        _log.debug("Stopping app...")
-        app.stop()
-    while loop.is_running():
-        _log.debug("Waiting for loop...")
-        await asyncio.sleep(0.1)
 
 
 async def timers_check(delay=0):  # pylint: disable=too-many-branches,too-many-locals,too-many-statements
