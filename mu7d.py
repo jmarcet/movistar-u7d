@@ -124,7 +124,7 @@ async def after_server_start(app):
 
     _g.ep = await get_end_point()
     if not _g.ep:
-        return sys.exit(1)
+        return _exit(1)
 
     _g._last_bw_warning = None
     _g._last_epg = None
@@ -153,6 +153,12 @@ async def before_server_stop(app):  # pylint: disable=unused-argument
         log.debug("Gathering vods...")
         await asyncio.gather(*(t for t in tasks if t.get_name() == "vod"))
     log.info("BYE")
+
+
+@app.listener("after_server_stop")
+async def after_server_stop(app):  # pylint: disable=unused-argument
+    if WIN32:
+        input("\nPulsa una tecla para terminar...")
 
 
 @app.put("/archive/<channel_id:int>/<program_id:int>")
@@ -701,6 +707,11 @@ if __name__ == "__main__":
             if sock.connect_ex((CONF["LAN_IP"], CONF["U7D_PORT"])) == 0:
                 raise LocalNetworkError(f"El puerto {CONF['LAN_IP']}:{CONF['U7D_PORT']} está ocupado")
 
+    def _exit(exitcode):
+        if WIN32:
+            input("\nPulsa una tecla para terminar...")
+        sys.exit(exitcode)
+
     def _get_iptv_iface_ip():
         iptv_iface = CONF["IPTV_IFACE"]
         if iptv_iface:
@@ -721,7 +732,7 @@ if __name__ == "__main__":
 
     if not CONF:
         log.critical("Imposible parsear fichero de configuración")
-        sys.exit(1)
+        _exit(1)
 
     banner = f"Movistar U7D v{VERSION}"
     log.info("=" * len(banner))
@@ -796,10 +807,10 @@ if __name__ == "__main__":
                 workers=1,
             )
     except (CancelledError, KeyboardInterrupt):
-        sys.exit(0)
-    except IPTVNetworkError as err:
+        _exit(0)
+    except (IPTVNetworkError, LocalNetworkError) as err:
         log.critical(err)
-        sys.exit(1)
+        _exit(1)
     except Timeout:
         log.critical("Cannot be run more than once!")
-        sys.exit(1)
+        _exit(1)
