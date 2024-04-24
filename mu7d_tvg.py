@@ -223,6 +223,7 @@ class MovistarTV:
                 "labelGenre" not in data,
                 "synopsis" not in data or data["synopsis"] == "Cine",
                 all((data.get("theme", "") == "Cine", not data.get("originalTitle", "").strip())),
+                data.get("theme", "") == "Series" and not any((data.get("season"), data.get("episode"))),
             )
         ):
             _data = await MovistarTV.get_service_data(f"epgInfov2&productID={pid}&channelID={channel_id}")
