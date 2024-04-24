@@ -369,7 +369,7 @@ def get_recording_name(channel_id, timestamp, cloud=False):
     guide = _g._CLOUD if cloud else _g._EPGDATA
 
     epg = guide[channel_id][timestamp]
-    anchor = epg.genre[0] == "0" and not epg.serie
+    anchor = not any((epg.genre[0] in ("1", "8"), epg.serie))
 
     path = os.path.join(_g.RECORDINGS, get_channel_dir(channel_id))
     if epg.serie:
