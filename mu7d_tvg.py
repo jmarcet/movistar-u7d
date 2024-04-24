@@ -408,7 +408,7 @@ class MulticastIPTV:
 
         self.__fixed = fixed_diff + fixed_over
 
-        log.debug("__fix_epg(): %s", str(self.__epg.keys()))
+        # log.debug("__fix_epg(): %s", str(self.__epg.keys()))
 
     async def __get_bin_epg(self):
         segments = self.__xml_data["segments"]
@@ -569,7 +569,7 @@ class MulticastIPTV:
             self.__fixed += _fixed
             gaps += _gaps
 
-        log.debug("__merge_epg(): %s", str(self.__cached_epg.keys()))
+        # log.debug("__merge_epg(): %s", str(self.__cached_epg.keys()))
         return gaps
 
     @staticmethod
@@ -610,7 +610,7 @@ class MulticastIPTV:
                     **self.__epg[key],
                     **self.__parse_bin_epg_body(head["data"], head["service_id"]),
                 }
-        log.debug("__parse_bin_epg(): %s", str(self.__epg.keys()))
+        # log.debug("__parse_bin_epg(): %s", str(self.__epg.keys()))
 
     @staticmethod
     def __parse_bin_epg_header(data):
