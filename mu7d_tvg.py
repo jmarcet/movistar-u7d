@@ -302,6 +302,7 @@ class MovistarTV:
 class MulticastIPTV:
     def __init__(self):
         self.__cached_epg = defaultdict(dict)
+        self.__channels_keys = {}
         self.__epg = defaultdict(dict)
         self.__epg_lock = asyncio.Lock()
         self.__expired = 0
@@ -412,6 +413,8 @@ class MulticastIPTV:
         # log.debug("__fix_epg(): %s", str(self.__epg.keys()))
 
     async def __get_bin_epg(self):
+        log.info("Descargando 8 días de EPG binario...")
+
         segments = self.__xml_data["segments"]
         await asyncio.gather(
             *(self.__get_epg_day(segments[key]["Address"], segments[key]["Port"], key) for key in segments)
@@ -434,15 +437,6 @@ class MulticastIPTV:
             if svc[2][4].tag == "{urn:dvb:ipisdns:2006}ReplacementService":
                 channel_list[channel_id]["replacement"] = int(svc[2][4][0].attrib["ServiceName"])
         return channel_list
-
-    def __get_channels_keys(self):
-        _channels = self.__xml_data["channels"]
-        _services = self.__xml_data["services"]
-
-        enabled_channels = EPG_CHANNELS & set(_channels)
-
-        # Services not in channels are special access channels like DAZN, Disney, Netflix & Prime
-        return {_channels[key].get("replacement", key): key for key in _services if key in enabled_channels}
 
     async def __get_epg_data(self, mcast_grp, mcast_port):
         log.info("Actualizando metadatos de la EPG. Descargando canales, paquetes y segmentos...")
@@ -477,8 +471,14 @@ class MulticastIPTV:
         del self.__xml_data["packages"]
 
     async def __get_epg_day(self, mcast_grp, mcast_port, source):
-        log.info(f'Descargando XML {source.split(".")[0]} -> {mcast_grp}:{mcast_port}')
-        await self.__parse_bin_epg_day(await self.get_xml_files(mcast_grp, mcast_port))
+        while True:
+            try:
+                await self.__parse_bin_epg_day(await self.get_xml_files(mcast_grp, mcast_port))
+            except Exception as ex:  # pylint: disable=broad-exception-caught
+                log.debug("%s -> %s", source.split(".")[0], repr(ex))
+                continue
+            log.info("%s -> descargado", source.split(".")[0])
+            break
 
     @staticmethod
     def __get_packages(root):
@@ -600,17 +600,13 @@ class MulticastIPTV:
         return programs
 
     async def __parse_bin_epg_day(self, bin_epg_day):
-        channels_keys = self.__get_channels_keys()
         for _id in (d for d in bin_epg_day if bin_epg_day[d]):
             head = self.__parse_bin_epg_header(bin_epg_day[_id])
-            key = channels_keys.get(head["service_id"])
+            key = self.__channels_keys.get(head["service_id"])
             if not key:
                 continue
             async with self.__epg_lock:
-                self.__epg[key] = {
-                    **self.__epg[key],
-                    **self.__parse_bin_epg_body(head["data"], head["service_id"]),
-                }
+                self.__epg[key].update(self.__parse_bin_epg_body(head["data"], head["service_id"]))
         # log.debug("__parse_bin_epg(): %s", str(self.__epg.keys()))
 
     @staticmethod
@@ -656,21 +652,24 @@ class MulticastIPTV:
                 f"Canal{'es' if len(no_chs) > 1 else ''} no existente{'s' if len(no_chs) > 1 else ''}: {no_chs}"
             )
 
+        # Services not in channels are special access channels like DAZN, Disney, Netflix & Prime
+        self.__channels_keys = {
+            _channels[key].get("replacement", key): key
+            for key in _services
+            if key in EPG_CHANNELS & set(_channels)
+        }
+
         while True:
-            try:
-                await self.__get_bin_epg()
-                self.__fix_epg()
-                gaps = self.__merge_epg()
-                self.__expire_epg()
-                self.__sort_epg()
-                await Cache.save_epg(self.__cached_epg)
-                if not gaps:
-                    del self.__epg, self.__xml_data["segments"]
-                    break
-                log.warning(f"EPG con huecos de [{str(timedelta(seconds=gaps))}s]. Descargando de nuevo...")
-            except Exception as ex:  # pylint: disable=broad-exception-caught
-                log.debug("%s", repr(ex))
-                log.warning("Error descargando la EPG. Reintentando...")
+            await self.__get_bin_epg()
+            self.__fix_epg()
+            gaps = self.__merge_epg()
+            self.__expire_epg()
+            self.__sort_epg()
+            await Cache.save_epg(self.__cached_epg)
+            if not gaps:
+                del self.__epg, self.__xml_data["segments"]
+                break
+            log.warning(f"EPG con huecos de [{str(timedelta(seconds=gaps))}s]. Descargando de nuevo...")
 
         log.info(f"Eventos en Caché: Arreglados = {self.__fixed} _ Caducados = {self.__expired}")
         return self.__cached_epg
@@ -817,7 +816,6 @@ class MulticastIPTV:
                     current_file = f'{chunk["filetype"]}_{chunk["fileid"]}'
                     _files[current_file] = xmldata[:-4]  # Discard last 4bytes binary footer
                     if current_file == last_file:
-                        log.info(f"{mc_grp}:{mc_port} -> XML descargado")
                         break
         return _files
 
