@@ -444,8 +444,8 @@ async def load_epg():
     await reload_epg()
 
     if not _g._last_epg:
-        if not await aio_os.path.exists(_g.GUIDE):
-            return sys.exit(1)
+        if not await a.all(a.map(aio_os.path.exists, (_g.CHANNELS, _g.GUIDE, epg_data))):
+            return app.stop()
         _g._last_epg = await aio_os.path.getmtime(_g.GUIDE)
 
     if _g.RECORDINGS:
