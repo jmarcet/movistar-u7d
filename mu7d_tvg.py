@@ -19,7 +19,7 @@ from contextlib import closing
 from datetime import date, datetime, timedelta
 from glob import iglob
 from html import escape, unescape
-from itertools import batched, combinations
+from itertools import combinations
 from json import JSONDecodeError
 from socket import (
     AF_INET,
@@ -34,6 +34,7 @@ from socket import (
 )
 
 import aiohttp
+import asyncstdlib as a
 from aiofiles import open as async_open, os as aio_os
 from aiohttp.client_exceptions import ClientConnectionError, ClientOSError, ServerDisconnectedError
 from async_files.gzip import open as async_gzip_open
@@ -840,7 +841,7 @@ class XmlTV:
     async def __add_programmes_tags(self, channel_id, programs, local, tz_offset):
         if not local:
             ext_infos = []
-            for batch in batched(programs.keys(), n=max(8, 2 * (os.cpu_count() or 1))):
+            async for batch in a.batched(programs.keys(), max(8, 2 * (os.cpu_count() or 1))):
                 ext_infos += await asyncio.gather(
                     *(MovistarTV.get_epg_extended_info(channel_id, ts, programs[ts]) for ts in batch)
                 )
