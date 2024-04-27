@@ -1194,27 +1194,20 @@ async def update_cloud():
 
 async def update_epg():
     cmd = (f"mu7d_tvg{EXT}", "--m3u", _g.CHANNELS, "--guide", _g.GUIDE)
-    for i in range(3):
-        async with tvgrab_lock:
-            retcode = await launch(cmd)
+    async with tvgrab_lock:
+        if await launch(cmd):
+            return
 
-        if retcode:
-            if i < 2:
-                await asyncio.sleep(3)
-                log.error(f"[{i + 2} / 3]...")
-            else:
-                return
-        else:
-            await reload_epg()
-            _g._last_epg = int(datetime.now().replace(minute=0, second=0).timestamp())
-            if _g.RECORDINGS:
-                if timers_lock.locked():
-                    _g._t_timers.cancel()
-                app.add_task(timers_check(delay=3))
-            break
+    await reload_epg()
+    _g._last_epg = int(datetime.now().replace(minute=0, second=0).timestamp())
 
-    if _g.RECORDINGS and _g._RECORDINGS and await upgrade_recording_channels():
-        await reindex_recordings()
+    if _g.RECORDINGS:
+        if timers_lock.locked():
+            _g._t_timers.cancel()
+        app.add_task(timers_check(delay=3))
+
+        if _g._RECORDINGS and await upgrade_recording_channels():
+            await reindex_recordings()
 
 
 async def update_epg_cron():
