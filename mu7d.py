@@ -739,7 +739,7 @@ if __name__ == "__main__":
     log.info(banner)
     log.info("=" * len(banner))
 
-    if LINUX and any(("UID" in CONF, "GID" in CONF)):
+    if LINUX and os.getuid() == 0 and any(("UID" in CONF, "GID" in CONF)):
         log.info("Dropping privileges...")
         if "GID" in CONF:
             try:
