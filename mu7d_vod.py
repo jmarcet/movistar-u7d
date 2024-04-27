@@ -817,8 +817,8 @@ if __name__ == "__main__":
     # pylint: disable=invalid-name
     _END_POINT = _IPTV = _SESSION = _SESSION_CLOUD = _filename = _tmpname = None
 
-    if not CONF:
-        log.critical("Imposible parsear fichero de configuración")
+    if CONF.get("Exception"):
+        log.critical(f'Imposible parsear fichero de configuración => {repr(CONF["Exception"])}')
         sys.exit(1)
 
     DEBUG = CONF["DEBUG"]

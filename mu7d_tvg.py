@@ -1186,8 +1186,8 @@ if __name__ == "__main__":
 
     logging.basicConfig(datefmt=DATEFMT, format=FMT, level=CONF["DEBUG"] and logging.DEBUG or logging.INFO)
 
-    if not CONF:
-        log.critical("Imposible parsear fichero de configuración")
+    if CONF.get("Exception"):
+        log.critical(f'Imposible parsear fichero de configuración => {repr(CONF["Exception"])}')
         sys.exit(1)
 
     if CONF["LOG_TO_FILE"]:

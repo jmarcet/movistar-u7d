@@ -75,12 +75,6 @@ PromEvent = namedtuple("PromEvent", "ch_id, endpoint, id, lat, method, msg, offs
 Recording = namedtuple("Recording", "filename, duration")
 Timer = namedtuple("Timer", "ch_id, ts, cloud, comskip, delay, keep, repeat, vo")
 
-cloud_data = os.path.join(CONF["HOME"], ".xmltv/cache/cloud.json")
-channels_data = os.path.join(CONF["HOME"], ".xmltv/cache/channels.json")
-epg_data = os.path.join(CONF["HOME"], ".xmltv/cache/epg.json")
-recordings_data = os.path.join(CONF["HOME"], "recordings.json")
-timers_data = os.path.join(CONF["HOME"], "timers.conf")
-
 epg_lock = asyncio.Lock()
 network_bw_lock = asyncio.Lock()
 recordings_lock = asyncio.Lock()
@@ -444,7 +438,7 @@ async def load_epg():
     await reload_epg()
 
     if not _g._last_epg:
-        if not await a.all(a.map(aio_os.path.exists, (_g.CHANNELS, _g.GUIDE, epg_data))):
+        if not await a.all(a.map(aio_os.path.exists, (_g.CHANNELS, _g.GUIDE, _g.epg_data))):
             return app.stop()
         _g._last_epg = await aio_os.path.getmtime(_g.GUIDE)
 
@@ -824,8 +818,8 @@ async def reindex_recordings():
 
 
 async def reload_epg():
-    if not await a.any(a.map(aio_os.path.exists, (_g.CHANNELS, channels_data))) and await a.all(
-        a.map(aio_os.path.exists, (epg_data, _g.GUIDE, _g.GUIDE + ".gz"))
+    if not await a.any(a.map(aio_os.path.exists, (_g.CHANNELS, _g.channels_data))) and await a.all(
+        a.map(aio_os.path.exists, (_g.epg_data, _g.GUIDE, _g.GUIDE + ".gz"))
     ):
         log.warning("Missing channel list! Need to download it. Please be patient...")
 
@@ -834,26 +828,26 @@ async def reload_epg():
             await launch(cmd)
 
     if not await a.all(
-        a.map(aio_os.path.exists, (_g.CHANNELS, channels_data, epg_data, _g.GUIDE, _g.GUIDE + ".gz"))
+        a.map(aio_os.path.exists, (_g.CHANNELS, _g.channels_data, _g.epg_data, _g.GUIDE, _g.GUIDE + ".gz"))
     ):
         log.warning("Missing EPG data! Need to download it. Please be patient...")
         return await update_epg()
 
     async with epg_lock:
         try:
-            async with async_open(channels_data, encoding="utf8") as f:
+            async with async_open(_g.channels_data, encoding="utf8") as f:
                 _g._CHANNELS = json.loads(await f.read(), object_hook=parse_channels)["data"]
         except (FileNotFoundError, JSONDecodeError, OSError, PermissionError, TypeError, ValueError) as ex:
             log.error(f"Failed to load Channels metadata {repr(ex)}")
-            await remove(channels_data, epg_data)
+            await remove(_g.channels_data, _g.epg_data)
             return await reload_epg()
 
         try:
-            async with async_open(epg_data, encoding="utf8") as f:
+            async with async_open(_g.epg_data, encoding="utf8") as f:
                 _g._EPGDATA = json.loads(await f.read(), object_hook=parse_epg)["data"]
         except (FileNotFoundError, JSONDecodeError, OSError, PermissionError, TypeError, ValueError) as ex:
             log.error(f"Failed to load EPG data {repr(ex)}")
-            await remove(epg_data)
+            await remove(_g.epg_data)
             return await reload_epg()
 
         log.info(f"Channels  &  EPG Updated => {_g.U7D_URL}/MovistarTV.m3u      - {_g.U7D_URL}/guide.xml.gz")
@@ -870,7 +864,7 @@ async def reload_recordings():
     else:
         async with recordings_lock:
             try:
-                async with async_open(recordings_data, encoding="utf8") as f:
+                async with async_open(_g.recordings_data, encoding="utf8") as f:
                     _g._RECORDINGS = defaultdict(dict, json.loads(await f.read(), object_hook=parse_recordings))
             except (JSONDecodeError, TypeError, ValueError) as ex:
                 log.error(f'Failed to parse "recordings.json" => {repr(ex)}')
@@ -946,7 +940,7 @@ async def timers_check(delay=0):  # pylint: disable=too-many-branches,too-many-l
 
         log.debug("Processing timers")
 
-        if not await aio_os.path.exists(timers_data):
+        if not await aio_os.path.exists(_g.timers_data):
             log.debug("timers_check: no timers.conf found")
             return
 
@@ -956,7 +950,7 @@ async def timers_check(delay=0):  # pylint: disable=too-many-branches,too-many-l
             return
 
         try:
-            async with async_open(timers_data, encoding="utf8") as f:
+            async with async_open(_g.timers_data, encoding="utf8") as f:
                 _timers = tomli.loads(await f.read())
         except (AttributeError, TOMLDecodeError, TypeError, ValueError) as ex:
             log.error(f"Failed to parse timers.conf: {repr(ex)}")
@@ -1182,7 +1176,7 @@ async def update_cloud():
                 return
 
         try:
-            async with async_open(cloud_data, encoding="utf8") as f:
+            async with async_open(_g.cloud_data, encoding="utf8") as f:
                 _g._CLOUD = json.loads(await f.read(), object_hook=parse_epg)["data"]
         except (FileNotFoundError, JSONDecodeError, OSError, PermissionError, TypeError, ValueError):
             return await update_cloud()
@@ -1242,9 +1236,9 @@ async def update_recordings(channel_id=None):
             ch: dict(sorted({k: v._asdict() for k, v in _g._RECORDINGS[ch].items()}.items()))
             for ch in (k for k in _g._CHANNELS if k in _g._RECORDINGS)
         }
-        async with async_open(recordings_data + ".tmp", "w", encoding="utf8") as f:
+        async with async_open(_g.recordings_data + ".tmp", "w", encoding="utf8") as f:
             await f.write(ujson.dumps(sorted_recordings, ensure_ascii=False, indent=4))
-        await rename(recordings_data + ".tmp", recordings_data)
+        await rename(_g.recordings_data + ".tmp", _g.recordings_data)
 
     await update_epg_local()
 

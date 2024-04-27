@@ -129,8 +129,8 @@ def _mu7d_config():  # pylint: disable=too-many-branches
             conf = tomli.loads(f.read().lstrip("\ufeff"))
     except FileNotFoundError:
         conf = {}
-    except (AttributeError, OSError, PermissionError, TOMLDecodeError, TypeError, ValueError):
-        return {}
+    except (AttributeError, OSError, PermissionError, TOMLDecodeError, TypeError, ValueError) as ex:
+        return {"Exception": ex}
 
     if "HOME" not in conf:
         conf["HOME"] = os.getenv("HOME", os.getenv("USERPROFILE"))
@@ -148,7 +148,7 @@ def _mu7d_config():  # pylint: disable=too-many-branches
             conf["COMSKIP"] += " --quiet"
         conf["COMSKIP"] = conf["COMSKIP"].split()
 
-    if "DEBUG" not in conf:
+    if "DEBUG" not in conf or not isinstance(conf["DEBUG"], bool):
         conf["DEBUG"] = False
 
     if "EPG_CHANNELS" not in conf:
