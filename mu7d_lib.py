@@ -692,11 +692,12 @@ async def record_program(ch_id, pid, offset=0, time=0, cloud=False, comskip=0, i
     ongoing = await ongoing_vods(filename=filename, _all=True)
     if ongoing:
         log_suffix = f': [{ch_id:4}] [{pid}] [{timestamp}] "{filename}"'
-        if f"{ch_id} {pid} -b {timestamp} " in ongoing or f"{ch_id} {pid} -b " not in ongoing:
-            if f"{ch_id} {pid} -b " in ongoing:
-                msg = DIV_ONE % ("Recording ONGOING", log_suffix)
-            else:
-                msg = DIV_ONE % ("Recording ONGOING: REPEATED EVENT", log_suffix)
+        if f"{ch_id} {pid} -b {timestamp} " in ongoing:
+            msg = DIV_ONE % ("Recording ONGOING", log_suffix)
+            log.warning(msg)
+            return re.sub(r"\s+:", ":", msg)
+        if f"{ch_id} {pid} -b " not in ongoing and filename in ongoing:
+            msg = DIV_ONE % ("Recording ONGOING: REPEATED EVENT", log_suffix)
             log.warning(msg)
             return re.sub(r"\s+:", ":", msg)
 
@@ -710,7 +711,7 @@ async def record_program(ch_id, pid, offset=0, time=0, cloud=False, comskip=0, i
             await asyncio.sleep(5)
         elif timestamp > prev_ts:
             msg = DIV_TWO % ("Event DELAYED", begin_time, log_suffix)
-            log.debug(msg)
+            log.info(msg)
             return re.sub(r"\s+:", ":", msg)
 
     if _g._NETWORK_SATURATION:
@@ -1107,8 +1108,11 @@ async def timers_check(delay=0):  # pylint: disable=too-many-branches,too-many-l
                 log.info(DIV_TWO, "Skipping MATCH", f"Too short [{duration}s]", log_suffix)
                 continue
 
-            if f"{ti.ch_id} {pid} -b " in ongoing or filename in ongoing:
-                continue
+            if f"{ti.ch_id} {pid} -b {ti.ts} " in ongoing:
+                continue  # recording already ongoing
+
+            if f"{ti.ch_id} {pid} -b " not in ongoing and filename in ongoing:
+                continue  # repeated event
 
             _x = filter(
                 lambda x: filename.startswith(_g._RECORDINGS[ti.ch_id][x].filename), _g._RECORDINGS[ti.ch_id]
