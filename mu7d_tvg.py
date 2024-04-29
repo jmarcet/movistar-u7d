@@ -584,10 +584,10 @@ class MulticastIPTV:
             genre = "{:02X}".format(struct.unpack("B", data[20:21])[0])
             full_title = MulticastIPTV.decode_string(data[32:title_end])
             serie_id = struct.unpack(">H", data[title_end + 5 : title_end + 7])[0]
-            meta_data = MulticastIPTV.get_title_meta(full_title, serie_id, service_id, genre)
+            year = struct.unpack(">H", data[title_end + 9 : title_end + 11])[0]
+            meta_data = MulticastIPTV.get_title_meta(full_title, serie_id, service_id, genre, year)
             # episode = struct.unpack("B", data[title_end + 8 : title_end + 9])[0]
             # season = struct.unpack("B", data[title_end + 11 : title_end + 12])[0]
-            # year = struct.unpack(">H", epg_dt[title_end + 9 : title_end + 11])[0]
             programs[start] = {
                 "pid": struct.unpack(">I", data[:4])[0],
                 "duration": duration,
@@ -700,7 +700,9 @@ class MulticastIPTV:
                 continue
 
             service_id = _channels[channel_id].get("replacement", channel_id)
-            meta = MulticastIPTV.get_title_meta(data["name"], data.get("seriesID"), service_id, data["theme"])
+            meta = MulticastIPTV.get_title_meta(
+                data["name"], data.get("seriesID"), service_id, data["theme"], data.get("year", 0)
+            )
 
             self.__cached_epg[channel_id][timestamp] = self.__fill_cloud_event(data, meta, pid)
 
@@ -720,7 +722,7 @@ class MulticastIPTV:
         return self.__xml_data
 
     @staticmethod
-    def get_title_meta(title, serie_id, service_id, genre):
+    def get_title_meta(title, serie_id, service_id, genre, year):
         try:
             _t = unescape(title).replace("\n", " ").replace("\r", " ").strip()
         except TypeError:
@@ -775,6 +777,9 @@ class MulticastIPTV:
 
         for item in (full_title, serie):
             item = re.sub(r"\s+", " ", item)
+
+        if genre[0] == "1" and year:
+            full_title += f" ({year})"
 
         return {"full_title": full_title, "serie": serie}
 
@@ -888,10 +893,14 @@ class XmlTV:
                 subtitle = program["full_title"].split(title, 1)[-1].strip("- ")
                 if subtitle in title:
                     subtitle = ""
+            elif any((not local and program["genre"][0] == "1", local and ext_info["theme"] == "Cine")):
+                _match = re.match(r"^(.+) \(\d{4}\)$", title)
+                if _match:
+                    title = program["full_title"] = _match.groups()[0]  # Remove year from movies' full_title
 
             if ext_info:
                 if ext_info["theme"] == "Cine" and title == "Cine" and ext_info["name"] != "Cine":
-                    title = ext_info["name"]
+                    title = program["full_title"] = ext_info["name"]
 
                 orig_title = ext_info.get("originalTitle", "")
                 orig_title = "" if orig_title.lower().lstrip().startswith("episod") else orig_title
@@ -907,7 +916,7 @@ class XmlTV:
                     elif ext_info["theme"] in ("Cine", "Documentales") and " (" in program["full_title"]:
                         _match = re.match(r"([^()]+) \((.+)\)", program["full_title"])
                         if _match and orig_title == _match.groups()[1]:
-                            title = _match.groups()[0]
+                            title = _match.groups()[0]  # Remove (original title) from full_title
 
                     if ext_info["theme"] == "Cine":
                         subtitle = f"«{orig_title}»"
