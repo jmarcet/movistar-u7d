@@ -53,7 +53,6 @@ ARG ffmpeg_LIBS="-L/usr/lib/jellyfin-ffmpeg/lib -lavcodec -lavformat -lavutil -l
 
 COPY patches/comskip.patch .
 
-# mesa-va-drivers: needed for AMD VAAPI
 RUN --mount=type=cache,sharing=locked,target=/var/cache/apt \
     if [ "$BUILD_TYPE" = "full" ]; then \
         APT_SRC=/etc/apt/sources.list.d/jellyfin.sources \
@@ -68,7 +67,6 @@ RUN --mount=type=cache,sharing=locked,target=/var/cache/apt \
         && apt-get update \
         && apt-get install --no-install-recommends --no-install-suggests -y \
            jellyfin-ffmpeg6 \
-           mesa-va-drivers \
         && apt-get purge -y gnupg \
         && apt-get install --no-install-recommends --no-install-suggests -y \
            autoconf \
