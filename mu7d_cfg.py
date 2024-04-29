@@ -224,7 +224,7 @@ def _mu7d_config():  # pylint: disable=too-many-branches
     if "U7D_PROCESSES" not in conf or not isinstance(conf["U7D_PROCESSES"], int):
         conf["U7D_PROCESSES"] = 1
 
-    conf["CACHE_DIR"] = os.path.join(conf["HOME"], ".xmltv", "cache")
+    conf["CACHE_DIR"] = os.path.join(conf["HOME"], ".mu7d")
     conf["TMP_DIR"] = os.getenv("TMP", os.getenv("TMPDIR", "/tmp"))  # nosec B108
 
     conf["CHANNELS"] = os.path.join(conf["HOME"], "MovistarTV.m3u")

@@ -188,7 +188,7 @@ def get_channel_id(channel_name):
 
 async def get_end_point():
     end_points = END_POINTS
-    ep_path = os.path.join(CONF["HOME"], ".xmltv", "cache", END_POINTS_FILE)
+    ep_path = os.path.join(CONF["CACHE_DIR"], END_POINTS_FILE)
     if await aio_os.path.exists(ep_path):
         try:
             async with async_open(ep_path) as f:

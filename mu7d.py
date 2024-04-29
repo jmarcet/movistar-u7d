@@ -778,9 +778,9 @@ if __name__ == "__main__":
     _g.U7D_URL = CONF["U7D_URL"]
     _g.VID_EXT = ".mkv" if CONF["MKV_OUTPUT"] else ".ts"
 
-    _g.cloud_data = os.path.join(CONF["HOME"], ".xmltv/cache/cloud.json")
-    _g.channels_data = os.path.join(CONF["HOME"], ".xmltv/cache/channels.json")
-    _g.epg_data = os.path.join(CONF["HOME"], ".xmltv/cache/epg.json")
+    _g.cloud_data = os.path.join(CONF["CACHE_DIR"], "cloud.json")
+    _g.channels_data = os.path.join(CONF["CACHE_DIR"], "channels.json")
+    _g.epg_data = os.path.join(CONF["CACHE_DIR"], "epg.json")
     _g.recordings_data = os.path.join(CONF["HOME"], "recordings.json")
     _g.timers_data = os.path.join(CONF["HOME"], "timers.conf")
 
