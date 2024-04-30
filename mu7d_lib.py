@@ -528,15 +528,15 @@ async def network_saturation():
         await asyncio.sleep(1)
 
 
-async def ongoing_vods(channel_id="", program_id="", filename="", _all=False, _fast=False):
+async def ongoing_vods(channel_id="", program_id="", filename="", all_=False, fast_=False):
     parent = os.getenv("U7D_PARENT", "0")  # if not WIN32 else None
     family = Process(int(parent)).children(recursive=True) if parent else process_iter()
 
-    if _fast:  # For U7D we just want to know if there are recordings in place
+    if fast_:  # For U7D we just want to know if there are recordings in place
         return "mu7d_vod REC " in str(family)
 
     if not WIN32:
-        regex = "^mu7d_vod REC " if not _all else "^mu7d_vod .*"
+        regex = "^mu7d_vod REC " if not all_ else "^mu7d_vod .*"
     else:
         regex = "^%smu7d_vod%s" % ((sys.executable.replace("\\", "\\\\") + " ") if EXT == ".py" else "", EXT)
 
@@ -549,7 +549,7 @@ async def ongoing_vods(channel_id="", program_id="", filename="", _all=False, _f
     regex += ")" if filename and program_id else ""
 
     vods = filter(None, map(lambda proc: proc_grep(proc, regex), family))
-    return tuple(vods) if not _all else "|".join([" ".join(proc.cmdline()).strip() for proc in vods])
+    return tuple(vods) if not all_ else "|".join([" ".join(proc.cmdline()).strip() for proc in vods])
 
 
 def parse_channels(data):
@@ -685,7 +685,7 @@ async def record_program(ch_id, pid, offset=0, time=0, cloud=False, comskip=0, i
         return "Event not found"
 
     filename = get_recording_name(ch_id, timestamp, cloud)
-    ongoing = await ongoing_vods(filename=filename, _all=True)
+    ongoing = await ongoing_vods(filename=filename, all_=True)
     if ongoing:
         log_suffix = f': [{ch_id:4}] [{pid}] [{timestamp}] "{filename}"'
         if f"{ch_id} {pid} -b {timestamp} " in ongoing:
@@ -1083,7 +1083,7 @@ async def timers_check(delay=0):  # pylint: disable=too-many-branches,too-many-l
                     curr_timers["cloud"][_f] = Timer(channel_id, timestamp, True, comskip, 0, 0, False, vo)
 
         _g._KEEP = kept
-        ongoing = await ongoing_vods(_all=True)  # we want to check against all ongoing vods, also in pp
+        ongoing = await ongoing_vods(all_=True)  # we want to check against all ongoing vods, also in pp
 
         log.debug("_KEEP=%s", str(_g._KEEP))
         log.debug("Ongoing VODs: |%s|", ongoing)
@@ -1128,7 +1128,7 @@ async def timers_check(delay=0):  # pylint: disable=too-many-branches,too-many-l
                 else:
                     program = get_program_name(filename)
 
-                    current = tuple(filter(lambda x: program in x, (await ongoing_vods(_all=True)).split("|")))
+                    current = tuple(filter(lambda x: program in x, (await ongoing_vods(all_=True)).split("|")))
                     if len(current) == ti.keep:
                         log.info('Recording %02d programs: SKIPPING [%d] "%s"', ti.keep, ti.ts, filename)
                         continue

@@ -225,7 +225,7 @@ async def handle_channel(request, channel_id=None, channel_name=None):
     if request.method == "HEAD":
         return response.HTTPResponse(content_type=MIME_WEBM, status=200)
 
-    if _g._NETWORK_SATURATED and not await ongoing_vods(_fast=True):
+    if _g._NETWORK_SATURATED and not await ongoing_vods(fast_=True):
         log.warning(f"[{request.ip}] {request.path} -> Network Saturated")
         raise ServiceUnavailable("Network Saturated")
 
@@ -328,7 +328,7 @@ async def handle_flussonic(request, url, channel_id=None, channel_name=None, clo
             return
         raise NotFound(f"Requested URL {request.path} not found")
 
-    if _g._NETWORK_SATURATED and not await ongoing_vods(_fast=True):
+    if _g._NETWORK_SATURATED and not await ongoing_vods(fast_=True):
         log.warning(f"[{request.ip}] {request.path} -> Network Saturated")
         raise ServiceUnavailable("Network Saturated")
 
