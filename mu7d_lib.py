@@ -462,7 +462,7 @@ async def load_epg():
                 await create_covers_cache()
 
         if not _g._t_timers:
-            if datetime.now().replace(minute=0, second=0).timestamp() <= _g._last_epg:
+            if datetime.now().replace(minute=0, second=0, microsecond=0).timestamp() <= _g._last_epg:
                 delay = int(max(5, boot_time() + 180 - time.time()))
                 if delay > 10:
                     log.info(f"Waiting {delay}s to check recording timers since the system just booted...")
@@ -1193,7 +1193,7 @@ async def update_epg():
             return
 
     await reload_epg()
-    _g._last_epg = int(datetime.now().replace(minute=0, second=0).timestamp())
+    _g._last_epg = int(datetime.now().replace(minute=0, second=0, microsecond=0).timestamp())
 
     if _g.RECORDINGS:
         if timers_lock.locked():
