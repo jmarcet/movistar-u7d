@@ -1,20 +1,24 @@
-## Nueva versión v6.0
+## Nueva versión v7.0
 
-- Actualizado a `Python 3.12`, con mucho mejor rendimiento.
+- Renombrado y reorganizado internamente. Ahora usa un único proceso, `mu7d`, lanzando `mu7d_tvg` para actualizar las EPGs y un `mu7d_vod` para cada grabación.
 
-- `ffmpeg` actualizado a la versión 6
+- Consumo de memoria y recursos enormemente reducidos. En Linux se puede usar con 100-120MB de RAM en lugar de 512MB.
 
-- Consumo de memoria y recursos enormemente reducidos. En Linux se puede usar con 192MB de RAM en lugar de 512MB.
+- Actualizado a `Python 3.12`, con mucho mejor rendimiento. Aunque es compatible con versiones anteriores de `Python`, la versión 3.12 mejora de forma importante la eficiencia y consumo de recursos.
+
+- `ffmpeg` actualizado a la versión 6 de `jellyfin-ffmpeg` con aceleración por hardware para todo tipo de entornos.
 
 - Las imágenes de docker ahora usan `debian-slim` y [jellyfin-ffmpeg](https://github.com/jellyfin/jellyfin-ffmpeg), con mucho mejor rendimiento que con `Alpine` y con aceleración de la codificación/decodificación de video tanto en `ffmpeg` como en `comskip`, con soporte de Intel QSV, AMD, Nvidia, Raspberry, ...
   - Las imágenes de docker están disponibles para `amd64, `arm64` y `arm`, con nuevas etiquetas `stable` y `unstable` y nuevas versiones `slim`, `stable-slim` y `unstable-slim`, sin `ffmpeg`/`ffprobe`/`comskip` y mucho más pequeñas.
   - Para Windows el `comskip` se debe [descargar](https://www.kaashoek.com/files/) por separado y copiarlo o bien junto a `mu7d` o bien en una ruta que esté en el `PATH`, es decir, que con escribir `comskip` en un `CMD`/`PowerShell` lo encuentre y ejecute.
 
+- Directorio de caché renombrado de `$HOME/.xmltv/cache` a `$HOME/.mu7d`
+
 - Fanart como imagen de los programas cuando está disponible, en formato panorámico y con mucha mejor calidad.
 
 - Sistema de mantenimiento de la caché de la EPG reescrito. Ya no debería haber huecos ni errores.
 
-- Actualizaciones de la EPG mucho más rápidas.
+- La primera vez que se ejecuta tardará un buen rato en tener la EPG completa de los 8 días. Una vez la tenga completa, se actualizará a todas las horas en punto tardando alrededor de 3 minutos.
 
 - Nueva playlist y guía de grabaciones locales, `MovistarTVLocal.m3u` & `local.xml`, accesible así igual que las grabaciones en la Nube de Movistar. `OTT Navigator` es la mejor alternativa para acceder a las mismas.
 
@@ -35,10 +39,12 @@
 - Cuando una grabación tiene un retraso de emisión mientras está en marcha, en lugar de ser cancelada se elimina el tiempo retrasado del principio. En caso de adelantarse sí se cancela y se repite.
 
 - Mensajes de diagnóstico en caso de error mejorados:
+  - Imposible parsear fichero de configuración.
   - IPTV de Movistar no accesible.
   - Multicast del IPTV de Movistar no accesible.
+  - Programas no disponibles del archivo aparecerán en los logs como NA y el resto de información del programa en cuestión.
 
-- Las grabaciones se hacen ahora en python puro, con `ffmpeg`, `ffprobe` y `comskip` reservado al postprocesado. Resultan así mucho más eficientes en recursos y también permiten hacer transcoding configurable en `mu7d.conf`.
+- Las grabaciones se hacen ahora en `Python` puro, con `ffmpeg`, `ffprobe` y `comskip` reservado al postprocesado. Resultan así mucho más eficientes en recursos y también permiten hacer transcoding configurable en `mu7d.conf`.
 
 - Si se establete `RECORDINGS_TMP`, las portadas de las grabaciones se cachean dentro de la carpeta `covers`, con la idea de no tener que despertar el HDD donde se almacenan las grabaciones con sólo moverse por la programación disponible.
 
@@ -60,8 +66,7 @@
   - `RECORDINGS_TRANSCODE_INPUT` & `RECORDINGS_TRANSCODE_OUTPUT`: permiten controlar el transcoding de (entrada y salida de) las grabaciones.
   - `RECORDINGS_UPGRADE`: actualiza los ficheros de metadatos de las grabaciones `-movistar.nfo`. Es necesario activarlo una vez para indexar correctamente grabaciones hechas con versiones anteriores a la v6.
   - ~~`TVG_THREADS`~~: opción eliminada. La EPG se descargará siempre con 8 hilos de ejecución.
-  - `U7D_PROCESSES`: número de procesos para la parte externa del proxy. Es extraño necesitar incrementarlo. Sólo relevante en UNIX.
-  - ~~`U7D_THREADS`~~: opción renombrada a `U7D_PROCESSES`.
+  - ~~`U7D_THREADS`~~: opción eliminada.
 
 - Nuevas opciones globales en `timers.conf`:
   - `comskip`: detectar anuncios y grabar capítulos en fichero `.ffmeta`.
