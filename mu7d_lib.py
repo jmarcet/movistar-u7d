@@ -361,19 +361,17 @@ async def get_recording_files(filename, cache=False):
 
 def get_recording_name(channel_id, timestamp, cloud=False):
     guide = _g._CLOUD if cloud else _g._EPGDATA
-
     epg = guide[channel_id][timestamp]
-    anchor = not any((epg.genre[0] in ("1", "8"), epg.serie))
 
     path = os.path.join(_g.RECORDINGS, get_channel_dir(channel_id))
     if epg.serie:
         path = os.path.join(path, get_safe_filename(epg.serie))
-    elif anchor:
+    else:
         path = os.path.join(path, get_safe_filename(epg.full_title))
-    path = path.rstrip(".").rstrip(",")
 
-    filename = os.path.join(path, get_safe_filename(epg.full_title))
-    if anchor:
+    filename = os.path.join(path.rstrip(" _.,;"), get_safe_filename(epg.full_title))
+
+    if not any((epg.genre[0] in ("1", "8"), epg.serie)):
         filename += f' - {datetime.fromtimestamp(timestamp).strftime("%Y%m%d_%H%M")}'
 
     return filename[len(_g.RECORDINGS) + 1 :]
@@ -624,8 +622,10 @@ async def prom_event(event, method, cloud=False, local=False, p_vod=None):
 
 
 async def prune_duplicates(channel_id, filename):
-    def _clean(string):
-        return re.sub(r"[^a-z0-9]", "", string.lower())
+    def _clean(fname):
+        return re.sub(r"[^a-z0-9]", "", os.path.basename(fname).lower())
+
+    new_files = await get_recording_files(filename, cache=True)
 
     for ts in tuple(
         ts
@@ -633,11 +633,7 @@ async def prune_duplicates(channel_id, filename):
         if _clean(_g._RECORDINGS[channel_id][ts].filename) in _clean(filename)
     ):
         duplicate = _g._RECORDINGS[channel_id][ts].filename
-        old_files = [
-            f
-            for f in await get_recording_files(duplicate, cache=True)
-            if f not in await get_recording_files(filename, cache=True)
-        ]
+        old_files = tuple(f for f in await get_recording_files(duplicate, cache=True) if f not in new_files)
 
         await remove(*old_files)
         [log.warning(f'REMOVED DUPLICATED "{file}"') for file in old_files if not await aio_os.path.exists(file)]
