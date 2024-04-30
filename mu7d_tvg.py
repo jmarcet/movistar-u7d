@@ -843,26 +843,32 @@ class XmlTV:
         self.__trans = str.maketrans("()!?", "❨❩ᴉ‽")
 
     # pylint: disable=too-many-branches,too-many-statements
-    async def __add_programmes_tags(self, channel_id, programs, local, tz_offset):
-        if not local:
-            ext_infos = []
-            async for batch in a.batched(programs.keys(), max(8, 2 * (os.cpu_count() or 1))):
+    async def __add_programmes_tags(self, ch_id, programs, local, tz_offset):
+        ext_infos = []
+        async for batch in a.batched(programs.keys(), 8 * (os.cpu_count() or 1)):
+            if not local:
                 ext_infos += await asyncio.gather(
-                    *(MovistarTV.get_epg_extended_info(channel_id, ts, programs[ts]) for ts in batch)
+                    *(MovistarTV.get_epg_extended_info(ch_id, ts, programs[ts]) for ts in batch)
                 )
-        else:
+            else:
+                ext_infos += await asyncio.gather(
+                    *(
+                        get_local_info(ch_id, ts, os.path.join(RECORDINGS, programs[ts]["filename"]), log, True)
+                        for ts in batch
+                    )
+                )
+
+        if local:
             tss = tuple(programs)
             last_idx = len(tss) - 1
 
         for idx, ts in enumerate(programs):
-            program = programs[ts]
-
+            ext_info = ext_infos[idx]
             if not local:
-                ext_info = ext_infos[idx]
+                program = programs[ts]
             else:
-                filename = os.path.join(RECORDINGS, program["filename"])
-                ext_info = await get_local_info(channel_id, ts, filename, log, extended=True)
                 if not ext_info:
+                    log.error(f"Metadatos no encontrados -> {programs[ts]}")
                     continue
                 program = ext_info
                 if idx < last_idx and ts + program["duration"] > tss[idx + 1]:
@@ -878,7 +884,7 @@ class XmlTV:
                 attr={
                     "start": f"{start} +0{tz_offset + dst_start}00",
                     "stop": f"{stop} +0{tz_offset + dst_stop}00",
-                    "channel": f"{channel_id}.movistar.tv",
+                    "channel": f"{ch_id}.movistar.tv",
                 },
                 pad=8,
                 child=True,
