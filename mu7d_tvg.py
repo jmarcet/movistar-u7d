@@ -49,23 +49,23 @@ log = logging.getLogger("TVG")
 
 
 DEMARCATIONS = {
-    "15": "Andalucia",
-    "34": "Aragon",
-    "13": "Asturias",
-    "29": "Cantabria",
-    "1": "Catalunya",
-    "38": "Castilla la Mancha",
-    "4": "Castilla y Leon",
-    "6": "Comunidad Valenciana",
-    "32": "Extremadura",
-    "24": "Galicia",
-    "10": "Islas Baleares",
-    "37": "Islas Canarias",
-    "31": "La Rioja",
-    "19": "Madrid",
-    "12": "Murcia",
-    "35": "Navarra",
-    "36": "Pais Vasco",
+    15: "Andalucia",
+    34: "Aragon",
+    13: "Asturias",
+    29: "Cantabria",
+    1: "Catalunya",
+    38: "Castilla la Mancha",
+    4: "Castilla y Leon",
+    6: "Comunidad Valenciana",
+    32: "Extremadura",
+    24: "Galicia",
+    10: "Islas Baleares",
+    37: "Islas Canarias",
+    31: "La Rioja",
+    19: "Madrid",
+    12: "Murcia",
+    35: "Navarra",
+    36: "Pais Vasco",
 }
 
 THEME_MAP = {
@@ -250,7 +250,7 @@ class MovistarTV:
             cfg = await Cache.load_config()
             if cfg:
                 if refresh:
-                    log.info(f'Demarcación: {DEMARCATIONS.get(str(cfg["demarcation"]), cfg["demarcation"])}')
+                    log.info(f'Demarcación: {DEMARCATIONS.get(cfg["demarcation"], cfg["demarcation"])}')
                     log.info(f'Paquete contratado: {cfg["tvPackages"]}')
                 return cfg
 
@@ -263,7 +263,7 @@ class MovistarTV:
         if not all((client, params, platform)):
             raise IPTVNetworkError("IPTV de Movistar no detectado")
 
-        log.info(f'Demarcación: {DEMARCATIONS.get(str(client["demarcation"]), client["demarcation"])}')
+        log.info(f'Demarcación: {DEMARCATIONS.get(client["demarcation"], client["demarcation"])}')
         log.info(f'Paquete contratado: {client["tvPackages"]}')
 
         dvb_entry_point = platform["dvbConfig"]["dvbipiEntryPoint"].split(":")
@@ -517,7 +517,7 @@ class MulticastIPTV:
             if data:
                 return data
 
-        _demarcation = MulticastIPTV.get_demarcation_name()
+        _demarcation = DEMARCATIONS.get(_CONFIG["demarcation"], f'la demarcación {_CONFIG["demarcation"]}')
         log.info("Buscando el Proveedor de Servicios de %s...", _demarcation)
 
         xml = (await MulticastIPTV.get_xml_files(_CONFIG["mcast_grp"], _CONFIG["mcast_port"], init=True))["1_0"]
@@ -627,10 +627,6 @@ class MulticastIPTV:
     @staticmethod
     def decode_string(string):
         return unescape(("".join(chr(char ^ 0x15) for char in string)).encode("latin1").decode("utf8"))
-
-    @staticmethod
-    def get_demarcation_name():
-        return DEMARCATIONS.get(str(_CONFIG["demarcation"]), f'la demarcación {_CONFIG["demarcation"]}')
 
     async def get_epg(self):
         self.__cached_epg = await Cache.load_epg()
