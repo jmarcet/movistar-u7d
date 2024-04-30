@@ -132,16 +132,16 @@ def _mu7d_config():  # pylint: disable=too-many-branches
     except (AttributeError, OSError, PermissionError, TOMLDecodeError, TypeError, ValueError) as ex:
         return {"Exception": ex}
 
-    if "HOME" not in conf:
+    if "HOME" not in conf or not os.path.exists(conf["HOME"]):
         conf["HOME"] = os.getenv("HOME", os.getenv("USERPROFILE"))
 
-    if "UID" not in conf:
+    if "UID" not in conf or not isinstance(conf["UID"], int):
         conf["UID"] = 65534
 
-    if "GID" not in conf:
+    if "GID" not in conf or not isinstance(conf["GID"], int):
         conf["GID"] = 65534
 
-    if "COMSKIP" not in conf or not which("comskip"):
+    if "COMSKIP" not in conf or not which("comskip") or not isinstance(conf["COMSKIP"], str):
         conf["COMSKIP"] = None
     else:
         if WIN32:
@@ -192,8 +192,18 @@ def _mu7d_config():  # pylint: disable=too-many-branches
     if "RECORDINGS_M3U" not in conf or not isinstance(conf["RECORDINGS_M3U"], bool):
         conf["RECORDINGS_M3U"] = False
 
+    if not WIN32 and conf["IPTV_BW_SOFT"]:
+        conf["RECORDINGS_PROCESSES"] = 9999
+    elif "RECORDINGS_PROCESSES" not in conf or not isinstance(conf["RECORDINGS_PROCESSES"], int):
+        conf["RECORDINGS_PROCESSES"] = 4
+
     if "RECORDINGS_REINDEX" not in conf or not isinstance(conf["RECORDINGS_REINDEX"], bool):
         conf["RECORDINGS_REINDEX"] = False
+
+    if "RECORDINGS_TMP" not in conf:
+        conf["RECORDINGS_TMP"] = None
+    else:
+        conf["RECORDINGS_TMP"] = conf["RECORDINGS_TMP"].rstrip("/").rstrip("\\")
 
     if "RECORDINGS_TRANSCODE_INPUT" not in conf:
         conf["RECORDINGS_TRANSCODE_INPUT"] = []
@@ -205,24 +215,11 @@ def _mu7d_config():  # pylint: disable=too-many-branches
         conf["RECORDINGS_TRANSCODE_OUTPUT"] += f" -packetsize {CHUNK} -ts_packetsize {CHUNK} -seek2any 1"
     conf["RECORDINGS_TRANSCODE_OUTPUT"] = conf["RECORDINGS_TRANSCODE_OUTPUT"].split()
 
-    if "RECORDINGS_TMP" not in conf:
-        conf["RECORDINGS_TMP"] = None
-    else:
-        conf["RECORDINGS_TMP"] = conf["RECORDINGS_TMP"].rstrip("/").rstrip("\\")
-
     if "RECORDINGS_UPGRADE" not in conf or conf["RECORDINGS_UPGRADE"] not in (-2, -1, 0, 1, 2):
         conf["RECORDINGS_UPGRADE"] = 0
 
-    if not WIN32 and conf["IPTV_BW_SOFT"]:
-        conf["RECORDINGS_PROCESSES"] = 9999
-    elif "RECORDINGS_PROCESSES" not in conf or not isinstance(conf["RECORDINGS_PROCESSES"], int):
-        conf["RECORDINGS_PROCESSES"] = 4
-
     if "U7D_PORT" not in conf or not isinstance(conf["U7D_PORT"], int):
         conf["U7D_PORT"] = 8888
-
-    if "U7D_PROCESSES" not in conf or not isinstance(conf["U7D_PROCESSES"], int):
-        conf["U7D_PROCESSES"] = 1
 
     conf["CACHE_DIR"] = os.path.join(conf["HOME"], ".mu7d")
     conf["TMP_DIR"] = os.getenv("TMP", os.getenv("TMPDIR", "/tmp"))  # nosec B108
