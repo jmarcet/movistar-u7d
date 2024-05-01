@@ -15,7 +15,7 @@ import sys
 import time
 from asyncio.exceptions import CancelledError
 from collections import defaultdict, deque
-from contextlib import closing
+from contextlib import closing, suppress
 from datetime import date, datetime, timedelta
 from glob import iglob
 from html import escape, unescape
@@ -305,9 +305,11 @@ class MulticastIPTV:
         self.__cached_epg = defaultdict(dict)
         self.__channels_keys = {}
         self.__epg = defaultdict(dict)
+        self.__epg_days = [0] * 8
         self.__epg_lock = asyncio.Lock()
         self.__expired = 0
         self.__fixed = 0
+        self.__gaps = 0
         self.__new_gaps = defaultdict(list)
         self.__xml_data = {}
 
@@ -355,7 +357,7 @@ class MulticastIPTV:
                         log.warning(msg.replace(" GAP    ", " EXTEND "))
                         fixed += 1
                     else:
-                        log.warning(msg)
+                        log.debug(msg)
                         gaps += _next - _end
 
             elif _end > _next:
@@ -406,20 +408,18 @@ class MulticastIPTV:
             if fixed_over:
                 _s = "programas acababan" if fixed_over > 1 else "programa acababa"
                 log.warning(f"{fixed_over} {_s} después de que el siguiente empezara")
-        else:
-            log.info("Nuevo EPG sin errores")
 
-        self.__fixed = fixed_diff + fixed_over
-
-        # log.debug("__fix_epg(): %s", str(self.__epg.keys()))
+        self.__fixed += fixed_diff + fixed_over
 
     async def __get_bin_epg(self):
         log.info("Descargando 8 días de EPG binario...")
-
-        segments = self.__xml_data["segments"]
-        await asyncio.gather(
-            *(self.__get_epg_day(segments[key]["Address"], segments[key]["Port"], key) for key in segments)
+        segs = self.__xml_data["segments"]
+        tasks = tuple(
+            asyncio.create_task(self.__get_epg_day(segs[key]["Address"], segs[key]["Port"], key), name="epg_day")
+            for key in segs
         )
+        with suppress(CancelledError):
+            await asyncio.gather(*tasks)
 
     @staticmethod
     def __get_channels(root):
@@ -472,14 +472,36 @@ class MulticastIPTV:
         del self.__xml_data["packages"]
 
     async def __get_epg_day(self, mcast_grp, mcast_port, source):
+        epg_bin = source.split(".")[0]
+        epg_day = int(epg_bin.split("_")[1])
+
         while True:
             try:
                 await self.__parse_bin_epg_day(await self.get_xml_files(mcast_grp, mcast_port))
+            except CancelledError:
+                break
             except Exception as ex:  # pylint: disable=broad-exception-caught
-                log.debug("%s -> %s", source.split(".")[0], repr(ex))
+                log.debug("%s -> %s", epg_bin, repr(ex))
                 continue
-            log.info("%s -> descargado", source.split(".")[0])
-            break
+
+            if not self.__epg_days[epg_day]:
+                log.info("%s -> descargado", epg_bin)
+
+            async with self.__epg_lock:
+                self.__fix_epg()
+                gaps = self.__merge_epg()
+
+                self.__epg_days[epg_day] += 1
+                await Cache.save_epg(self.__cached_epg)
+
+                if all(self.__epg_days):
+                    if not gaps:
+                        tuple(t.cancel() for t in asyncio.all_tasks() if t.get_name() == "epg_day")
+                        break
+
+                    if self.__gaps != gaps:
+                        self.__gaps = gaps
+                        log.warning(f"EPG con huecos de [{str(timedelta(seconds=gaps))}s]...")
 
     @staticmethod
     def __get_packages(root):
@@ -571,7 +593,6 @@ class MulticastIPTV:
             self.__fixed += _fixed
             gaps += _gaps
 
-        # log.debug("__merge_epg(): %s", str(self.__cached_epg.keys()))
         return gaps
 
     @staticmethod
@@ -608,7 +629,6 @@ class MulticastIPTV:
                 continue
             async with self.__epg_lock:
                 self.__epg[key].update(self.__parse_bin_epg_body(head["data"], head["service_id"]))
-        # log.debug("__parse_bin_epg(): %s", str(self.__epg.keys()))
 
     @staticmethod
     def __parse_bin_epg_header(data):
@@ -629,11 +649,18 @@ class MulticastIPTV:
         return unescape(("".join(chr(char ^ 0x15) for char in string)).encode("latin1").decode("utf8"))
 
     async def get_epg(self):
-        self.__cached_epg = await Cache.load_epg()
-
-        skipped = 0
         _channels = self.__xml_data["channels"]
         _services = self.__xml_data["services"]
+
+        self.__cached_epg = await Cache.load_epg()
+        # Services not in channels are special access channels like DAZN, Disney, Netflix & Prime
+        self.__channels_keys = {
+            _channels[key].get("replacement", key): key
+            for key in _services
+            if key in EPG_CHANNELS & set(_channels)
+        }
+
+        skipped = 0
         for channel_id in (ch for ch in _services if ch in set(_channels) - EPG_CHANNELS):
             channel_name = _channels[channel_id]["name"].strip(" *")
             channel_number = _services[channel_id]
@@ -649,26 +676,16 @@ class MulticastIPTV:
                 f"Canal{'es' if len(no_chs) > 1 else ''} no existente{'s' if len(no_chs) > 1 else ''}: {no_chs}"
             )
 
-        # Services not in channels are special access channels like DAZN, Disney, Netflix & Prime
-        self.__channels_keys = {
-            _channels[key].get("replacement", key): key
-            for key in _services
-            if key in EPG_CHANNELS & set(_channels)
-        }
+        await self.__get_bin_epg()
+        del self.__epg, self.__xml_data["segments"]
 
-        while True:
-            await self.__get_bin_epg()
-            self.__fix_epg()
-            gaps = self.__merge_epg()
-            self.__expire_epg()
-            self.__sort_epg()
-            await Cache.save_epg(self.__cached_epg)
-            if not gaps:
-                del self.__epg, self.__xml_data["segments"]
-                break
-            log.warning(f"EPG con huecos de [{str(timedelta(seconds=gaps))}s]. Descargando de nuevo...")
+        self.__expire_epg()
+        self.__sort_epg()
+
+        await Cache.save_epg(self.__cached_epg)
 
         log.info(f"Eventos en Caché: Arreglados = {self.__fixed} _ Caducados = {self.__expired}")
+
         return self.__cached_epg
 
     async def get_epg_cloud(self):
@@ -1054,6 +1071,8 @@ class XmlTV:
         self.__doc.clear()
 
     def write_m3u(self, file_path, cloud=None, local=None):
+        if not any((cloud, local)):
+            log.info("Generando lista de canales...")
         m3u = '#EXTM3U name="'
         m3u += "Cloud " if cloud else "Local " if local else ""
         m3u += 'MovistarTV" catchup="flussonic-ts" catchup-days="'
