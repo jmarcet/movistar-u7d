@@ -93,6 +93,7 @@ from mu7d_lib import (
     reload_recordings,
     timers_check,
     timers_lock,
+    tvgrab_lock,
     update_epg,
     update_recordings,
 )
@@ -580,6 +581,9 @@ async def handle_recordings(request):
     if not _g.RECORDINGS:
         raise NotFound(f"Requested URL {request.path} not found")
 
+    if recordings_lock.locked():
+        raise Forbidden("Already reindexing/reloading recordings")
+
     app.add_task(reindex_recordings() if request.route.path == "reindex_recordings" else reload_recordings())
     _m = "Reindex" if request.route.path == "reindex_recordings" else "Reload"
     return response.json({"status": f"Recordings {_m} Queued"}, 200)
@@ -588,6 +592,9 @@ async def handle_recordings(request):
 @app.get("/reload_epg", name="epg_reload")
 @app.get("/update_epg", name="epg_update")
 async def handle_reload_epg(request):
+    if tvgrab_lock.locked():
+        raise Forbidden("Already reloading/updating EPG")
+
     app.add_task(reload_epg() if request.route.path == "reload_epg" else update_epg())
     _m = "Reload" if request.route.path == "reload_epg" else "Update"
     return response.json({"status": f"EPG {_m} Queued"}, 200)
