@@ -431,11 +431,13 @@ async def postprocess(vod_info):  # pylint: disable=too-many-statements
 
     async def _step_3():
         global COMSKIP
-        nonlocal proc
+        nonlocal proc, step
+
+        step += 1
 
         cmd = ("comskip", *COMSKIP, "--ts", _tmpname + TMP_EXT)
 
-        log.info("POSTPROCESS #3A - COMSKIP - Checking recording for commercials")
+        log.info(f"POSTPROCESS #{step}A - COMSKIP - Checking recording for commercials")
         async with async_open(COMSKIP_LOG, "ab") as f:
             start = time.time()
             proc = await asyncio.create_subprocess_exec(*cmd, stdin=NULL, stdout=f, stderr=f)
@@ -443,17 +445,18 @@ async def postprocess(vod_info):  # pylint: disable=too-many-statements
             end = time.time()
 
         COMSKIP = None if proc.returncode else COMSKIP
-        msg1 = f"POSTPROCESS #3B - COMSKIP - Commercials {'NOT found' if proc.returncode else 'found'}"
+        msg1 = f"POSTPROCESS #{step}B - COMSKIP - Commercials {'NOT found' if proc.returncode else 'found'}"
         msg2 = f"In [{str(timedelta(seconds=round(end - start)))}s]"
         msg = DIV_LOG % (msg1, msg2)
         log.warning(msg) if proc.returncode else log.info(msg)
 
     async def _step_4():
-        nonlocal proc, tags
+        nonlocal proc, step, tags
 
         if COMSKIP and await aio_os.path.exists(_tmpname + CHP_EXT):
             intervals = []
             pieces = []
+            step += 1
 
             async with async_open(_tmpname + CHP_EXT) as f:
                 c = await f.read()
@@ -461,7 +464,7 @@ async def postprocess(vod_info):  # pylint: disable=too-many-statements
             _s = filter(lambda x: "Show Segment" in x, (" ".join(c.splitlines()).split("[CHAPTER]"))[1:])
             segments = tuple(_s)
             if not segments:
-                log.warning("POSTPROCESS #4  - COMSKIP - Could not find any Show Segment")
+                log.warning(f"POSTPROCESS #{step}  - COMSKIP - Could not find any Show Segment")
                 await _cleanup(CHP_EXT, ".log", ".logo.txt", ".txt")
                 return
 
@@ -479,7 +482,7 @@ async def postprocess(vod_info):  # pylint: disable=too-many-statements
                     cmd += ("-c", "copy", "-map", "0", *tags, "-v", "error", "-y", pieces[-1])
 
                     ch = chr(idx + 64)
-                    msg1, msg2 = f"POSTPROCESS #4{ch} - Cutting Chapter [{idx:02}]", f"({start} - {end})"
+                    msg1, msg2 = f"POSTPROCESS #{step}{ch} - Cutting Chapter [{idx:02}]", f"({start} - {end})"
                     log.info(DIV_LOG, msg1, msg2)
                     proc = await asyncio.create_subprocess_exec(*cmd, stdin=NULL, stdout=PIPE, stderr=OUT)
 
@@ -489,7 +492,7 @@ async def postprocess(vod_info):  # pylint: disable=too-many-statements
                 cmd += (*tags, "-v", "error", "-y", "-f", "mpegts", _tmpname + TMP_EXT2)
 
                 ch = chr(ord(ch) + 1)
-                log.info(f"POSTPROCESS #4{ch} - Merging recording w/o commercials")
+                log.info(f"POSTPROCESS #{step}{ch} - Merging recording w/o commercials")
                 proc = await asyncio.create_subprocess_exec(*cmd, stdin=NULL, stdout=PIPE, stderr=OUT)
 
                 await _check_process("Failed merging recording w/o commercials")
@@ -498,7 +501,7 @@ async def postprocess(vod_info):  # pylint: disable=too-many-statements
                 cmd = ("ffmpeg", "-i", _tmpname + TMP_EXT, "-i", _tmpname + CHP_EXT, *tags)
                 cmd += ("-v", "error", "-y", "-f", "matroska", _tmpname + TMP_EXT2)
 
-                log.info("POSTPROCESS #4  - COMSKIP - Merging mkv chapters")
+                log.info(f"POSTPROCESS #{step}  - COMSKIP - Merging mkv chapters")
                 proc = await asyncio.create_subprocess_exec(*cmd, stdin=NULL, stdout=PIPE, stderr=OUT)
 
                 await _check_process("Failed merging mkv chapters")
@@ -517,14 +520,16 @@ async def postprocess(vod_info):  # pylint: disable=too-many-statements
             await remove(*pieces)
 
     async def _step_5():
-        nonlocal mtime
+        nonlocal mtime, step
+
+        step += 1
 
         duration = await _get_duration(_tmpname + TMP_EXT)
         length = f"[{str(timedelta(seconds=duration))}s]"
         if COMSKIP and _args.time != duration:
             cmrcls = f"{str(timedelta(seconds=_args.time - duration))}s]"
             length = f" [{str(timedelta(seconds=_args.time))}s - {cmrcls} = {length}"
-        log.info(DIV_LOG, "POSTPROCESS #5  - Archiving recording", length)
+        log.info(DIV_LOG, f"POSTPROCESS #{step}  - Archiving recording", length)
 
         await _archive_recording()
 
@@ -553,6 +558,7 @@ async def postprocess(vod_info):  # pylint: disable=too-many-statements
 
     await asyncio.sleep(0.1)  # Prioritize the main loop
 
+    step = 2
     metadata = proc = None
     mtime = vod_info["beginTime"] // 1000 + _args.start
     tags = ["-metadata", 'service_name="%s"' % vod_info["channelName"]]
