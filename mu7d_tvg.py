@@ -91,7 +91,11 @@ class Cache:
     async def check_dirs():
         progs_path = os.path.join(CACHE_DIR, "programs")
         if not await aio_os.path.exists(progs_path):
-            await aio_os.makedirs(progs_path)
+            try:
+                await aio_os.makedirs(progs_path)
+            except (OSError, PermissionError):
+                log.error(f"Imposible escribir en directorio de caché '{CACHE_DIR}'")
+                sys.exit(1)
 
     @staticmethod
     async def clean():
