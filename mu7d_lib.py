@@ -810,9 +810,20 @@ async def reindex_recordings():
 
 
 async def reload_epg():
-    if not await a.any(a.map(aio_os.path.exists, (_g.CHANNELS, _g.channels_data))) and await a.all(
-        a.map(aio_os.path.exists, (_g.epg_data, _g.GUIDE, _g.GUIDE + ".gz"))
-    ):
+    if await a.all(a.map(aio_os.path.exists, (_g.CHANNELS, _g.channels_data))):
+        async with epg_lock:
+            try:
+                async with async_open(_g.channels_data, encoding="utf8") as f:
+                    _g._CHANNELS = json.loads(await f.read(), object_hook=parse_channels)["data"]
+            except (FileNotFoundError, JSONDecodeError, OSError, PermissionError, TypeError, ValueError) as ex:
+                log.error(f"Failed to load Channels metadata {repr(ex)}")
+                await remove(_g.channels_data, _g.epg_data)
+                return await reload_epg()
+
+    elif await a.all(a.map(aio_os.path.exists, (_g.epg_data, _g.GUIDE, _g.GUIDE + ".gz"))):
+        if tvgrab_lock.locked():
+            return
+
         log.warning("Missing channel list! Need to download it. Please be patient...")
 
         cmd = (f"mu7d_tvg{EXT}", "--m3u", _g.CHANNELS)
@@ -822,18 +833,17 @@ async def reload_epg():
     if not await a.all(
         a.map(aio_os.path.exists, (_g.CHANNELS, _g.channels_data, _g.epg_data, _g.GUIDE, _g.GUIDE + ".gz"))
     ):
+        if _g._CHANNELS and await a.all(a.map(aio_os.path.exists, (_g.CHANNELS, _g.channels_data))):
+            log.info(f"Channels         Updated => {_g.U7D_URL}/MovistarTV.m3u")
+            log.info(f"Total: {len(_g._CHANNELS):2} Channels")
+
+        if tvgrab_lock.locked():
+            return
+
         log.warning("Missing EPG data! Need to download it. Please be patient...")
         return await update_epg()
 
     async with epg_lock:
-        try:
-            async with async_open(_g.channels_data, encoding="utf8") as f:
-                _g._CHANNELS = json.loads(await f.read(), object_hook=parse_channels)["data"]
-        except (FileNotFoundError, JSONDecodeError, OSError, PermissionError, TypeError, ValueError) as ex:
-            log.error(f"Failed to load Channels metadata {repr(ex)}")
-            await remove(_g.channels_data, _g.epg_data)
-            return await reload_epg()
-
         try:
             async with async_open(_g.epg_data, encoding="utf8") as f:
                 _g._EPGDATA = json.loads(await f.read(), object_hook=parse_epg)["data"]
@@ -844,7 +854,7 @@ async def reload_epg():
 
         log.info(f"Channels  &  EPG Updated => {_g.U7D_URL}/MovistarTV.m3u      - {_g.U7D_URL}/guide.xml.gz")
         nr_epg = sum((len(_g._EPGDATA[channel]) for channel in _g._EPGDATA))
-        log.info(f"Total: {len(_g._EPGDATA):2} Channels & {nr_epg:5} EPG entries")
+        log.info(f"Total: {len(_g._CHANNELS):2} Channels & {nr_epg:5} EPG entries")
 
     await update_cloud()
     freemem()
