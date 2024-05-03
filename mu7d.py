@@ -743,6 +743,9 @@ if __name__ == "__main__":
         log.critical(f'Imposible parsear fichero de configuración => {repr(CONF["Exception"])}')
         _exit(1)
 
+    if not WIN32:
+        os.umask(0o002)
+
     if LINUX and os.getuid() == 0 and any(("UID" in CONF, "GID" in CONF)):
         log.info("Dropping privileges...")
         if "GID" in CONF:
