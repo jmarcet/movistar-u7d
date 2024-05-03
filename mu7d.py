@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 
 import asyncio
+import logging
 import os
 import sys
 import time
@@ -56,6 +57,7 @@ from mu7d_cfg import (
     VERSION,
     VID_EXTS,
     WIN32,
+    add_logfile,
 )
 from mu7d_lib import (
     IPTVNetworkError,
@@ -741,11 +743,6 @@ if __name__ == "__main__":
         log.critical(f'Imposible parsear fichero de configuración => {repr(CONF["Exception"])}')
         _exit(1)
 
-    banner = f"Movistar U7D v{VERSION}"
-    log.info("=" * len(banner))
-    log.info(banner)
-    log.info("=" * len(banner))
-
     if LINUX and os.getuid() == 0 and any(("UID" in CONF, "GID" in CONF)):
         log.info("Dropping privileges...")
         if "GID" in CONF:
@@ -758,6 +755,15 @@ if __name__ == "__main__":
                 os.setuid(CONF["UID"])
             except PermissionError:
                 log.warning(f"Could not drop privileges to GID {CONF['GID']}")
+
+    if CONF["LOG_TO_FILE"]:
+        if add_logfile(log, CONF["LOG_TO_FILE"], CONF["DEBUG"] and logging.DEBUG or logging.INFO):
+            log.error(f'Cannot write logs to {CONF["LOG_TO_FILE"]}')
+
+    banner = f"Movistar U7D v{VERSION}"
+    log.info("=" * len(banner))
+    log.info(banner)
+    log.info("=" * len(banner))
 
     os.environ["PATH"] = "%s;%s" % (os.path.dirname(__file__), os.getenv("PATH"))
     os.environ["PYTHONOPTIMIZE"] = "0" if CONF["DEBUG"] else "2"

@@ -56,7 +56,6 @@ from mu7d_cfg import (
     WIN32,
     XML_INT_KEYS,
     YEAR_SECONDS,
-    add_logfile,
 )
 
 if WIN32:
@@ -97,10 +96,6 @@ logging.getLogger("sanic.root").disabled = True
 logging.getLogger("sanic.server").disabled = True
 
 logging.basicConfig(datefmt=DATEFMT, format=FMT, level=CONF.get("DEBUG", True) and logging.DEBUG or logging.INFO)
-
-if CONF.get("LOG_TO_FILE"):
-    if add_logfile(log, CONF["LOG_TO_FILE"], CONF["DEBUG"] and logging.DEBUG or logging.INFO):
-        log.error(f'Cannot write logs to {CONF["LOG_TO_FILE"]}')
 
 
 class IPTVNetworkError(Exception):
