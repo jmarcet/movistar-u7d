@@ -116,6 +116,7 @@ async def after_server_start(app):
 
     _g._CHANNELS = {}
     _g._CLOUD = {}
+    _g._DELAYED = set()
     _g._EPGDATA = {}
     _g._KEEP = defaultdict(dict)
     _g._RECORDINGS = defaultdict(dict)

@@ -702,7 +702,9 @@ async def record_program(ch_id, pid, offset=0, time=0, cloud=False, comskip=0, i
             await asyncio.sleep(5)
         elif timestamp > prev_ts:
             msg = DIV_TWO % ("Event DELAYED", begin_time, log_suffix)
-            log.info(msg)
+            if filename not in _g._DELAYED:
+                _g._DELAYED.add(filename)
+                log.info(msg)
             return re.sub(r"\s+:", ":", msg)
 
     if _g._NETWORK_SATURATION:
@@ -1089,7 +1091,9 @@ async def timers_check(delay=0):  # pylint: disable=too-many-branches,too-many-l
 
         _g._KEEP = kept
         ongoing = await ongoing_vods(all_=True)  # we want to check against all ongoing vods, also in pp
+        [_g._DELAYED.remove(filename) for filename in _g._DELAYED if filename not in ongoing]
 
+        log.debug("_DELAYED=%s", str(_g._DELAYED))
         log.debug("_KEEP=%s", str(_g._KEEP))
         log.debug("Ongoing VODs: |%s|", ongoing)
 
@@ -1114,6 +1118,9 @@ async def timers_check(delay=0):  # pylint: disable=too-many-branches,too-many-l
 
             if f"{ti.ch_id} {pid} -b " not in ongoing and filename in ongoing:
                 continue  # repeated event
+
+            if filename in _g._DELAYED:
+                continue  # recording already ongoing but delayed
 
             _x = filter(
                 lambda x: filename.startswith(_g._RECORDINGS[ti.ch_id][x].filename), _g._RECORDINGS[ti.ch_id]
