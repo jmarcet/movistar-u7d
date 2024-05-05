@@ -120,6 +120,7 @@ async def after_server_start(app):
     _g._EPGDATA = {}
     _g._KEEP = defaultdict(dict)
     _g._RECORDINGS = defaultdict(dict)
+    _g._SHUTDOWN = False
 
     _g._IPTV = get_iptv_ip()
 
@@ -148,19 +149,22 @@ async def after_server_start(app):
 
 @app.listener("before_server_stop")
 async def before_server_stop(app):  # pylint: disable=unused-argument
-    # Required to not leave _vod processes behind whne mu7d dies
-    tasks = tuple(task for task in asyncio.all_tasks() if task is not asyncio.current_task())
-    log.debug("Cancelling tasks...")
-    tuple(task.cancel() for task in tasks)
-    # Wait for vod tasks to end so _vod processes do not stay alive after mu7d dies
-    with suppress(CancelledError):
-        log.debug("Gathering vods...")
-        await asyncio.gather(*(t for t in tasks if t.get_name() == "vod"))
-    log.info("BYE")
+    _g._SHUTDOWN = True
+
+    if not WIN32:
+        tasks = tuple(task for task in asyncio.all_tasks() if task is not asyncio.current_task())
+        log.debug("Cancelling tasks...")
+        tuple(task.cancel() for task in tasks)
+        await _wait_children()
 
 
 @app.listener("after_server_stop")
 async def after_server_stop(app):  # pylint: disable=unused-argument
+    if WIN32:
+        await _wait_children()
+
+    log.info("BYE")
+
     if WIN32:
         input("\nPulsa una tecla para terminar...")
 
@@ -260,7 +264,7 @@ async def handle_channel(request, channel_id=None, channel_name=None):
                     )
                 )
 
-                while True:
+                while not _g._SHUTDOWN:
                     await _response.send((await stream.recv())[0][28:])
 
     finally:
@@ -362,7 +366,7 @@ async def handle_flussonic(request, url, channel_id=None, channel_name=None, clo
 
             prom = app.add_task(add_prom_event(event._replace(lat=time.time() - _start), cloud, local, p_vod))
 
-            while True:
+            while not _g._SHUTDOWN:
                 await _response.send((await stream.recv())[0])
 
     finally:
@@ -648,7 +652,7 @@ async def transcode(request, event, p_vod, channel_id=0, filename="", offset=0, 
     prom = app.add_task(add_prom_event(event._replace(lat=time.time() - event.id), p_vod=p_vod))
 
     try:
-        while True:
+        while not _g._SHUTDOWN:
             content = await proc.stdout.read(BUFF)
             if len(content) < 1:
                 break
@@ -740,6 +744,13 @@ if __name__ == "__main__":
                     else:
                         raise LocalNetworkError(f"Unable to get address from interface {iptv_iface}...") from ex
 
+    async def _wait_children():
+        with suppress(ChildProcessError):
+            if Process().children():
+                log.debug("Waiting for children...")
+                while Process().children():
+                    await asyncio.sleep(0.1)
+
     if CONF.get("Exception"):
         log.critical(f'Imposible parsear fichero de configuración => {repr(CONF["Exception"])}')
         _exit(1)
@@ -791,6 +802,7 @@ if __name__ == "__main__":
     _g.RECORDINGS_PROCESSES = CONF["RECORDINGS_PROCESSES"]
     _g.RECORDINGS_TMP = CONF["RECORDINGS_TMP"]
     _g.RECORDINGS_UPGRADE = CONF["RECORDINGS_UPGRADE"]
+    _g.TVG_BUSY = CONF["TVG_BUSY"]
     _g.U7D_PORT = CONF["U7D_PORT"]
     _g.U7D_URL = CONF["U7D_URL"]
     _g.VID_EXT = ".mkv" if CONF["MKV_OUTPUT"] else ".ts"
@@ -833,6 +845,8 @@ if __name__ == "__main__":
         _exit(0)
     except (IPTVNetworkError, LocalNetworkError) as err:
         log.critical(err)
+        _exit(1)
+    except RuntimeError:
         _exit(1)
     except Timeout:
         log.critical("Cannot be run more than once!")

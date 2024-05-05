@@ -230,6 +230,7 @@ def _mu7d_config():  # pylint: disable=too-many-branches
     conf["GUIDE"] = os.path.join(conf["HOME"], "guide.xml")
     conf["GUIDE_CLOUD"] = os.path.join(conf["HOME"], "cloud.xml")
     conf["GUIDE_LOCAL"] = os.path.join(conf["HOME"], "local.xml")
+    conf["TVG_BUSY"] = os.path.join(conf["CACHE_DIR"], ".tvg.busy")
     conf["U7D_URL"] = f"http://{conf['LAN_IP']}:{conf['U7D_PORT']}"
 
     return conf

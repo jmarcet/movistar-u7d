@@ -21,6 +21,7 @@ from glob import iglob
 from html import escape, unescape
 from itertools import combinations
 from json import JSONDecodeError
+from pathlib import Path
 from socket import (
     AF_INET,
     IP_ADD_MEMBERSHIP,
@@ -43,7 +44,7 @@ from defusedxml.ElementTree import ParseError, fromstring
 from filelock import FileLock, Timeout
 
 from mu7d_cfg import CONF, DATEFMT, END_POINTS_FILE, FMT, UA, VERSION, WIN32, add_logfile
-from mu7d_lib import IPTVNetworkError, get_end_point, get_iptv_ip, get_local_info, rename
+from mu7d_lib import IPTVNetworkError, get_end_point, get_iptv_ip, get_local_info, remove, rename
 
 log = logging.getLogger("TVG")
 
@@ -683,6 +684,9 @@ class MulticastIPTV:
         await self.__get_bin_epg()
         del self.__epg, self.__xml_data["segments"]
 
+        if not self.__cached_epg:
+            return
+
         self.__expire_epg()
         self.__sort_epg()
 
@@ -1041,7 +1045,10 @@ class XmlTV:
         with codecs.open(file_path, "w", "UTF-8") as f:
             f.write(content)
 
-    async def generate_xml(self, parsed_epg, local=False):
+    async def generate_xml(self, parsed_epg, cloud=None, local=None):
+        if not any((cloud, local)):
+            log.info("Generando guía XML...")
+
         attr = {
             "date": datetime.now().strftime("%Y%m%d%H%M%S"),
             "source-info-name": "Movistar IPTV Spain",
@@ -1127,86 +1134,89 @@ def create_args_parser():
     return parser
 
 
-async def tvg_main(args, refresh, time_start):
+async def tvg_main(args, time_start):
     global _CONFIG, _END_POINT, _DEADLINE, _MIPTV, _SESSION, _XMLTV
+
+    _END_POINT = await get_end_point()
+    if not _END_POINT:
+        return
 
     _DEADLINE = int(datetime.combine(date.today() - timedelta(days=7), datetime.min.time()).timestamp())
 
-    await Cache.cache(full=bool(args.m3u or args.guide))  # Inicializa la caché
+    add_exit_handlers(asyncio.get_running_loop())
 
-    _SESSION = aiohttp.ClientSession(headers={"User-Agent": UA}, json_serialize=json.dumps)
+    full = refresh = any((args.m3u, args.guide))
+    if refresh:
+        epg_metadata = os.path.join(CACHE_DIR, "epg_metadata.json")
+        last_datetime = datetime.now().replace(minute=0, second=0, microsecond=0).timestamp()
+        if await aio_os.path.exists(epg_metadata) and await aio_os.path.getmtime(epg_metadata) > last_datetime:
+            refresh = False
 
-    epg = {}
+    await Cache.cache(full)
 
-    try:
-        _END_POINT = await get_end_point()
-        if not _END_POINT:
-            return
-        # Descarga la configuración del servicio Web de MovistarTV
-        _CONFIG = await MovistarTV.get_service_config(refresh)
+    if args.guide:
+        Path(TVG_BUSY).touch(exist_ok=True)
 
-        # Busca el Proveedor de Servicios y descarga los archivos XML: canales, paquetes y segmentos
+    async with aiohttp.ClientSession(headers={"User-Agent": UA}) as _SESSION:
         _MIPTV = MulticastIPTV()
+        _CONFIG = await MovistarTV.get_service_config(full)
         xdata = await _MIPTV.get_service_provider_data(refresh)
-
-        # Crea el objeto XMLTV a partir de los datos descargados del Proveedor de Servicios
         _XMLTV = XmlTV(xdata)
 
-        if args.m3u:
-            await Cache.save_channels_data(xdata)
-            _XMLTV.write_m3u(args.m3u)
-            if not args.guide:
-                return
+        with suppress(CancelledError):
+            if args.m3u:
+                await Cache.save_channels_data(xdata)
+                _XMLTV.write_m3u(args.m3u)
+                if not args.guide:
+                    return
+            epg_nr_days = len(xdata["segments"])
+            del xdata
 
-        epg_nr_days = len(xdata["segments"])
-        del xdata
-
-        # Descarga los segmentos de cada EPG_X_BIN.imagenio.es y obtiene la guía decodificada
-        if args.guide:
-            epg = await _MIPTV.get_epg()
-        elif any((args.cloud_m3u, args.cloud_recordings, args.local_m3u, args.local_recordings)):
-            if any((args.cloud_m3u, args.cloud_recordings)):
+            epg = {}
+            if args.guide:
+                epg = await _MIPTV.get_epg()
+            elif any((args.cloud_m3u, args.cloud_recordings)):
                 epg = await _MIPTV.get_epg_cloud()
-            else:
+            elif any((args.local_m3u, args.local_recordings)):
                 epg = await Cache.load_epg_local()
             if not epg:
                 return
+            epg_nr_channels = len(epg)
+            del _MIPTV
+
+            if args.guide:
+                async with (
+                    async_open(args.guide + ".tmp", "w", encoding="utf8") as f,
+                    async_gzip_open(args.guide + ".gz" + ".tmp", "wt", encoding="utf8") as f_z,
+                ):
+                    async for dom in _XMLTV.generate_xml(epg, args.cloud_recordings, args.local_recordings):
+                        block = "\n".join(dom) + "\n"
+                        await asyncio.gather(f.write(block), f_z.write(block))
+                await rename(args.guide + ".tmp", args.guide)
+                await rename(args.guide + ".gz" + ".tmp", args.guide + ".gz")
+
+                current_task = asyncio.current_task()
+                if current_task and not current_task.cancelling():
+                    await remove(TVG_BUSY)
+
+                _t = str(timedelta(seconds=round(time.time() - time_start)))
+                log.info(f"EPG de {epg_nr_channels} canales y {epg_nr_days} días generada en {_t}s")
+                log.info(f"Fecha de caducidad: [{time.ctime(_DEADLINE)}] [{_DEADLINE}]")
+                return
+
             if any((args.cloud_m3u, args.local_m3u)):
                 _XMLTV.write_m3u(
                     args.cloud_m3u or args.local_m3u,
-                    cloud=tuple(epg) if args.cloud_m3u else None,
-                    local=tuple(epg) if args.local_m3u else None,
+                    cloud=args.cloud_m3u and tuple(epg),
+                    local=args.local_m3u and tuple(epg),
                 )
-            if not any((args.cloud_recordings, args.local_recordings)):
-                return
-        del _MIPTV
-        epg_nr_channels = len(epg)
 
-        # Genera el árbol XMLTV de los paquetes contratados
-        if args.guide:
-            async with (
-                async_open(args.guide + ".tmp", "w", encoding="utf8") as f,
-                async_gzip_open(args.guide + ".gz" + ".tmp", "wt", encoding="utf8") as f_z,
-            ):
-                async for dom in _XMLTV.generate_xml(epg, bool(args.local_m3u or args.local_recordings)):
-                    block = "\n".join(dom) + "\n"
-                    await asyncio.gather(f.write(block), f_z.write(block))
-            await rename(args.guide + ".tmp", args.guide)
-            await rename(args.guide + ".gz" + ".tmp", args.guide + ".gz")
-        elif any((args.cloud_recordings, args.local_recordings)):
-            xml_file = args.cloud_recordings or args.local_recordings
-            async with async_open(xml_file + ".tmp", "w", encoding="utf8") as f:
-                async for dom in _XMLTV.generate_xml(epg, bool(args.local_m3u or args.local_recordings)):
-                    await f.write("\n".join(dom) + "\n")
-            await rename(xml_file + ".tmp", xml_file)
-
-        if not any((args.cloud_recordings, args.local_recordings)):
-            _t = str(timedelta(seconds=round(time.time() - time_start)))
-            log.info(f"EPG de {epg_nr_channels} canales y {epg_nr_days} días generada en {_t}s")
-            log.info(f"Fecha de caducidad: [{time.ctime(_DEADLINE)}] [{_DEADLINE}]")
-
-    finally:
-        await _SESSION.close()
+            if any((args.cloud_recordings, args.local_recordings)):
+                xml_file = args.cloud_recordings or args.local_recordings
+                async with async_open(xml_file + ".tmp", "w", encoding="utf8") as f:
+                    async for dom in _XMLTV.generate_xml(epg, args.cloud_recordings, args.local_recordings):
+                        await f.write("\n".join(dom) + "\n")
+                await rename(xml_file + ".tmp", xml_file)
 
 
 if __name__ == "__main__":
@@ -1214,6 +1224,50 @@ if __name__ == "__main__":
         from setproctitle import setproctitle
 
         setproctitle("mu7d_tvg      # %s" % " ".join(sys.argv[1:]))
+
+    def add_exit_handlers(loop):
+        async def exit_handler(loop):
+            [signal(sig, SIG_IGN) for sig in (SIGINT, SIGTERM)]
+            tasks = tuple(t for t in asyncio.all_tasks(loop) if t is not asyncio.current_task(loop))
+            log.debug("Cancelando tareas...")
+            tuple(task.cancel() for task in tasks)
+            with suppress(CancelledError):
+                log.debug("Esperando a tvg_main...")
+                [await task for task in tasks if task.get_name() == "Task-1"]
+                log.info("adiós :)")
+                sys.exit(1)
+
+        def exit_handler_win(event):
+            import win32con  # pylint: disable=import-error
+
+            log.debug("exit_handler_win(event=%d)", event)
+            if event in (
+                win32con.CTRL_BREAK_EVENT,
+                win32con.CTRL_C_EVENT,
+                win32con.CTRL_CLOSE_EVENT,
+                win32con.CTRL_LOGOFF_EVENT,
+                win32con.CTRL_SHUTDOWN_EVENT,
+            ):
+                tasks = tuple(t for t in asyncio.all_tasks(loop) if t is not asyncio.current_task(loop))
+                log.debug("Cancelando tareas...")
+                tuple(task.cancel() for task in tasks)
+                with suppress(CancelledError):
+                    log.debug("Esperando a tvg_main...")
+                    while not all(task.done() for task in tasks if task.get_name() == "Task-1"):
+                        time.sleep(0.1)
+                log.info("adiós :)")
+
+            return True
+
+        if not WIN32:
+            from signal import SIG_IGN, SIGINT, SIGTERM, signal
+
+            loop.add_signal_handler(SIGINT, lambda: asyncio.create_task(exit_handler(loop)))
+            loop.add_signal_handler(SIGTERM, lambda: asyncio.create_task(exit_handler(loop)))
+        else:
+            import win32api  # pylint: disable=import-error
+
+            win32api.SetConsoleCtrlHandler(exit_handler_win, True)
 
     logging.getLogger("asyncio").setLevel(logging.FATAL)
     logging.getLogger("filelock").setLevel(logging.FATAL)
@@ -1228,16 +1282,6 @@ if __name__ == "__main__":
         add_logfile(log, CONF["LOG_TO_FILE"], CONF["DEBUG"] and logging.DEBUG or logging.INFO)
 
     args = create_args_parser().parse_args()
-
-    if any((args.cloud_m3u, args.cloud_recordings, args.local_m3u, args.local_recordings)):
-        refresh = False  # pylint: disable=invalid-name
-    else:
-        refresh = True  # pylint: disable=invalid-name
-        banner = f"Movistar U7D - TVG v{VERSION}"
-        log.info("-" * len(banner))
-        log.info(banner)
-        log.info("-" * len(banner))
-        log.debug("%s", " ".join(sys.argv[1:]))
 
     if any(
         map(
@@ -1255,6 +1299,13 @@ if __name__ == "__main__":
         log.critical("No es posible mezclar categorías")
         sys.exit(1)
 
+    if any((args.m3u, args.guide)):
+        banner = f"Movistar U7D - TVG v{VERSION}"
+        log.info("-" * len(banner))
+        log.info(banner)
+        log.info("-" * len(banner))
+        log.debug("%s", " ".join(sys.argv[1:]))
+
     _CONFIG = _DEADLINE = _END_POINT = _IPTV = _MIPTV = _SESSION = _XMLTV = None
 
     CACHE_DIR = CONF["CACHE_DIR"]
@@ -1262,6 +1313,7 @@ if __name__ == "__main__":
     HOME = CONF["HOME"]
     OTT_HACK = CONF["OTT_HACK"]
     RECORDINGS = CONF["RECORDINGS"]
+    TVG_BUSY = CONF["TVG_BUSY"]
     U7D_URL = CONF["U7D_URL"]
 
     AGE_RATING = ("0", "0", "0", "7", "12", "16", "17", "18")
@@ -1279,9 +1331,9 @@ if __name__ == "__main__":
     try:
         with FileLock(lockfile, timeout=0):
             _IPTV = get_iptv_ip()
-            asyncio.run(tvg_main(args, refresh, time.time()))
+            asyncio.run(tvg_main(args, time.time()))
     except (CancelledError, KeyboardInterrupt):
-        sys.exit(0)
+        sys.exit(1)
     except IPTVNetworkError as err:
         log.critical(err)
         sys.exit(1)

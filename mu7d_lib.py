@@ -430,6 +430,9 @@ async def launch(cmd):
 async def load_epg():
     await reload_epg()
 
+    if _g._SHUTDOWN:
+        return app.stop()
+
     if not _g._last_epg:
         if not await a.all(a.map(aio_os.path.exists, (_g.CHANNELS, _g.GUIDE, _g.epg_data))):
             return app.stop()
@@ -457,13 +460,15 @@ async def load_epg():
                 await create_covers_cache()
 
         if not _g._t_timers:
-            if datetime.now().replace(minute=0, second=0, microsecond=0).timestamp() <= _g._last_epg:
+            if await aio_os.path.exists(_g.TVG_BUSY):
+                log.warning("Delaying timers_check until TVG is done...")
+            elif _g._last_epg < datetime.now().replace(minute=0, second=0, microsecond=0).timestamp():
+                log.warning("Delaying timers_check until the EPG is updated...")
+            else:
                 delay = int(max(5, boot_time() + 180 - time.time()))
                 if delay > 10:
                     log.info(f"Waiting {delay}s to check recording timers since the system just booted...")
                 app.add_task(timers_check(delay))
-            else:
-                log.warning("Delaying timers_check until the EPG is updated...")
 
     app.add_task(update_epg_cron())
 
@@ -477,6 +482,8 @@ async def log_network_saturated(nr_procs=None, _wait=False):
         if _wait:  # when called by network_saturation(), we wait so the recordings count is always correct
             await asyncio.sleep(1)
         nr_procs = len(await ongoing_vods())
+    if _g._SHUTDOWN:
+        return
     msg += f"Recording {nr_procs} streams." if nr_procs else ""
     if not _g._last_bw_warning or (time.time() - _g._last_bw_warning[0] > 5 or _g._last_bw_warning[1] != msg):
         _g._last_bw_warning = (time.time(), msg)
@@ -496,7 +503,7 @@ async def network_saturation():
     before = last = 0
     cutpoint = _g.IPTV_BW_SOFT + (_g.IPTV_BW_HARD - _g.IPTV_BW_SOFT) / 2
 
-    while True:
+    while not _g._SHUTDOWN:
         if not await aio_os.path.exists(iface_rx):
             last = 0
             log.error(f"{_g.IPTV_IFACE} NOT ACCESSIBLE")
@@ -722,7 +729,7 @@ async def record_program(ch_id, pid, offset=0, time=0, cloud=False, comskip=0, i
     cmd += ["--vo"] if vo else []
 
     log.debug('Launching: "%s"', " ".join(cmd))
-    asyncio.create_task(launch(cmd), name="vod")  # required to not leave _vod processes behind whne mu7d dies
+    app.add_task(launch(cmd))
 
 
 async def reindex_recordings():
@@ -842,6 +849,8 @@ async def reload_epg():
         if tvgrab_lock.locked():
             return
 
+        await remove(_g.TVG_BUSY)
+
         log.warning("Missing EPG data! Need to download it. Please be patient...")
         return await update_epg()
 
@@ -936,7 +945,7 @@ async def timers_check(delay=0):  # pylint: disable=too-many-branches,too-many-l
 
     await asyncio.sleep(delay)
 
-    if timers_lock.locked():
+    if timers_lock.locked() or _g._SHUTDOWN:
         return
 
     async with epg_lock, recordings_lock, timers_lock:
@@ -1217,12 +1226,18 @@ async def update_epg():
 
 
 async def update_epg_cron():
+    if _g._SHUTDOWN:
+        return
+
     last_datetime = datetime.now().replace(minute=0, second=0, microsecond=0).timestamp()
-    if await aio_os.path.getmtime(_g.GUIDE) < last_datetime:
+    if await aio_os.path.exists(_g.TVG_BUSY):
+        log.warning("TVG was interrumped. Launching again...")
+        await update_epg()
+    elif await aio_os.path.getmtime(_g.GUIDE) < last_datetime:
         log.warning("EPG too old. Updating it...")
         await update_epg()
     await asyncio.sleep(last_datetime + 3600 - 0.25 - time.time())
-    while True:
+    while not _g._SHUTDOWN:
         await asyncio.gather(asyncio.sleep(3600), update_epg())
 
 
@@ -1336,6 +1351,9 @@ async def update_recordings(channel_id=None):
 
 
 async def upgrade_recording_channels():
+    if _g._SHUTDOWN:
+        return
+
     changed_nr, stale = deque(), deque()
 
     names = tuple(_g._CHANNELS[x].name for x in _g._CHANNELS)
