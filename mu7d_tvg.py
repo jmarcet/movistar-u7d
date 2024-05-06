@@ -336,7 +336,6 @@ class MulticastIPTV:
         }
 
     def __fix_edges(self, channel, sorted_channel, new_epg=False):
-        drop = defaultdict(list)
         fixed = gaps = 0
         if new_epg:
             name, epg = "New EPG   ", self.__epg
@@ -372,13 +371,9 @@ class MulticastIPTV:
                     log.warning(msg)
                     fixed += 1
                 else:
-                    drop[channel].append(ts)
+                    epg[channel].pop(ts)
                     msg = f"{chan}{name} DROP    -> FROM:[{__ts}] [{ts}] - TO:[{__next}] [{_next}]"
                     log.debug(msg)
-
-        for channel_id in drop:
-            for ts in drop[channel_id]:
-                del epg[channel_id][ts]
 
         return fixed, gaps
 
@@ -644,6 +639,30 @@ class MulticastIPTV:
         # "size": struct.unpack(">H", data[1:3])[0],
         return {"data": data[body:-4], "service_id": struct.unpack(">H", data[3:5])[0]}
 
+    def __setup_epg_channels(self):
+        channels, services = self.__xml_data["channels"], self.__xml_data["services"]
+
+        # Services not in channels are special access channels like DAZN, Disney, Netflix & Prime
+        self.__channels_keys = {
+            channels[key].get("replacement", key): key for key in services if key in EPG_CHANNELS & set(channels)
+        }
+
+        skipped = 0
+        for channel_id in (ch for ch in services if ch in set(channels) - EPG_CHANNELS):
+            channel_name = channels[channel_id]["name"].strip(" *")
+            channel_number = services[channel_id]
+            log.info(f'Saltando canal: [{channel_id:4}] "{channel_number:03}. {channel_name}"')
+            if channel_id in self.__cached_epg:
+                del self.__cached_epg[channel_id]
+            skipped += 1
+        if skipped:
+            log.info(f"Canales disponibles no indexados: {skipped:2}")
+        no_chs = EPG_CHANNELS - set(services)
+        if no_chs:
+            log.warning(
+                f"Canal{'es' if len(no_chs) > 1 else ''} no existente{'s' if len(no_chs) > 1 else ''}: {no_chs}"
+            )
+
     def __sort_epg(self):
         epg = self.__cached_epg
         _services = self.__xml_data["services"]
@@ -654,32 +673,8 @@ class MulticastIPTV:
         return unescape(("".join(chr(char ^ 0x15) for char in string)).encode("latin1").decode("utf8"))
 
     async def get_epg(self):
-        _channels = self.__xml_data["channels"]
-        _services = self.__xml_data["services"]
-
         self.__cached_epg = await Cache.load_epg()
-        # Services not in channels are special access channels like DAZN, Disney, Netflix & Prime
-        self.__channels_keys = {
-            _channels[key].get("replacement", key): key
-            for key in _services
-            if key in EPG_CHANNELS & set(_channels)
-        }
-
-        skipped = 0
-        for channel_id in (ch for ch in _services if ch in set(_channels) - EPG_CHANNELS):
-            channel_name = _channels[channel_id]["name"].strip(" *")
-            channel_number = _services[channel_id]
-            log.info(f'Saltando canal: [{channel_id:4}] "{channel_number:03}. {channel_name}"')
-            if channel_id in self.__cached_epg:
-                del self.__cached_epg[channel_id]
-            skipped += 1
-        if skipped:
-            log.info(f"Canales disponibles no indexados: {skipped:2}")
-        no_chs = EPG_CHANNELS - set(_services)
-        if no_chs:
-            log.warning(
-                f"Canal{'es' if len(no_chs) > 1 else ''} no existente{'s' if len(no_chs) > 1 else ''}: {no_chs}"
-            )
+        self.__setup_epg_channels()
 
         await self.__get_bin_epg()
         del self.__epg, self.__xml_data["segments"]
@@ -691,9 +686,7 @@ class MulticastIPTV:
         self.__sort_epg()
 
         await Cache.save_epg(self.__cached_epg)
-
         log.info(f"Eventos en Caché: Arreglados = {self.__fixed} _ Caducados = {self.__expired}")
-
         return self.__cached_epg
 
     async def get_epg_cloud(self):
@@ -713,8 +706,6 @@ class MulticastIPTV:
 
             pid = program["productID"]
             timestamp = program["beginTime"] // 1000
-
-            data = await MovistarTV.get_service_data(f"epgInfov2&productID={pid}&channelID={channel_id}")
 
             data = await MovistarTV.get_service_data(f"getRecordingData&extInfoID={pid}&channelID={channel_id}")
             if not data:  # There can be events with no data sometimes
