@@ -1,14 +1,21 @@
-FROM python:3.12-slim
+FROM python:3.12-slim as base
 
 ARG BUILD_TYPE
 ARG TARGETARCH
 
+ARG COMSKIP_BRANCH=master
+ARG JELLYFIN_FFMPEG_BRANCH=jellyfin
+
+# http://stackoverflow.com/questions/48162574/ddg#49462622
+ENV APT_KEY_DONT_WARN_ON_DANGEROUS_USAGE=DontWarn
 # https://askubuntu.com/questions/972516/debian-frontend-environment-variable
-ARG DEBIAN_FRONTEND="noninteractive"
+ENV DEBIAN_FRONTEND="noninteractive"
 
 RUN --mount=type=cache,sharing=locked,target=/var/cache/apt \
     apt-get update \
     && apt-get install --no-install-recommends --no-install-suggests -y \
+       build-essential \
+       git \
        htop \
        less \
        locales \
@@ -19,19 +26,7 @@ RUN --mount=type=cache,sharing=locked,target=/var/cache/apt \
     && sed -i -e 's/# es_ES.UTF-8 UTF-8/es_ES.UTF-8 UTF-8/' /etc/locale.gen \
     && locale-gen
 
-ENV LC_ALL es_ES.UTF-8
-ENV LANG es_ES.UTF-8
-ENV LANGUAGE es_ES:UTF-8
-
-ENV HOME=/home
-ENV PATH=/home/.local/bin:/usr/local/bin:/usr/sbin:/usr/bin
-ENV PYTHONPATH=/app
-ENV TMP=/tmp
-
 WORKDIR /tmp
-
-RUN --mount=type=cache,sharing=locked,target=/var/cache/apt \
-    apt-get install --no-install-recommends --no-install-suggests -y build-essential git
 
 COPY requirements.txt .
 
@@ -39,17 +34,8 @@ RUN --mount=type=cache,target=${HOME}/.cache \
     pip install --disable-pip-version-check --root-user-action ignore --use-pep517 uv \
     && uv pip install --system -r requirements.txt
 
-# http://stackoverflow.com/questions/48162574/ddg#49462622
-ARG APT_KEY_DONT_WARN_ON_DANGEROUS_USAGE=DontWarn
-
-# https://github.com/NVIDIA/nvidia-docker/wiki/Installation-(Native-GPU-Support)
-ENV NVIDIA_DRIVER_CAPABILITIES="compute,utility,video"
-
-ARG COMSKIP_BRANCH=master
-ARG JELLYFIN_FFMPEG_BRANCH=jellyfin
-
-ARG ffmpeg_CFLAGS="-I/usr/lib/jellyfin-ffmpeg/include"
-ARG ffmpeg_LIBS="-L/usr/lib/jellyfin-ffmpeg/lib -lavcodec -lavformat -lavutil -lswscale"
+ENV ffmpeg_CFLAGS="-I/usr/lib/jellyfin-ffmpeg/include"
+ENV ffmpeg_LIBS="-L/usr/lib/jellyfin-ffmpeg/lib -lavcodec -lavformat -lavutil -lswscale"
 
 COPY patches/comskip.patch .
 
@@ -88,6 +74,7 @@ RUN --mount=type=cache,sharing=locked,target=/var/cache/apt \
         && make -j$(nproc) \
         && make -j$(nproc) install \
         && cd .. \
+        && rm -f comskip.patch \
         && rm -fr Comskip \
         && rm -fr /usr/lib/jellyfin-ffmpeg/include \
         && apt-get purge -y \
@@ -104,14 +91,11 @@ RUN --mount=type=cache,sharing=locked,target=/var/cache/apt \
         && ln -s /usr/lib/jellyfin-ffmpeg/lib/libswscale.so.* /usr/local/lib/; \
     fi
 
-RUN rm -f comskip.patch
-
 RUN apt-get purge -y binutils-common build-essential dpkg-dev git git-man gpg-agent libcurl3-gnutls \
     liberror-perl libgdbm-compat4 libldap-2.5-0 libnghttp2-14 libperl5.36 librtmp1 libsasl2-2 \
     libsasl2-modules-db libssh2-1 patch perl perl-modules-5.36 pkgconf \
     && apt-get clean autoclean -y \
-    && apt-get autoremove -y \
-    && rm -fr /var/lib/apt/lists/*
+    && apt-get autoremove -y
 
 WORKDIR /app
 
@@ -132,9 +116,30 @@ RUN --mount=type=cache,target=${HOME}/.cache \
 RUN --mount=type=cache,target=${HOME}/.cache \
     pip uninstall --disable-pip-version-check --root-user-action ignore -y uv wheel
 
-RUN rm -fr Dockerfile patches pyproject.toml requirements*.txt tox.ini /tmp/*.txt /usr/local/.lock *.conf
+RUN rm -fr \
+        Dockerfile patches pyproject.toml requirements*.txt tox.ini \
+        /tmp/* /usr/local/.lock /var/cache/* /var/lib/apt/lists/* *.conf
 
 RUN chown nobody:nogroup /home && chmod g+s /home
+
+######################
+# Squash final image #
+######################
+FROM scratch
+
+COPY --from=base / /
+
+# https://github.com/NVIDIA/nvidia-docker/wiki/Installation-(Native-GPU-Support)
+ENV NVIDIA_DRIVER_CAPABILITIES="compute,utility,video"
+
+ENV LC_ALL=es_ES.UTF-8
+ENV LANG=es_ES.UTF-8
+ENV LANGUAGE=es_ES:UTF-8
+
+ENV HOME=/home
+ENV PATH=/home/.local/bin:/usr/local/bin:/usr/sbin:/usr/bin
+ENV PYTHONPATH=/app
+ENV TMP=/tmp
 
 WORKDIR /home
 
