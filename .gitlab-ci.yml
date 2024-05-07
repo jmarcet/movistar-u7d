@@ -26,8 +26,8 @@ build-stable:
    - if: $CI_COMMIT_TAG
      when: never
   script:
-    - docker buildx build                             --platform linux/amd64,linux/arm64,linux/arm/v7 --provenance false --push --tag $REPOSITORY:stable-slim --tag $REPOSITORY:$CI_COMMIT_SHORT_SHA-stable-slim .
     - docker buildx build --build-arg BUILD_TYPE=full --platform linux/amd64,linux/arm64,linux/arm/v7 --provenance false --push --tag $REPOSITORY:stable      --tag $REPOSITORY:$CI_COMMIT_SHORT_SHA-stable      .
+    - docker buildx build                             --platform linux/amd64,linux/arm64,linux/arm/v7 --provenance false --push --tag $REPOSITORY:stable-slim --tag $REPOSITORY:$CI_COMMIT_SHORT_SHA-stable-slim .
 
 build-tag:
   stage: build
@@ -35,13 +35,13 @@ build-tag:
    - if: $CI_COMMIT_BRANCH == $CI_DEFAULT_BRANCH
    - if: $CI_COMMIT_TAG
   script:
-    - docker buildx build                             --platform linux/amd64,linux/arm64,linux/arm/v7 --provenance false --push --tag $REPOSITORY:stable-slim --tag $REPOSITORY:$CI_COMMIT_SHORT_SHA-stable-slim --tag $REPOSITORY:$CI_COMMIT_TAG-stable-slim .
     - docker buildx build --build-arg BUILD_TYPE=full --platform linux/amd64,linux/arm64,linux/arm/v7 --provenance false --push --tag $REPOSITORY:stable      --tag $REPOSITORY:$CI_COMMIT_SHORT_SHA-stable      --tag $REPOSITORY:$CI_COMMIT_TAG-stable      .
+    - docker buildx build                             --platform linux/amd64,linux/arm64,linux/arm/v7 --provenance false --push --tag $REPOSITORY:stable-slim --tag $REPOSITORY:$CI_COMMIT_SHORT_SHA-stable-slim --tag $REPOSITORY:$CI_COMMIT_TAG-stable-slim .
 
 build-unstable:
   stage: build
   rules:
    - if: $CI_COMMIT_BRANCH == "next"
   script:
-    - docker buildx build                             --platform linux/amd64,linux/arm64,linux/arm/v7 --provenance false --push --tag $REPOSITORY:unstable-slim .
     - docker buildx build --build-arg BUILD_TYPE=full --platform linux/amd64,linux/arm64,linux/arm/v7 --provenance false --push --tag $REPOSITORY:unstable      .
+    - docker buildx build                             --platform linux/amd64,linux/arm64,linux/arm/v7 --provenance false --push --tag $REPOSITORY:unstable-slim .
