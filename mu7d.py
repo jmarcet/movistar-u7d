@@ -1,4 +1,4 @@
-#!/usr/bin/env python3
+#!/usr/bin/env -S python3 -OO -X no_debug_ranges -X utf8 -u
 
 import asyncio
 import logging
@@ -781,7 +781,6 @@ if __name__ == "__main__":
     log.info("=" * len(banner))
 
     os.environ["PATH"] = "%s;%s" % (os.path.dirname(__file__), os.getenv("PATH"))
-    os.environ["PYTHONOPTIMIZE"] = "0" if CONF["DEBUG"] else "2"
     os.environ["U7D_PARENT"] = str(os.getpid())
 
     _g.CHANNELS = CONF["CHANNELS"]

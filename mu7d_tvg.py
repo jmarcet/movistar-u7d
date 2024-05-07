@@ -1,4 +1,4 @@
-#!/usr/bin/env python3
+#!/usr/bin/env -S python3 -OO -X no_debug_ranges -X utf8 -u
 #
 # Based on tv_grab_es_movistartv by Willow:
 # Source: https://github.com/MovistarTV/tv_grab_es_movistartv

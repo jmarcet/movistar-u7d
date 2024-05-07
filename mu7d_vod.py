@@ -1,4 +1,4 @@
-#!/usr/bin/env python3
+#!/usr/bin/env -S python3 -OO -X no_debug_ranges -X utf8 -u
 #
 # Started from MovistarU7D by XXLuigiMario:
 # Source: https://github.com/XXLuigiMario/MovistarU7D

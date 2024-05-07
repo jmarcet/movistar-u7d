@@ -1,5 +1,3 @@
-#!/usr/bin/env python3
-
 import asyncio
 import ctypes
 import gc
@@ -417,7 +415,7 @@ async def kill_vod():
 
 
 async def launch(cmd):
-    cmd = (sys.executable, *cmd) if EXT == ".py" else cmd
+    cmd = (*sys.orig_argv[:-1], *cmd) if EXT == ".py" else cmd
     proc = await asyncio.create_subprocess_exec(*cmd, cwd=os.path.dirname(__file__) if EXT == ".py" else None)
     try:
         return await proc.wait()
