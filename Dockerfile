@@ -11,6 +11,10 @@ ENV APT_KEY_DONT_WARN_ON_DANGEROUS_USAGE=DontWarn
 # https://askubuntu.com/questions/972516/debian-frontend-environment-variable
 ENV DEBIAN_FRONTEND="noninteractive"
 
+ENV PIP_CACHE_DIR=/root/.cache/pip
+ENV RUFF_CACHE_DIR=/root/.cache/ruff
+ENV UV_CACHE_DIR=/root/.cache/uv
+
 RUN --mount=type=cache,sharing=locked,target=/var/cache/apt \
     apt-get update \
     && apt-get install --no-install-recommends --no-install-suggests -y \
@@ -30,7 +34,7 @@ WORKDIR /tmp
 
 COPY requirements.txt .
 
-RUN --mount=type=cache,target=${HOME}/.cache \
+RUN --mount=type=cache,target=/root/.cache \
     pip install --disable-pip-version-check --root-user-action ignore --use-pep517 uv \
     && uv pip install --system -r requirements.txt
 
@@ -101,19 +105,19 @@ WORKDIR /app
 
 COPY . .
 
-RUN --mount=type=cache,target=${HOME}/.cache \
+RUN --mount=type=cache,target=/root/.cache \
     if [ "${BUILD_TYPE}" = "full" ] && [ "$TARGETARCH" = "amd64" ]; then \
         uv pip install --system bandit pycodestyle pylint ruff 2>&1 | tee /tmp/lint-install.txt \
         && bandit -v *.py \
         && pycodestyle -v *.py \
         && pylint --rcfile pyproject.toml -v *.py \
-        && ruff check --config pyproject.toml --no-cache -v *.py \
-        && ruff check --config pyproject.toml --diff --no-cache --no-fix-only -v *.py \
-        && ruff format --config pyproject.toml --diff --no-cache -v *.py \
+        && ruff check --config pyproject.toml -v *.py \
+        && ruff check --config pyproject.toml --diff --no-fix-only -v *.py \
+        && ruff format --config pyproject.toml --diff -v *.py \
         && uv pip uninstall --system $( awk '/==/ { print $2 }' /tmp/lint-install.txt ); \
     fi
 
-RUN --mount=type=cache,target=${HOME}/.cache \
+RUN --mount=type=cache,target=/root/.cache \
     pip uninstall --disable-pip-version-check --root-user-action ignore -y uv wheel
 
 RUN rm -fr \
