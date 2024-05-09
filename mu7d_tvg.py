@@ -7,6 +7,7 @@ import argparse
 import asyncio
 import codecs
 import json
+import locale
 import logging
 import os
 import re
@@ -1191,8 +1192,9 @@ async def tvg_main(args, time_start):
                     await remove(TVG_BUSY)
 
                 _t = str(timedelta(seconds=round(time.time() - time_start)))
+                deadline_str = datetime.fromtimestamp(_DEADLINE).strftime("%a %d %b %Y %H:%M:%S")
                 log.info(f"EPG de {epg_nr_channels} canales y {epg_nr_days} días generada en {_t}s")
-                log.info(f"Fecha de caducidad: [{time.ctime(_DEADLINE)}] [{_DEADLINE}]")
+                log.info(f"Fecha de caducidad: [{deadline_str}] [{_DEADLINE}]")
                 return
 
             if any((args.cloud_m3u, args.local_m3u)):
@@ -1263,6 +1265,7 @@ if __name__ == "__main__":
     logging.getLogger("asyncio").setLevel(logging.FATAL)
     logging.getLogger("filelock").setLevel(logging.FATAL)
 
+    locale.setlocale(locale.LC_ALL, "es_ES.UTF-8")
     logging.basicConfig(datefmt=DATEFMT, format=FMT, level=CONF["DEBUG"] and logging.DEBUG or logging.INFO)
 
     if CONF.get("Exception"):
