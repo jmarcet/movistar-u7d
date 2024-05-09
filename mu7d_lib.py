@@ -463,7 +463,7 @@ async def load_epg():
             elif _g._last_epg < datetime.now().replace(minute=0, second=0, microsecond=0).timestamp():
                 log.warning("Delaying timers_check until the EPG is updated...")
             else:
-                delay = int(max(5, boot_time() + 180 - time.time()))
+                delay = int(max(5, boot_time() + 90 - time.time()))
                 if delay > 10:
                     log.info(f"Waiting {delay}s to check recording timers since the system just booted...")
                 app.add_task(timers_check(delay))

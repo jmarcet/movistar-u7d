@@ -710,7 +710,7 @@ if __name__ == "__main__":
                     break
                 log.info("IPTV address: waiting for interface to be routed...")
             except IPTVNetworkError as err:
-                if uptime < 180:
+                if uptime < 90:
                     log.info(err)
                 else:
                     raise
@@ -738,7 +738,7 @@ if __name__ == "__main__":
                     log.info(f"IPTV interface: {iptv_iface}")
                     return iptv
                 except (KeyError, ValueError) as ex:
-                    if uptime < 180:
+                    if uptime < 90:
                         log.info("IPTV interface: waiting for it...")
                         sleep(5)
                     else:
