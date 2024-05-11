@@ -990,8 +990,8 @@ async def timers_check(delay=0):  # pylint: disable=too-many-branches,too-many-l
                 delay = keep = 0
                 fresh = repeat = False
                 fixed_timer = None
+                genre = msg = ""
                 lang = deflang
-                msg = ""
 
                 if " ## " in timer_match:
                     match_split = timer_match.split(" ## ")
@@ -1023,9 +1023,11 @@ async def timers_check(delay=0):  # pylint: disable=too-many-branches,too-many-l
                         elif res == "fresh":
                             fresh = True
 
+                        elif res.startswith("genre"):
+                            genre = res[5:] if res[5:].isdigit() else ""
+
                         elif res.startswith("keep"):
-                            keep = int(res.lstrip("keep").rstrip("d"))
-                            keep = -keep if res.endswith("d") else keep
+                            keep = int(res[4:].rstrip("d")) * (-1 if res.endswith("d") else 1)
 
                         elif res == "nocomskip":
                             comskip = 0
@@ -1062,6 +1064,9 @@ async def timers_check(delay=0):  # pylint: disable=too-many-branches,too-many-l
                     )
                 elif days:
                     tss = filter(lambda ts: days.get(datetime.fromtimestamp(ts).isoweekday()), tss)
+
+                if genre:
+                    tss = filter(lambda ts: _g._EPGDATA[channel_id][ts].genre.startswith(genre), tss)
 
                 tss = tuple(tss)
 
