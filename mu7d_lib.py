@@ -529,8 +529,8 @@ async def network_saturation():
 
 
 async def ongoing_vods(channel_id="", program_id="", filename="", all_=False, fast_=False):
-    parent = os.getenv("U7D_PARENT", "0")  # if not WIN32 else None
-    family = Process(int(parent)).children(recursive=True) if parent else process_iter()
+    parent = int(os.getenv("U7D_PARENT", "0")) if not WIN32 else None
+    family = Process(parent).children(recursive=True) if parent else process_iter()
 
     if fast_:  # For U7D we just want to know if there are recordings in place
         return "mu7d_vod REC " in str(family)
