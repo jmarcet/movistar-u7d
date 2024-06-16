@@ -725,7 +725,7 @@ async def rtsp(vod_info):
             with suppress(CancelledError):
                 await rec_t
 
-    if rec_t:
+    if rec_t and _filename:
         if U7D_PARENT:
             await postprocess(vod_info)
         else:
