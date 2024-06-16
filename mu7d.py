@@ -274,6 +274,7 @@ async def handle_channel(request, channel_id=None, channel_name=None):
 
 
 @app.route("/<channel_id:int>/<url>", methods=["GET", "HEAD"], name="flussonic_id")
+@app.route("/<channel_id:int>/mpegts/<url>", methods=["GET", "HEAD"], name="flussonic_id2")
 @app.route(r"/<channel_name:([A-Za-z1-9]+)>/<url>", methods=["GET", "HEAD"], name="flussonic_name")
 async def handle_flussonic(request, url, channel_id=None, channel_name=None, cloud=False, local=False):
     log.debug("%s %s %s", *map(str, (request, request.args, request.headers)))
