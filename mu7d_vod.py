@@ -435,7 +435,7 @@ async def postprocess(vod_info):  # pylint: disable=too-many-statements
 
         step += 1
 
-        cmd = ("comskip", *COMSKIP, "--ts", _tmpname + TMP_EXT)
+        cmd = ("comskip", *COMSKIP, "--ts", _tmpname + TMP_EXT)  # pylint: disable=used-before-assignment
 
         log.info(f"POSTPROCESS #{step}A - COMSKIP - Checking recording for commercials")
         async with async_open(COMSKIP_LOG, "ab") as f:
@@ -877,7 +877,7 @@ if __name__ == "__main__":
             sys.exit(1)
 
         CACHE_DIR = CONF["CACHE_DIR"]
-        COMSKIP = (_args.comskip or _args.comskipcut) and CONF["COMSKIP"]
+        COMSKIP = CONF["COMSKIP"] if (_args.comskip or _args.comskipcut) else None
         COMSKIP_LOG = os.path.join(CONF["HOME"], "comskip.log") if COMSKIP else None
         NO_SUBS = CONF["NO_SUBS"]
         RECORDINGS = CONF["RECORDINGS"]
