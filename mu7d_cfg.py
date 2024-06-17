@@ -62,7 +62,7 @@ EPG_CHANNELS = {
     2526,  # "laSexta HD"
     # 4913,# "TVG HD"
     # 4912,# "TVG 2 HD"
-    844,  # _"TRECE"
+    5311,  # _"TRECE HD"
     5275,  # "Energy HD"
     5276,  # "FDF HD"
     4714,  # "Neox HD"
