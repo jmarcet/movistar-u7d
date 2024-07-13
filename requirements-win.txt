@@ -4,7 +4,7 @@ async-files
 asyncio
 asyncio-dgram
 asyncstdlib
-cx_Freeze>=6.16.0.dev25
+cx_Freeze
 defusedxml
 filelock
 psutil

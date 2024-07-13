@@ -20,7 +20,6 @@ from itertools import chain
 from json import JSONDecodeError
 from operator import itemgetter
 from socket import AF_INET, SOCK_DGRAM, socket
-from warnings import filterwarnings
 
 import aiohttp
 import asyncstdlib as a
@@ -82,8 +81,6 @@ tvgrab_local_lock = asyncio.Lock()
 anchored_regex = re.compile(r"^(.+) - \d{8}_\d{4}$")
 channeldir_regex = re.compile(r"^(\d{3})\. (.+)$")
 flussonic_regex = re.compile(r"\w*-?(\d{10})-?(\d+){0,1}\.?\w*")
-
-filterwarnings(action="ignore", category=DeprecationWarning, module="sanic")
 
 log = logging.getLogger("U7D")
 
