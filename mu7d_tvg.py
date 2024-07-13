@@ -314,7 +314,7 @@ class MulticastIPTV:
         self.__epg_days = [0] * 8
         self.__epg_lock = asyncio.Lock()
         self.__expired = 0
-        self.__gaps = 0
+        self.__gaps = {}
         self.__new_gaps = defaultdict(list)
         self.__xml_data = {}
 
@@ -336,14 +336,9 @@ class MulticastIPTV:
         }
 
     def __fix_edges(self, channel, sorted_channel, new_epg=False):
-        gaps = 0
-        chan = f"[{channel:4}] "
+        gaps = []
+        epg = self.__epg if new_epg else self.__cached_epg
         now = int((datetime.now() + timedelta(hours=1)).replace(minute=5, second=0, microsecond=0).timestamp())
-
-        if new_epg:
-            name, epg = "New EPG   ", self.__epg
-        else:
-            name, epg = "Cached EPG", self.__cached_epg
 
         for i in range(len(sorted_channel) - 1):
             ts = sorted_channel[i]
@@ -351,24 +346,14 @@ class MulticastIPTV:
             _next = sorted_channel[i + 1]
 
             if _end != _next:
-                __ts, __end, __next = map(time.ctime, (ts, _end, _next))
-
                 if _end > _next:
-                    end = (__ts, ts)
+                    end = ts
                     epg[channel].pop(ts)
                 else:
-                    end = (__end, _end)
+                    end = _end
 
                 if any((new_epg, ts < now)):
-                    if new_epg:
-                        self.__new_gaps[channel].append((end[1], _next))
-                    else:
-                        gaps += _next - end[1]
-
-                    if not all((d == 1 for d in self.__epg_days)):
-                        continue
-
-                    log.info(f"{chan}{name} GAP     ->  END:[{end[0]}] [{end[1]}] - TO:[{__next}] [{_next}]")
+                    self.__new_gaps[channel].append((end, _next)) if new_epg else gaps.append((end, _next))
 
         return gaps
 
@@ -470,8 +455,15 @@ class MulticastIPTV:
                         break
 
                     if self.__gaps != gaps:
+                        _gaps = 0
+                        for channel, values in gaps.items():
+                            msg = f"[{channel:4}] Cached EPG GAP    "
+                            for f, t in values:
+                                _gaps += t - f
+                                _f, _t = map(time.ctime, (f, t))
+                                log.warning(f"{msg} ->  END:[{_f}] [{f}] - TO:[{_t}] [{t}]")
                         self.__gaps = gaps
-                        log.warning(f"EPG con huecos de [{str(timedelta(seconds=gaps))}s]...")
+                        log.warning(f"EPG con huecos de [{str(timedelta(seconds=_gaps))}s]...")
 
     @staticmethod
     def __get_packages(root):
@@ -557,9 +549,11 @@ class MulticastIPTV:
                 self.__cached_epg[channel] = self.__epg[channel]
             del self.__epg[channel]
 
-        gaps = 0
+        gaps = {}
         for channel in (ch for ch in self.__xml_data["services"] if ch in self.__cached_epg):
-            gaps += self.__fix_edges(channel, sorted(self.__cached_epg[channel]))
+            _gaps = self.__fix_edges(channel, sorted(self.__cached_epg[channel]))
+            if _gaps:
+                gaps[channel] = _gaps
 
         return gaps
 
