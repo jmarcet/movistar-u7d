@@ -314,7 +314,6 @@ class MulticastIPTV:
         self.__epg_days = [0] * 8
         self.__epg_lock = asyncio.Lock()
         self.__expired = 0
-        self.__fixed = 0
         self.__gaps = 0
         self.__new_gaps = defaultdict(list)
         self.__xml_data = {}
@@ -337,80 +336,49 @@ class MulticastIPTV:
         }
 
     def __fix_edges(self, channel, sorted_channel, new_epg=False):
-        fixed = gaps = 0
+        gaps = 0
+        chan = f"[{channel:4}] "
+        now = int((datetime.now() + timedelta(hours=1)).replace(minute=5, second=0, microsecond=0).timestamp())
+
         if new_epg:
             name, epg = "New EPG   ", self.__epg
         else:
             name, epg = "Cached EPG", self.__cached_epg
-        now = int(datetime.now().timestamp())
-        chan = f"[{channel:4}] "
 
         for i in range(len(sorted_channel) - 1):
             ts = sorted_channel[i]
             _end = ts + epg[channel][ts]["duration"]
             _next = sorted_channel[i + 1]
-            __ts, __end, __next = map(time.ctime, (ts, _end, _next))
 
-            if _end < _next:
-                msg = f"{chan}{name} GAP     ->  END:[{__end}] [{_end}] - TO:[{__next}] [{_next}]"
-                if new_epg:
-                    log.debug(msg)
-                    self.__new_gaps[channel].append((_end, _next))
-                elif ts < now:
-                    if _next - ts < 1500:
-                        epg[channel][ts]["duration"] = _next - ts
-                        log.warning(msg.replace(" GAP    ", " EXTEND "))
-                        fixed += 1
-                    else:
-                        log.debug(msg)
-                        gaps += _next - _end
+            if _end != _next:
+                __ts, __end, __next = map(time.ctime, (ts, _end, _next))
 
-            elif _end > _next:
-                if ts < now:
-                    epg[channel][ts]["duration"] = _next - ts
-                    msg = f"{chan}{name} SHORTEN ->  END:[{__end}] [{_end}] - TO:[{__next}] [{_next}]"
-                    log.warning(msg)
-                    fixed += 1
-                else:
+                if _end > _next:
+                    end = (__ts, ts)
                     epg[channel].pop(ts)
-                    msg = f"{chan}{name} DROP    -> FROM:[{__ts}] [{ts}] - TO:[{__next}] [{_next}]"
-                    log.debug(msg)
+                else:
+                    end = (__end, _end)
 
-        return fixed, gaps
+                if any((new_epg, ts < now)):
+                    if new_epg:
+                        self.__new_gaps[channel].append((end[1], _next))
+                    else:
+                        gaps += _next - end[1]
+
+                    if not all((d == 1 for d in self.__epg_days)):
+                        continue
+
+                    log.info(f"{chan}{name} GAP     ->  END:[{end[0]}] [{end[1]}] - TO:[{__next}] [{_next}]")
+
+        return gaps
 
     def __fix_epg(self):
-        fixed_diff = fixed_over = 0
         for channel in (ch for ch in self.__xml_data["services"] if ch in self.__epg):
             _new = sorted(self.__epg[channel])
             msg = f"[{channel:4}] New EPG            -> FROM:[{time.ctime(_new[0])}] [{_new[0]}] - "
             msg += f"TO:[{time.ctime(_new[-1])}] [{_new[-1]}]"
-
             log.debug(msg)
-
-            for ts in _new:
-                _duration = self.__epg[channel][ts]["duration"]
-                _end = ts + _duration
-
-                if _duration != _end - ts:
-                    self.__epg[channel][ts]["duration"] = _end - ts
-                    msg = f"New EPG    WRONG  -> FROM:[{time.ctime(ts)}] [{ts}] - "
-                    msg += f"TO:[{time.ctime(ts + _duration)}] [{ts + _duration}] > "
-                    msg += f"[{time.ctime(_end)}] [{_end}]"
-                    log.warning(msg)
-                    fixed_diff += 1
-
-            fixed_over += self.__fix_edges(channel, _new, new_epg=True)[0]
-
-        if fixed_diff or fixed_over:
-            log.warning("El nuevo EPG contenía errores")
-            if fixed_diff:
-                _s = "programas no duraban" if fixed_diff > 1 else "programa no duraba"
-                log.warning(f"{fixed_diff} {_s} el tiempo hasta al siguiente programa")
-            if fixed_over:
-                _s = "programas acababan" if fixed_over > 1 else "programa acababa"
-                log.warning(f"{fixed_over} {_s} después de que el siguiente empezara")
-
-        self.__fixed += fixed_diff + fixed_over
+            self.__fix_edges(channel, _new, new_epg=True)
 
     async def __get_bin_epg(self):
         log.info("Descargando 8 días de EPG binario...")
@@ -489,10 +457,11 @@ class MulticastIPTV:
                 log.info("%s -> descargado", epg_bin)
 
             async with self.__epg_lock:
+                self.__epg_days[epg_day] += 1
+
                 self.__fix_epg()
                 gaps = self.__merge_epg()
 
-                self.__epg_days[epg_day] += 1
                 await Cache.save_epg(self.__cached_epg)
 
                 if all(self.__epg_days):
@@ -590,9 +559,7 @@ class MulticastIPTV:
 
         gaps = 0
         for channel in (ch for ch in self.__xml_data["services"] if ch in self.__cached_epg):
-            _fixed, _gaps = self.__fix_edges(channel, sorted(self.__cached_epg[channel]))
-            self.__fixed += _fixed
-            gaps += _gaps
+            gaps += self.__fix_edges(channel, sorted(self.__cached_epg[channel]))
 
         return gaps
 
@@ -686,8 +653,10 @@ class MulticastIPTV:
         self.__expire_epg()
         self.__sort_epg()
 
+        if self.__expired:
+            log.info(f"Eventos en Caché: Caducados = {self.__expired}")
+
         await Cache.save_epg(self.__cached_epg)
-        log.info(f"Eventos en Caché: Arreglados = {self.__fixed} _ Caducados = {self.__expired}")
         return self.__cached_epg
 
     async def get_epg_cloud(self):
