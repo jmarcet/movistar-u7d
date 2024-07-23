@@ -338,7 +338,7 @@ class MulticastIPTV:
     def __fix_edges(self, channel, sorted_channel, new_epg=False):
         gaps = []
         epg = self.__epg if new_epg else self.__cached_epg
-        now = int((datetime.now() + timedelta(hours=1)).replace(minute=5, second=0, microsecond=0).timestamp())
+        now = int((datetime.now() + timedelta(hours=2)).replace(minute=0, second=0, microsecond=0).timestamp())
 
         for i in range(len(sorted_channel) - 1):
             ts = sorted_channel[i]
