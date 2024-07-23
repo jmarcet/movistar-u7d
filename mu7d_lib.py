@@ -1241,7 +1241,7 @@ async def update_epg_cron():
         await update_epg()
     await asyncio.sleep(last_datetime + 3600 - 0.25 - time.time())
     while not _g._SHUTDOWN:
-        await asyncio.gather(asyncio.sleep(3600), update_epg())
+        await asyncio.gather(asyncio.sleep(3600), asyncio.wait_for(update_epg(), timeout=3300))
 
 
 async def update_epg_local():
