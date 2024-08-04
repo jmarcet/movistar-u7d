@@ -442,11 +442,11 @@ async def handle_images(request, cover=None, logo=None, path=None):
                             content_type="image/jpeg" if not url.endswith(".png") else "image/png",
                             headers={"Content-Disposition": f'attachment; filename="{os.path.basename(url)}"'},
                         )
-                    log.warning("Got empty image => %s", str(r).splitlines()[0])
+                    log.warning(f"[{request.ip}] GET {request.url:82} => Image empty")
                 else:
-                    log.warning("Could not get image => %s", str(r).splitlines()[0])
-        except (ClientConnectionError, ClientOSError, ServerDisconnectedError) as ex:
-            log.warning("Could not get image => %s", str(ex))
+                    log.warning(f"[{request.ip}] GET {request.url:82} => Image not found")
+        except (ClientConnectionError, ClientOSError, ServerDisconnectedError):
+            log.warning(f"[{request.ip}] GET {request.url:82} => Image not found")
     raise NotFound(f"Requested URL {request.path} not found")
 
 
