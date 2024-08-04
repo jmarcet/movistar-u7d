@@ -1,19 +1,17 @@
-version: '2.4'
-
 services:
   movistar_u7d:
-    # build:
-    #   context: .
-    #   args:
-    #     BUILD_TYPE: full
-    #     BUILDKIT_INLINE_CACHE: 1
-    #     DOCKER_BUILDKIT: 1
-    #     COMPOSE_DOCKER_CLI_BUILD: 1
-    # image: registry.marcet.info/javier/movistar-u7d:latest
-    # image: registry.marcet.info/javier/movistar-u7d:stable
-    # image: registry.marcet.info/javier/movistar-u7d:stable-slim
+  # build:
+  #   context: .
+  #   args:
+  #     BUILD_TYPE: full
+  #     BUILDKIT_INLINE_CACHE: 1
+  #     DOCKER_BUILDKIT: 1
+  #     COMPOSE_DOCKER_CLI_BUILD: 1
+  # image: registry.marcet.info/javier/movistar-u7d:latest
+  # image: registry.marcet.info/javier/movistar-u7d:stable
+  # image: registry.marcet.info/javier/movistar-u7d:stable-slim
     image: registry.marcet.info/javier/movistar-u7d:unstable
-    # image: registry.marcet.info/javier/movistar-u7d:unstable-slim
+  # image: registry.marcet.info/javier/movistar-u7d:unstable-slim
     container_name: movistar_u7d
     cap_add:
       - NET_ADMIN
@@ -22,24 +20,26 @@ services:
       - SYS_NICE
     dns: 172.26.23.3
     dns_search: ""
-    restart: on-failure
+    environment:
+      - LAN_IP
+    restart: ${RESTART_POLICY}
     network_mode: host
+  # devices:
+  #   - /dev/dri:/dev/dri
     volumes:
       - /etc/localtime:/etc/localtime
-    # - ./:/app
-    # - ${HOME}:/home
-    # - ${RECORDINGS}:${RECORDINGS}
-    # devices:
-    #   - /dev/dri:/dev/dri
-    # cpu_shares: 8192
-    # cpus: 4
-    # mem_limit: 3gb
-    # memswap_limit: 3gb
-    # healthcheck:
-    #   test: nc -zv $LAN_IP 8888
-    #   test: nc -zv 127.0.0.1 8889
-    #   interval: 10s
-    #   timeout: 5s
-    #   retries: 5
+  #   - ./:/app
+  #   - ${RECORDINGS}:${RECORDINGS}
+  #   - ${RECORDINGS_TMP}:${RECORDINGS_TMP}
+      - ${U7D_HOME}:/home
+  # cpu_shares: 8192
+  # cpus: 4
+  # mem_limit: 4gb
+  # memswap_limit: 4gb
+  # healthcheck:
+  #   test: nc -zv $LAN_IP 8888
+  #   interval: 10s
+  #   timeout: 5s
+  #   retries: 5
 
 # vim: et ci pi sts=2 sw=2 ts=2

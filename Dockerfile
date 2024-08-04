@@ -1,4 +1,4 @@
-FROM python:3.12-slim as base
+FROM python:3.12-slim AS base
 
 ARG BUILD_TYPE
 ARG TARGETARCH
@@ -36,7 +36,7 @@ COPY requirements.txt .
 
 RUN --mount=type=cache,target=/root/.cache \
     pip install --disable-pip-version-check --root-user-action ignore --use-pep517 uv \
-    && uv pip install --system -r requirements.txt
+    && uv pip install --link-mode=copy --system -r requirements.txt
 
 ENV ffmpeg_CFLAGS="-I/usr/lib/jellyfin-ffmpeg/include"
 ENV ffmpeg_LIBS="-L/usr/lib/jellyfin-ffmpeg/lib -lavcodec -lavformat -lavutil -lswscale"
@@ -107,7 +107,7 @@ COPY . .
 
 RUN --mount=type=cache,target=/root/.cache \
     if [ "${BUILD_TYPE}" = "full" ] && [ "$TARGETARCH" = "amd64" ]; then \
-        uv pip install --system bandit pycodestyle pylint ruff 2>&1 | tee /tmp/lint-install.txt \
+        uv pip install --link-mode=copy --system bandit pycodestyle pylint ruff 2>&1 | tee /tmp/lint-install.txt \
         && bandit -v *.py \
         && pycodestyle -v *.py \
         && pylint --rcfile pyproject.toml -v *.py \
