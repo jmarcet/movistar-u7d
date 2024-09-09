@@ -139,9 +139,9 @@ class Cache:
     async def load_epg_local():
         try:
             async with async_open(os.path.join(HOME, "recordings.json"), "r", encoding="utf8") as f:
-                return json.loads(await f.read(), object_hook=Cache.keys_to_int)
+                return json.loads(await f.read(), object_hook=Cache.keys_to_int) or {}
         except (FileNotFoundError, JSONDecodeError, OSError, PermissionError, ValueError):
-            return
+            return {}
 
     @staticmethod
     async def load_epg_metadata():
@@ -642,7 +642,7 @@ class MulticastIPTV:
         del self.__epg, self.__xml_data["segments"]
 
         if not self.__cached_epg:
-            return
+            return {}
 
         self.__expire_epg()
         self.__sort_epg()
@@ -657,7 +657,7 @@ class MulticastIPTV:
         data = await MovistarTV.get_service_data("recordingList&mode=0&state=2&firstItem=0&numItems=999")
         if not data or not data.get("result"):
             log.info("No existen grabaciones en la Nube")
-            return
+            return {}
         cloud_recordings = data["result"]
 
         _channels = self.__xml_data["channels"]
@@ -1037,17 +1037,18 @@ class XmlTV:
         self.__doc.clear()
 
     def write_m3u(self, file_path, cloud=None, local=None):
-        if not any((cloud, local)):
+        if cloud is None and local is None:
             log.info("Generando lista de canales...")
         m3u = '#EXTM3U name="'
-        m3u += "Cloud " if cloud else "Local " if local else ""
+        m3u += "Cloud " if cloud is not None else "Local " if local is not None else ""
         m3u += 'MovistarTV" catchup="flussonic-ts" catchup-days="'
-        m3u += '9999" ' if (cloud or local) else '8" '
+        m3u += '9999" ' if cloud is not None or local is not None else '8" '
         m3u += f'max-conn="12" refresh="1200" url-tvg="{U7D_URL}/'
-        m3u += "cloud.xml" if cloud else "local.xml" if local else "guide.xml.gz"
+        m3u += "cloud.xml" if cloud is not None else "local.xml" if local is not None else "guide.xml.gz"
         m3u += '"\n'
 
-        services = {k: v for k, v in self.__services.items() if k in (cloud or local or EPG_CHANNELS)}
+        channels = EPG_CHANNELS if cloud is None and local is None else cloud or local or {}
+        services = {k: v for k, v in self.__services.items() if k in channels}
 
         for channel_id in (ch for ch in services if ch in self.__channels):
             channel_name = self.__channels[channel_id]["name"]
@@ -1134,8 +1135,6 @@ async def tvg_main(args, time_start):
                 epg = await _MIPTV.get_epg_cloud()
             elif any((args.local_m3u, args.local_recordings)):
                 epg = await Cache.load_epg_local()
-            if not epg:
-                return
             epg_nr_channels = len(epg)
             del _MIPTV
 
@@ -1153,6 +1152,9 @@ async def tvg_main(args, time_start):
                 current_task = asyncio.current_task()
                 if current_task and not current_task.cancelling():
                     await remove(TVG_BUSY)
+
+                if not epg_nr_channels:
+                    return
 
                 _t = str(timedelta(seconds=round(time.time() - time_start)))
                 deadline_str = datetime.fromtimestamp(_DEADLINE).strftime("%a %d %b %Y %H:%M:%S")

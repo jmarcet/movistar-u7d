@@ -1204,6 +1204,9 @@ async def update_cloud():
         except (FileNotFoundError, JSONDecodeError, OSError, PermissionError, TypeError, ValueError):
             return await update_cloud()
 
+        if not _g._CLOUD:
+            return
+
         log.info(f"Cloud Recordings Updated => {_g.U7D_URL}/MovistarTVCloud.m3u - {_g.U7D_URL}/cloud.xml")
         nr_epg = sum((len(_g._CLOUD[channel]) for channel in _g._CLOUD))
         log.info(f"Total: {len(_g._CLOUD):2} Channels & {nr_epg:5} EPG entries")
