@@ -749,7 +749,9 @@ if __name__ == "__main__":
         with suppress(ChildProcessError):
             if Process().children():
                 log.debug("Waiting for children...")
-                while Process().children():
+                while True:
+                    if not Process().children():
+                        break
                     await asyncio.sleep(0.1)
 
     if CONF.get("Exception"):

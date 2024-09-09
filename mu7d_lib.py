@@ -502,7 +502,9 @@ async def network_saturation():
         if not await aio_os.path.exists(iface_rx):
             last = 0
             log.error(f"{_g.IPTV_IFACE} NOT ACCESSIBLE")
-            while not await aio_os.path.exists(iface_rx):
+            while True:
+                if await aio_os.path.exists(iface_rx):
+                    break
                 await asyncio.sleep(1)
             log.info(f"{_g.IPTV_IFACE} IS now ACCESSIBLE")
 
