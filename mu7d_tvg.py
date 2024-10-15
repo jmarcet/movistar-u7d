@@ -1259,10 +1259,10 @@ if __name__ == "__main__":
         sys.exit(1)
 
     if any((args.m3u, args.guide)):
-        banner = f"Movistar U7D - TVG v{VERSION}"
-        log.info("-" * len(banner))
-        log.info(banner)
-        log.info("-" * len(banner))
+        BANNER = f"Movistar U7D - TVG v{VERSION}"
+        log.info("-" * len(BANNER))
+        log.info(BANNER)
+        log.info("-" * len(BANNER))
         log.debug("%s", " ".join(sys.argv[1:]))
 
     _CONFIG = _DEADLINE = _END_POINT = _IPTV = _MIPTV = _SESSION = _XMLTV = None

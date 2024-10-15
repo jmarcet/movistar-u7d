@@ -778,10 +778,10 @@ if __name__ == "__main__":
         if add_logfile(log, CONF["LOG_TO_FILE"], CONF["DEBUG"] and logging.DEBUG or logging.INFO):
             log.error(f'Cannot write logs to {CONF["LOG_TO_FILE"]}')
 
-    banner = f"Movistar U7D v{VERSION}"
-    log.info("=" * len(banner))
-    log.info(banner)
-    log.info("=" * len(banner))
+    BANNER = f"Movistar U7D v{VERSION}"
+    log.info("=" * len(BANNER))
+    log.info(BANNER)
+    log.info("=" * len(BANNER))
 
     os.environ["PATH"] = "%s;%s" % (os.path.dirname(__file__), os.getenv("PATH"))
     os.environ["U7D_PARENT"] = str(os.getpid())
