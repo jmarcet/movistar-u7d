@@ -140,7 +140,7 @@ def _mu7d_config():  # pylint: disable=too-many-branches
         conf["GID"] = int(os.getenv("PGID", "65534"))
 
     if "COMSKIP" not in conf or not which("comskip") or not isinstance(conf["COMSKIP"], str):
-        conf["COMSKIP"] = None
+        conf["COMSKIP"] = ""
     else:
         if WIN32:
             conf["COMSKIP"] += " --quiet"
@@ -183,7 +183,7 @@ def _mu7d_config():  # pylint: disable=too-many-branches
         conf["OTT_HACK"] = False
 
     if "RECORDINGS" not in conf or not all((which("ffmpeg"), which("ffprobe"))):
-        conf["RECORDINGS"] = conf["RECORDINGS_M3U"] = None
+        conf["RECORDINGS"] = ""
     else:
         conf["RECORDINGS"] = conf["RECORDINGS"].rstrip("/").rstrip("\\")
 
@@ -199,7 +199,7 @@ def _mu7d_config():  # pylint: disable=too-many-branches
         conf["RECORDINGS_REINDEX"] = False
 
     if "RECORDINGS_TMP" not in conf:
-        conf["RECORDINGS_TMP"] = None
+        conf["RECORDINGS_TMP"] = ""
     else:
         conf["RECORDINGS_TMP"] = conf["RECORDINGS_TMP"].rstrip("/").rstrip("\\")
 
