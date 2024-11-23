@@ -134,10 +134,10 @@ def _mu7d_config():  # pylint: disable=too-many-branches
         conf["HOME"] = os.getenv("HOME", os.getenv("USERPROFILE"))
 
     if "UID" not in conf or not isinstance(conf["UID"], int):
-        conf["UID"] = 65534
+        conf["UID"] = int(os.getenv("PUID", "65534"))
 
     if "GID" not in conf or not isinstance(conf["GID"], int):
-        conf["GID"] = 65534
+        conf["GID"] = int(os.getenv("PGID", "65534"))
 
     if "COMSKIP" not in conf or not which("comskip") or not isinstance(conf["COMSKIP"], str):
         conf["COMSKIP"] = None
