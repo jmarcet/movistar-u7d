@@ -876,6 +876,14 @@ if __name__ == "__main__":
             log.error("RECORDINGS path not set")
             sys.exit(1)
 
+        if not os.access(CONF["RECORDINGS"], os.R_OK | os.W_OK):
+            log.critical(f'Cannot acceess RECORDINGS="{CONF["RECORDINGS"]}"')
+            sys.exit(1)
+
+        if CONF["RECORDINGS_TMP"] and not os.access(CONF["RECORDINGS_TMP"], os.R_OK | os.W_OK):
+            log.warning(f'Cannot access RECORDINGS_TMP="{CONF["RECORDINGS_TMP"]}" => Disabling RECORDINGS_TMP')
+            CONF["RECORDINGS_TMP"] = ""
+
         CACHE_DIR = CONF["CACHE_DIR"]
         COMSKIP = CONF["COMSKIP"] if (_args.comskip or _args.comskipcut) else None
         COMSKIP_LOG = os.path.join(CONF["HOME"], "comskip.log") if COMSKIP else None

@@ -774,9 +774,21 @@ if __name__ == "__main__":
             except PermissionError:
                 log.warning(f"Could not drop privileges to GID {CONF['GID']}")
 
+    if not os.access(CONF["HOME"], os.R_OK | os.W_OK):
+        log.critical(f'Cannot access HOME="{CONF["HOME"]}". Fix permissions and/or config in "mu7d.conf"')
+        _exit(1)
+
     if CONF["LOG_TO_FILE"]:
         if add_logfile(log, CONF["LOG_TO_FILE"], CONF["DEBUG"] and logging.DEBUG or logging.INFO):
             log.error(f'Cannot write logs to {CONF["LOG_TO_FILE"]}')
+
+    if CONF["RECORDINGS"] and not os.access(CONF["RECORDINGS"], os.R_OK | os.W_OK):
+        log.warning(f'Cannot access RECORDINGS="{CONF["RECORDINGS"]}" => Disabling RECORDINGS')
+        CONF["RECORDINGS"] = ""
+
+    if CONF["RECORDINGS_TMP"] and not os.access(CONF["RECORDINGS_TMP"], os.R_OK | os.W_OK):
+        log.warning(f'Cannot access RECORDINGS_TMP="{CONF["RECORDINGS_TMP"]}" => Disabling RECORDINGS_TMP')
+        CONF["RECORDINGS_TMP"] = ""
 
     BANNER = f"Movistar U7D v{VERSION}"
     log.info("=" * len(BANNER))
