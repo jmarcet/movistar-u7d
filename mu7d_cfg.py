@@ -208,8 +208,7 @@ def _mu7d_config():  # pylint: disable=too-many-branches
         conf["RECORDINGS_TRANSCODE_INPUT"] = conf["RECORDINGS_TRANSCODE_INPUT"].split()
 
     if "RECORDINGS_TRANSCODE_OUTPUT" not in conf:
-        conf["RECORDINGS_TRANSCODE_OUTPUT"] = "-c copy -c:a:0 libfdk_aac -c:a:1 libfdk_aac -b:a 128k"
-        conf["RECORDINGS_TRANSCODE_OUTPUT"] += f" -packetsize {CHUNK} -ts_packetsize {CHUNK} -seek2any 1"
+        conf["RECORDINGS_TRANSCODE_OUTPUT"] = "-c copy -packetsize {CHUNK} -ts_packetsize {CHUNK} -seek2any 1"
     conf["RECORDINGS_TRANSCODE_OUTPUT"] = conf["RECORDINGS_TRANSCODE_OUTPUT"].split()
 
     if "RECORDINGS_UPGRADE" not in conf or conf["RECORDINGS_UPGRADE"] not in (-2, -1, 0, 1, 2):
