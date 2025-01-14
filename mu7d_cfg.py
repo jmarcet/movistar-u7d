@@ -78,7 +78,6 @@ EPG_CHANNELS = {
     # 5301,# "Paramount Network HD"
     3185,  # "Be Mad HD"
     3443,  # "Ten"
-    1616,  # "Disney Channel HD"
     5278,  # "Boing HD"
     4467,  # "Clan TVE HD"
     5106,  # "Canal 24 H. HD"
