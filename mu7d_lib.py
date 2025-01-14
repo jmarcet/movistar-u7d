@@ -748,6 +748,10 @@ async def reindex_recordings():
             basename = nfo_file.removesuffix(NFO_EXT)
             if not await does_recording_exist(basename):
                 log.error(f'No recording found: "{basename + _g.VID_EXT}" {nfo_file=}')
+                _glob = os.path.join(os.path.dirname(basename), "metadata", os.path.basename(basename))
+                _glob += "-*.jpg"
+                await remove(nfo_file, basename + ".jpg")
+                await remove(*glob(_glob))
                 continue
 
             try:
