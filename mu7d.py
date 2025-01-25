@@ -3,6 +3,7 @@
 import asyncio
 import logging
 import os
+import re
 import sys
 import time
 import urllib.parse
@@ -227,7 +228,7 @@ async def handle_channel(request, channel_id=None, channel_name=None):
         raise NotFound(f"Requested URL {request.path} not found")
 
     ua = request.headers.get("user-agent", "")
-    if " Chrome/" in ua:
+    if _g.chrome_regex.match(ua):
         return await handle_flussonic(request, f"{int(datetime.now().timestamp())}.ts", channel_id)
 
     if request.method == "HEAD":
@@ -246,7 +247,7 @@ async def handle_channel(request, channel_id=None, channel_name=None):
             with closing(await dgram_from_socket(sock)) as stream:
                 # 1st packet on SDTV channels is bogus and breaks ffmpeg
                 if ua.startswith("Jellyfin") and " HD" not in ch.name:
-                    log.debug('UA="%s" detected, skipping first packet', ua)
+                    log.info('UA="%s" detected, skipping first packet', ua)
                     await stream.recv()
                 else:
                     await _response.send((await stream.recv())[0][28:])
@@ -308,11 +309,13 @@ async def handle_flussonic(request, url, channel_id=None, channel_name=None, clo
     )
 
     ua = request.headers.get("user-agent", "")
+    if _g.chrome_regex.match(ua):
+        log.info('UA="%s" detected -> Transcoding', ua)
 
     if local:
         if await aio_os.path.exists(p_vod.pid):
-            if " Chrome/" in ua or not p_vod.pid.endswith(".ts"):
-                return await transcode(request, event, p_vod, filename=p_vod.pid, offset=p_vod.offset)
+            if _g.chrome_regex.match(ua) or not p_vod.pid.endswith(".ts"):
+                return await transcode(request, event, p_vod, cloud, local)
 
             _stat = await aio_os.stat(p_vod.pid)
             bytepos = round(p_vod.offset * _stat.st_size / p_vod.duration)
@@ -352,15 +355,15 @@ async def handle_flussonic(request, url, channel_id=None, channel_name=None, clo
     if not vod:
         raise NotFound(f"Requested URL {request.path} not found")
 
-    if " Chrome/" in ua:
-        return await transcode(request, event, p_vod, channel_id=channel_id, port=client_port, vod=vod)
+    if _g.chrome_regex.match(ua):
+        return await transcode(request, event, p_vod, cloud, local, channel_id, client_port, vod)
 
     _response, prom = await request.respond(content_type=MIME_WEBM), None
     try:
         with closing(await dgram_bind((_g._IPTV, client_port))) as stream:
             # 1st packet on SDTV channels is bogus and breaks ffmpeg
-            if ua.startswith("Jellyfin") and " HD" not in _g._CHANNELS[channel_id].name:
-                log.debug('UA="%s" detected, skipping first packet', ua)
+            if ua.startswith("Jellyfin ") and " HD" not in _g._CHANNELS[channel_id].name:
+                log.info('UA="%s" detected -> Skipping first packet', ua)
                 await stream.recv()
             else:
                 await _response.send((await stream.recv())[0])
@@ -626,10 +629,10 @@ async def handle_timers_check(request):
     return response.json({"status": "Timers check queued"}, 200)
 
 
-async def transcode(request, event, p_vod, channel_id=0, filename="", offset=0, port=0, vod=None):
+async def transcode(request, event, p_vod, cloud, local, channel_id=0, port=0, vod=None):
     log.debug(
-        'transcode(): channel_id=%s port=%s vod=%s offset=%s filename="%s"',
-        *map(str, (channel_id, port, vod, offset, filename)),
+        "transcode(): p_vod=%s cloud=%s local=%s channel_id=%s port=%s vod=%s",
+        *map(str, (p_vod, cloud, local, channel_id, port, vod)),
     )
 
     if request.args.get("vo") == "1":
@@ -638,8 +641,8 @@ async def transcode(request, event, p_vod, channel_id=0, filename="", offset=0, 
         lang_channel = ("-map", "0:a", "-map", "-0:m:language:mul", "-map", "-0:m:language:vo")
 
     cmd = ["ffmpeg"]
-    if filename:
-        cmd += ["-ss", f"{offset}", "-i", filename]
+    if local:
+        cmd += ["-ss", f"{p_vod.offset}", "-i", p_vod.pid]
     else:
         cmd += ["-skip_initial_bytes", f"{CHUNK}"] if " HD" not in _g._CHANNELS[channel_id].name else []
         cmd += ["-i", f"udp://@{_g._IPTV}:{port}"]
@@ -650,7 +653,7 @@ async def transcode(request, event, p_vod, channel_id=0, filename="", offset=0, 
     _response = await request.respond(content_type=MIME_WEBM)
 
     await _response.send(await proc.stdout.read(BUFF))
-    prom = app.add_task(add_prom_event(event._replace(lat=time.time() - event.id), p_vod=p_vod))
+    prom = app.add_task(add_prom_event(event._replace(lat=time.time() - event.id), cloud, local, p_vod))
 
     try:
         while not _g._SHUTDOWN:
@@ -826,6 +829,11 @@ if __name__ == "__main__":
     _g.epg_data = os.path.join(CONF["CACHE_DIR"], "epg.json")
     _g.recordings_data = os.path.join(CONF["HOME"], "recordings.json")
     _g.timers_data = os.path.join(CONF["HOME"], "timers.conf")
+
+    _g.chrome_regex = re.compile(
+        r"^Mozilla\/\d+\.\d+ \(.+; (Linux|Mac OS X|Win32;|Win64;) .+\) AppleWebKit\/\d+\.\d+ "
+        r"\(KHTML, like Gecko\) Chrome/\d+.\d+.\d+.\d+ \Safari/\d+\.\d+"
+    )
 
     VodArgs = namedtuple("Vod", "channel, program, client_ip, client_port, start, cloud")
 
