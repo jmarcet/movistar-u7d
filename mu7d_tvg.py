@@ -195,7 +195,7 @@ class Cache:
 
     @staticmethod
     async def save_epg_extended_info(data):
-        await Cache.save(os.path.join("programs", f'{data["productID"]}.json'), data, sort_keys=True)
+        await Cache.save(os.path.join("programs", f"{data['productID']}.json"), data, sort_keys=True)
 
     @staticmethod
     async def save_service_provider_data(data):
@@ -256,8 +256,8 @@ class MovistarTV:
             cfg = await Cache.load_config()
             if cfg:
                 if refresh:
-                    log.info(f'Demarcación: {DEMARCATIONS.get(cfg["demarcation"], cfg["demarcation"])}')
-                    log.info(f'Paquete contratado: {cfg["tvPackages"]}')
+                    log.info(f"Demarcación: {DEMARCATIONS.get(cfg['demarcation'], cfg['demarcation'])}")
+                    log.info(f"Paquete contratado: {cfg['tvPackages']}")
                 return cfg
 
         client, params, platform = await asyncio.gather(
@@ -269,11 +269,11 @@ class MovistarTV:
         if not all((client, params, platform)):
             raise IPTVNetworkError("IPTV de Movistar no detectado")
 
-        log.info(f'Demarcación: {DEMARCATIONS.get(client["demarcation"], client["demarcation"])}')
-        log.info(f'Paquete contratado: {client["tvPackages"]}')
+        log.info(f"Demarcación: {DEMARCATIONS.get(client['demarcation'], client['demarcation'])}")
+        log.info(f"Paquete contratado: {client['tvPackages']}")
 
         dvb_entry_point = platform["dvbConfig"]["dvbipiEntryPoint"].split(":")
-        genres = await MovistarTV.get_service_data(f'getEpgSubGenres&tvWholesaler={client["tvWholesaler"]}')
+        genres = await MovistarTV.get_service_data(f"getEpgSubGenres&tvWholesaler={client['tvWholesaler']}")
         uri = platform[next(filter(lambda f: re.search("base.*uri", f, re.IGNORECASE), platform.keys()))]
         conf = {
             "tvPackages": client["tvPackages"],
@@ -501,12 +501,12 @@ class MulticastIPTV:
             if data:
                 return data
 
-        _demarcation = DEMARCATIONS.get(_CONFIG["demarcation"], f'la demarcación {_CONFIG["demarcation"]}')
+        _demarcation = DEMARCATIONS.get(_CONFIG["demarcation"], f"la demarcación {_CONFIG['demarcation']}")
         log.info("Buscando el Proveedor de Servicios de %s...", _demarcation)
 
         xml = (await MulticastIPTV.get_xml_files(_CONFIG["mcast_grp"], _CONFIG["mcast_port"], init=True))["1_0"]
         result = re.findall(
-            f'DEM_{_CONFIG["demarcation"]}' + r'\..*?Address="(.*?)".*?\s*Port="(.*?)".*?',
+            f"DEM_{_CONFIG['demarcation']}" + r'\..*?Address="(.*?)".*?\s*Port="(.*?)".*?',
             xml,
             re.DOTALL,
         )[0]
@@ -775,7 +775,7 @@ class MulticastIPTV:
                     try:
                         chunk = MulticastIPTV.parse_chunk((await asyncio.wait_for(stream.recv(), timeout=3))[0])
                         if chunk["end"]:
-                            last_file = f'{chunk["filetype"]}_{chunk["fileid"]}'
+                            last_file = f"{chunk['filetype']}_{chunk['fileid']}"
                             break
                     except (AttributeError, KeyError, TypeError, UnicodeError):
                         pass
@@ -795,7 +795,7 @@ class MulticastIPTV:
                     while not chunk["end"]:
                         chunk = MulticastIPTV.parse_chunk((await stream.recv())[0])
                         xmldata += chunk["data"]
-                    current_file = f'{chunk["filetype"]}_{chunk["fileid"]}'
+                    current_file = f"{chunk['filetype']}_{chunk['fileid']}"
                     _files[current_file] = xmldata[:-4]  # Discard last 4bytes binary footer
                     if current_file == last_file:
                         break
@@ -1234,7 +1234,7 @@ if __name__ == "__main__":
     logging.basicConfig(datefmt=DATEFMT, format=FMT, level=CONF["DEBUG"] and logging.DEBUG or logging.INFO)
 
     if CONF.get("Exception"):
-        log.critical(f'Imposible parsear fichero de configuración => {repr(CONF["Exception"])}')
+        log.critical(f"Imposible parsear fichero de configuración => {repr(CONF['Exception'])}")
         sys.exit(1)
 
     if CONF["LOG_TO_FILE"]:

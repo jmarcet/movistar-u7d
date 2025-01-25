@@ -139,7 +139,7 @@ async def _cleanup_recording(exception, start=None):
             msg += " @ [%6ss] / [%5ss]" % ("~" + str(int(time.time() - start)), str(_args.time))
         log.error("%-17s%87s", "Recording FAILED", msg)
     else:
-        log.error(f'Recording FAILED: {str(exception).split(" - ", 1)[-1]}')
+        log.error(f"Recording FAILED: {str(exception).split(' - ', 1)[-1]}")
 
     await remove(*glob_safe(os.path.join(os.path.dirname(_tmpname), f"??_show_segment{VID_EXT}")))
     if RECORDINGS_TMP or await a.any(a.map(aio_os.path.exists, (_tmpname + TMP_EXT, _tmpname + TMP_EXT2))):
@@ -824,7 +824,7 @@ if __name__ == "__main__":
     _END_POINT = _IPTV = _SESSION = _SESSION_CLOUD = _filename = _tmpname = None
 
     if CONF.get("Exception"):
-        log.critical(f'Imposible parsear fichero de configuración => {repr(CONF["Exception"])}')
+        log.critical(f"Imposible parsear fichero de configuración => {repr(CONF['Exception'])}")
         sys.exit(1)
 
     DEBUG = CONF["DEBUG"]

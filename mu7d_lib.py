@@ -362,7 +362,7 @@ def get_recording_name(channel_id, timestamp, cloud=False):
     filename = os.path.join(path.rstrip(" _.,;"), get_safe_filename(epg.full_title))
 
     if not any((epg.genre[0] in ("1", "8"), epg.serie)):
-        filename += f' - {datetime.fromtimestamp(timestamp).strftime("%Y%m%d_%H%M")}'
+        filename += f" - {datetime.fromtimestamp(timestamp).strftime('%Y%m%d_%H%M')}"
 
     return filename[len(_g.RECORDINGS) + 1 :]
 
@@ -1331,7 +1331,7 @@ async def update_recordings(channel_id=None):
     channels_dirs += [(0, _g.RECORDINGS)]
 
     for ch_id, _dir in channels_dirs:
-        header = f"#EXTM3U name=\"{'Recordings' if _dir == _g.RECORDINGS else _dir}\" dlna_extras=mpeg_ps_pal\n"
+        header = f'#EXTM3U name="{"Recordings" if _dir == _g.RECORDINGS else _dir}" dlna_extras=mpeg_ps_pal\n'
         if ch_id:
             m3u_file = os.path.join(_g.RECORDINGS, _dir, f"{_dir}.m3u")
         else:
@@ -1389,7 +1389,7 @@ async def upgrade_recording_channels():
 
     for nr, name in stale:
         old_channel_name = f"{nr:03}. {name}"
-        new_channel_name = f'OLD_{datetime.now().strftime("%Y%m%dT%H%M%S")}_{nr:03}_{name}'
+        new_channel_name = f"OLD_{datetime.now().strftime('%Y%m%dT%H%M%S')}_{nr:03}_{name}"
         if nr in numbers and name not in names:
             log.warning(f'Channel "{old_channel_name}" has changed its name')
         else:
@@ -1447,7 +1447,7 @@ async def upgrade_recording_channels():
                     await aio_os.rename(old_file, new_file)
 
         if await aio_os.path.exists(new_channel_path):
-            changed_channel_name = f'OLD_{datetime.now().strftime("%Y%m%dT%H%M%S")}_{old_nr:03}_{name}'
+            changed_channel_name = f"OLD_{datetime.now().strftime('%Y%m%dT%H%M%S')}_{old_nr:03}_{name}"
             changed_channel_path = os.path.join(_g.RECORDINGS, changed_channel_name)
 
             log.warning(f'RENAMING channel folder: "{old_channel_name}" => "{changed_channel_name}"')

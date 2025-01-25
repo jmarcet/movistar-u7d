@@ -419,7 +419,7 @@ async def handle_guides(request):
 async def handle_images(request, cover=None, logo=None, path=None):
     log.debug("[%s] %s %s", request.ip, request.method, request.url)
     if path and cover:
-        urls = (f'{URL_FANART}/{request.args.get("fanart")}',) if "?fanart=" in request.url else ()
+        urls = (f"{URL_FANART}/{request.args.get('fanart')}",) if "?fanart=" in request.url else ()
         urls += (f"{URL_COVER}/{path}/{cover}",)
     elif logo:
         urls = (f"{URL_LOGO}/{logo}",)
@@ -755,7 +755,7 @@ if __name__ == "__main__":
                     await asyncio.sleep(0.1)
 
     if CONF.get("Exception"):
-        log.critical(f'Imposible parsear fichero de configuración => {repr(CONF["Exception"])}')
+        log.critical(f"Imposible parsear fichero de configuración => {repr(CONF['Exception'])}")
         _exit(1)
 
     if not WIN32:
@@ -780,7 +780,7 @@ if __name__ == "__main__":
 
     if CONF["LOG_TO_FILE"]:
         if add_logfile(log, CONF["LOG_TO_FILE"], CONF["DEBUG"] and logging.DEBUG or logging.INFO):
-            log.error(f'Cannot write logs to {CONF["LOG_TO_FILE"]}')
+            log.error(f"Cannot write logs to {CONF['LOG_TO_FILE']}")
 
     if CONF["RECORDINGS"] and not os.access(CONF["RECORDINGS"], os.R_OK | os.W_OK):
         log.warning(f'Cannot access RECORDINGS="{CONF["RECORDINGS"]}" => Disabling RECORDINGS')
