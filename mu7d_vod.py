@@ -377,7 +377,7 @@ async def postprocess(vod_info):  # pylint: disable=too-many-statements
         nonlocal mtime, proc, tags
 
         if not RECORDINGS_TRANSCODE_OUTPUT:
-            log.info("POSTPROCESS #2  - Skipped. Transcoding disabled")
+            log.info("POSTPROCESS #2  - Skipped. Remuxing/Transcoding disabled")
             return
 
         cmd = ["ffmpeg"] + RECORDINGS_TRANSCODE_INPUT + ["-i", _tmpname + TMP_EXT]
@@ -413,7 +413,12 @@ async def postprocess(vod_info):  # pylint: disable=too-many-statements
 
         cmd += [*tags, "-v", "error", "-y", "-f", "matroska" if _args.mkv else "mpegts", _tmpname + TMP_EXT2]
 
-        msg = msg1 = "POSTPROCESS #2A - Remuxing/Transcoding"
+        if re.search(r"-c[:\w]* (?!copy)", " ".join(RECORDINGS_TRANSCODE_OUTPUT)):
+            _msg = "Transcoding"
+        else:
+            _msg = "Remuxing"
+
+        msg = msg1 = f"POSTPROCESS #2A - {_msg}"
         if _info and mtime != new_mtime:
             msg = DIV_LOG % (msg1, f"Cutting first [{new_mtime - mtime}s]")
             mtime = new_mtime
@@ -422,7 +427,7 @@ async def postprocess(vod_info):  # pylint: disable=too-many-statements
         start = time.time()
         proc = await asyncio.create_subprocess_exec(*cmd, stdin=NULL, stdout=PIPE, stderr=OUT)
 
-        await _check_process("Failed remuxing/transcoding, leaving as is")
+        await _check_process(f"Failed {_msg} -> Leaving as is")
 
         if proc.returncode:
             COMSKIP = None
