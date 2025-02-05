@@ -411,7 +411,7 @@ async def postprocess(vod_info):  # pylint: disable=too-many-statements
         if all((_args.mkv, img_mime, img_name)):
             tags += ["-attach", img_name, "-metadata:s:t:0", f"mimetype={img_mime}"]
 
-        cmd += [*tags, "-v", "error", "-y", "-f", "matroska" if _args.mkv else "mpegts", _tmpname + TMP_EXT2]
+        cmd += [*tags, "-v", "info", "-y", "-f", "matroska" if _args.mkv else "mpegts", _tmpname + TMP_EXT2]
 
         if re.search(r"-c[:\w]* (?!copy)", " ".join(RECORDINGS_TRANSCODE_OUTPUT)):
             _msg = "Transcoding"
@@ -424,10 +424,11 @@ async def postprocess(vod_info):  # pylint: disable=too-many-statements
             mtime = new_mtime
 
         log.info(msg)
-        start = time.time()
-        proc = await asyncio.create_subprocess_exec(*cmd, stdin=NULL, stdout=PIPE, stderr=OUT)
-
-        await _check_process(f"Failed {_msg} -> Leaving as is")
+        async with async_open(TRANSCODE_LOG, "ab") as f:
+            start = time.time()
+            proc = await asyncio.create_subprocess_exec(*cmd, stdin=NULL, stdout=f, stderr=f)
+            await _check_process(f"Failed {_msg} -> Leaving as is")
+            end = time.time()
 
         if proc.returncode:
             COMSKIP = None
@@ -435,7 +436,6 @@ async def postprocess(vod_info):  # pylint: disable=too-many-statements
         else:
             await rename(_tmpname + TMP_EXT2, _tmpname + TMP_EXT)
 
-        end = time.time()
         msg1 = msg1.replace("#2A", "#2B").replace("ing", "ed")
         msg = DIV_LOG % (msg1, f"In [{str(timedelta(seconds=round(end - start)))}s]")
         log.info(msg)
@@ -903,6 +903,7 @@ if __name__ == "__main__":
         RECORDINGS_TMP = CONF["RECORDINGS_TMP"]
         RECORDINGS_TRANSCODE_INPUT = CONF["RECORDINGS_TRANSCODE_INPUT"]
         RECORDINGS_TRANSCODE_OUTPUT = CONF["RECORDINGS_TRANSCODE_OUTPUT"]
+        TRANSCODE_LOG = os.path.join(CONF["HOME"], "transcode.log") if RECORDINGS_TRANSCODE_OUTPUT else None
         TMP_DIR = CONF["TMP_DIR"]
         U7D_URL = CONF["U7D_URL"]
 
