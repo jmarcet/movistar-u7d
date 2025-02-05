@@ -360,6 +360,9 @@ class MulticastIPTV:
     def __fix_epg(self):
         for channel in (ch for ch in self.__xml_data["services"] if ch in self.__epg):
             _new = sorted(self.__epg[channel])
+            if not _new:
+                del self.__epg[channel]
+                continue
             msg = f"[{channel:4}] New EPG            -> FROM:[{time.ctime(_new[0])}] [{_new[0]}] - "
             msg += f"TO:[{time.ctime(_new[-1])}] [{_new[-1]}]"
             log.debug(msg)
