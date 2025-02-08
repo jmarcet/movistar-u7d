@@ -430,6 +430,21 @@ async def postprocess(vod_info):  # pylint: disable=too-many-statements
             await _check_process(f"Failed {_msg} -> Leaving as is")
             end = time.time()
 
+        if _msg == "Transcoding":
+            size_orig = (await aio_os.stat(_tmpname + TMP_EXT)).st_size
+            size_dest = (await aio_os.stat(_tmpname + TMP_EXT2)).st_size
+            if size_dest < size_orig:
+
+                def _h(num):
+                    for unit in ("", "Ki", "Mi", "Gi", "Ti", "Pi", "Ei", "Zi"):
+                        if abs(num) < 1024.0:
+                            return f"{num:3.1f}{unit}B"
+                        num /= 1024.0
+                    return f"{num:.1f}YiB"
+
+                msg1 += f" - Saved [{_h(size_orig)} - {_h(size_dest)}] ="
+                msg1 += f" [{_h(size_orig - size_dest)} ({(size_orig - size_dest) / size_orig * 100:.2f}%)]"
+
         if proc.returncode:
             COMSKIP = None
             await _cleanup(TMP_EXT2)
@@ -437,7 +452,7 @@ async def postprocess(vod_info):  # pylint: disable=too-many-statements
             await rename(_tmpname + TMP_EXT2, _tmpname + TMP_EXT)
 
         msg1 = msg1.replace("#2A", "#2B").replace("ing", "ed")
-        msg = DIV_LOG % (msg1, f"In [{str(timedelta(seconds=round(end - start)))}s]")
+        msg = "%-84s%20s" % (msg1, f"In [{str(timedelta(seconds=round(end - start)))}s]")
         log.info(msg)
 
     async def _step_3():
