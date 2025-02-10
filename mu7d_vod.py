@@ -182,7 +182,7 @@ async def _open_sessions():
 
 
 async def postprocess(vod_info):  # pylint: disable=too-many-statements
-    async def _check_process(msg=""):
+    async def _check_process(msg="", fatal=True):
         nonlocal proc
 
         if not proc:
@@ -207,7 +207,7 @@ async def postprocess(vod_info):  # pylint: disable=too-many-statements
                 msg += ": " if msg else ""
                 msg += '"%s"' % re.sub(r"\s+", " ", stdout.decode().replace("\n", " ").strip())
 
-            if any((not WIN32 and proc.returncode == -9, WIN32 and proc.returncode == 15)):
+            if fatal:
                 raise RecordingError(msg)
 
             if msg:
@@ -373,7 +373,6 @@ async def postprocess(vod_info):  # pylint: disable=too-many-statements
         log.info(msg)
 
     async def _step_2():
-        global COMSKIP
         nonlocal mtime, proc, tags
 
         if not RECORDINGS_TRANSCODE_OUTPUT:
@@ -427,7 +426,7 @@ async def postprocess(vod_info):  # pylint: disable=too-many-statements
         async with async_open(TRANSCODE_LOG, "ab") as f:
             start = time.time()
             proc = await asyncio.create_subprocess_exec(*cmd, stdin=NULL, stdout=f, stderr=f)
-            await _check_process(f"Failed {_msg} -> Leaving as is")
+            await _check_process(f"Failed {_msg}")
             end = time.time()
 
         if _msg == "Transcoding":
@@ -445,11 +444,7 @@ async def postprocess(vod_info):  # pylint: disable=too-many-statements
                 msg1 += f" - Saved [{_h(size_orig)} - {_h(size_dest)}] ="
                 msg1 += f" [{_h(size_orig - size_dest)} ({(size_orig - size_dest) / size_orig * 100:.2f}%)]"
 
-        if proc.returncode:
-            COMSKIP = None
-            await _cleanup(TMP_EXT2)
-        else:
-            await rename(_tmpname + TMP_EXT2, _tmpname + TMP_EXT)
+        await rename(_tmpname + TMP_EXT2, _tmpname + TMP_EXT)
 
         msg1 = msg1.replace("#2A", "#2B").replace("ing", "ed")
         msg = "%-84s%20s" % (msg1, f"In [{str(timedelta(seconds=round(end - start)))}s]")
@@ -467,11 +462,11 @@ async def postprocess(vod_info):  # pylint: disable=too-many-statements
         async with async_open(COMSKIP_LOG, "ab") as f:
             start = time.time()
             proc = await asyncio.create_subprocess_exec(*cmd, stdin=NULL, stdout=f, stderr=f)
-            await _check_process()
+            await _check_process(fatal=False)
             end = time.time()
 
-        COMSKIP = None if proc.returncode else COMSKIP
-        msg1 = f"POSTPROCESS #{step}B - COMSKIP - Commercials {'NOT found' if proc.returncode else 'found'}"
+        COMSKIP = None if any((proc.returncode, not await aio_os.path.exists(_tmpname + CHP_EXT))) else COMSKIP
+        msg1 = f"POSTPROCESS #{step}B - COMSKIP - Commercials {'found' if COMSKIP else 'NOT found'}"
         msg2 = f"In [{str(timedelta(seconds=round(end - start)))}s]"
         msg = DIV_LOG % (msg1, msg2)
         log.warning(msg) if proc.returncode else log.info(msg)
@@ -479,7 +474,7 @@ async def postprocess(vod_info):  # pylint: disable=too-many-statements
     async def _step_4():
         nonlocal proc, step, tags
 
-        if COMSKIP and await aio_os.path.exists(_tmpname + CHP_EXT):
+        if COMSKIP:
             intervals = []
             pieces = []
             step += 1
@@ -535,9 +530,7 @@ async def postprocess(vod_info):  # pylint: disable=too-many-statements
             elif RECORDINGS_TMP:
                 shutil.copy2(_tmpname + CHP_EXT, _filename + CHP_EXT)
 
-            if proc.returncode:
-                await _cleanup(TMP_EXT2)
-            elif await aio_os.path.exists(_tmpname + TMP_EXT2):
+            if await aio_os.path.exists(_tmpname + TMP_EXT2):
                 await rename(_tmpname + TMP_EXT2, _tmpname + TMP_EXT)
 
             if _args.comskipcut or _args.mkv:
