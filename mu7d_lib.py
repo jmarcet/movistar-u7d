@@ -47,6 +47,9 @@ from mu7d_cfg import (
     IPTV_DNS,
     NFO_EXT,
     UA,
+    URL_COVER,
+    URL_FANART,
+    URL_LOGO,
     VERSION,
     VID_EXTS,
     VID_EXTS_KEEP,
@@ -157,6 +160,39 @@ def find_free_port(iface=""):
         return sock.getsockname()[1]
 
 
+async def fetch_cover(cover="", fanart="", logo="", returndata=False):
+    log.debug("fetch_cover(cover=%s, fanart=%s, logo=%s, returndata=%s)", cover, fanart, logo, str(returndata))
+    if cover:
+        path = CONF["COVERS_DIR"]
+        urls = ((URL_FANART, fanart), (URL_COVER, cover)) if fanart else ((URL_COVER, cover),)
+    elif logo:
+        path = CONF["LOGOS_DIR"]
+        urls = ((URL_LOGO, logo),)
+    else:
+        return
+
+    for url, image_path in urls:
+        full_path = os.path.join(path, image_path)
+        if await aio_os.path.exists(full_path) and not returndata:
+            return
+        try:
+            async with _g._SESSION.get(f"{url}/{image_path}") as r:
+                if r.status == 200:
+                    image_data = await r.read()
+                    if not image_data:
+                        log.debug("GET '%s' => Image empty", image_path)
+                        return
+                    if CONF["CACHE_IMAGES"]:
+                        if not await aio_os.path.exists(os.path.dirname(full_path)):
+                            await aio_os.makedirs(os.path.dirname(full_path))
+                        async with async_open(full_path, "wb") as f:
+                            await f.write(image_data)
+                    if returndata:
+                        return {"name": os.path.basename(image_path), "data": image_data}
+        except (ClientConnectionError, ClientOSError, ServerDisconnectedError):
+            log.debug("GET '%s' => Image not found", image_path)
+
+
 def freemem():
     gc.collect()
     if not WIN32:
@@ -174,6 +210,20 @@ def get_channel_id(channel_name):
         if channel_name.lower() in _g._CHANNELS[channel_id].name.lower().replace(" ", "").replace(".", "")
     ]
     return res[0] if len(res) == 1 else None
+
+
+async def get_cover(cover="", fanart="", logo=""):
+    if fanart and await aio_os.path.exists(os.path.join(CONF["COVERS_DIR"], fanart)):
+        image_path = os.path.join(CONF["COVERS_DIR"], fanart)
+    elif cover and await aio_os.path.exists(os.path.join(CONF["COVERS_DIR"], cover)):
+        image_path = os.path.join(CONF["COVERS_DIR"], cover)
+    elif logo and await aio_os.path.exists(os.path.join(CONF["LOGOS_DIR"], logo)):
+        image_path = os.path.join(CONF["LOGOS_DIR"], logo)
+    else:
+        return await fetch_cover(cover, fanart, logo, True)
+
+    async with async_open(image_path, "rb") as f:
+        return {"name": os.path.basename(image_path), "data": await f.read()}
 
 
 async def get_end_point():

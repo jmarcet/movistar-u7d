@@ -145,6 +145,9 @@ def _mu7d_config():  # pylint: disable=too-many-branches
             conf["COMSKIP"] += " --quiet"
         conf["COMSKIP"] = conf["COMSKIP"].split()
 
+    if "CACHE_IMAGES" not in conf or not isinstance(conf["CACHE_IMAGES"], bool):
+        conf["CACHE_IMAGES"] = True
+
     if "DEBUG" not in conf or not isinstance(conf["DEBUG"], bool):
         conf["DEBUG"] = False
 
@@ -218,6 +221,8 @@ def _mu7d_config():  # pylint: disable=too-many-branches
         conf["U7D_PORT"] = 8888
 
     conf["CACHE_DIR"] = os.path.join(conf["HOME"], ".mu7d")
+    conf["COVERS_DIR"] = os.path.join(conf["CACHE_DIR"], "covers")
+    conf["LOGOS_DIR"] = os.path.join(conf["CACHE_DIR"], "logos")
     conf["TMP_DIR"] = os.getenv("TMP", os.getenv("TMPDIR", "/tmp"))  # nosec B108
 
     conf["CHANNELS"] = os.path.join(conf["HOME"], "MovistarTV.m3u")

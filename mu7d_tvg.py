@@ -45,7 +45,16 @@ from defusedxml.ElementTree import ParseError, fromstring
 from filelock import FileLock, Timeout
 
 from mu7d_cfg import CONF, DATEFMT, END_POINTS_FILE, FMT, UA, VERSION, WIN32, add_logfile
-from mu7d_lib import IPTVNetworkError, get_end_point, get_iptv_ip, get_local_info, remove, rename
+from mu7d_lib import (
+    IPTVNetworkError,
+    _g,
+    fetch_cover,
+    get_end_point,
+    get_iptv_ip,
+    get_local_info,
+    remove,
+    rename,
+)
 
 log = logging.getLogger("TVG")
 
@@ -91,25 +100,35 @@ class Cache:
 
     @staticmethod
     async def check_dirs():
-        progs_path = os.path.join(CACHE_DIR, "programs")
-        if not await aio_os.path.exists(progs_path):
-            try:
-                await aio_os.makedirs(progs_path)
-            except (OSError, PermissionError):
-                log.error(f"Imposible escribir en directorio de caché '{CACHE_DIR}'")
-                sys.exit(1)
+        for kind in ("covers", "logos", "programs"):
+            path = os.path.join(CACHE_DIR, kind)
+            if not await aio_os.path.exists(path):
+                try:
+                    await aio_os.makedirs(path)
+                except (OSError, PermissionError):
+                    log.error(f"Imposible escribir en directorio de caché '{CACHE_DIR}'")
+                    sys.exit(1)
 
     @staticmethod
     async def clean():
+        cached_covers = set()
         for file in iglob(os.path.join(CACHE_DIR, "programs", "*.json")):
             try:
                 async with async_open(file, encoding="utf8") as f:
-                    _data = json.loads(await f.read(), object_hook=Cache.keys_to_int)["data"]
-                if _data["endTime"] // 1000 < _DEADLINE:
+                    data = json.loads(await f.read(), object_hook=Cache.keys_to_int)["data"]
+                if data["endTime"] // 1000 < _DEADLINE:
                     log.debug('Eliminando "%s" caducado', os.path.basename(file))
                     await aio_os.remove(file)
+                elif CACHE_IMAGES:
+                    cached_covers.add(os.path.basename(data["cover"]))
+                    cached_covers.add(os.path.basename(data.get("covers", {}).get("fanart", "")))
             except (FileNotFoundError, JSONDecodeError, OSError, PermissionError, TypeError, ValueError):
                 pass
+        if CACHE_IMAGES:
+            for cover in iglob(f"{CACHE_DIR}/covers/**/*.*", recursive=True):
+                if os.path.basename(cover) not in cached_covers:
+                    log.debug("Removing stale cover=%s", cover)
+                    await remove(cover)
 
     @staticmethod
     def keys_to_int(data):
@@ -196,6 +215,8 @@ class Cache:
     @staticmethod
     async def save_epg_extended_info(data):
         await Cache.save(os.path.join("programs", f"{data['productID']}.json"), data, sort_keys=True)
+        if CACHE_IMAGES:
+            await fetch_cover(data["cover"], os.path.basename(data.get("covers", {}).get("fanart", "")))
 
     @staticmethod
     async def save_service_provider_data(data):
@@ -1121,6 +1142,7 @@ async def tvg_main(args, time_start):
         _CONFIG = await MovistarTV.get_service_config(full)
         xdata = await _MIPTV.get_service_provider_data(refresh)
         _XMLTV = XmlTV(xdata)
+        _g._SESSION = _SESSION
 
         with suppress(CancelledError):
             if args.m3u:
@@ -1271,6 +1293,7 @@ if __name__ == "__main__":
     _CONFIG = _DEADLINE = _END_POINT = _IPTV = _MIPTV = _SESSION = _XMLTV = None
 
     CACHE_DIR = CONF["CACHE_DIR"]
+    CACHE_IMAGES = CONF["CACHE_IMAGES"]
     EPG_CHANNELS = CONF["EPG_CHANNELS"]
     HOME = CONF["HOME"]
     OTT_HACK = CONF["OTT_HACK"]

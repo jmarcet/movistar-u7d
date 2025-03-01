@@ -390,6 +390,7 @@ disable = [
     "possibly-used-before-assignment",
     "protected-access",
     "redefined-outer-name",
+    "too-many-lines",
     "too-many-positional-arguments",
 ]
 

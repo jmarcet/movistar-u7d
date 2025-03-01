@@ -29,7 +29,6 @@ from time import sleep
 import aiohttp
 import ujson
 from aiofiles import open as async_open, os as aio_os
-from aiohttp.client_exceptions import ClientConnectionError, ClientOSError, ServerDisconnectedError
 from asyncio_dgram import bind as dgram_bind, from_socket as dgram_from_socket
 from filelock import FileLock, Timeout
 from psutil import AccessDenied, Process, boot_time
@@ -52,9 +51,6 @@ from mu7d_cfg import (
     MIME_M3U,
     MIME_WEBM,
     UA,
-    URL_COVER,
-    URL_FANART,
-    URL_LOGO,
     VERSION,
     VID_EXTS,
     WIN32,
@@ -72,6 +68,7 @@ from mu7d_lib import (
     does_recording_exist,
     find_free_port,
     get_channel_id,
+    get_cover,
     get_end_point,
     get_epg,
     get_iptv_ip,
@@ -417,40 +414,34 @@ async def handle_guides(request):
     return await response.file(guide, validate_when_requested=False, mime_type=MIME_GUIDE)
 
 
-@app.route("/Covers/<path:int>/<cover>", methods=["GET", "HEAD"], name="images_covers")
+@app.route("/Covers/<path>/<cover>", methods=["GET", "HEAD"], name="images_covers")
 @app.route("/Logos/<logo>", methods=["GET", "HEAD"], name="images_logos")
 async def handle_images(request, cover=None, logo=None, path=None):
     log.debug("[%s] %s %s", request.ip, request.method, request.url)
+
     if path and cover:
-        urls = (f"{URL_FANART}/{request.args.get('fanart')}",) if "?fanart=" in request.url else ()
-        urls += (f"{URL_COVER}/{path}/{cover}",)
+        _cover = f"{path}/{cover}"
+        fanart = request.args.get("fanart") if "?fanart=" in request.url else ""
+        logo = ""
     elif logo:
-        urls = (f"{URL_LOGO}/{logo}",)
+        _cover = fanart = ""
     else:
+        raise NotFound(f"Requested URL {request.path} not found")
+
+    image = await get_cover(_cover, fanart, logo)
+    if not image:
         raise NotFound(f"Requested URL {request.path} not found")
 
     if request.method == "HEAD":
         return response.HTTPResponse(
-            content_type="image/jpeg" if not urls[0].endswith(".png") else "image/png", status=200
+            content_type="image/jpeg" if not image["name"].endswith(".png") else "image/png", status=200
         )
 
-    for url in urls:
-        try:
-            async with _g._SESSION.get(url) as r:
-                if r.status == 200:
-                    logo_data = await r.read()
-                    if logo_data:
-                        return response.HTTPResponse(
-                            body=logo_data,
-                            content_type="image/jpeg" if not url.endswith(".png") else "image/png",
-                            headers={"Content-Disposition": f'attachment; filename="{os.path.basename(url)}"'},
-                        )
-                    log.warning(f"[{request.ip}] GET {request.url:82} => Image empty")
-                else:
-                    log.warning(f"[{request.ip}] GET {request.url:82} => Image not found")
-        except (ClientConnectionError, ClientOSError, ServerDisconnectedError):
-            log.warning(f"[{request.ip}] GET {request.url:82} => Image not found")
-    raise NotFound(f"Requested URL {request.path} not found")
+    return response.HTTPResponse(
+        body=image["data"],
+        content_type="image/jpeg" if not image["name"].endswith(".png") else "image/png",
+        headers={"Content-Disposition": f'attachment; filename="{image["name"]}"'},
+    )
 
 
 @app.get(r"/<m3u_file:([A-Za-z1-9]+)\.m3u$>")
