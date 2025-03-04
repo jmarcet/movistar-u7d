@@ -5,7 +5,6 @@ import logging
 import os
 import re
 import sys
-import time
 import urllib.parse
 from asyncio.exceptions import CancelledError
 from asyncio.subprocess import DEVNULL, PIPE
@@ -24,7 +23,7 @@ from socket import (
     inet_aton,
     socket,
 )
-from time import sleep
+from time import sleep, time
 
 import aiohttp
 import ujson
@@ -216,7 +215,7 @@ async def handle_archive(request, channel_id, program_id):
 async def handle_channel(request, channel_id=None, channel_name=None):
     log.debug("%s %s %s", *map(str, (request, request.args, request.headers)))
 
-    _start = time.time()
+    _start = time()
 
     if channel_name:
         channel_id = get_channel_id(channel_name)
@@ -255,7 +254,7 @@ async def handle_channel(request, channel_id=None, channel_name=None):
                             ch_id=channel_id,
                             endpoint=f"{ch.name} _ {request.ip}",
                             id=_start,
-                            lat=time.time() - _start,
+                            lat=time() - _start,
                             method="live",
                             msg=f"[{request.ip}] -> Playing {request.url}",
                         )
@@ -277,7 +276,7 @@ async def handle_channel(request, channel_id=None, channel_name=None):
 async def handle_flussonic(request, url, channel_id=None, channel_name=None, cloud=False, local=False):
     log.debug("%s %s %s", *map(str, (request, request.args, request.headers)))
 
-    _start = time.time()
+    _start = time()
 
     if not url:
         return response.empty(404)
@@ -365,7 +364,7 @@ async def handle_flussonic(request, url, channel_id=None, channel_name=None, clo
             else:
                 await _response.send((await stream.recv())[0])
 
-            prom = app.add_task(add_prom_event(event._replace(lat=time.time() - _start), cloud, local, p_vod))
+            prom = app.add_task(add_prom_event(event._replace(lat=time() - _start), cloud, local, p_vod))
 
             while not _g._SHUTDOWN:
                 await _response.send((await stream.recv())[0])
@@ -644,7 +643,7 @@ async def transcode(request, event, p_vod, cloud, local, channel_id=0, port=0, v
     _response = await request.respond(content_type=MIME_WEBM)
 
     await _response.send(await proc.stdout.read(BUFF))
-    prom = app.add_task(add_prom_event(event._replace(lat=time.time() - event.id), cloud, local, p_vod))
+    prom = app.add_task(add_prom_event(event._replace(lat=time() - event.id), cloud, local, p_vod))
 
     try:
         while not _g._SHUTDOWN:

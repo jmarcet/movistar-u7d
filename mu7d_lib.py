@@ -7,7 +7,6 @@ import os
 import re
 import shutil
 import sys
-import time
 import unicodedata
 import urllib.parse
 from asyncio.exceptions import CancelledError
@@ -20,6 +19,7 @@ from itertools import chain
 from json import JSONDecodeError
 from operator import itemgetter
 from socket import AF_INET, SOCK_DGRAM, socket
+from time import time
 
 import aiohttp
 import asyncstdlib as a
@@ -110,7 +110,7 @@ async def add_prom_event(event, cloud=False, local=False, p_vod=None):
         await prom_event(event, "add", cloud, local, p_vod)
         await asyncio.sleep(YEAR_SECONDS)
     except CancelledError:
-        await prom_event(event._replace(offset=int(time.time() - event.id)), "remove", cloud, local, p_vod)
+        await prom_event(event._replace(offset=int(time() - event.id)), "remove", cloud, local, p_vod)
 
 
 async def alive():
@@ -311,7 +311,7 @@ def get_program_vod(channel_id, url=None, cloud=False, local=False):
         return
 
     if not url:
-        start = int(time.time())
+        start = int(time())
     elif not url.isdigit():
         _match = flussonic_regex.match(url)
         if not _match:
@@ -510,7 +510,7 @@ async def load_epg():
             elif _g._last_epg < datetime.now().replace(minute=0, second=0, microsecond=0).timestamp():
                 log.warning("Delaying timers_check until the EPG is updated...")
             else:
-                delay = int(max(5, boot_time() + 90 - time.time()))
+                delay = int(max(5, boot_time() + 90 - time()))
                 if delay > 10:
                     log.info(f"Waiting {delay}s to check recording timers since the system just booted...")
                 app.add_task(timers_check(delay))
@@ -530,8 +530,8 @@ async def log_network_saturated(nr_procs=None, _wait=False):
     if _g._SHUTDOWN:
         return
     msg += f"Recording {nr_procs} streams." if nr_procs else ""
-    if not _g._last_bw_warning or (time.time() - _g._last_bw_warning[0] > 5 or _g._last_bw_warning[1] != msg):
-        _g._last_bw_warning = (time.time(), msg)
+    if not _g._last_bw_warning or (time() - _g._last_bw_warning[0] > 5 or _g._last_bw_warning[1] != msg):
+        _g._last_bw_warning = (time(), msg)
         log.warning(msg)
     return msg
 
@@ -559,7 +559,7 @@ async def network_saturation():
             log.info(f"{_g.IPTV_IFACE} IS now ACCESSIBLE")
 
         async with async_open(iface_rx) as f:
-            now, cur = time.time(), int((await f.read())[:-1])
+            now, cur = time(), int((await f.read())[:-1])
 
         if last:
             tp = (cur - last) * 0.008 / (now - before)
@@ -1098,7 +1098,7 @@ async def timers_check(delay=0):  # pylint: disable=too-many-branches,too-many-l
                 if fresh:
                     tss = filter(
                         lambda ts: ts <= _g._last_epg + 3600
-                        and ts + _g._EPGDATA[channel_id][ts].duration > int(time.time()),
+                        and ts + _g._EPGDATA[channel_id][ts].duration > int(time()),
                         _g._EPGDATA[channel_id],
                     )
                 else:
@@ -1242,7 +1242,7 @@ async def timers_check(delay=0):  # pylint: disable=too-many-branches,too-many-l
 
         if next_ts and not _g._t_timers_next:
             log.info(f'Adding timers_check() @ {datetime.fromtimestamp(next_ts)} "{next_title}"')
-            _g._t_timers_next = app.add_task(timers_check(delay=next_ts - time.time()), name=f"{next_ts}")
+            _g._t_timers_next = app.add_task(timers_check(delay=next_ts - time()), name=f"{next_ts}")
 
 
 async def update_cloud():
@@ -1295,7 +1295,7 @@ async def update_epg_cron():
     elif await aio_os.path.getmtime(_g.GUIDE) < last_datetime:
         log.warning("EPG too old. Updating it...")
         await update_epg()
-    await asyncio.sleep(last_datetime + 3600 - 0.25 - time.time())
+    await asyncio.sleep(last_datetime + 3600 - 0.25 - time())
     while not _g._SHUTDOWN:
         await asyncio.gather(asyncio.sleep(3600), asyncio.wait_for(update_epg(), timeout=3300))
 

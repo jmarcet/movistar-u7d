@@ -10,13 +10,13 @@ import os
 import re
 import shutil
 import sys
-import time
 import urllib.parse
 from asyncio.exceptions import CancelledError
 from asyncio.subprocess import DEVNULL as NULL, PIPE, STDOUT as OUT
 from contextlib import closing, suppress
 from datetime import timedelta
 from signal import SIG_IGN, SIGINT, SIGTERM, signal
+from time import sleep, time
 
 import aiohttp
 import asyncstdlib as a
@@ -136,7 +136,7 @@ async def _cleanup_recording(exception, start=None):
     if isinstance(exception, CancelledError):
         msg = "Cancelled"
         if start:
-            msg += " @ [%6ss] / [%5ss]" % ("~" + str(int(time.time() - start)), str(_args.time))
+            msg += " @ [%6ss] / [%5ss]" % ("~" + str(int(time() - start)), str(_args.time))
         log.error("%-17s%87s", "Recording FAILED", msg)
     else:
         log.error(f"Recording FAILED: {str(exception).split(' - ', 1)[-1]}")
@@ -424,10 +424,10 @@ async def postprocess(vod_info):  # pylint: disable=too-many-statements
 
         log.info(msg)
         async with async_open(TRANSCODE_LOG, "ab") as f:
-            start = time.time()
+            start = time()
             proc = await asyncio.create_subprocess_exec(*cmd, stdin=NULL, stdout=f, stderr=f)
             await _check_process(f"Failed {_msg}")
-            end = time.time()
+            end = time()
 
         if _msg == "Transcoding":
             size_orig = (await aio_os.stat(_tmpname + TMP_EXT)).st_size
@@ -460,10 +460,10 @@ async def postprocess(vod_info):  # pylint: disable=too-many-statements
 
         log.info(f"POSTPROCESS #{step}A - COMSKIP - Checking recording for commercials")
         async with async_open(COMSKIP_LOG, "ab") as f:
-            start = time.time()
+            start = time()
             proc = await asyncio.create_subprocess_exec(*cmd, stdin=NULL, stdout=f, stderr=f)
             await _check_process(fatal=False)
-            end = time.time()
+            end = time()
 
         COMSKIP = None if any((proc.returncode, not await aio_os.path.exists(_tmpname + CHP_EXT))) else COMSKIP
         msg1 = f"POSTPROCESS #{step}B - COMSKIP - Commercials {'found' if COMSKIP else 'NOT found'}"
@@ -668,7 +668,7 @@ async def record_stream(vod_info):
             buffer += (await stream.recv())[0]
         return buffer
 
-    end = _args.time + time.time()
+    end = _args.time + time()
     log.info(DIV_LOG, "Recording STARTED", log_start)
     try:
         with closing(await dgram_bind((_IPTV, _args.client_port))) as stream:
@@ -677,7 +677,7 @@ async def record_stream(vod_info):
                     # 1st packet on SDTV channels is bogus and breaks ffmpeg
                     await asyncio.wait_for(stream.recv(), timeout=1.0)
 
-                while time.time() < end:
+                while time() < end:
                     await f.write(await asyncio.wait_for(_buffer(), timeout=1.0))
 
     except (CancelledError, TransportClosed) as ex:
@@ -691,7 +691,7 @@ async def record_stream(vod_info):
         if not WIN32:
             setproctitle(getproctitle().replace(" REC ", "     "))
 
-    record_time = int(time.time() - end + _args.time)
+    record_time = int(time() - end + _args.time)
     log.info(DIV_LOG, "Recording ENDED", "[%6ss] / [%5ss]" % (f"~{record_time}", f"{_args.time}"))
 
 
@@ -826,7 +826,7 @@ if __name__ == "__main__":
                 with suppress(CancelledError):
                     log.debug("Waiting for vod tasks...")
                     while not all(task.done() for task in tasks):
-                        time.sleep(0.1)
+                        sleep(0.1)
                 log.debug("bye")
 
             return True
