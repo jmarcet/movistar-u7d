@@ -360,97 +360,36 @@ async def postprocess(vod_info):  # pylint: disable=too-many-statements
         log.debug("XML Metadata saved")
 
     async def _step_1():
+        nonlocal skip_start, step, tags
+
         duration = await _get_duration(_tmpname + TMP_EXT)
         bad = duration < _args.time * 95 // 100
 
         log_suffix = f"[{str(timedelta(seconds=duration))}s = {str(duration):>5}s] / [{str(_args.time):>5}s]"
 
-        msg = f"POSTPROCESS #1  - Recording is {'INCOMPLETE' if bad else 'COMPLETE'}"
+        msg = f"POSTPROCESS #{step}  - Recording is {'INCOMPLETE' if bad else 'COMPLETE'}"
         msg = DIV_LOG % (msg, log_suffix)
 
         if bad:
             raise RecordingError(msg)
+
+        tags += await _get_language_tags(_tmpname + TMP_EXT, _args.vo)
+
         log.info(msg)
-
-    async def _step_2():
-        nonlocal mtime, proc, tags
-
-        if not RECORDINGS_TRANSCODE_OUTPUT:
-            log.info("POSTPROCESS #2  - Skipped. Remuxing/Transcoding disabled")
-            return
-
-        cmd = ["ffmpeg"] + RECORDINGS_TRANSCODE_INPUT + ["-i", _tmpname + TMP_EXT]
 
         _info = await get_vod_info(_SESSION_CLOUD, _END_POINT, _args.channel, _args.cloud, _args.program)
         if not _info:
-            log.warning("POSTPROCESS #2  - Could not verify event has not shifted")
+            log.warning(f"POSTPROCESS #{step}  - Could not verify event has not shifted")
         else:
             new_mtime = _info["beginTime"] // 1000 + _args.start
             if mtime != new_mtime:
-                msg = DIV_LOG % ("POSTPROCESS #2  - Event CHANGED", f"beginTime=[{new_mtime - mtime:+}s]")
+                msg = DIV_LOG % (f"POSTPROCESS #{step}  - Event CHANGED", f"beginTime=[{new_mtime - mtime:+}s]")
                 if new_mtime < mtime:
                     raise RecordingError(msg)
+                skip_start = new_mtime - mtime
                 log.info(msg)
 
-                cmd += ["-ss", str(timedelta(seconds=new_mtime - mtime))]
-
-        if _args.vo:
-            cmd += ["-map", "0:v", "-map", "0:a:1?", "-map", "0:a:0", "-map", "0:s?"]
-        else:
-            cmd += ["-map", "0:v", "-map", "0:a", "-map", "0:s?"]
-        tags += await _get_language_tags(_tmpname + TMP_EXT, _args.vo)
-
-        cmd += RECORDINGS_TRANSCODE_OUTPUT
-
-        if NO_SUBS:
-            log.info("POSTPROCESS #2  - Dropping subs")
-            cmd.append("-sn")
-
-        img_mime, img_name = await _save_metadata(get_cover=True)
-        if all((_args.mkv, img_mime, img_name)):
-            tags += ["-attach", img_name, "-metadata:s:t:0", f"mimetype={img_mime}"]
-
-        cmd += [*tags, "-v", "info", "-y", "-f", "matroska" if _args.mkv else "mpegts", _tmpname + TMP_EXT2]
-
-        if re.search(r"-c[:\w]* (?!copy)", " ".join(RECORDINGS_TRANSCODE_OUTPUT)):
-            _msg = "Transcoding"
-        else:
-            _msg = "Remuxing"
-
-        msg = msg1 = f"POSTPROCESS #2A - {_msg}"
-        if _info and mtime != new_mtime:
-            msg = DIV_LOG % (msg1, f"Cutting first [{new_mtime - mtime}s]")
-            mtime = new_mtime
-
-        log.info(msg)
-        async with async_open(TRANSCODE_LOG, "ab") as f:
-            start = time()
-            proc = await asyncio.create_subprocess_exec(*cmd, stdin=NULL, stdout=f, stderr=f)
-            await _check_process(f"Failed {_msg}")
-            end = time()
-
-        if _msg == "Transcoding":
-            size_orig = (await aio_os.stat(_tmpname + TMP_EXT)).st_size
-            size_dest = (await aio_os.stat(_tmpname + TMP_EXT2)).st_size
-            if size_dest < size_orig:
-
-                def _h(num):
-                    for unit in ("", "Ki", "Mi", "Gi", "Ti", "Pi", "Ei", "Zi"):
-                        if abs(num) < 1024.0:
-                            return f"{num:3.1f}{unit}B"
-                        num /= 1024.0
-                    return f"{num:.1f}YiB"
-
-                msg1 += f" - Saved [{_h(size_orig)} - {_h(size_dest)}] ="
-                msg1 += f" [{_h(size_orig - size_dest)} ({(size_orig - size_dest) / size_orig * 100:.2f}%)]"
-
-        await rename(_tmpname + TMP_EXT2, _tmpname + TMP_EXT)
-
-        msg1 = msg1.replace("#2A", "#2B").replace("ing", "ed")
-        msg = "%-84s%20s" % (msg1, f"In [{str(timedelta(seconds=round(end - start)))}s]")
-        log.info(msg)
-
-    async def _step_3():
+    async def _step_2():
         global COMSKIP
         nonlocal proc, step
 
@@ -471,11 +410,12 @@ async def postprocess(vod_info):  # pylint: disable=too-many-statements
         msg = DIV_LOG % (msg1, msg2)
         log.warning(msg) if proc.returncode else log.info(msg)
 
-    async def _step_4():
-        nonlocal proc, step, tags
+    async def _step_3():
+        nonlocal proc, skip_start, step, tags
 
         if COMSKIP:
             intervals = []
+            intervals_seconds = []
             pieces = []
             step += 1
 
@@ -495,6 +435,18 @@ async def postprocess(vod_info):  # pylint: disable=too-many-statements
                     start, end = map(lambda x: str(timedelta(seconds=int(x) / 100)), r.groups())
                     start, end = map(lambda x: x + (".000000" if len(x) < 9 else ""), (start, end))
                     intervals.append((start, end))
+                    intervals_seconds.append(tuple(map(lambda x: int(x) / 100, r.groups())))
+
+                if skip_start:
+                    while True:
+                        if skip_start <= intervals_seconds[0][0]:
+                            skip_start = None
+                            break
+                        if intervals_seconds[0][0] < skip_start < intervals_seconds[0][1]:
+                            skip_start -= intervals_seconds[0][0]
+                            break
+                        intervals = intervals[1:]
+                        intervals_seconds = intervals_seconds[1:]
 
                 for idx, (start, end) in enumerate(intervals, start=1):
                     tmpdir = os.path.dirname(_tmpname)
@@ -509,7 +461,7 @@ async def postprocess(vod_info):  # pylint: disable=too-many-statements
 
                     await _check_process(f"Failed Cutting Chapter [{idx:02}]")
 
-                cmd = ("ffmpeg", "-i", f"concat:{'|'.join(pieces)}", "-c", "copy", "-map", "0")
+                cmd = ("ffmpeg", "-i", f"concat:{'|'.join(pieces)}", "-map", "0", "-c", "copy")
                 cmd += (*tags, "-v", "error", "-y", "-f", "mpegts", _tmpname + TMP_EXT2)
 
                 ch = chr(ord(ch) + 1)
@@ -537,6 +489,87 @@ async def postprocess(vod_info):  # pylint: disable=too-many-statements
                 await _cleanup(CHP_EXT)
             await _cleanup(".log", ".logo.txt", ".txt")
             await remove(*pieces)
+
+    async def _step_4():
+        nonlocal mtime, proc, skip_start, step, tags
+
+        step += 1
+
+        if not RECORDINGS_TRANSCODE_OUTPUT:
+            log.info(f"POSTPROCESS #{step}  - Skipped. Remuxing/Transcoding disabled")
+            return
+
+        cmd = ["ffmpeg"] + RECORDINGS_TRANSCODE_INPUT + ["-i", _tmpname + TMP_EXT]
+
+        if not COMSKIP:
+            _info = await get_vod_info(_SESSION_CLOUD, _END_POINT, _args.channel, _args.cloud, _args.program)
+            if not _info:
+                log.warning(f"POSTPROCESS #{step}  - Could not verify event has not shifted")
+            else:
+                new_mtime = _info["beginTime"] // 1000 + _args.start
+                if mtime != new_mtime:
+                    msg = DIV_LOG % (
+                        f"POSTPROCESS #{step}  - Event CHANGED",
+                        f"beginTime=[{new_mtime - mtime:+}s]",
+                    )
+                    if new_mtime < mtime:
+                        raise RecordingError(msg)
+                    log.info(msg)
+
+        if _args.vo:
+            cmd += ["-map", "0:v", "-map", "0:a:1?", "-map", "0:a:0", "-map", "0:s?"]
+        else:
+            cmd += ["-map", "0:v", "-map", "0:a", "-map", "0:s?"]
+
+        cmd += RECORDINGS_TRANSCODE_OUTPUT
+
+        if NO_SUBS:
+            log.info(f"POSTPROCESS #{step}  - Dropping subs")
+            cmd.append("-sn")
+
+        img_mime, img_name = await _save_metadata(get_cover=True)
+        if all((_args.mkv, img_mime, img_name)):
+            tags += ["-attach", img_name, "-metadata:s:t:0", f"mimetype={img_mime}"]
+
+        cmd += [*tags, "-v", "info", "-y", "-f", "matroska" if _args.mkv else "mpegts", _tmpname + TMP_EXT2]
+
+        if re.search(r"-c[:\w]* (?!copy)", " ".join(RECORDINGS_TRANSCODE_OUTPUT)):
+            _msg = "Transcoding"
+        else:
+            _msg = "Remuxing"
+
+        msg = msg1 = f"POSTPROCESS #{step}A - {_msg}"
+        if skip_start:
+            msg = DIV_LOG % (msg1, f"Cutting first [{skip_start}s]")
+            cmd += ["-ss", str(timedelta(seconds=skip_start))]
+
+        log.info(msg)
+        async with async_open(TRANSCODE_LOG, "ab") as f:
+            start = time()
+            proc = await asyncio.create_subprocess_exec(*cmd, stdin=NULL, stdout=f, stderr=f)
+            await _check_process("Failed {_msg}")
+            end = time()
+
+        if _msg == "Transcoding":
+            size_orig = (await aio_os.stat(_tmpname + TMP_EXT)).st_size
+            size_dest = (await aio_os.stat(_tmpname + TMP_EXT2)).st_size
+            if size_dest < size_orig:
+
+                def _h(num):
+                    for unit in ("", "Ki", "Mi", "Gi", "Ti", "Pi", "Ei", "Zi"):
+                        if abs(num) < 1024.0:
+                            return f"{num:3.1f}{unit}B"
+                        num /= 1024.0
+                    return f"{num:.1f}YiB"
+
+                msg1 += f" - Saved [{_h(size_orig)} - {_h(size_dest)}] ="
+                msg1 += f" [{_h(size_orig - size_dest)} ({(size_orig - size_dest) / size_orig * 100:.2f}%)]"
+
+        await rename(_tmpname + TMP_EXT2, _tmpname + TMP_EXT)
+
+        msg1 = msg1.replace(f"#{step}A", f"#{step}B").replace("ing", "ed")
+        msg = "%-84s%20s" % (msg1, f"In [{str(timedelta(seconds=round(end - start)))}s]")
+        log.info(msg)
 
     async def _step_5():
         nonlocal mtime, step
@@ -577,8 +610,8 @@ async def postprocess(vod_info):  # pylint: disable=too-many-statements
 
     await asyncio.sleep(0.1)  # Prioritize the main loop
 
-    step = 2
-    metadata = proc = None
+    step = 1
+    metadata = proc = skip_start = None
     mtime = vod_info["beginTime"] // 1000 + _args.start
     tags = ["-metadata", 'service_name="%s"' % vod_info["channelName"]]
     tags += ["-metadata", 'service_provider="Movistar IPTV"']
@@ -592,11 +625,12 @@ async def postprocess(vod_info):  # pylint: disable=too-many-statements
         log.debug("POSTPROCESS STARTS")
 
         await _step_1()  # Check actual length
-        await _step_2()  # Remux/Transcode
 
         if COMSKIP:
-            await _step_3()  # Comskip analysis
-            await _step_4()  # Cut/Merge chapters
+            await _step_2()  # Comskip analysis
+            await _step_3()  # Cut/Merge chapters
+
+        await _step_4()  # Remux/Transcode
 
         await asyncio.shield(_step_5())  # Archive recording
 
