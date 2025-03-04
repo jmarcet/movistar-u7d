@@ -1269,8 +1269,7 @@ async def update_cloud():
 async def update_epg():
     cmd = (f"mu7d_tvg{EXT}", "--m3u", _g.CHANNELS, "--guide", _g.GUIDE)
     async with tvgrab_lock:
-        if await launch(cmd):
-            return
+        await launch(cmd)
 
     await reload_epg()
     _g._last_epg = int(datetime.now().replace(minute=0, second=0, microsecond=0).timestamp())
