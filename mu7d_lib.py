@@ -1292,7 +1292,10 @@ async def update_epg_cron():
     last_datetime = datetime.now().replace(minute=0, second=0, microsecond=0).timestamp()
     if last_datetime + 3300 > time():
         update = False
-        if await aio_os.path.exists(_g.TVG_BUSY):
+        if _g._CHANNELS and sorted(_g._CHANNELS) != sorted(CONF["EPG_CHANNELS"]):
+            log.warning("Enabled channels have changed. Updating...")
+            update = True
+        elif await aio_os.path.exists(_g.TVG_BUSY):
             log.warning("TVG was interrumped. Launching again...")
             update = True
         elif await aio_os.path.getmtime(_g.GUIDE) < last_datetime:
