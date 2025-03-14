@@ -1268,8 +1268,10 @@ async def update_cloud():
 
 async def update_epg():
     cmd = (f"mu7d_tvg{EXT}", "--m3u", _g.CHANNELS, "--guide", _g.GUIDE)
+    time_limit = datetime.now().replace(minute=57, second=0, microsecond=0).timestamp()
+
     async with tvgrab_lock:
-        await launch(cmd)
+        await asyncio.wait_for(launch(cmd), timeout=max(0, time_limit - time()) or None)
 
     await reload_epg()
     _g._last_epg = int(datetime.now().replace(minute=0, second=0, microsecond=0).timestamp())
@@ -1288,15 +1290,21 @@ async def update_epg_cron():
         return
 
     last_datetime = datetime.now().replace(minute=0, second=0, microsecond=0).timestamp()
-    if await aio_os.path.exists(_g.TVG_BUSY):
-        log.warning("TVG was interrumped. Launching again...")
-        await update_epg()
-    elif await aio_os.path.getmtime(_g.GUIDE) < last_datetime:
-        log.warning("EPG too old. Updating it...")
-        await update_epg()
-    await asyncio.sleep(last_datetime + 3600 - 0.25 - time())
+    if last_datetime + 3300 > time():
+        update = False
+        if await aio_os.path.exists(_g.TVG_BUSY):
+            log.warning("TVG was interrumped. Launching again...")
+            update = True
+        elif await aio_os.path.getmtime(_g.GUIDE) < last_datetime:
+            log.warning("EPG too old. Updating it...")
+            update = True
+        if update:
+            await update_epg()
+            last_datetime = datetime.now().replace(minute=0, second=0, microsecond=0).timestamp()
+
+    await asyncio.sleep(last_datetime + 3600 - time())
     while not _g._SHUTDOWN:
-        await asyncio.gather(asyncio.sleep(3600), asyncio.wait_for(update_epg(), timeout=3300))
+        await asyncio.gather(asyncio.sleep(3600), update_epg())
 
 
 async def update_epg_local():
