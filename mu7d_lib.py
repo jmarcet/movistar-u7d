@@ -154,6 +154,16 @@ async def does_recording_exist(filename):
     return await aio_os.path.exists(os.path.join(_g.RECORDINGS, filename + _g.VID_EXT))
 
 
+def expire_epg_ott(epg):
+    deadline_ott = int(datetime.combine(date.today() - timedelta(days=90), datetime.min.time()).timestamp())
+    timelimited_epg = defaultdict(dict)
+    for channel in epg:
+        timelimited_epg[channel] = {k: v for k, v in epg[channel].items() if k > deadline_ott}
+        if not timelimited_epg[channel]:
+            del timelimited_epg[channel]
+    return timelimited_epg
+
+
 def find_free_port(iface=""):
     with closing(socket(AF_INET, SOCK_DGRAM)) as sock:
         sock.bind((iface, 0))
@@ -1262,8 +1272,13 @@ async def update_cloud():
             return
 
         log.info(f"Cloud Recordings Updated => {_g.U7D_URL}/MovistarTVCloud.m3u - {_g.U7D_URL}/cloud.xml")
-        nr_epg = sum((len(_g._CLOUD[channel]) for channel in _g._CLOUD))
-        log.info(f"Total: {len(_g._CLOUD):2} Channels & {nr_epg:5} EPG entries")
+        if _g.OTT_RECORDINGS_EPG:
+            timelimited_epg = expire_epg_ott(_g._CLOUD)
+            nr_epg = sum((len(timelimited_epg[channel]) for channel in timelimited_epg))
+            log.info(f"Total: {len(timelimited_epg):2} Channels & {nr_epg:5} EPG entries")
+        else:
+            nr_epg = sum((len(_g._CLOUD[channel]) for channel in _g._CLOUD))
+            log.info(f"Total: {len(_g._CLOUD):2} Channels & {nr_epg:5} EPG entries")
 
 
 async def update_epg():
@@ -1319,8 +1334,13 @@ async def update_epg_local():
                 return
 
         log.info(f"Local Recordings Updated => {_g.U7D_URL}/MovistarTVLocal.m3u - {_g.U7D_URL}/local.xml")
-        nr_epg = sum((len(_g._RECORDINGS[channel]) for channel in _g._RECORDINGS))
-        log.info(f"Total: {len(_g._RECORDINGS):2} Channels & {nr_epg:5} EPG entries")
+        if _g.OTT_RECORDINGS_EPG:
+            timelimited_epg = expire_epg_ott(_g._RECORDINGS)
+            nr_epg = sum((len(timelimited_epg[channel]) for channel in timelimited_epg))
+            log.info(f"Total: {len(timelimited_epg):2} Channels & {nr_epg:5} EPG entries")
+        else:
+            nr_epg = sum((len(_g._RECORDINGS[channel]) for channel in _g._RECORDINGS))
+            log.info(f"Total: {len(_g._RECORDINGS):2} Channels & {nr_epg:5} EPG entries")
 
 
 async def update_recordings(channel_id=None):
