@@ -48,6 +48,7 @@ from mu7d_cfg import CONF, DATEFMT, END_POINTS_FILE, FMT, UA, VERSION, WIN32, ad
 from mu7d_lib import (
     IPTVNetworkError,
     _g,
+    expire_epg_ott,
     fetch_cover,
     get_end_point,
     get_iptv_ip,
@@ -1163,6 +1164,11 @@ async def tvg_main(args, time_start):
             epg_nr_channels = len(epg)
             del _MIPTV
 
+            if OTT_RECORDINGS_EPG:
+                if any((args.cloud_m3u, args.cloud_recordings, args.local_m3u, args.local_recordings)):
+                    epg = expire_epg_ott(epg)
+                    epg_nr_channels = len(epg)
+
             if args.guide:
                 async with (
                     async_open(args.guide + ".tmp", "w", encoding="utf8") as f,
@@ -1297,6 +1303,7 @@ if __name__ == "__main__":
     EPG_CHANNELS = CONF["EPG_CHANNELS"]
     HOME = CONF["HOME"]
     OTT_HACK = CONF["OTT_HACK"]
+    OTT_RECORDINGS_EPG = CONF["OTT_RECORDINGS_EPG"]
     RECORDINGS = CONF["RECORDINGS"]
     TVG_BUSY = CONF["TVG_BUSY"]
     U7D_URL = CONF["U7D_URL"]

@@ -184,6 +184,9 @@ def _mu7d_config():  # pylint: disable=too-many-branches
     if "OTT_HACK" not in conf or not isinstance(conf["OTT_HACK"], bool):
         conf["OTT_HACK"] = False
 
+    if "OTT_RECORDINGS_EPG" not in conf or not isinstance(conf["OTT_RECORDINGS_EPG"], bool):
+        conf["OTT_RECORDINGS_EPG"] = False
+
     if "RECORDINGS" not in conf or not all((which("ffmpeg"), which("ffprobe"))):
         conf["RECORDINGS"] = ""
     else:
