@@ -1294,10 +1294,16 @@ async def update_epg():
     if _g.RECORDINGS:
         if timers_lock.locked():
             _g._t_timers.cancel()
-        app.add_task(timers_check(delay=3))
 
-        if _g._RECORDINGS and await upgrade_recording_channels():
+        if _g.OTT_RECORDINGS_EPG and datetime.now().hour < 1:
+            last_midnight = datetime.now().replace(hour=0, minute=0, second=0, microsecond=0).timestamp()
+            if _g._last_epg_local < last_midnight:
+                await update_epg_local()
+
+        if await upgrade_recording_channels():
             await reindex_recordings()
+
+        app.add_task(timers_check(delay=3))
 
 
 async def update_epg_cron():
@@ -1328,6 +1334,8 @@ async def update_epg_cron():
 async def update_epg_local():
     async with recordings_lock:
         cmd = (f"mu7d_tvg{EXT}", "--local_m3u", _g.CHANNELS_LOCAL, "--local_recordings", _g.GUIDE_LOCAL)
+
+        _g._last_epg_local = datetime.now().timestamp()
 
         async with tvgrab_local_lock:
             if await launch(cmd):

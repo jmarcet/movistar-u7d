@@ -129,7 +129,8 @@ async def after_server_start(app):
         return _exit(1)
 
     _g._last_bw_warning = None
-    _g._last_epg = None
+    _g._last_epg = 0
+    _g._last_epg_local = 0
     _g._t_timers = None
     _g._t_timers_next = None
 
