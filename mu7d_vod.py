@@ -495,6 +495,10 @@ async def postprocess(vod_info):  # pylint: disable=too-many-statements
 
         step += 1
 
+        img_mime, img_name = await _save_metadata(get_cover=True)
+        if all((_args.mkv, img_mime, img_name)):
+            tags += ["-attach", img_name, "-metadata:s:t:0", f"mimetype={img_mime}"]
+
         if not RECORDINGS_TRANSCODE_OUTPUT:
             log.info(f"POSTPROCESS #{step}  - Skipped. Remuxing/Transcoding disabled")
             return
@@ -511,10 +515,6 @@ async def postprocess(vod_info):  # pylint: disable=too-many-statements
         if NO_SUBS:
             log.info(f"POSTPROCESS #{step}  - Dropping subs")
             cmd.append("-sn")
-
-        img_mime, img_name = await _save_metadata(get_cover=True)
-        if all((_args.mkv, img_mime, img_name)):
-            tags += ["-attach", img_name, "-metadata:s:t:0", f"mimetype={img_mime}"]
 
         cmd += [*tags, "-v", "info", "-y", "-f", "matroska" if _args.mkv else "mpegts", _tmpname + TMP_EXT2]
 
