@@ -532,7 +532,7 @@ async def postprocess(vod_info):  # pylint: disable=too-many-statements
         async with async_open(TRANSCODE_LOG, "ab") as f:
             start = time()
             proc = await asyncio.create_subprocess_exec(*cmd, stdin=NULL, stdout=f, stderr=f)
-            await _check_process("Failed {_msg}")
+            await _check_process(f"Failed {_msg}")
             end = time()
 
         if _msg == "Transcoding":
