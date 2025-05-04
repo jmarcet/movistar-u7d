@@ -360,7 +360,7 @@ async def postprocess(vod_info):  # pylint: disable=too-many-statements
         log.debug("XML Metadata saved")
 
     async def _step_1():
-        nonlocal skip_start, step, tags
+        nonlocal step, tags
 
         duration = await _get_duration(_tmpname + TMP_EXT)
         bad = duration < _args.time * 95 // 100
@@ -386,112 +386,9 @@ async def postprocess(vod_info):  # pylint: disable=too-many-statements
                 msg = DIV_LOG % (f"POSTPROCESS #{step}  - Event CHANGED", f"beginTime=[{new_mtime - mtime:+}s]")
                 if new_mtime < mtime:
                     raise RecordingError(msg)
-                skip_start = new_mtime - mtime
-                log.info(msg)
 
     async def _step_2():
-        global COMSKIP
-        nonlocal proc, step
-
-        step += 1
-
-        cmd = ("comskip", *COMSKIP, "--ts", _tmpname + TMP_EXT)  # pylint: disable=used-before-assignment
-
-        log.info(f"POSTPROCESS #{step}A - COMSKIP - Checking recording for commercials")
-        async with async_open(COMSKIP_LOG, "ab") as f:
-            start = time()
-            proc = await asyncio.create_subprocess_exec(*cmd, stdin=NULL, stdout=f, stderr=f)
-            await _check_process(fatal=False)
-            end = time()
-
-        COMSKIP = None if any((proc.returncode, not await aio_os.path.exists(_tmpname + CHP_EXT))) else COMSKIP
-        msg1 = f"POSTPROCESS #{step}B - COMSKIP - Commercials {'found' if COMSKIP else 'NOT found'}"
-        msg2 = f"In [{str(timedelta(seconds=round(end - start)))}s]"
-        msg = DIV_LOG % (msg1, msg2)
-        log.warning(msg) if proc.returncode else log.info(msg)
-
-    async def _step_3():
-        nonlocal proc, skip_start, step, tags
-
-        if COMSKIP:
-            intervals = []
-            intervals_seconds = []
-            pieces = []
-            step += 1
-
-            async with async_open(_tmpname + CHP_EXT) as f:
-                c = await f.read()
-
-            _s = filter(lambda x: "Show Segment" in x, (" ".join(c.splitlines()).split("[CHAPTER]"))[1:])
-            segments = tuple(_s)
-            if not segments:
-                log.warning(f"POSTPROCESS #{step}  - COMSKIP - Could not find any Show Segment")
-                await _cleanup(CHP_EXT, ".log", ".logo.txt", ".txt")
-                return
-
-            if _args.comskipcut and not _args.mkv:
-                for segment in segments:
-                    r = re.match(r" TIMEBASE=[^ ]+ START=([^ ]+) END=([^ ]+) .+", segment)
-                    start, end = map(lambda x: str(timedelta(seconds=int(x) / 100)), r.groups())
-                    start, end = map(lambda x: x + (".000000" if len(x) < 9 else ""), (start, end))
-                    intervals.append((start, end))
-                    intervals_seconds.append(tuple(map(lambda x: int(x) / 100, r.groups())))
-
-                if skip_start:
-                    while True:
-                        if skip_start <= intervals_seconds[0][0]:
-                            skip_start = None
-                            break
-                        if intervals_seconds[0][0] < skip_start < intervals_seconds[0][1]:
-                            skip_start -= intervals_seconds[0][0]
-                            break
-                        intervals = intervals[1:]
-                        intervals_seconds = intervals_seconds[1:]
-
-                for idx, (start, end) in enumerate(intervals, start=1):
-                    tmpdir = os.path.dirname(_tmpname)
-                    pieces.append(os.path.join(tmpdir, f"{idx:02}_show_segment{VID_EXT}"))
-                    cmd = ("ffmpeg", "-i", _tmpname + TMP_EXT, "-ss", start, "-to", end)
-                    cmd += ("-c", "copy", "-map", "0", *tags, "-v", "error", "-y", pieces[-1])
-
-                    ch = chr(idx + 64)
-                    msg1, msg2 = f"POSTPROCESS #{step}{ch} - Cutting Chapter [{idx:02}]", f"({start} - {end})"
-                    log.info(DIV_LOG, msg1, msg2)
-                    proc = await asyncio.create_subprocess_exec(*cmd, stdin=NULL, stdout=PIPE, stderr=OUT)
-
-                    await _check_process(f"Failed Cutting Chapter [{idx:02}]")
-
-                cmd = ("ffmpeg", "-i", f"concat:{'|'.join(pieces)}", "-map", "0", "-c", "copy")
-                cmd += (*tags, "-v", "error", "-y", "-f", "mpegts", _tmpname + TMP_EXT2)
-
-                ch = chr(ord(ch) + 1)
-                log.info(f"POSTPROCESS #{step}{ch} - Merging recording w/o commercials")
-                proc = await asyncio.create_subprocess_exec(*cmd, stdin=NULL, stdout=PIPE, stderr=OUT)
-
-                await _check_process("Failed merging recording w/o commercials")
-
-            elif _args.mkv:
-                cmd = ("ffmpeg", "-i", _tmpname + TMP_EXT, "-i", _tmpname + CHP_EXT, *tags)
-                cmd += ("-v", "error", "-y", "-f", "matroska", _tmpname + TMP_EXT2)
-
-                log.info(f"POSTPROCESS #{step}  - COMSKIP - Merging mkv chapters")
-                proc = await asyncio.create_subprocess_exec(*cmd, stdin=NULL, stdout=PIPE, stderr=OUT)
-
-                await _check_process("Failed merging mkv chapters")
-
-            elif RECORDINGS_TMP:
-                shutil.copy2(_tmpname + CHP_EXT, _filename + CHP_EXT)
-
-            if await aio_os.path.exists(_tmpname + TMP_EXT2):
-                await rename(_tmpname + TMP_EXT2, _tmpname + TMP_EXT)
-
-            if _args.comskipcut or _args.mkv:
-                await _cleanup(CHP_EXT)
-            await _cleanup(".log", ".logo.txt", ".txt")
-            await remove(*pieces)
-
-    async def _step_4():
-        nonlocal mtime, proc, skip_start, step, tags
+        nonlocal mtime, proc, step, tags
 
         step += 1
 
@@ -524,9 +421,9 @@ async def postprocess(vod_info):  # pylint: disable=too-many-statements
             _msg = "Remuxing"
 
         msg = msg1 = f"POSTPROCESS #{step}A - {_msg}"
-        if skip_start:
-            msg = DIV_LOG % (msg1, f"Cutting first [{skip_start}s]")
-            cmd += ["-ss", str(timedelta(seconds=skip_start))]
+        if _info and mtime != new_mtime:
+            msg = DIV_LOG % (msg1, f"Cutting first [{new_mtime - mtime}s]")
+            mtime = new_mtime
 
         log.info(msg)
         async with async_open(TRANSCODE_LOG, "ab") as f:
@@ -555,6 +452,93 @@ async def postprocess(vod_info):  # pylint: disable=too-many-statements
         msg1 = msg1.replace(f"#{step}A", f"#{step}B").replace("ing", "ed")
         msg = "%-84s%20s" % (msg1, f"In [{str(timedelta(seconds=round(end - start)))}s]")
         log.info(msg)
+
+    async def _step_3():
+        global COMSKIP
+        nonlocal proc, step
+
+        step += 1
+
+        cmd = ("comskip", *COMSKIP, "--ts", _tmpname + TMP_EXT)  # pylint: disable=used-before-assignment
+
+        log.info(f"POSTPROCESS #{step}A - COMSKIP - Checking recording for commercials")
+        async with async_open(COMSKIP_LOG, "ab") as f:
+            start = time()
+            proc = await asyncio.create_subprocess_exec(*cmd, stdin=NULL, stdout=f, stderr=f)
+            await _check_process(fatal=False)
+            end = time()
+
+        COMSKIP = None if any((proc.returncode, not await aio_os.path.exists(_tmpname + CHP_EXT))) else COMSKIP
+        msg1 = f"POSTPROCESS #{step}B - COMSKIP - Commercials {'found' if COMSKIP else 'NOT found'}"
+        msg2 = f"In [{str(timedelta(seconds=round(end - start)))}s]"
+        msg = DIV_LOG % (msg1, msg2)
+        log.warning(msg) if proc.returncode else log.info(msg)
+
+    async def _step_4():
+        nonlocal proc, step, tags
+
+        intervals = []
+        pieces = []
+        step += 1
+
+        async with async_open(_tmpname + CHP_EXT) as f:
+            c = await f.read()
+
+        _s = filter(lambda x: "Show Segment" in x, (" ".join(c.splitlines()).split("[CHAPTER]"))[1:])
+        segments = tuple(_s)
+        if not segments:
+            log.warning(f"POSTPROCESS #{step}  - COMSKIP - Could not find any Show Segment")
+            await _cleanup(CHP_EXT, ".log", ".logo.txt", ".txt")
+            return
+
+        if _args.comskipcut and not _args.mkv:
+            for segment in segments:
+                r = re.match(r" TIMEBASE=[^ ]+ START=([^ ]+) END=([^ ]+) .+", segment)
+                start, end = map(lambda x: str(timedelta(seconds=int(x) / 100)), r.groups())
+                start, end = map(lambda x: x + (".000000" if len(x) < 9 else ""), (start, end))
+                intervals.append((start, end))
+
+            for idx, (start, end) in enumerate(intervals, start=1):
+                tmpdir = os.path.dirname(_tmpname)
+                pieces.append(os.path.join(tmpdir, f"{idx:02}_show_segment{VID_EXT}"))
+                cmd = ("ffmpeg", "-i", _tmpname + TMP_EXT, "-ss", start, "-to", end)
+                cmd += ("-c", "copy", "-map", "0", *tags, "-v", "error", "-y", pieces[-1])
+
+                ch = chr(idx + 64)
+                msg1, msg2 = f"POSTPROCESS #{step}{ch} - Cutting Chapter [{idx:02}]", f"({start} - {end})"
+                log.info(DIV_LOG, msg1, msg2)
+                proc = await asyncio.create_subprocess_exec(*cmd, stdin=NULL, stdout=PIPE, stderr=OUT)
+
+                await _check_process(f"Failed Cutting Chapter [{idx:02}]")
+
+            cmd = ("ffmpeg", "-i", f"concat:{'|'.join(pieces)}", "-map", "0", "-c", "copy")
+            cmd += (*tags, "-v", "error", "-y", "-f", "mpegts", _tmpname + TMP_EXT2)
+
+            ch = chr(ord(ch) + 1)
+            log.info(f"POSTPROCESS #{step}{ch} - Merging recording w/o commercials")
+            proc = await asyncio.create_subprocess_exec(*cmd, stdin=NULL, stdout=PIPE, stderr=OUT)
+
+            await _check_process("Failed merging recording w/o commercials")
+
+        elif _args.mkv:
+            cmd = ("ffmpeg", "-i", _tmpname + TMP_EXT, "-i", _tmpname + CHP_EXT, *tags)
+            cmd += ("-v", "error", "-y", "-f", "matroska", _tmpname + TMP_EXT2)
+
+            log.info(f"POSTPROCESS #{step}  - COMSKIP - Merging mkv chapters")
+            proc = await asyncio.create_subprocess_exec(*cmd, stdin=NULL, stdout=PIPE, stderr=OUT)
+
+            await _check_process("Failed merging mkv chapters")
+
+        elif RECORDINGS_TMP:
+            shutil.copy2(_tmpname + CHP_EXT, _filename + CHP_EXT)
+
+        if await aio_os.path.exists(_tmpname + TMP_EXT2):
+            await rename(_tmpname + TMP_EXT2, _tmpname + TMP_EXT)
+
+        if _args.comskipcut or _args.mkv:
+            await _cleanup(CHP_EXT)
+        await _cleanup(".log", ".logo.txt", ".txt")
+        await remove(*pieces)
 
     async def _step_5():
         nonlocal mtime, step
@@ -596,7 +580,7 @@ async def postprocess(vod_info):  # pylint: disable=too-many-statements
     await asyncio.sleep(0.1)  # Prioritize the main loop
 
     step = 1
-    metadata = proc = skip_start = None
+    metadata = proc = None
     mtime = vod_info["beginTime"] // 1000 + _args.start
     tags = ["-metadata", 'service_name="%s"' % vod_info["channelName"]]
     tags += ["-metadata", 'service_provider="Movistar IPTV"']
@@ -610,12 +594,11 @@ async def postprocess(vod_info):  # pylint: disable=too-many-statements
         log.debug("POSTPROCESS STARTS")
 
         await _step_1()  # Check actual length
+        await _step_2()  # Remux/Transcode
 
         if COMSKIP:
-            await _step_2()  # Comskip analysis
-            await _step_3()  # Cut/Merge chapters
-
-        await _step_4()  # Remux/Transcode
+            await _step_3()  # Comskip analysis
+            await _step_4()  # Cut/Merge chapters
 
         await asyncio.shield(_step_5())  # Archive recording
 
