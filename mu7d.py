@@ -637,7 +637,7 @@ async def transcode(request, event, p_vod, cloud, local, channel_id=0, port=0, v
     else:
         cmd += ["-skip_initial_bytes", f"{CHUNK}"] if " HD" not in _g._CHANNELS[channel_id].name else []
         cmd += ["-i", f"udp://@{_g._IPTV}:{port}"]
-    cmd += ["-map", "0:v", *lang_channel, "-c:v:0", "copy", "-c:a:0", "libfdk_aac", "-b:a", "128k"]
+    cmd += ["-map", "0:v", *lang_channel, "-c:v:0", "copy", "-c:a:0", "aac"]
     cmd += ["-f", "matroska", "-v", "fatal", "-"]
 
     proc = await asyncio.create_subprocess_exec(*cmd, stdin=DEVNULL, stdout=PIPE)
