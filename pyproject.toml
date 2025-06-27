@@ -618,7 +618,7 @@ output-format = "full"
 # McCabe complexity (`C901`) by default.
 # select = ["E4", "E7", "E9", "F", "B"]
 select = ["A", "ASYNC", "E", "F", "I", "PL", "S", "TID", "W"]
-ignore = ["PLR0911", "PLR0912", "PLR0913", "PLR0915", "PLR2004", "PLW0603", "PLW2901", "S108"]
+ignore = ["PLC0415", "PLR0911", "PLR0912", "PLR0913", "PLR0915", "PLR2004", "PLW0603", "PLW2901", "S108"]
 
 # Allow fix for all enabled rules (when `--fix`) is provided.
 fixable = ["ALL"]
