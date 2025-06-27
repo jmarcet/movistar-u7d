@@ -80,8 +80,8 @@ class RtspClient:
         self.writer.write(req.encode())
         resp = (await self.reader.read(4096)).decode().splitlines()
 
-        # log.debug("[%d]: Req  = [%s]", self.cseq, "|".join(resp))
-        # log.debug("[%d]: Resp = [%s]", self.cseq, "|".join(resp))
+        # log.debug("[%d:%s]: Req  = [%s]", self.cseq, method, "|".join(resp))
+        # log.debug("[%d:%s]: Resp = [%s]", self.cseq, method, "|".join(resp))
 
         self.cseq += 1
 
@@ -89,7 +89,7 @@ class RtspClient:
             return
 
         if method == "SETUP":
-            return resp[1].split(": ")[1].split(";")[0]
+            return [x for x in resp if x.startswith("Session: ")][0].split(": ")[1].split(";")[0]
 
         return True
 
