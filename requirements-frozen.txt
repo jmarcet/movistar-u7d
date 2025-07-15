@@ -1,6 +1,6 @@
 aiofiles==24.1.0
 aiohappyeyeballs==2.6.1
-aiohttp==3.12.13
+aiohttp==3.12.14
 aiosignal==1.3.2
 async-files==0.4
 asyncio==3.4.3
