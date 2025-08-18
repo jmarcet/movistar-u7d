@@ -4,7 +4,7 @@ ARG BUILD_TYPE
 ARG TARGETARCH
 
 ARG COMSKIP_BRANCH=master
-ARG JELLYFIN_FFMPEG_BRANCH=jellyfin-6.0
+ARG JELLYFIN_FFMPEG_BRANCH=jellyfin
 
 # http://stackoverflow.com/questions/48162574/ddg#49462622
 ENV APT_KEY_DONT_WARN_ON_DANGEROUS_USAGE=DontWarn
@@ -56,7 +56,7 @@ RUN --mount=type=cache,sharing=locked,target=/var/cache/apt \
         && wget -O- https://repo.jellyfin.org/jellyfin_team.gpg.key | gpg --dearmor --yes --output /etc/apt/keyrings/jellyfin.gpg \
         && apt-get update \
         && apt-get install --no-install-recommends --no-install-suggests -y \
-           jellyfin-ffmpeg6 \
+           jellyfin-ffmpeg7 \
         && apt-get purge -y gnupg \
         && apt-get install --no-install-recommends --no-install-suggests -y \
            autoconf \
@@ -95,9 +95,8 @@ RUN --mount=type=cache,sharing=locked,target=/var/cache/apt \
         && ln -s /usr/lib/jellyfin-ffmpeg/lib/libswscale.so.* /usr/local/lib/; \
     fi
 
-RUN apt-get purge -y binutils-common build-essential dpkg-dev git git-man gpg-agent libcurl3-gnutls \
-    liberror-perl libgdbm-compat4 libldap-2.5-0 libnghttp2-14 libperl5.36 librtmp1 libsasl2-2 \
-    libsasl2-modules-db libssh2-1 patch perl perl-modules-5.36 pkgconf \
+RUN apt-get purge -y binutils-common build-essential dpkg-dev git git-man gpg-agent libcurl3-gnutls liberror-perl libnghttp2-14 \
+                     libperl5.40 librtmp1 libsasl2-2 libsasl2-modules-db libssh2-1 patch perl perl-modules-5.40 pkgconf \
     && apt-get clean autoclean -y \
     && apt-get autoremove -y
 
