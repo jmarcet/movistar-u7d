@@ -6,7 +6,7 @@ asyncio-dgram
 asyncstdlib
 defusedxml
 filelock
-netifaces
+ifaddr
 psutil
 sanic
 sanic-prometheus @ git+https://github.com/AltanAlpay/sanic-prometheus

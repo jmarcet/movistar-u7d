@@ -724,14 +724,16 @@ if __name__ == "__main__":
     def _get_iptv_iface_ip():
         iptv_iface = CONF["IPTV_IFACE"]
         if iptv_iface:
-            import netifaces
+            import ifaddr
 
             while True:
                 uptime = int(datetime.now().timestamp() - boot_time())
                 try:
-                    iptv = netifaces.ifaddresses(iptv_iface)[2][0]["addr"]
-                    log.info(f"IPTV interface: {iptv_iface}")
-                    return iptv
+                    for iface in (x for x in ifaddr.get_adapters() if x.nice_name == iptv_iface):
+                        iptv = iface.ips[0].ip
+                        log.info(f"IPTV interface: {iptv_iface}")
+                        return iptv
+                    raise ValueError(f"IPTV interface '{iptv_iface}' not found")
                 except (KeyError, ValueError) as ex:
                     if uptime < 90:
                         log.info("IPTV interface: waiting for it...")
