@@ -1,4 +1,4 @@
-FROM python:3.13-slim AS base
+FROM python:3.14-slim-trixie AS base
 
 ARG BUILD_TYPE
 ARG TARGETARCH

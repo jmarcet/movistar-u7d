@@ -5,7 +5,6 @@
 
 import argparse
 import asyncio
-import codecs
 import json
 import locale
 import logging
@@ -1022,7 +1021,7 @@ class XmlTV:
 
     @staticmethod
     def __write(file_path, content):
-        with codecs.open(file_path, "w", "UTF-8") as f:
+        with open(file_path, mode="w", encoding="UTF-8") as f:
             f.write(content)
 
     async def generate_xml(self, parsed_epg, cloud=None, local=None):
