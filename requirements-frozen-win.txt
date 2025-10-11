@@ -21,7 +21,7 @@ prometheus-client==0.16.0
 propcache==0.4.1
 psutil==7.1.0
 pywin32==311
-sanic==25.3.0
+sanic @ git+https://github.com/jmarcet/sanic@dae0d1d25bf94baf457736d33d6248bb564f2986
 sanic-prometheus @ git+https://github.com/AltanAlpay/sanic-prometheus@278fbd7e5e7217310401b5b0378467131e8ef13c
 sanic-routing==23.12.0
 setuptools==80.8.0
