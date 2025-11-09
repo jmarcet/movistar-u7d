@@ -1,7 +1,7 @@
 Movistar IPTV U7D - Flussonic catchup proxy
 ===========================================
 
-[![TiviMate Movistar](../../raw/data/TiviMate_Video_Overlay.jpg)](https://openwrt.marcet.info/u7d/TiviMate_Movistar_20210320_U7D-1.mp4)
+[![TiviMate Movistar](https://openwrt.marcet.info/u7d/repo/TiviMate_Video_Overlay.jpg)](https://openwrt.marcet.info/u7d/TiviMate_Movistar_20210320_U7D-1.mp4)
 
 
 Qué es
@@ -39,8 +39,8 @@ Una vez instalado, tendremos las siguientes URLs disponibles, donde 192.168.1.10
 
 Con estas dos ya tendremos acceso a los directos y a los últimos 7 días en cualquier cliente IPTV con soporte de catchup flussonic. De hecho, con configurar la primera suele ser suficiente, ya que la guía la saca de la propia lista de canales, que incluye un enlace a la misma.
 
-![catchup1](../../raw/data/TiviMate_20211010_201536.png)
-![catchup2](../../raw/data/TiviMate_20211010_201255.png)
+![catchup1](https://openwrt.marcet.info/u7d/repo/TiviMate_20211010_201536.png)
+![catchup2](https://openwrt.marcet.info/u7d/repo/TiviMate_20211010_201255.png)
 
 También es posible acceder a las grabaciones que tengamos en la nube de [Movistar](https://www.movistar.es/particulares/internet/). De tener alguna grabación en dicha nube, tendremos disponibles una nueva lista de canales y una nueva guía de programación que, análoga a la general, incluirá solamente información de aquellos programas que tengamos grabados. El resultado es una forma muy cómoda de acceder a estas grabaciones en la nube.
 
@@ -48,8 +48,8 @@ También es posible acceder a las grabaciones que tengamos en la nube de [Movist
 
  4. Guía de programación de las grabaciones en la nube (EPG): `http://192.168.1.10:8888/cloud.xml` o `http://192.168.1.10:8888/nube.xml`
 
-![cloud1](../../raw/data/TiviMate_20211010_195920.png)
-![cloud2](../../raw/data/TiviMate_20211010_195949.png)
+![cloud1](https://openwrt.marcet.info/u7d/repo/TiviMate_20211010_195920.png)
+![cloud2](https://openwrt.marcet.info/u7d/repo/TiviMate_20211010_195949.png)
 
 Por último, dispone de una funcionalidad de grabaciones locales automáticas, o temporizadores, y acceso a las mismas a través de una nueva lista de canales `.m3u` de tipo `VOD`, que resulta especialmente útil para almacenar de forma local programas y series, y así crear colecciones. El resultado es increíblemente cómodo de usar.
 
@@ -57,10 +57,10 @@ Por último, dispone de una funcionalidad de grabaciones locales automáticas, o
 
 Ésta última sólo se activará cuando la variable de entorno `RECORDINGS` esté definida.
 
-![recordings](../../raw/data/TiviMate_20211010_200145.png)
+![recordings](https://openwrt.marcet.info/u7d/repo/TiviMate_20211010_200145.png)
 
-![overview](../../raw/data/TiviMate_20211010_200214.png)
-![settings](../../raw/data/TiviMate_20211010_200007.png)
+![overview](https://openwrt.marcet.info/u7d/repo/TiviMate_20211010_200214.png)
+![settings](https://openwrt.marcet.info/u7d/repo/TiviMate_20211010_200007.png)
 
  6. Si tenemos además activa la opción `RECORDINGS_PER_CHANNEL`, en los canales de los que tengamos grabaciones realizadas, se generará una lista `m3u` por cada uno. Ésta será ligeramente diferente de las anteriores, más pensada para consumir con reproductores como `vlc` o `mpv`. Las encontraremos en la carpeta correspondiente a cada canal y podremos acceder a ellas con el nombre del canal sin espacios, el `hd` no es necesario: `http://192.168.1.10:8888/neox.m3u` o `http://192.168.1.10:8888/la2.m3u`
 
@@ -70,7 +70,7 @@ En todos los casos, las URL de las listas `m3u` son insensibles a mayúsculas o 
 
 Éstas contienen información en tiempo real de los clientes activos, separados por directos y catchups, y ordenados por la latencia inicial que tuvo cada stream para llegar. Perfectas para conectar con [Grafana](https://grafana.com/grafana/) y así poder visualizarlas y también tener un archivo histórico de uso:
 
-![grafana-dashboard.json](../../raw/data/grafana.png)
+![grafana-dashboard.json](https://openwrt.marcet.info/u7d/repo/grafana.png)
 
 
 Instalación en Windows
@@ -80,11 +80,11 @@ Nos descargamos la última versión de [aquí](../../releases), la descomprimimo
 
 Enseguida se abrirá una ventana de un terminal, donde aparecerán mensajes de información sobre todo lo que está haciendo.
 
-![movistar-u7d-inicio](../../raw/data/movistar-u7d-inicio.png)
+![movistar-u7d-inicio](https://openwrt.marcet.info/u7d/repo/movistar-u7d-inicio.png)
 
 Por defecto la(s) lista(s) de canales y la(s) guía(s) las generará en vuestra carpeta de usuario, que o bien podemos abrir directamente, o podemos acceder a través de las [URLs normales](#uso). Podemos usar [VLC](https://www.videolan.org/vlc/) o [mpv](https://mpv.io/installation/) por ejemplo, que aunque no soportan en sí el catchup, es decir, no hay forma de seleccionar de forma cómoda programas de la parrilla, sí pueden reproducir todo. Mucho más completo resulta `Kodi` con `IPTV Simple` para usar en el ordenador.
 
-![movistar-u8d-escritorio](../../raw/data/movistar-u7d-escritorio.png)
+![movistar-u8d-escritorio](https://openwrt.marcet.info/u7d/repo/movistar-u7d-escritorio.png)
 
 Existen varias [opciones de configuración](#configuración).
 
@@ -184,11 +184,11 @@ Configuración de clientes
 
  - En el caso del `Kodi IPTV Simple`, además de añadir la lista de canales y la guía (sin caché) en los ajustes del addon, deberemos activar el Catchup en modo Flussonic con 8 días de catchup y la opción de Reproducir desde la EPG en modo Live TV. De esta manera conseguiremos una experiencia de uso prácticamente idéntica a la del `TiviMate`, manteniendo la interfaz de LiveTV con el Catchup, con reproducción continua, etc.
 
-![Kodi-PVR-General](../../raw/data/Kodi-PVR-General.png)
-![Kodi-PVR-Guia](../../raw/data/Kodi-PVR-Guia.png)
-![Kodi-IPTV_Simple-General](../../raw/data/Kodi-IPTV_Simple-General.png)
-![Kodi-IPTV_Simple-EPG](../../raw/data/Kodi-IPTV_Simple-EPG.png)
-![Kodi-IPTV_Simple-Catchup](../../raw/data/Kodi-IPTV_Simple-Catchup.png)
+![Kodi-PVR-General](https://openwrt.marcet.info/u7d/repo/Kodi-PVR-General.png)
+![Kodi-PVR-Guia](https://openwrt.marcet.info/u7d/repo/Kodi-PVR-Guia.png)
+![Kodi-IPTV_Simple-General](https://openwrt.marcet.info/u7d/repo/Kodi-IPTV_Simple-General.png)
+![Kodi-IPTV_Simple-EPG](https://openwrt.marcet.info/u7d/repo/Kodi-IPTV_Simple-EPG.png)
+![Kodi-IPTV_Simple-Catchup](https://openwrt.marcet.info/u7d/repo/Kodi-IPTV_Simple-Catchup.png)
 
 
 Posibles problemas
