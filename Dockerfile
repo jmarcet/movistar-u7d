@@ -28,13 +28,25 @@ RUN --mount=type=cache,sharing=locked,target=/var/cache/apt \
     && sed -i -e 's/# es_ES.UTF-8 UTF-8/es_ES.UTF-8 UTF-8/' /etc/locale.gen \
     && locale-gen
 
-WORKDIR /tmp
+WORKDIR /app
 
-COPY requirements.txt .
+COPY . .
 
 RUN --mount=type=cache,target=/root/.cache \
     pip install --disable-pip-version-check --root-user-action ignore --use-pep517 uv \
     && uv pip install --link-mode=copy --system -r requirements.txt
+
+RUN --mount=type=cache,target=/root/.cache \
+   if [ "$TARGETARCH" = "amd64" ] && [ "${BUILD_TYPE}" != "full" ]; then \
+       uv pip install --link-mode=copy --system bandit pycodestyle pylint ruff 2>&1 | tee /tmp/lint-install.txt \
+       && bandit -v *.py \
+       && pycodestyle -v *.py \
+       && pylint --rcfile pyproject.toml -v *.py \
+       && ruff check --config pyproject.toml -v *.py \
+       && ruff check --config pyproject.toml --diff --no-fix-only -v *.py \
+       && ruff format --config pyproject.toml --diff -v *.py \
+       && uv pip uninstall --system $( awk '/==/ { print $2 }' /tmp/lint-install.txt ); \
+   fi
 
 ENV ffmpeg_CFLAGS="-I/usr/lib/jellyfin-ffmpeg/include"
 ENV ffmpeg_LIBS="-L/usr/lib/jellyfin-ffmpeg/lib -lavcodec -lavformat -lavutil -lswscale"
@@ -97,22 +109,6 @@ RUN apt-get purge -y binutils-common build-essential dpkg-dev git git-man gpg-ag
                      libperl5.40 librtmp1 libsasl2-2 libsasl2-modules-db libssh2-1 patch perl perl-modules-5.40 pkgconf \
     && apt-get clean autoclean -y \
     && apt-get autoremove -y
-
-WORKDIR /app
-
-COPY . .
-
-RUN --mount=type=cache,target=/root/.cache \
-    if [ "${BUILD_TYPE}" = "full" ] && [ "$TARGETARCH" = "amd64" ]; then \
-        uv pip install --link-mode=copy --system bandit pycodestyle pylint ruff 2>&1 | tee /tmp/lint-install.txt \
-        && bandit -v *.py \
-        && pycodestyle -v *.py \
-        && pylint --rcfile pyproject.toml -v *.py \
-        && ruff check --config pyproject.toml -v *.py \
-        && ruff check --config pyproject.toml --diff --no-fix-only -v *.py \
-        && ruff format --config pyproject.toml --diff -v *.py \
-        && uv pip uninstall --system $( awk '/==/ { print $2 }' /tmp/lint-install.txt ); \
-    fi
 
 RUN --mount=type=cache,target=/root/.cache \
     pip uninstall --disable-pip-version-check --root-user-action ignore -y uv wheel
