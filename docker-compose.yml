@@ -7,11 +7,11 @@ services:
   #     BUILDKIT_INLINE_CACHE: 1
   #     DOCKER_BUILDKIT: 1
   #     COMPOSE_DOCKER_CLI_BUILD: 1
-  # image: registry.marcet.info/javier/movistar-u7d:latest
-  # image: registry.marcet.info/javier/movistar-u7d:stable
-  # image: registry.marcet.info/javier/movistar-u7d:stable-slim
-    image: registry.marcet.info/javier/movistar-u7d:unstable
-  # image: registry.marcet.info/javier/movistar-u7d:unstable-slim
+  # image: git.marcet.info/javier/movistar-u7d:latest
+  # image: git.marcet.info/javier/movistar-u7d:stable
+  # image: git.marcet.info/javier/movistar-u7d:stable-slim
+    image: git.marcet.info/javier/movistar-u7d:unstable
+  # image: git.marcet.info/javier/movistar-u7d:unstable-slim
     container_name: movistar_u7d
     cap_add:
       - NET_ADMIN
