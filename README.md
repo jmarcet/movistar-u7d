@@ -100,7 +100,7 @@ Podemos usar cualquier tipo de dispositivo, desde un ordenador tradicional a alg
 docker-compose up -d && docker-compose logs -f
 ```
 
-Dentro del `docker` queda todo lo necesario y se ejecutará muy rápidamente, sólo tiene que descargar la última versión disponible [aquí](https://gitlab.marcet.info/javier/movistar-u7d/container_registry/2), no necesita generar nada. Un vez arranque sí, tardará unos minutos en generar la EPG y las listas de canales.
+Dentro del `docker` queda todo lo necesario y se ejecutará muy rápidamente, sólo tiene que descargar la última versión disponible [aquí](https://git.marcet.info/javier/-/packages/container/movistar-u7d/versions), no necesita generar nada. Un vez arranque sí, tardará unos minutos en generar la EPG y las listas de canales.
 
  2. Si por el contrario preferimos instalarlo y usarlo directamente:
 

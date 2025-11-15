@@ -96,7 +96,7 @@
 
 - Otras pequeñas mejoras.
 
-**Full Changelog**: https://gitlab.marcet.info/javier/movistar-u7d/compare/v5.1...V5.2
+**Full Changelog**: https://git.marcet.info/javier/movistar-u7d/compare/v5.1...V5.2
 
 
 ## Nueva versión v5.1
@@ -105,7 +105,7 @@
 
 - Arreglado y mejorado el sistema de actualización de las fechas de modificación de las grabaciones: al iniciarse se actualizan las listas m3u y los directorios de los canales y al acabar cada grabación se actualizan las carpetas afectadas, incluidas la del programa grabado y la de metadatos; siempre con la fecha de la emisión más reciente que contengan. De esta manera resulta muy fácil identificar la antigüedad de las grabaciones.
 
-**Full Changelog**: https://gitlab.marcet.info/javier/movistar-u7d/compare/v5.0...V5.1
+**Full Changelog**: https://git.marcet.info/javier/movistar-u7d/compare/v5.0...V5.1
 
 
 ## Nueva versión v5.0
@@ -138,7 +138,7 @@ Tras una extensa limpieza y optimización cuando no reescritura por completo de 
 
 - Cuando se graba una reemisión de un programa con el título extendido, como sucede con Cuarto Milenio que primero se estrena sin título específico y posteriormente se reemite con título propio, ahora la copia antigua será borrada automáticamente.
 
-**Full Changelog**: https://gitlab.marcet.info/javier/movistar-u7d/compare/v4.8.2...V5.0
+**Full Changelog**: https://git.marcet.info/javier/movistar-u7d/compare/v4.8.2...V5.0
 
 
 ## Nueva versión v4.8.2
@@ -153,7 +153,7 @@ Tras una extensa limpieza y optimización cuando no reescritura por completo de 
 
 Ejecutando el proxy con `DEBUG=1` veremos todos los canales que no son incluidos por no estar en la lista de canales en abierto. Puede ser que simplemente en tu comunidad alguno cambie de número y se reciba sin encriptar. Si me avisáis de este último caso, los añado a la lista de canales sin encriptar.
 
-**Full Changelog**: https://gitlab.marcet.info/javier/movistar-u7d/compare/v4.8...v4.8.2
+**Full Changelog**: https://git.marcet.info/javier/movistar-u7d/compare/v4.8...v4.8.2
 
 
 ## Nueva versión v4.8
@@ -180,7 +180,7 @@ Ejecutando el proxy con `DEBUG=1` veremos todos los canales que no son incluidos
 
 - Muchos otros detalles internos.
 
-**Full Changelog**: https://gitlab.marcet.info/javier/movistar-u7d/compare/v4.6.2...v4.8
+**Full Changelog**: https://git.marcet.info/javier/movistar-u7d/compare/v4.6.2...v4.8
 
 
 ## Nueva versión v4.6.2
@@ -201,7 +201,7 @@ Nueva versión con novedades importantes:
 
 - Muchos otros detalles internos.
 
-**Full Changelog**: https://gitlab.marcet.info/javier/movistar-u7d/compare/v4.3...v4.6.2
+**Full Changelog**: https://git.marcet.info/javier/movistar-u7d/compare/v4.3...v4.6.2
 
 
 ## Nueva versión v4.3
@@ -218,7 +218,7 @@ Nueva versión con novedades importantes:
 
 - Otros pequeños problemas corregidos.
 
-**Full Changelog**: https://gitlab.marcet.info/javier/movistar-u7d/compare/v4.2...v4.3
+**Full Changelog**: https://git.marcet.info/javier/movistar-u7d/compare/v4.2...v4.3
 
 
 ## Nueva versión v4.2
@@ -235,7 +235,7 @@ Nueva versión con novedades importantes:
 
 - Mejoras internas generales.
 
-**Full Changelog**: https://gitlab.marcet.info/javier/movistar-u7d/compare/v4.0.9...v4.2
+**Full Changelog**: https://git.marcet.info/javier/movistar-u7d/compare/v4.0.9...v4.2
 
 
 ## Primera versión para Windows plenamente funcional, grabaciones también
