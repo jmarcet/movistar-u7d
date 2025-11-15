@@ -105,10 +105,6 @@ persistent = true
 # Discover python modules and packages in the file system subtree.
 # recursive =
 
-# When enabled, pylint would attempt to guess common misconfiguration and emit
-# user-friendly hints instead of false-positive error messages.
-suggestion-mode = true
-
 # Allow loading of arbitrary C extensions. Extensions are imported into the
 # active Python interpreter and may run arbitrary code.
 # unsafe-load-any-extension =
@@ -382,6 +378,7 @@ disable = [
     "global-statement",
     "import-outside-toplevel",
     "inconsistent-return-statements",
+    "invalid-name",
     "logging-fstring-interpolation",
     "logging-too-many-args",
     "missing-class-docstring",
