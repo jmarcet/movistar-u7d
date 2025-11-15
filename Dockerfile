@@ -6,8 +6,6 @@ ARG TARGETARCH
 ARG COMSKIP_BRANCH=master
 ARG JELLYFIN_FFMPEG_BRANCH=jellyfin
 
-# http://stackoverflow.com/questions/48162574/ddg#49462622
-ENV APT_KEY_DONT_WARN_ON_DANGEROUS_USAGE=DontWarn
 # https://askubuntu.com/questions/972516/debian-frontend-environment-variable
 ENV DEBIAN_FRONTEND="noninteractive"
 

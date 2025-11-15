@@ -1,0 +1,69 @@
+name: movistar_u7d Docker Build CI
+on:
+  push:
+    branches: ["master", "next"]
+
+defaults:
+  run:
+    shell: sh
+
+jobs:
+  build:
+    runs-on: docker
+    env:
+      BUILDKIT_OPTS: "--builder=mu7d --cache-from type=gha --cache-to type=gha,mode=max,scope=image --platform linux/amd64,linux/arm64 --push"
+
+    steps:
+
+      - name: Set DATE & REPOSITORY envs
+        run: |
+          echo "DATE=$( date +%Y%m%d )" >> $GITEA_ENV
+          SERVER_URL=${{ gitea.server_url }}
+          echo "REPOSITORY=${SERVER_URL/https:\/\/}/${{ gitea.repository }}" >> $GITEA_ENV
+
+      - name: Clone repository
+        run: |
+          git clone --revision=${{ gitea.sha }} https://${{ gitea.actor }}:${{ secrets.ACCESS_TOKEN }}@$REPOSITORY ${{ gitea.workspace }}
+          echo "💡 ${{ gitea.repository }} repository has been cloned to the runner"
+
+      - name: Login to Docker registry
+        run: |
+          docker login -u ${{ gitea.actor }} -p ${{ secrets.ACCESS_TOKEN }} ${{ gitea.server_url }} 2>/dev/null
+          echo "💡 Logged in Docker registry ${{ gitea.server_url }}"
+
+      - name: Prepare 'mu7d' Docker builder
+        run: |
+          docker run --privileged --rm tonistiigi/binfmt --install arm64
+          docker buildx create --bootstrap --name mu7d
+          echo "💡 'mu7d' DOcker builder ready"
+
+      - name: Build 'stable' with version tag
+        if: gitea.ref_type == 'tag'
+        env:
+          TAG_NAME: ${{ gitea.ref_name }}
+        run: |
+          docker buildx build                             $BUILDKIT_OPTS --tag $REPOSITORY:$DATE-stable-slim   --tag $REPOSITORY:$TAG_NAME-stable-slim --tag $REPOSITORY:stable-slim .
+          echo "💡 Tagged 'stable-slim' images built & pushed"
+          docker buildx build --build-arg BUILD_TYPE=full $BUILDKIT_OPTS --tag $REPOSITORY:$DATE-stable        --tag $REPOSITORY:$TAG_NAME-stable      --tag $REPOSITORY:stable      .
+          echo "💡 Tagged 'stable' images built & pushed"
+
+      - name: Build 'stable' with no version tag
+        if: gitea.ref_type == 'branch' && gitea.ref_name == 'master'
+        run: |
+          docker buildx build                             $BUILDKIT_OPTS --tag $REPOSITORY:$DATE-stable-slim   --tag $REPOSITORY:stable-slim .
+          echo "💡 Untagged 'stable-slim' images built & pushed"
+          docker buildx build --build-arg BUILD_TYPE=full $BUILDKIT_OPTS --tag $REPOSITORY:$DATE-stable        --tag $REPOSITORY:stable      .
+          echo "💡 Untagged 'stable' images built & pushed"
+
+      - name: Build 'unstable'
+        if: gitea.ref_type == 'branch' && gitea.ref_name == 'next'
+        run: |
+          docker buildx build                             $BUILDKIT_OPTS --tag $REPOSITORY:$DATE-unstable-slim --tag $REPOSITORY:unstable-slim .
+          echo "💡 Untagged 'unstable-slim' images built & pushed"
+          docker buildx build --build-arg BUILD_TYPE=full $BUILDKIT_OPTS --tag $REPOSITORY:$DATE-unstable      --tag $REPOSITORY:unstable      .
+          echo "💡 Untagged 'unstable' images built & pushed"
+
+      - name: Remove 'mu7d' docker builder
+        run: |
+          docker buildx rm --keep-state mu7d
+          echo "💡 'mu7d' builder removed"
