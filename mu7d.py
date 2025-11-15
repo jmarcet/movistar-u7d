@@ -24,6 +24,7 @@ from socket import (
     socket,
 )
 from time import sleep, time
+from warnings import filterwarnings
 
 import aiohttp
 import ujson
@@ -838,6 +839,8 @@ if __name__ == "__main__":
         mmc_period_sec=None,
         multiprocess_mode="livesum",
     ).expose_endpoint()
+
+    filterwarnings("ignore", category=DeprecationWarning, module="sanic")
 
     lockfile = os.path.join(CONF["TMP_DIR"], ".mu7d.lock")
     try:
