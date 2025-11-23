@@ -5,9 +5,13 @@ __pycache__/
 archive/
 bin/
 build/
+diff
+frozen
 lib/
 lib64
 pyvenv.cfg
+test.*
 *.dll
 *.exe
+*.patch
 *.swp
