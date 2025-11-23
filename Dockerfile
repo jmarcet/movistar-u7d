@@ -91,11 +91,11 @@ COPY . .
 
 RUN --mount=type=cache,target=/root/.cache \
     pip install --disable-pip-version-check --root-user-action ignore --use-pep517 uv \
-    && uv pip install --link-mode=copy --system -r requirements.txt
+    && uv pip install --system -r requirements.txt
 
 RUN --mount=type=cache,target=/root/.cache \
    if [ "$TARGETARCH" = "amd64" ] && [ "${BUILD_TYPE}" != "full" ]; then \
-       uv pip install --link-mode=copy --system bandit pycodestyle pylint ruff 2>&1 | tee /tmp/lint-install.txt \
+       uv pip install --system bandit pycodestyle pylint ruff 2>&1 | tee /tmp/lint-install.txt \
        && bandit -v *.py \
        && pycodestyle -v *.py \
        && pylint --rcfile pyproject.toml -v *.py \
@@ -111,7 +111,7 @@ RUN apt-get purge -y binutils-common build-essential dpkg-dev git git-man gpg-ag
     && apt-get autoremove -y
 
 RUN --mount=type=cache,target=/root/.cache \
-    pip uninstall --disable-pip-version-check --root-user-action ignore -y uv wheel
+    uv pip uninstall --system uv wheel
 
 RUN rm -fr \
         Dockerfile patches pyproject.toml requirements*.txt tox.ini \
