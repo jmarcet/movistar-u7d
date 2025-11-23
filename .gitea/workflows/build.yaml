@@ -11,7 +11,7 @@ jobs:
   build:
     runs-on: docker
     env:
-      BUILDKIT_OPTS: "--builder=mu7d --cache-from type=gha --cache-to type=gha,mode=max,scope=image --platform linux/amd64,linux/arm64 --push"
+      BUILDKIT_OPTS: "--builder=mu7d --cache-from type=gha --cache-to type=gha,mode=max,scope=image --platform linux/amd64,linux/arm64 --progress plain --push"
 
     steps:
 
