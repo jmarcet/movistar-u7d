@@ -49,7 +49,7 @@ from mu7d_cfg import (
     LINUX,
     MIME_GUIDE,
     MIME_M3U,
-    MIME_WEBM,
+    MIME_VIDEO,
     UA,
     VERSION,
     VID_EXTS,
@@ -230,13 +230,13 @@ async def handle_channel(request, channel_id=None, channel_name=None):
         return await handle_flussonic(request, f"{int(datetime.now().timestamp())}.ts", channel_id)
 
     if request.method == "HEAD":
-        return response.HTTPResponse(content_type=MIME_WEBM, status=200)
+        return response.HTTPResponse(content_type=MIME_VIDEO, status=200)
 
     if _g._NETWORK_SATURATED and not await ongoing_vods(fast_=True):
         log.warning(f"[{request.ip}] {request.path} -> Network Saturated")
         raise ServiceUnavailable("Network Saturated")
 
-    _response, ch, prom = await request.respond(content_type=MIME_WEBM), _g._CHANNELS[channel_id], None
+    _response, ch, prom = await request.respond(content_type=MIME_VIDEO), _g._CHANNELS[channel_id], None
     try:
         with closing(socket(AF_INET, SOCK_DGRAM, IPPROTO_UDP)) as sock:
             sock.setsockopt(SOL_SOCKET, SO_REUSEADDR, 1)
@@ -294,7 +294,7 @@ async def handle_flussonic(request, url, channel_id=None, channel_name=None, clo
         raise NotFound(f"Requested URL {request.path} not found")
 
     if request.method == "HEAD":
-        return response.HTTPResponse(content_type=MIME_WEBM, status=200)
+        return response.HTTPResponse(content_type=MIME_VIDEO, status=200)
 
     event = PromEvent(
         ch_id=channel_id,
@@ -322,7 +322,7 @@ async def handle_flussonic(request, url, channel_id=None, channel_name=None, clo
 
             async with async_open(p_vod.pid, mode="rb") as f:
                 await f.seek(bytepos)
-                _response = await request.respond(content_type=MIME_WEBM)
+                _response = await request.respond(content_type=MIME_VIDEO)
                 prom = app.add_task(add_prom_event(event, cloud, local, p_vod))
 
                 try:
@@ -356,7 +356,7 @@ async def handle_flussonic(request, url, channel_id=None, channel_name=None, clo
     if _g.chrome_regex.match(ua):
         return await transcode(request, event, p_vod, cloud, local, channel_id, client_port, vod)
 
-    _response, prom = await request.respond(content_type=MIME_WEBM), None
+    _response, prom = await request.respond(content_type=MIME_VIDEO), None
     try:
         with closing(await dgram_bind((_g._IPTV, client_port))) as stream:
             # 1st packet on SDTV channels is bogus and breaks ffmpeg
@@ -571,7 +571,7 @@ async def handle_recording(request):
         if ext in VID_EXTS:
             try:
                 _range = ContentRangeHandler(request, await aio_os.stat(file))
-                return await response.file_stream(file, mime_type=MIME_WEBM, _range=_range)
+                return await response.file_stream(file, mime_type=MIME_VIDEO, _range=_range)
             except HeaderNotFound:
                 pass
 
@@ -642,7 +642,7 @@ async def transcode(request, event, p_vod, cloud, local, channel_id=0, port=0, v
     cmd += ["-f", "matroska", "-v", "fatal", "-"]
 
     proc = await asyncio.create_subprocess_exec(*cmd, stdin=DEVNULL, stdout=PIPE)
-    _response = await request.respond(content_type=MIME_WEBM)
+    _response = await request.respond(content_type=MIME_VIDEO)
 
     await _response.send(await proc.stdout.read(BUFF))
     prom = app.add_task(add_prom_event(event._replace(lat=time() - event.id), cloud, local, p_vod))
