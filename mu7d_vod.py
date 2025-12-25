@@ -41,6 +41,7 @@ from mu7d_cfg import (
     UA,
     URL_COVER,
     VERSION,
+    VID_EXT,
     WIN32,
     add_logfile,
 )
@@ -252,46 +253,39 @@ async def postprocess(vod_info):  # pylint: disable=too-many-statements
             log.debug('Saving cover cache "%s"', cached_cover)
             shutil.copy2(cover, cached_cover)
 
-    async def _save_metadata(duration=None, get_cover=False):
+    async def _save_metadata(duration):
         nonlocal metadata, mtime
 
-        # Only the main cover, to embed in the video file
-        if get_cover:
+        try:
+            async with async_open(
+                os.path.join(CACHE_DIR, "programs", f"{_args.program}.json"), encoding="utf8"
+            ) as f:
+                metadata = ujson.loads(await f.read())["data"]
+        except (FileNotFoundError, OSError, PermissionError, TypeError, ValueError) as ex:
+            if _args.index:
+                raise RecordingError(f"Extended info not found => {repr(ex)}") from ex
+
+        cover = metadata["cover"]
+        img_ext = os.path.splitext(cover)[1]
+        img_name = _filename + img_ext
+        metadata["cover"] = img_name[len(RECORDINGS) + 1 :]
+        log.debug('Getting cover "%s"', cover)
+        for x in range(2):
             try:
-                async with async_open(
-                    os.path.join(CACHE_DIR, "programs", f"{_args.program}.json"), encoding="utf8"
-                ) as f:
-                    metadata = ujson.loads(await f.read())["data"]
-            except (FileNotFoundError, OSError, PermissionError, TypeError, ValueError) as ex:
-                if _args.index:
-                    raise RecordingError(f"Extended info not found => {repr(ex)}") from ex
-                return None, None
-
-            cover = metadata["cover"]
-            img_ext = os.path.splitext(cover)[1]
-            img_name, archival_img_name = _tmpname + img_ext, _filename + img_ext
-            metadata["cover"] = archival_img_name[len(RECORDINGS) + 1 :]
-            log.debug('Getting cover "%s"', cover)
-            for x in range(2):
-                try:
-                    async with _SESSION_CLOUD.get(f"{URL_COVER}/{cover}") as resp:
-                        if resp.status == 200:
-                            img_data = await resp.read()
-                            if img_data:
-                                log.debug('Got cover "%s"', cover)
-                                async with async_open(img_name, "wb") as f:
-                                    await f.write(await resp.read())
-                                await utime(mtime, img_name)
-                                img_mime = "image/png" if img_ext == ".png" else "image/jpeg"
-                                return img_mime, img_name
-                except (ClientConnectionError, ClientOSError, ServerDisconnectedError) as ex:
-                    resp = ex
-
-                log.warning('Failed to get cover "%s" => %s', cover, str(resp).splitlines()[0])
+                async with _SESSION_CLOUD.get(f"{URL_COVER}/{cover}") as resp:
+                    if resp.status == 200:
+                        img_data = await resp.read()
+                        if img_data:
+                            log.debug('Got cover "%s"', cover)
+                            async with async_open(img_name, "wb") as f:
+                                await f.write(await resp.read())
+                            await utime(mtime, img_name)
+            except (ClientConnectionError, ClientOSError, ServerDisconnectedError) as ex:
+                log.warning('Failed to get cover "%s" => %s', cover, str(ex).splitlines()[0])
                 if x == 0:
                     await asyncio.sleep(2)
-
-            raise RecordingError("Failed to get cover")
+                else:
+                    raise RecordingError("Failed to get cover") from ex
 
         # Save all the available metadata
         log.debug('metadata="%s"', metadata)
@@ -429,7 +423,7 @@ async def postprocess(vod_info):  # pylint: disable=too-many-statements
                 await _cleanup(CHP_EXT, ".log", ".logo.txt", ".txt")
                 return
 
-            if _args.comskipcut and not _args.mkv:
+            if _args.comskipcut:
                 for segment in segments:
                     r = re.match(r" TIMEBASE=[^ ]+ START=([^ ]+) END=([^ ]+) .+", segment)
                     start, end = map(lambda x: str(timedelta(seconds=int(x) / 100)), r.groups())
@@ -470,22 +464,13 @@ async def postprocess(vod_info):  # pylint: disable=too-many-statements
 
                 await _check_process("Failed merging recording w/o commercials")
 
-            elif _args.mkv:
-                cmd = ("ffmpeg", "-i", _tmpname + TMP_EXT, "-i", _tmpname + CHP_EXT, *tags)
-                cmd += ("-v", "error", "-y", "-f", "matroska", _tmpname + TMP_EXT2)
-
-                log.info(f"POSTPROCESS #{step}  - COMSKIP - Merging mkv chapters")
-                proc = await asyncio.create_subprocess_exec(*cmd, stdin=NULL, stdout=PIPE, stderr=OUT)
-
-                await _check_process("Failed merging mkv chapters")
-
             elif RECORDINGS_TMP:
                 shutil.copy2(_tmpname + CHP_EXT, _filename + CHP_EXT)
 
             if await aio_os.path.exists(_tmpname + TMP_EXT2):
                 await rename(_tmpname + TMP_EXT2, _tmpname + TMP_EXT)
 
-            if _args.comskipcut or _args.mkv:
+            if _args.comskipcut:
                 await _cleanup(CHP_EXT)
             await _cleanup(".log", ".logo.txt", ".txt")
             await remove(*pieces)
@@ -494,10 +479,6 @@ async def postprocess(vod_info):  # pylint: disable=too-many-statements
         nonlocal mtime, proc, skip_start, step, tags
 
         step += 1
-
-        img_mime, img_name = await _save_metadata(get_cover=True)
-        if all((_args.mkv, img_mime, img_name)):
-            tags += ["-attach", img_name, "-metadata:s:t:0", f"mimetype={img_mime}"]
 
         if not RECORDINGS_TRANSCODE_OUTPUT:
             log.info(f"POSTPROCESS #{step}  - Skipped. Remuxing/Transcoding disabled")
@@ -516,7 +497,7 @@ async def postprocess(vod_info):  # pylint: disable=too-many-statements
             log.info(f"POSTPROCESS #{step}  - Dropping subs")
             cmd.append("-sn")
 
-        cmd += [*tags, "-v", "info", "-y", "-f", "matroska" if _args.mkv else "mpegts", _tmpname + TMP_EXT2]
+        cmd += [*tags, "-v", "info", "-y", "-f", "mpegts", _tmpname + TMP_EXT2]
 
         if re.search(r"-c[:\w]* (?!copy)", " ".join(RECORDINGS_TRANSCODE_OUTPUT)):
             _msg = "Transcoding"
@@ -571,7 +552,7 @@ async def postprocess(vod_info):  # pylint: disable=too-many-statements
         await _archive_recording()
 
         if _args.index:
-            await _save_metadata(duration=duration)
+            await _save_metadata(duration)
 
         dirname = os.path.dirname(_filename)
         metadata_dir = os.path.join(dirname, "metadata")
@@ -600,7 +581,6 @@ async def postprocess(vod_info):  # pylint: disable=too-many-statements
     mtime = vod_info["beginTime"] // 1000 + _args.start
     tags = ["-metadata", 'service_name="%s"' % vod_info["channelName"]]
     tags += ["-metadata", 'service_provider="Movistar IPTV"']
-    tags += ["-metadata:s:v", f"title={os.path.basename(_args.filename)}"] if _args.mkv else []
 
     lockfile = os.path.join(TMP_DIR, ".mu7d_vod.lock")
     pp_lock = FileLock(lockfile)
@@ -665,7 +645,6 @@ async def record_stream(vod_info):
         _args.time = min(_args.time, vod_info["duration"])
 
     flags = "[COMSKIPCUT] " if _args.comskipcut else "[COMSKIP] " if _args.comskip else ""
-    flags += "[MKV] " if _args.mkv else ""
     flags += "[VO] " if _args.vo else ""
     log_start = f"{flags}[{str(timedelta(seconds=_args.time)):>7}s = {_args.time:>5}s]"
 
@@ -892,7 +871,6 @@ if __name__ == "__main__":
     parser.add_argument("--comskipcut", help="do comercials analysis, cut chapters", action="store_true")
     parser.add_argument("--debug", help="enable debug logs", action="store_true")
     parser.add_argument("--index", help="index recording in db", action="store_true")
-    parser.add_argument("--mkv", help="output recording in mkv container", action="store_true")
     parser.add_argument("--vo", help="set 2nd language as main one", action="store_true")
     parser.add_argument("--write_to_file", "-w", help="record", action="store_true")
 
@@ -937,7 +915,6 @@ if __name__ == "__main__":
         CHP_EXT = ".ffmeta"
         TMP_EXT = ".tmp"
         TMP_EXT2 = ".tmp2"
-        VID_EXT = ".mkv" if _args.mkv else ".ts"
 
         if _args.index and not os.path.exists(os.path.join(CACHE_DIR, "programs", f"{_args.program}.json")):
             log.error(f"No metadata exists for [{_args.channel:4}] [{_args.program}]")

@@ -51,6 +51,7 @@ from mu7d_cfg import (
     URL_FANART,
     URL_LOGO,
     VERSION,
+    VID_EXT,
     VID_EXTS,
     VID_EXTS_KEEP,
     WIN32,
@@ -151,7 +152,7 @@ async def create_covers_cache():
 
 
 async def does_recording_exist(filename):
-    return await aio_os.path.exists(os.path.join(_g.RECORDINGS, filename + _g.VID_EXT))
+    return await aio_os.path.exists(os.path.join(_g.RECORDINGS, filename + VID_EXT))
 
 
 def expire_epg_ott(epg):
@@ -302,7 +303,7 @@ async def get_local_info(channel, timestamp, path, _log=None, extended=False):
 
 
 def get_path(filename, bare=False):
-    return os.path.join(_g.RECORDINGS, filename + (_g.VID_EXT if not bare else ""))
+    return os.path.join(_g.RECORDINGS, filename + (VID_EXT if not bare else ""))
 
 
 def get_program_name(filename):
@@ -386,7 +387,7 @@ def get_program_vod(channel_id, url=None, cloud=False, local=False):
 
 
 async def get_recording_files(filename, cache=False):
-    absname = os.path.join(_g.RECORDINGS, filename.removesuffix(_g.VID_EXT))
+    absname = os.path.join(_g.RECORDINGS, filename.removesuffix(VID_EXT))
     nfo = os.path.join(absname + NFO_EXT)
 
     path, basename = os.path.split(absname)
@@ -738,7 +739,7 @@ async def reaper():
         await asyncio.sleep(5)
 
 
-async def record_program(ch_id, pid, offset=0, time=0, cloud=False, comskip=0, index=True, mkv=False, vo=False):
+async def record_program(ch_id, pid, offset=0, time=0, cloud=False, comskip=0, index=True, vo=False):
     timestamp = get_epg(ch_id, pid, cloud)[0]
     if not timestamp:
         return "Event not found"
@@ -782,7 +783,6 @@ async def record_program(ch_id, pid, offset=0, time=0, cloud=False, comskip=0, i
     cmd += ["--cloud"] if cloud else []
     cmd += ["--comskip"] if comskip == 1 else ["--comskipcut"] if comskip == 2 else []
     cmd += ["--index"] if index else []
-    cmd += ["--mkv"] if mkv else []
     cmd += ["--vo"] if vo else []
 
     log.debug('Launching: "%s"', " ".join(cmd))
@@ -807,7 +807,7 @@ async def reindex_recordings():
         ):
             basename = nfo_file.removesuffix(NFO_EXT)
             if not await does_recording_exist(basename):
-                log.error(f'No recording found: "{basename + _g.VID_EXT}" {nfo_file=}')
+                log.error(f'No recording found: "{basename + VID_EXT}" {nfo_file=}')
                 _glob = os.path.join(os.path.dirname(basename), "metadata", os.path.basename(basename))
                 _glob += "-*.jpg"
                 await remove(nfo_file, basename + ".jpg")
@@ -1229,9 +1229,7 @@ async def timers_check(delay=0):  # pylint: disable=too-many-branches,too-many-l
                 next_timers.append((guide[ti.ch_id][ti.ts].full_title, ti.ts + ti.delay + 30))
                 continue
 
-            if await record_program(
-                ti.ch_id, pid, 0, duration, ti.cloud, ti.comskip, True, _g.MKV_OUTPUT, ti.vo
-            ):
+            if await record_program(ti.ch_id, pid, 0, duration, ti.cloud, ti.comskip, True, ti.vo):
                 continue
 
             log.info(DIV_ONE, f"Found {'Cloud ' if ti.cloud else ''}EPG MATCH", log_suffix)
@@ -1383,14 +1381,14 @@ async def update_recordings(channel_id=None):
 
     async def _dump_files(files, channel=False, latest=False):
         m3u = deque()
-        async for file in (f async for f in files if await aio_os.path.exists(f + _g.VID_EXT)):
+        async for file in (f async for f in files if await aio_os.path.exists(f + VID_EXT)):
             path, name = (urllib.parse.quote(x.translate(translation)) for x in os.path.split(file))
             _m3u = '#EXTINF:-1 group-title="'
             _m3u += '# Recientes"' if latest else f'{path}"' if path else '#"'
             _m3u += f' tvg-logo="{_g.U7D_URL}/recording/?{urllib.parse.quote(file + ".jpg")}"'
             _m3u += f",{path} - " if (channel and path) else ","
             _m3u += f"{name}\n"
-            _m3u += f"{_g.U7D_URL}/recording/?{urllib.parse.quote(file + _g.VID_EXT)}"
+            _m3u += f"{_g.U7D_URL}/recording/?{urllib.parse.quote(file + VID_EXT)}"
             m3u.append(_m3u)
         return m3u
 
@@ -1553,7 +1551,7 @@ async def upgrade_recordings():
 
     for nfo_file in sorted(glob(f"{_g.RECORDINGS}/**/*{NFO_EXT}", recursive=True)):
         basename = nfo_file.split(NFO_EXT)[0]
-        recording = basename + _g.VID_EXT
+        recording = basename + VID_EXT
 
         mtime = int(await aio_os.path.getmtime(recording))
 

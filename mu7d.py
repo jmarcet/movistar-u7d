@@ -3,11 +3,9 @@
 import asyncio
 import logging
 import os
-import re
 import sys
 import urllib.parse
 from asyncio.exceptions import CancelledError
-from asyncio.subprocess import DEVNULL, PIPE
 from collections import defaultdict, namedtuple
 from contextlib import closing, suppress
 from datetime import datetime
@@ -225,10 +223,6 @@ async def handle_channel(request, channel_id=None, channel_name=None):
     if channel_id not in _g._CHANNELS:
         raise NotFound(f"Requested URL {request.path} not found")
 
-    ua = request.headers.get("user-agent", "")
-    if _g.chrome_regex.match(ua):
-        return await handle_flussonic(request, f"{int(datetime.now().timestamp())}.ts", channel_id)
-
     if request.method == "HEAD":
         return response.HTTPResponse(content_type=MIME_VIDEO, status=200)
 
@@ -236,7 +230,8 @@ async def handle_channel(request, channel_id=None, channel_name=None):
         log.warning(f"[{request.ip}] {request.path} -> Network Saturated")
         raise ServiceUnavailable("Network Saturated")
 
-    _response, ch, prom = await request.respond(content_type=MIME_VIDEO), _g._CHANNELS[channel_id], None
+    ch, prom, ua = _g._CHANNELS[channel_id], None, request.headers.get("user-agent", "")
+    _response = await request.respond(content_type=MIME_VIDEO)
     try:
         with closing(socket(AF_INET, SOCK_DGRAM, IPPROTO_UDP)) as sock:
             sock.setsockopt(SOL_SOCKET, SO_REUSEADDR, 1)
@@ -305,16 +300,10 @@ async def handle_flussonic(request, url, channel_id=None, channel_name=None, clo
         msg=f"[{request.ip}] -> Playing {request.url}",
         url=url,
     )
-
     ua = request.headers.get("user-agent", "")
-    if _g.chrome_regex.match(ua):
-        log.info('UA="%s" detected -> Transcoding', ua)
 
     if local:
         if await aio_os.path.exists(p_vod.pid):
-            if _g.chrome_regex.match(ua) or not p_vod.pid.endswith(".ts"):
-                return await transcode(request, event, p_vod, cloud, local)
-
             _stat = await aio_os.stat(p_vod.pid)
             bytepos = round(p_vod.offset * _stat.st_size / p_vod.duration)
             bytepos -= bytepos % CHUNK
@@ -352,9 +341,6 @@ async def handle_flussonic(request, url, channel_id=None, channel_name=None, clo
     vod = app.add_task(Vod(args, _g.vod_client, info))
     if not vod:
         raise NotFound(f"Requested URL {request.path} not found")
-
-    if _g.chrome_regex.match(ua):
-        return await transcode(request, event, p_vod, cloud, local, channel_id, client_port, vod)
 
     _response, prom = await request.respond(content_type=MIME_VIDEO), None
     try:
@@ -506,7 +492,6 @@ async def handle_record_program(request, url, channel_id=None, channel_name=None
     cloud = request.args.get("cloud") == "1"
     comskip = int(request.args.get("comskip", "0"))
     index = request.args.get("index", "1") == "1"
-    mkv = request.args.get("mkv") == "1"
     record_time = int(request.args.get("time", "0"))
     vo = request.args.get("vo") == "1"
 
@@ -520,7 +505,7 @@ async def handle_record_program(request, url, channel_id=None, channel_name=None
     if not record_time:
         record_time = p_vod.duration - p_vod.offset
 
-    msg = await record_program(channel_id, p_vod.pid, p_vod.offset, record_time, cloud, comskip, index, mkv, vo)
+    msg = await record_program(channel_id, p_vod.pid, p_vod.offset, record_time, cloud, comskip, index, vo)
     if msg:
         raise Forbidden(msg)
 
@@ -536,7 +521,6 @@ async def handle_record_program(request, url, channel_id=None, channel_name=None
             "cloud": cloud,
             "comskip": comskip,
             "index": index,
-            "mkv": mkv,
             "vo": vo,
         }
     )
@@ -619,49 +603,6 @@ async def handle_timers_check(request):
     app.add_task(timers_check(delay=delay))
 
     return response.json({"status": "Timers check queued"}, 200)
-
-
-async def transcode(request, event, p_vod, cloud, local, channel_id=0, port=0, vod=None):
-    log.debug(
-        "transcode(): p_vod=%s cloud=%s local=%s channel_id=%s port=%s vod=%s",
-        *map(str, (p_vod, cloud, local, channel_id, port, vod)),
-    )
-
-    if request.args.get("vo") == "1":
-        lang_channel = ("-map", "0:a", "-map", "-0:m:language:spa", "-map", "-0:m:language:esp")
-    else:
-        lang_channel = ("-map", "0:a", "-map", "-0:m:language:mul", "-map", "-0:m:language:vo")
-
-    cmd = ["ffmpeg"]
-    if local:
-        cmd += ["-ss", f"{p_vod.offset}", "-i", p_vod.pid]
-    else:
-        cmd += ["-skip_initial_bytes", f"{CHUNK}"] if " HD" not in _g._CHANNELS[channel_id].name else []
-        cmd += ["-i", f"udp://@{_g._IPTV}:{port}"]
-    cmd += ["-map", "0:v", *lang_channel, "-c:v:0", "copy", "-c:a:0", "aac"]
-    cmd += ["-f", "matroska", "-v", "fatal", "-"]
-
-    proc = await asyncio.create_subprocess_exec(*cmd, stdin=DEVNULL, stdout=PIPE)
-    _response = await request.respond(content_type=MIME_VIDEO)
-
-    await _response.send(await proc.stdout.read(BUFF))
-    prom = app.add_task(add_prom_event(event._replace(lat=time() - event.id), cloud, local, p_vod))
-
-    try:
-        while not _g._SHUTDOWN:
-            content = await proc.stdout.read(BUFF)
-            if len(content) < 1:
-                break
-            await _response.send(content)
-
-    finally:
-        proc.kill()
-        if vod:
-            vod.cancel()
-        if prom:
-            prom.cancel()
-        await proc.wait()
-        await _response.eof()
 
 
 class VodHttpProtocol(HttpProtocol):
@@ -806,7 +747,6 @@ if __name__ == "__main__":
     _g.IPTV_BW_SOFT = CONF["IPTV_BW_SOFT"]
     _g.IPTV_IFACE = CONF["IPTV_IFACE"]
     _g.LAN_IP = CONF["LAN_IP"]
-    _g.MKV_OUTPUT = CONF["MKV_OUTPUT"]
     _g.OTT_RECORDINGS_EPG = CONF["OTT_RECORDINGS_EPG"]
     _g.RECORDINGS = CONF["RECORDINGS"]
     _g.RECORDINGS_M3U = CONF["RECORDINGS_M3U"]
@@ -817,18 +757,12 @@ if __name__ == "__main__":
     _g.TVG_BUSY = CONF["TVG_BUSY"]
     _g.U7D_PORT = CONF["U7D_PORT"]
     _g.U7D_URL = CONF["U7D_URL"]
-    _g.VID_EXT = ".mkv" if CONF["MKV_OUTPUT"] else ".ts"
 
     _g.cloud_data = os.path.join(CONF["CACHE_DIR"], "cloud.json")
     _g.channels_data = os.path.join(CONF["CACHE_DIR"], "channels.json")
     _g.epg_data = os.path.join(CONF["CACHE_DIR"], "epg.json")
     _g.recordings_data = os.path.join(CONF["HOME"], "recordings.json")
     _g.timers_data = os.path.join(CONF["HOME"], "timers.conf")
-
-    _g.chrome_regex = re.compile(
-        r"^Mozilla\/\d+\.\d+ \(.+; (Linux|Mac OS X|Win32;|Win64;) .+\) AppleWebKit\/\d+\.\d+ "
-        r"\(KHTML, like Gecko\) Chrome/\d+.\d+.\d+.\d+ \Safari/\d+\.\d+"
-    )
 
     VodArgs = namedtuple("Vod", "channel, program, client_ip, client_port, start, cloud")
 

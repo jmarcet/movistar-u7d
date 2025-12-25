@@ -32,6 +32,7 @@ URL_BASE = "http://html5-static.svc.imagenio.telefonica.net/appclientv/nux/incom
 URL_COVER = f"{URL_BASE}/covers/programmeImages/portrait/290x429"
 URL_FANART = "http://recortes.svc.imagenio.telefonica.net/recorte/n/bigtv_fanart"
 URL_LOGO = f"{URL_BASE}/channelLogo"
+VID_EXT = ".ts"
 VID_EXTS = (".avi", ".mkv", ".mp4", ".mpeg", ".mpg", ".ts")
 VID_EXTS_KEEP = (*VID_EXTS, ".tmp", ".tmp2")
 YEAR_SECONDS = 365 * 24 * 60 * 60
@@ -174,9 +175,6 @@ def _mu7d_config():  # pylint: disable=too-many-branches
 
     if "LOG_TO_FILE" not in conf:
         conf["LOG_TO_FILE"] = os.path.join(conf["HOME"], "mu7d.log")
-
-    if "MKV_OUTPUT" not in conf or not isinstance(conf["MKV_OUTPUT"], bool):
-        conf["MKV_OUTPUT"] = False
 
     if "NO_SUBS" not in conf or not isinstance(conf["NO_SUBS"], bool):
         conf["NO_SUBS"] = False

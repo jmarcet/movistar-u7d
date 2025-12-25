@@ -30,7 +30,7 @@
 
 - Transcode transparente (del audio) cuando el cliente es `Chrome`, así se pueden reproducir directos o catchups directamente desde el navegador.
 
-- El formato por defecto de las grabaciones es ahora `.ts`, con `.mkv` como opción. Ya no hay opción de `.mp4`.
+- El formato de las grabaciones es ahora `.ts`. Ya no hay opciones de `.mkv` ni `.mp4`.
 
 - Ante cambios de numeración de canales por parte de Movistar, si existen grabaciones del mismo se renombran.
 
@@ -54,7 +54,6 @@
   - ~~`EXTRA_CHANNELS`~~: opción eliminada, en favor de la anterior.
   - `LOG_TO_FILE`: para escribir los logs en un fichero.
   - ~~`MP4_OUTPUT`~~: opción eliminada. Por defecto las grabaciones se realizan en formato `.ts`, el único en el que los subtítulos funcionan correctamente con cualquier reproductor.
-  - `MKV_OUTPUT`: para hacer las grabaciones en formato `.mkv`. No es deseable de querer usar la nueva `MovistarTVLocal.m3u`/`local.xml`.
   - ~~`NO_VERBOSE_LOGS`~~: opción eliminada.
   - `OTT_HACK`: hack para que OTT Navigator muestre los caracteres "()?¡!" en los títulos, de lo contrario, lo que vaya entre () lo pasa al subtítulo y los otros caracteres se los come.
   - `RECORDINGS_M3U`: desactivada por defecto, para controlar si generar listas `m3u` de grabaciones. Con `Jellyfin` es recomendable desactivarla, o se quejará de que no puede localizar las grabaciones.
