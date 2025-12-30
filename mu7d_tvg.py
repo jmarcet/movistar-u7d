@@ -1080,10 +1080,10 @@ class XmlTV:
             channel_tag += " - TDT Movistar.es"
             channel_number = services[channel_id]
             channel_logo = f"{U7D_URL}/Logos/" + self.__channels[channel_id]["logo_uri"]
-            m3u += f'#EXTINF:-1 ch-number="{channel_number}" audio-track="2" '
+            m3u += f'#EXTINF:-1 ch-number="{channel_number:03}" tvg-chno="{channel_number:03}" '
             m3u += f'tvg-id="{channel_id}.movistar.tv" '
-            m3u += f'group-title="{channel_tag}" '
-            m3u += f'tvg-logo="{channel_logo}"'
+            m3u += f'tvg-logo="{channel_logo}" '
+            m3u += f'audio-track="2" group-title="{channel_tag}"'
             m3u += f",{channel_name}\n"
             m3u += f"{U7D_URL}"
             m3u += "/cloud" if cloud else "/local" if local else ""
