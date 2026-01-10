@@ -595,13 +595,16 @@ class MulticastIPTV:
             meta_data = MulticastIPTV.get_title_meta(full_title, serie_id, service_id, genre, year)
             # episode = struct.unpack("B", data[title_end + 8 : title_end + 9])[0]
             # season = struct.unpack("B", data[title_end + 11 : title_end + 12])[0]
-            programs[start] = {
-                "pid": struct.unpack(">I", data[:4])[0],
-                "duration": duration,
-                "full_title": meta_data["full_title"],
-                "genre": genre,
-                "serie": meta_data["serie"],
-            }
+            if meta_data["full_title"]:
+                programs[start] = {
+                    "pid": struct.unpack(">I", data[:4])[0],
+                    "duration": duration,
+                    "full_title": meta_data["full_title"],
+                    "genre": genre,
+                    "serie": meta_data["serie"],
+                }
+            else:  # Skip empty programs
+                log.debug(f"Skipping Empty program found in New EPG: {service_id=} {full_title=} {meta_data=}")
             pr_title_end = struct.unpack("B", data[title_end + 12 : title_end + 13])[0] + title_end + 13
             cut = pr_title_end or title_end
             data = data[struct.unpack("B", data[cut + 3 : cut + 4])[0] + cut + 4 :]
