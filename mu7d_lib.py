@@ -998,9 +998,11 @@ async def timers_check(delay=0):  # pylint: disable=too-many-branches,too-many-l
 
     def _filter_recorded(channel_id, timestamps, stored_filenames):
         return filter(
-            lambda ts: channel_id not in _g._RECORDINGS
-            or ts not in _g._RECORDINGS[channel_id]
-            or get_recording_name(channel_id, ts) not in stored_filenames,
+            lambda ts: (
+                channel_id not in _g._RECORDINGS
+                or ts not in _g._RECORDINGS[channel_id]
+                or get_recording_name(channel_id, ts) not in stored_filenames
+            ),
             timestamps,
         )
 
@@ -1107,8 +1109,9 @@ async def timers_check(delay=0):  # pylint: disable=too-many-branches,too-many-l
 
                 if fresh:
                     tss = filter(
-                        lambda ts: ts <= _g._last_epg + 3600
-                        and ts + _g._EPGDATA[channel_id][ts].duration > int(time()),
+                        lambda ts: (
+                            ts <= _g._last_epg + 3600 and ts + _g._EPGDATA[channel_id][ts].duration > int(time())
+                        ),
                         _g._EPGDATA[channel_id],
                     )
                 else:
@@ -1121,8 +1124,10 @@ async def timers_check(delay=0):  # pylint: disable=too-many-branches,too-many-l
                         for i in range(8)
                     )
                     tss = filter(
-                        lambda ts: any(map(lambda fixed_ts: abs(ts - fixed_ts) <= 1500, fixed_timestamps))
-                        and (not days or days.get(datetime.fromtimestamp(ts).isoweekday())),
+                        lambda ts: (
+                            any(map(lambda fixed_ts: abs(ts - fixed_ts) <= 1500, fixed_timestamps))
+                            and (not days or days.get(datetime.fromtimestamp(ts).isoweekday()))
+                        ),
                         tss,
                     )
                 elif days:
