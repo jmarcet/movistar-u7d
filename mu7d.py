@@ -163,7 +163,7 @@ async def after_server_stop(app):  # pylint: disable=unused-argument
     log.info("BYE")
 
     if WIN32:
-        input("\nPulsa una tecla para terminar...")
+        await asyncio.to_thread(input, "\nPulsa una tecla para terminar...")
 
 
 @app.put("/archive/<channel_id:int>/<program_id:int>")

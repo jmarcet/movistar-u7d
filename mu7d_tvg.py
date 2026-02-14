@@ -1138,7 +1138,7 @@ async def tvg_main(args, time_start):
     await Cache.cache(full)
 
     if args.guide:
-        Path(TVG_BUSY).touch(exist_ok=True)
+        await asyncio.to_thread(Path(TVG_BUSY).touch, exist_ok=True)
 
     async with aiohttp.ClientSession(headers={"User-Agent": UA}) as _SESSION:
         _MIPTV = MulticastIPTV()
