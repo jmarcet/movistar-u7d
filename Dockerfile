@@ -4,7 +4,7 @@ ARG BUILD_TYPE
 ARG TARGETARCH
 
 ARG COMSKIP_BRANCH=master
-ARG JELLYFIN_FFMPEG_BRANCH=jellyfin
+ARG JELLYFIN_FFMPEG_BRANCH=jellyfin-7.1
 
 # https://askubuntu.com/questions/972516/debian-frontend-environment-variable
 ENV DEBIAN_FRONTEND="noninteractive"
