@@ -53,8 +53,11 @@ RUN --mount=type=cache,sharing=locked,target=/var/cache/apt \
            automake \
            libargtable2-dev \
            libtool \
-           pkg-config \
-        && git clone -b ${JELLYFIN_FFMPEG_BRANCH} https://github.com/jellyfin/jellyfin-ffmpeg \
+           pkg-config; \
+    fi
+
+RUN if [ "$BUILD_TYPE" = "full" ]; then \
+        git clone -b ${JELLYFIN_FFMPEG_BRANCH} https://github.com/jellyfin/jellyfin-ffmpeg \
         && cd jellyfin-ffmpeg \
         && ./configure --prefix=/usr/lib/jellyfin-ffmpeg --disable-x86asm \
         && make -j$(nproc) install-headers \
