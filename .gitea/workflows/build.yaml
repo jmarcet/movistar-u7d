@@ -2,6 +2,7 @@ name: movistar_u7d Docker Build CI
 on:
   push:
     branches: ["master", "next"]
+  workflow_dispatch:
 
 defaults:
   run:
