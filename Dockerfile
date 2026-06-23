@@ -90,11 +90,13 @@ RUN if [ "$BUILD_TYPE" = "full" ]; then \
 
 WORKDIR /app
 
-COPY . .
+COPY requirements.txt .
 
 RUN --mount=type=cache,target=/root/.cache \
     pip install --disable-pip-version-check --root-user-action ignore --use-pep517 uv \
     && uv pip install --system -r requirements.txt
+
+COPY . .
 
 RUN --mount=type=cache,target=/root/.cache \
    if [ "$TARGETARCH" = "amd64" ] && [ "${BUILD_TYPE}" != "full" ]; then \
