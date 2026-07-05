@@ -480,6 +480,9 @@ async def launch(cmd):
     except CancelledError:
         with suppress(CancelledError):
             proc.terminate()
+            with suppress(TimeoutError):
+                return await asyncio.wait_for(proc.wait(), 120)
+            proc.kill()
             return await proc.wait()
 
 
