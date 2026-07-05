@@ -884,14 +884,14 @@ async def reindex_recordings():
 
 async def reload_epg():
     if await a.all(a.map(aio_os.path.exists, (_g.CHANNELS, _g.channels_data))):
-        async with epg_lock:
-            try:
+        try:
+            async with epg_lock:
                 async with async_open(_g.channels_data, encoding="utf8") as f:
                     _g._CHANNELS = json.loads(await f.read(), object_hook=parse_channels)["data"]
-            except (FileNotFoundError, JSONDecodeError, OSError, PermissionError, TypeError, ValueError) as ex:
-                log.error(f"Failed to load Channels metadata {repr(ex)}")
-                await remove(_g.channels_data, _g.epg_data)
-                return await reload_epg()
+        except (FileNotFoundError, JSONDecodeError, OSError, PermissionError, TypeError, ValueError) as ex:
+            log.error(f"Failed to load Channels metadata {repr(ex)}")
+            await remove(_g.channels_data, _g.epg_data)
+            return await reload_epg()
 
     elif await a.all(a.map(aio_os.path.exists, (_g.epg_data, _g.GUIDE, _g.GUIDE + ".gz"))):
         if tvgrab_lock.locked():
@@ -918,18 +918,18 @@ async def reload_epg():
         log.warning("Missing EPG data! Need to download it. Please be patient...")
         return await update_epg()
 
-    async with epg_lock:
-        try:
+    try:
+        async with epg_lock:
             async with async_open(_g.epg_data, encoding="utf8") as f:
                 _g._EPGDATA = json.loads(await f.read(), object_hook=parse_epg)["data"]
-        except (FileNotFoundError, JSONDecodeError, OSError, PermissionError, TypeError, ValueError) as ex:
-            log.error(f"Failed to load EPG data {repr(ex)}")
-            await remove(_g.epg_data)
-            return await reload_epg()
+    except (FileNotFoundError, JSONDecodeError, OSError, PermissionError, TypeError, ValueError) as ex:
+        log.error(f"Failed to load EPG data {repr(ex)}")
+        await remove(_g.epg_data)
+        return await reload_epg()
 
-        log.info(f"Channels  &  EPG Updated => {_g.U7D_URL}/MovistarTV.m3u      - {_g.U7D_URL}/guide.xml.gz")
-        nr_epg = sum((len(_g._EPGDATA[channel]) for channel in _g._EPGDATA))
-        log.info(f"Total: {len(_g._CHANNELS):2} Channels & {nr_epg:5} EPG entries")
+    log.info(f"Channels  &  EPG Updated => {_g.U7D_URL}/MovistarTV.m3u      - {_g.U7D_URL}/guide.xml.gz")
+    nr_epg = sum((len(_g._EPGDATA[channel]) for channel in _g._EPGDATA))
+    log.info(f"Total: {len(_g._CHANNELS):2} Channels & {nr_epg:5} EPG entries")
 
     await update_cloud()
     freemem()
