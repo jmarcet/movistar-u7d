@@ -1262,7 +1262,8 @@ async def update_cloud():
     async with epg_lock:
         cmd = (f"mu7d_tvg{EXT}", "--cloud_m3u", _g.CHANNELS_CLOUD, "--cloud_recordings", _g.GUIDE_CLOUD)
         async with tvgrab_lock:
-            if await launch(cmd):
+            time_limit = datetime.now().replace(minute=57, second=0, microsecond=0).timestamp()
+            if await asyncio.wait_for(launch(cmd), timeout=(time_limit - time()) % 3600):
                 return
 
         try:
@@ -1286,10 +1287,10 @@ async def update_cloud():
 
 async def update_epg():
     cmd = (f"mu7d_tvg{EXT}", "--m3u", _g.CHANNELS, "--guide", _g.GUIDE)
-    time_limit = datetime.now().replace(minute=57, second=0, microsecond=0).timestamp()
 
     async with tvgrab_lock:
-        await asyncio.wait_for(launch(cmd), timeout=max(0, time_limit - time()) or None)
+        time_limit = datetime.now().replace(minute=57, second=0, microsecond=0).timestamp()
+        await asyncio.wait_for(launch(cmd), timeout=(time_limit - time()) % 3600)
 
     await reload_epg()
     _g._last_epg = int(datetime.now().replace(minute=0, second=0, microsecond=0).timestamp())
@@ -1327,11 +1328,13 @@ async def update_epg_cron():
             update = True
         if update:
             await update_epg()
-            last_datetime = datetime.now().replace(minute=0, second=0, microsecond=0).timestamp()
 
-    await asyncio.sleep(last_datetime + 3600 - time())
     while not _g._SHUTDOWN:
-        await asyncio.gather(asyncio.sleep(3600), update_epg())
+        await asyncio.sleep(3600 - time() % 3600)
+        try:
+            await update_epg()
+        except Exception as ex:  # pylint: disable=broad-exception-caught
+            log.error(f"update_epg() failed => {repr(ex)}")
 
 
 async def update_epg_local():
