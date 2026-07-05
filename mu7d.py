@@ -4,6 +4,7 @@ import asyncio
 import logging
 import os
 import sys
+import threading
 import urllib.parse
 from asyncio.exceptions import CancelledError
 from collections import defaultdict, namedtuple
@@ -97,6 +98,34 @@ from mu7d_lib import (
 )
 from mu7d_vod import Vod
 
+if WIN32:
+    win32_cleanup_done = threading.Event()
+
+    def add_win32_exit_handler(loop):
+        import win32api  # pylint: disable=import-error
+        import win32con  # pylint: disable=import-error
+
+        def exit_handler_win(event):
+            log.debug("exit_handler_win(event=%d)", event)
+            if event == win32con.CTRL_C_EVENT:
+                return False  # Python turns it into SIGINT => KeyboardInterrupt => Sanic's graceful stop
+
+            if event in (
+                win32con.CTRL_BREAK_EVENT,
+                win32con.CTRL_CLOSE_EVENT,
+                win32con.CTRL_LOGOFF_EVENT,
+                win32con.CTRL_SHUTDOWN_EVENT,
+            ):
+                _g._CONSOLE_GONE = True
+                with suppress(RuntimeError):
+                    loop.call_soon_threadsafe(app.stop)
+                # Windows terminates the process ~5s after these events, as soon as this handler returns
+                win32_cleanup_done.wait(4.5)
+
+            return True
+
+        win32api.SetConsoleCtrlHandler(exit_handler_win, True)
+
 
 @app.listener("before_server_start")
 async def before_server_start(app):
@@ -112,11 +141,15 @@ async def after_server_start(app):
 
     _g._CHANNELS = {}
     _g._CLOUD = {}
+    _g._CONSOLE_GONE = False
     _g._DELAYED = set()
     _g._EPGDATA = {}
     _g._KEEP = defaultdict(dict)
     _g._RECORDINGS = defaultdict(dict)
     _g._SHUTDOWN = False
+
+    if WIN32:
+        add_win32_exit_handler(asyncio.get_running_loop())
 
     _g._IPTV = get_iptv_ip()
 
@@ -163,7 +196,9 @@ async def after_server_stop(app):  # pylint: disable=unused-argument
     log.info("BYE")
 
     if WIN32:
-        await asyncio.to_thread(input, "\nPulsa una tecla para terminar...")
+        win32_cleanup_done.set()
+        if not _g._CONSOLE_GONE:
+            await asyncio.to_thread(input, "\nPulsa una tecla para terminar...")
 
 
 @app.put("/archive/<channel_id:int>/<program_id:int>")

@@ -12,6 +12,7 @@ import os
 import re
 import struct
 import sys
+import threading
 import time
 from asyncio.exceptions import CancelledError
 from collections import defaultdict, deque
@@ -1239,13 +1240,25 @@ if __name__ == "__main__":
                 win32con.CTRL_LOGOFF_EVENT,
                 win32con.CTRL_SHUTDOWN_EVENT,
             ):
-                tasks = tuple(t for t in asyncio.all_tasks(loop) if t is not asyncio.current_task(loop))
-                log.debug("Cancelando tareas...")
-                tuple(task.cancel() for task in tasks)
-                with suppress(CancelledError):
-                    log.debug("Esperando a tvg_main...")
-                    while not all(task.done() for task in tasks if task.get_name() == "Task-1"):
-                        time.sleep(0.1)
+                done = threading.Event()
+
+                def cancel_tasks():
+                    tasks = tuple(t for t in asyncio.all_tasks(loop) if t is not asyncio.current_task(loop))
+                    log.debug("Cancelando tareas...")
+                    tuple(task.cancel() for task in tasks)
+
+                    def check_done():
+                        if all(task.done() for task in tasks if task.get_name() == "Task-1"):
+                            done.set()
+                        else:
+                            loop.call_later(0.1, check_done)
+
+                    check_done()
+
+                log.debug("Esperando a tvg_main...")
+                loop.call_soon_threadsafe(cancel_tasks)
+                # Windows mata el proceso ~5s después de un CTRL_CLOSE_EVENT, en cuanto retorna este handler
+                done.wait(4.5)
                 log.info("adiós :)")
 
             return True

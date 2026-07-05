@@ -10,13 +10,14 @@ import os
 import re
 import shutil
 import sys
+import threading
 import urllib.parse
 from asyncio.exceptions import CancelledError
 from asyncio.subprocess import DEVNULL as NULL, PIPE, STDOUT as OUT
 from contextlib import closing, suppress
 from datetime import timedelta
 from signal import SIG_IGN, SIGINT, SIGTERM, signal
-from time import sleep, time
+from time import time
 
 import aiohttp
 import asyncstdlib as a
@@ -807,7 +808,7 @@ if __name__ == "__main__":
                 log.debug("bye")
                 sys.exit(1)
 
-        def exit_handler_win(event):
+        def exit_handler_win(event):  # pylint: disable=duplicate-code
             import win32con  # pylint: disable=import-error
 
             log.debug("exit_handler_win(event=%d)", event)
@@ -818,13 +819,25 @@ if __name__ == "__main__":
                 win32con.CTRL_LOGOFF_EVENT,
                 win32con.CTRL_SHUTDOWN_EVENT,
             ):
-                tasks = tuple(t for t in asyncio.all_tasks(loop) if t is not asyncio.current_task(loop))
-                log.debug("Cancelling vod tasks...")
-                tuple(task.cancel() for task in tasks)
-                with suppress(CancelledError):
-                    log.debug("Waiting for vod tasks...")
-                    while not all(task.done() for task in tasks):
-                        sleep(0.1)
+                done = threading.Event()
+
+                def cancel_tasks():
+                    tasks = tuple(t for t in asyncio.all_tasks(loop) if t is not asyncio.current_task(loop))
+                    log.debug("Cancelling vod tasks...")
+                    tuple(task.cancel() for task in tasks)
+
+                    def check_done():
+                        if all(task.done() for task in tasks):
+                            done.set()
+                        else:
+                            loop.call_later(0.1, check_done)
+
+                    check_done()
+
+                log.debug("Waiting for vod tasks...")
+                loop.call_soon_threadsafe(cancel_tasks)
+                # Windows kills the process ~5s after a CTRL_CLOSE_EVENT, as soon as this handler returns
+                done.wait(4.5)
                 log.debug("bye")
 
             return True
