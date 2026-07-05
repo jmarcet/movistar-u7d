@@ -1265,10 +1265,8 @@ async def update_cloud():
     async with epg_lock:
         cmd = (f"mu7d_tvg{EXT}", "--cloud_m3u", _g.CHANNELS_CLOUD, "--cloud_recordings", _g.GUIDE_CLOUD)
         async with tvgrab_lock:
-            time_limit = datetime.now().replace(minute=57, second=0, microsecond=0).timestamp()
-            if await asyncio.wait_for(launch(cmd), timeout=(time_limit - time()) % 3600):
+            if await asyncio.wait_for(launch(cmd), timeout=(3420 - time()) % 3600):
                 return
-
         try:
             async with async_open(_g.cloud_data, encoding="utf8") as f:
                 _g._CLOUD = json.loads(await f.read(), object_hook=parse_epg)["data"]
@@ -1292,8 +1290,7 @@ async def update_epg():
     cmd = (f"mu7d_tvg{EXT}", "--m3u", _g.CHANNELS, "--guide", _g.GUIDE)
 
     async with tvgrab_lock:
-        time_limit = datetime.now().replace(minute=57, second=0, microsecond=0).timestamp()
-        await asyncio.wait_for(launch(cmd), timeout=(time_limit - time()) % 3600)
+        await asyncio.wait_for(launch(cmd), timeout=(3420 - time()) % 3600)
 
     await reload_epg()
     _g._last_epg = int(datetime.now().replace(minute=0, second=0, microsecond=0).timestamp())
