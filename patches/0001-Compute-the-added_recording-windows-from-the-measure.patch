@@ -1,0 +1,70 @@
+From 02467a3ec5af41165a9fa6d7cf78d7261375d585 Mon Sep 17 00:00:00 2001
+From: Javier Marcet <javier@marcet.info>
+Date: Sun, 12 Jul 2026 16:02:46 +0000
+Subject: [PATCH] Compute the added_recording windows from the measured
+ framerate
+
+The after_start / before_end frame positions bounding the edge
+heuristics (delete_show_before_or_after_current / H7,
+delete_show_after_last_commercial / H5, and related checks) are
+computed from the specified framerate:
+
+    after_start = added_recording * fps * 60;
+    before_end  = frame_count - added_recording * fps * 60;
+
+On interlaced H.264 transport streams the container commonly declares
+the field rate (50 for 1080i50 PAL broadcasts) while frames actually
+decode at 25 fps, and fps is never corrected during the run.  Comskip
+already detects and warns about this:
+
+    Frame Rate set to 50.000 f/s
+    WARNING: Actual framerate (25.000) different from specified framerate (50.000)
+
+With the default added_recording=14 the end window then covers the last
+28 real minutes of the recording instead of 14.  A show whose real
+final segment resumes after a long commercial break inside that span is
+discarded as if it were the following show:
+
+    H7 Discarding cblock 211 of 1535 seconds because cblock 210 has also logo and small non show gap.
+
+which cuts the whole ending of the recording.
+
+Compute the windows from avg_fps, the framerate measured while
+decoding, whenever it diverges from the specified one by more than
+1 fps - the same condition the existing framerate warning uses.  When
+loading from .txt files avg_fps is set to fps, so behaviour there is
+unchanged.
+
+Signed-off-by: Javier Marcet <javier@marcet.info>
+---
+ comskip.c | 14 ++++++++++++--
+ 1 file changed, 12 insertions(+), 2 deletions(-)
+
+diff --git a/comskip.c b/comskip.c
+index dbdace6..5c0ba92 100644
+--- a/comskip.c
++++ b/comskip.c
+@@ -4358,8 +4358,18 @@ scanagain:
+     }
+ 
+ 
+-    after_start = added_recording * fps * 60;
+-    before_end  = frame_count - added_recording * fps * 60;
++    // The specified framerate can be the field rate (e.g. 50 for 1080i50 while
++    // frames decode at 25), which would inflate the added_recording windows.
++    if (avg_fps > 1.0 && fabs(avg_fps - fps) > 1)
++    {
++        after_start = added_recording * avg_fps * 60;
++        before_end  = frame_count - added_recording * avg_fps * 60;
++    }
++    else
++    {
++        after_start = added_recording * fps * 60;
++        before_end  = frame_count - added_recording * fps * 60;
++    }
+ 
+     frame[frame_count].dimCount = 0;
+     frame[frame_count].hasBright = 0;
+-- 
+2.47.3
+

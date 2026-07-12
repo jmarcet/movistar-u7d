@@ -31,7 +31,7 @@ RUN --mount=type=cache,sharing=locked,target=/var/cache/apt \
 ENV ffmpeg_CFLAGS="-I/usr/lib/jellyfin-ffmpeg/include"
 ENV ffmpeg_LIBS="-L/usr/lib/jellyfin-ffmpeg/lib -lavcodec -lavformat -lavutil -lswscale"
 
-COPY patches/comskip.patch .
+COPY patches/comskip.patch patches/0001-Compute-the-added_recording-windows-from-the-measure.patch .
 
 RUN --mount=type=cache,sharing=locked,target=/var/cache/apt \
     if [ "$BUILD_TYPE" = "full" ]; then \
@@ -66,12 +66,13 @@ RUN if [ "$BUILD_TYPE" = "full" ]; then \
         && git clone -b ${COMSKIP_BRANCH} https://github.com/erikkaashoek/Comskip \
         && cd Comskip \
         && patch -p1 < ../comskip.patch \
+        && patch -p1 < ../0001-Compute-the-added_recording-windows-from-the-measure.patch \
         && ./autogen.sh \
         && ./configure \
         && make -j$(nproc) \
         && make -j$(nproc) install \
         && cd .. \
-        && rm -f comskip.patch \
+        && rm -f comskip.patch 0001-Compute-the-added_recording-windows-from-the-measure.patch \
         && rm -fr Comskip \
         && rm -fr /usr/lib/jellyfin-ffmpeg/include \
         && apt-get purge -y \
