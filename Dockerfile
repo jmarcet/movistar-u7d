@@ -86,7 +86,8 @@ RUN if [ "$BUILD_TYPE" = "full" ]; then \
         && ln -s /usr/lib/jellyfin-ffmpeg/lib/libavcodec.so.* /usr/local/lib/ \
         && ln -s /usr/lib/jellyfin-ffmpeg/lib/libavformat.so.* /usr/local/lib/ \
         && ln -s /usr/lib/jellyfin-ffmpeg/lib/libavutil.so.* /usr/local/lib/ \
-        && ln -s /usr/lib/jellyfin-ffmpeg/lib/libswscale.so.* /usr/local/lib/; \
+        && ln -s /usr/lib/jellyfin-ffmpeg/lib/libswscale.so.* /usr/local/lib/ \
+        && ldconfig; \
     fi
 
 WORKDIR /app
