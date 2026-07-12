@@ -74,6 +74,7 @@ from mu7d_lib import (
     get_local_info,
     get_path,
     get_program_vod,
+    get_record_time,
     get_recording_name,
     get_vod_info,
     load_epg,
@@ -538,7 +539,7 @@ async def handle_record_program(request, url, channel_id=None, channel_name=None
         raise NotFound(f"Requested URL {request.path} not found")
 
     if not record_time:
-        record_time = p_vod.duration - p_vod.offset
+        record_time = get_record_time(p_vod.duration - p_vod.offset)
 
     msg = await record_program(channel_id, p_vod.pid, p_vod.offset, record_time, cloud, comskip, index, vo)
     if msg:

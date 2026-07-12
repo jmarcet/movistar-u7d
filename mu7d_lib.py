@@ -386,6 +386,16 @@ def get_program_vod(channel_id, url=None, cloud=False, local=False):
     return ProgramVOD(channel, pid, full_title, start, duration, offset=new_start - start if new_start else 0)
 
 
+def get_record_time(duration):
+    # Channels tend to air beyond their announced schedule, the recording gets
+    # extended accordingly, mu7d_vod caps it to the actual catchup asset length
+    if duration <= 300:
+        return duration * 3 // 2
+    if duration <= 1800:
+        return duration * 4 // 3
+    return duration * 7 // 6
+
+
 async def get_recording_files(filename, cache=False):
     absname = os.path.join(_g.RECORDINGS, filename.removesuffix(VID_EXT))
     nfo = os.path.join(absname + NFO_EXT)
@@ -1237,7 +1247,8 @@ async def timers_check(delay=0):  # pylint: disable=too-many-branches,too-many-l
                 next_timers.append((guide[ti.ch_id][ti.ts].full_title, ti.ts + ti.delay + 30))
                 continue
 
-            if await record_program(ti.ch_id, pid, 0, duration, ti.cloud, ti.comskip, True, ti.vo):
+            record_time = get_record_time(duration) if duration else 0
+            if await record_program(ti.ch_id, pid, 0, record_time, ti.cloud, ti.comskip, True, ti.vo):
                 continue
 
             log.info(DIV_ONE, f"Found {'Cloud ' if ti.cloud else ''}EPG MATCH", log_suffix)
