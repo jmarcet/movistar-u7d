@@ -82,6 +82,11 @@ RUN if [ "$BUILD_TYPE" = "full" ]; then \
            libtool \
            pkg-config \
         && apt-get install --no-install-recommends --no-install-suggests -y libargtable2.0 \
+        && if [ "$TARGETARCH" = "amd64" ]; then \
+               apt-get install --no-install-recommends --no-install-suggests -y \
+                  intel-gpu-tools \
+                  msr-tools; \
+           fi \
         && ln -s /usr/lib/jellyfin-ffmpeg/ff* /usr/local/bin/ \
         && ln -s /usr/lib/jellyfin-ffmpeg/lib/libavcodec.so.* /usr/local/lib/ \
         && ln -s /usr/lib/jellyfin-ffmpeg/lib/libavformat.so.* /usr/local/lib/ \

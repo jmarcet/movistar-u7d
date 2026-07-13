@@ -18,6 +18,7 @@ services:
       - NET_BROADCAST
       - SYS_ADMIN
       - SYS_NICE
+  #   - SYS_RAWIO  # wrmsr
     dns: 172.26.23.3
     dns_search: ""
     environment:
@@ -25,7 +26,8 @@ services:
     restart: ${RESTART_POLICY}
     network_mode: host
   # devices:
-  #   - /dev/dri:/dev/dri
+  #   - /dev/cpu:/dev/cpu  # rdmsr/wrmsr, needs CONFIG_X86_MSR in the host kernel
+  #   - /dev/dri:/dev/dri  # qsv transcoding
     volumes:
       - /etc/localtime:/etc/localtime
   #   - ./:/app
