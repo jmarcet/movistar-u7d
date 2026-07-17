@@ -499,9 +499,14 @@ async def postprocess(vod_info):  # pylint: disable=too-many-statements
                     range(len(pieces)),
                 )
 
+                # Declaring the exact durations, the merge does not need to estimate them,
+                # which would shift the splices, and the merged recording becomes seekable
                 async with async_open(_tmpname + CAT_EXT, "w", encoding="utf8") as f:
-                    quoted = (pieces[i].replace("'", "'\\''") for i in shows)
-                    await f.write("ffconcat version 1.0\n" + "".join(f"file '{q}'\n" for q in quoted))
+                    lines = ["ffconcat version 1.0"]
+                    for i in shows:
+                        quoted = pieces[i].replace("'", "'\\''")
+                        lines.append(f"file '{quoted}'\nduration {bounds[i + 1] - bounds[i]:.6f}")
+                    await f.write("\n".join(lines) + "\n")
 
                 cmd = ("ffmpeg", "-f", "concat", "-safe", "0", "-i", _tmpname + CAT_EXT)
                 cmd += ("-map", "0", "-c", "copy", *tags, "-v", "error", "-y", "-f", "mpegts")
@@ -510,7 +515,7 @@ async def postprocess(vod_info):  # pylint: disable=too-many-statements
                 ch = chr(ord(ch) + 1)
                 merged = round(sum(end - start for start, end in cuts))
                 msg1 = f"POSTPROCESS #{step}{ch} - Merging recording w/o commercials"
-                log.info(DIV_LOG, msg1, f"[{timedelta(seconds=merged)}s = {merged}s]")
+                log.info(DIV_LOG, msg1, f"[{timedelta(seconds=merged)}s = {merged}s] / [{str(_args.time):>5}s]")
                 proc = await asyncio.create_subprocess_exec(*cmd, stdin=NULL, stdout=PIPE, stderr=OUT)
 
                 await _check_process("Failed merging recording w/o commercials")
