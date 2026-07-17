@@ -222,6 +222,22 @@ async def postprocess(vod_info):  # pylint: disable=too-many-statements
 
         return int(float(recording_data.get("format", {}).get("duration", 0)))
 
+    async def _get_keyframes(recording):
+        cmd = ("ffprobe", "-i", recording, "-v", "quiet", "-of", "csv", "-select_streams", "v:0")
+        cmd += ("-show_entries", "format=start_time:packet=pts_time,flags")
+        proc = await asyncio.create_subprocess_exec(*cmd, stdin=NULL, stdout=PIPE, stderr=NULL)
+
+        keyframes, start_time = [], 0.0
+        for line in (await proc.communicate())[0].decode().splitlines():
+            kind, _, values = line.partition(",")
+            if kind == "packet":
+                pts, _, flags = values.partition(",")
+                if "K" in flags and pts != "N/A":
+                    keyframes.append(float(pts))
+            elif kind == "format":
+                start_time = float(values)
+        return keyframes, start_time
+
     async def _get_language_tags(recording, vo):
         cmd = ("ffprobe", "-i", recording, "-v", "quiet", "-of", "json")
         cmd += ("-show_entries", "stream=codec_type:stream_tags=language")
@@ -410,8 +426,6 @@ async def postprocess(vod_info):  # pylint: disable=too-many-statements
 
         if COMSKIP:
             intervals = []
-            intervals_seconds = []
-            pieces = []
             step += 1
 
             async with async_open(_tmpname + CHP_EXT) as f:
@@ -427,43 +441,80 @@ async def postprocess(vod_info):  # pylint: disable=too-many-statements
             if _args.comskipcut:
                 for segment in segments:
                     r = re.match(r" TIMEBASE=[^ ]+ START=([^ ]+) END=([^ ]+) .+", segment)
-                    start, end = map(lambda x: str(timedelta(seconds=int(x) / 100)), r.groups())
-                    start, end = map(lambda x: x + (".000000" if len(x) < 9 else ""), (start, end))
-                    intervals.append((start, end))
-                    intervals_seconds.append(tuple(map(lambda x: int(x) / 100, r.groups())))
+                    intervals.append(tuple(map(lambda x: int(x) / 100, r.groups())))
 
                 if skip_start:
                     while True:
-                        if skip_start <= intervals_seconds[0][0]:
+                        if skip_start <= intervals[0][0]:
                             skip_start = None
                             break
-                        if intervals_seconds[0][0] < skip_start < intervals_seconds[0][1]:
-                            skip_start -= intervals_seconds[0][0]
+                        if intervals[0][0] < skip_start < intervals[0][1]:
+                            skip_start -= intervals[0][0]
                             break
                         intervals = intervals[1:]
-                        intervals_seconds = intervals_seconds[1:]
 
+                # ffmpeg filters cut points by DTS, so with reordered video every cut keeps the
+                # audio of its last frames but loses their video, desyncing both streams a bit
+                # more at every splice. The segment muxer instead assigns every packet to the
+                # right piece, cutting at keyframes: with the cut points pre-snapped to them,
+                # video and audio stay balanced within every piece, and through the final merge.
+                keyframes, start_time = await _get_keyframes(_tmpname + TMP_EXT)
+
+                cuts = []
                 for idx, (start, end) in enumerate(intervals, start=1):
-                    tmpdir = os.path.dirname(_tmpname)
-                    pieces.append(os.path.join(tmpdir, f"{idx:02}_show_segment{VID_EXT}"))
-                    cmd = ("ffmpeg", "-i", _tmpname + TMP_EXT, "-ss", start, "-to", end)
-                    cmd += ("-c", "copy", "-map", "0", *tags, "-v", "error", "-y", pieces[-1])
+                    inpoint = next((k for k in keyframes if k >= start + start_time - 0.001), None)
+                    outpoint = next((k for k in reversed(keyframes) if k <= end + start_time + 0.001), None)
+                    if inpoint is None or outpoint is None or inpoint >= outpoint:
+                        log.warning(f"POSTPROCESS #{step}  - Dropping empty Chapter [{idx:02}]")
+                        continue
+                    cuts.append((inpoint - start_time, outpoint - start_time))
 
-                    ch = chr(idx + 64)
+                    ch = chr(len(cuts) + 64)
+                    _t = map(lambda x: f"{timedelta(seconds=round(x, 2))}", cuts[-1])
+                    start, end = map(lambda x: x + (".000000" if len(x) < 9 else ""), _t)
                     msg1, msg2 = f"POSTPROCESS #{step}{ch} - Cutting Chapter [{idx:02}]", f"({start} - {end})"
                     log.info(DIV_LOG, msg1, msg2)
-                    proc = await asyncio.create_subprocess_exec(*cmd, stdin=NULL, stdout=PIPE, stderr=OUT)
 
-                    await _check_process(f"Failed Cutting Chapter [{idx:02}]")
+                if not cuts:
+                    log.warning(f"POSTPROCESS #{step}  - COMSKIP - Could not cut any Show Segment")
+                    await _cleanup(CHP_EXT, ".log", ".logo.txt", ".txt")
+                    return
 
-                cmd = ("ffmpeg", "-i", f"concat:{'|'.join(pieces)}", "-map", "0", "-c", "copy")
-                cmd += (*tags, "-v", "error", "-y", "-f", "mpegts", _tmpname + TMP_EXT2)
+                times = sorted({t for cut in cuts for t in cut if t > 0.001})
+                pieces = [f"{_tmpname}.{i}{VID_EXT}" for i in range(len(times) + 1)]
+
+                cmd = ("ffmpeg", "-i", _tmpname + TMP_EXT, "-map", "0", "-c", "copy", "-f", "segment")
+                cmd += ("-segment_times", ",".join(f"{t:.6f}" for t in times), "-reset_timestamps", "1")
+                cmd += ("-v", "error", "-y", _tmpname.replace("%", "%%") + ".%d" + VID_EXT)
 
                 ch = chr(ord(ch) + 1)
-                log.info(f"POSTPROCESS #{step}{ch} - Merging recording w/o commercials")
+                log.info(f"POSTPROCESS #{step}{ch} - Splitting recording at the Chapter boundaries")
+                proc = await asyncio.create_subprocess_exec(*cmd, stdin=NULL, stdout=PIPE, stderr=OUT)
+
+                await _check_process("Failed splitting recording")
+
+                bounds = (0.0, *times, float("inf"))
+                shows = filter(
+                    lambda i: any(s - 0.1 <= bounds[i] and bounds[i + 1] <= e + 0.1 for s, e in cuts),
+                    range(len(pieces)),
+                )
+
+                async with async_open(_tmpname + CAT_EXT, "w", encoding="utf8") as f:
+                    quoted = (pieces[i].replace("'", "'\\''") for i in shows)
+                    await f.write("ffconcat version 1.0\n" + "".join(f"file '{q}'\n" for q in quoted))
+
+                cmd = ("ffmpeg", "-f", "concat", "-safe", "0", "-i", _tmpname + CAT_EXT)
+                cmd += ("-map", "0", "-c", "copy", *tags, "-v", "error", "-y", "-f", "mpegts")
+                cmd += (_tmpname + TMP_EXT2,)
+
+                ch = chr(ord(ch) + 1)
+                merged = round(sum(end - start for start, end in cuts))
+                msg1 = f"POSTPROCESS #{step}{ch} - Merging recording w/o commercials"
+                log.info(DIV_LOG, msg1, f"[{timedelta(seconds=merged)}s = {merged}s]")
                 proc = await asyncio.create_subprocess_exec(*cmd, stdin=NULL, stdout=PIPE, stderr=OUT)
 
                 await _check_process("Failed merging recording w/o commercials")
+                await remove(*pieces)
 
             elif RECORDINGS_TMP:
                 shutil.copy2(_tmpname + CHP_EXT, _filename + CHP_EXT)
@@ -472,9 +523,8 @@ async def postprocess(vod_info):  # pylint: disable=too-many-statements
                 await rename(_tmpname + TMP_EXT2, _tmpname + TMP_EXT)
 
             if _args.comskipcut:
-                await _cleanup(CHP_EXT)
+                await _cleanup(CAT_EXT, CHP_EXT)
             await _cleanup(".log", ".logo.txt", ".txt")
-            await remove(*pieces)
 
     async def _step_4():
         nonlocal mtime, proc, skip_start, step, tags
@@ -915,6 +965,7 @@ if __name__ == "__main__":
         TMP_DIR = CONF["TMP_DIR"]
         U7D_URL = CONF["U7D_URL"]
 
+        CAT_EXT = ".ffconcat"
         CHP_EXT = ".ffmeta"
         TMP_EXT = ".tmp"
         TMP_EXT2 = ".tmp2"
