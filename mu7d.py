@@ -93,6 +93,7 @@ from mu7d_lib import (
     reload_recordings,
     timers_check,
     timers_lock,
+    ts_pts,
     tvgrab_lock,
     update_epg,
     update_recordings,
@@ -343,9 +344,19 @@ async def handle_flussonic(request, url, channel_id=None, channel_name=None, clo
             _stat = await aio_os.stat(p_vod.pid)
             bytepos = round(p_vod.offset * _stat.st_size / p_vod.duration)
             bytepos -= bytepos % CHUNK
-            to_send = _stat.st_size - bytepos
 
             async with async_open(p_vod.pid, mode="rb") as f:
+                # The linear estimate drifts with VBR, correct it against the actual PTS
+                if p_vod.offset and (start := await ts_pts(f, 0)) is not None:
+                    target = start + p_vod.offset
+                    for _ in range(4):
+                        pts = await ts_pts(f, bytepos)
+                        if pts is None or abs(pts - target) < 1:
+                            break
+                        bytepos += round((target - pts) * _stat.st_size / p_vod.duration)
+                        bytepos = min(max(0, bytepos - bytepos % CHUNK), _stat.st_size - CHUNK)
+
+                to_send = _stat.st_size - bytepos
                 await f.seek(bytepos)
                 _response = await request.respond(content_type=MIME_VIDEO)
                 prom = app.add_task(add_prom_event(event, cloud, local, p_vod))

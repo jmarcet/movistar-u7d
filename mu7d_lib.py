@@ -35,6 +35,8 @@ from tomli import TOMLDecodeError
 from xmltodict import ParsingInterrupted
 
 from mu7d_cfg import (
+    ATOM,
+    BUFF,
     CONF,
     DATEFMT,
     DIV_ONE,
@@ -1270,6 +1272,40 @@ async def timers_check(delay=0):  # pylint: disable=too-many-branches,too-many-l
         if next_ts and not _g._t_timers_next:
             log.info(f'Adding timers_check() @ {datetime.fromtimestamp(next_ts)} "{next_title}"')
             _g._t_timers_next = app.add_task(timers_check(delay=next_ts - time()), name=f"{next_ts}")
+
+
+async def ts_pts(f, bytepos):
+    # First PES PTS at/after bytepos, widening the window when inside a huge video PES
+    data = b""
+    await f.seek(bytepos)
+    for _ in range(16):
+        chunk = await f.read(BUFF)
+        if not chunk:
+            return None
+        scanned = max(0, len(data) - ATOM)
+        data += chunk
+        base = next(
+            (
+                j
+                for j in range(min(ATOM, max(0, len(data) - 2 * ATOM)))
+                if data[j] == data[j + ATOM] == data[j + 2 * ATOM] == 0x47
+            ),
+            None,
+        )
+        if base is None:
+            continue
+        first = base + ((scanned - base + ATOM - 1) // ATOM) * ATOM if scanned > base else base
+        for i in range(first, len(data) - ATOM + 1, ATOM):
+            if data[i] != 0x47 or not data[i + 1] & 0x40:
+                continue
+            p = i + 4 + (1 + data[i + 4] if data[i + 3] & 0x20 else 0)
+            if p + 14 > i + ATOM or data[p : p + 3] != b"\x00\x00\x01":
+                continue
+            if not 0xC0 <= data[p + 3] <= 0xEF or not data[p + 7] & 0x80:
+                continue
+            b = data[p + 9 : p + 14]
+            return ((b[0] >> 1 & 7) << 30 | b[1] << 22 | (b[2] >> 1) << 15 | b[3] << 7 | b[4] >> 1) / 90000
+    return None
 
 
 async def update_cloud():
