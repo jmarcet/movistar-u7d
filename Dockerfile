@@ -118,7 +118,7 @@ RUN apt-get purge -y binutils-common build-essential dpkg-dev git git-man gpg-ag
     && apt-get autoremove -y
 
 RUN --mount=type=cache,target=/root/.cache \
-    uv pip uninstall --system uv wheel
+    if [ "$TARGETARCH" != "amd64" ] || [ "$BUILD_TYPE" != "full" ]; then uv pip uninstall --system uv; fi
 
 RUN rm -fr \
         Dockerfile Makefile patches pyproject.toml requirements*.txt setup.py tox.ini \
