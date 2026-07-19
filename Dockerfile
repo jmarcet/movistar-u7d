@@ -108,12 +108,7 @@ COPY . .
 RUN --mount=type=cache,target=/root/.cache \
    if [ "$TARGETARCH" = "amd64" ] && [ "${BUILD_TYPE}" != "full" ]; then \
        uv pip install --system bandit pycodestyle pylint ruff 2>&1 | tee /tmp/lint-install.txt \
-       && bandit -v *.py \
-       && pycodestyle -v *.py \
-       && pylint --rcfile pyproject.toml -v *.py \
-       && ruff check --config pyproject.toml -v *.py \
-       && ruff check --config pyproject.toml --diff --no-fix-only -v *.py \
-       && ruff format --config pyproject.toml --diff -v *.py \
+       && make test \
        && uv pip uninstall --system $( awk '/==/ { print $2 }' /tmp/lint-install.txt ); \
    fi
 
@@ -126,7 +121,7 @@ RUN --mount=type=cache,target=/root/.cache \
     uv pip uninstall --system uv wheel
 
 RUN rm -fr \
-        Dockerfile patches pyproject.toml requirements*.txt tox.ini \
+        Dockerfile Makefile patches pyproject.toml requirements*.txt setup.py tox.ini \
         /tmp/* /usr/local/.lock /var/cache/* /var/lib/apt/lists/* *.conf
 
 RUN chown nobody:nogroup /home && chmod g+s /home

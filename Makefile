@@ -2,7 +2,8 @@ REPOSITORY ?= git.marcet.info/javier/movistar-u7d
 PLATFORMS  ?= linux/amd64,linux/arm64
 TAG        ?= unstable
 
-PY_FILES    = mu7d.py mu7d_cfg.py mu7d_lib.py mu7d_tvg.py mu7d_vod.py
+PY_FILES    = mu7d.py mu7d_cfg.py mu7d_lib.py mu7d_tvg.py mu7d_vod.py setup.py
+CONF_FILES  = $(wildcard mu7d.conf)
 
 .PHONY: help format lint test image image-slim devcontainer buildx freeze start stop restart up down logs clean
 
@@ -10,17 +11,19 @@ help:  ## Show this help
 	@awk -F':.*## ' '/^[a-z-]+:.*## / { printf "%-14s %s\n", $$1, $$2 }' $(MAKEFILE_LIST)
 
 format:  ## Format the code and fix what ruff can
-	ruff format $(PY_FILES) setup.py
-	ruff check --fix $(PY_FILES) setup.py
+	ruff format $(PY_FILES)
+	ruff check --fix $(PY_FILES)
 
-lint:  ## Check the code with ruff & pylint
-	ruff format --check $(PY_FILES) setup.py
-	ruff check $(PY_FILES) setup.py
+lint:  ## Check the code with ruff, bandit, pycodestyle & pylint
+	ruff format --check $(PY_FILES)
+	ruff check $(PY_FILES)
+	bandit $(PY_FILES)
+	pycodestyle $(PY_FILES)
 	pylint $(PY_FILES)
 
 test: lint  ## Lint plus compile & sample config checks
 	python3 -m py_compile $(PY_FILES)
-	python3 -c "import tomli; tomli.loads(open('mu7d.conf', encoding='utf8').read().lstrip('﻿'))"
+	$(if $(CONF_FILES),python3 -c "import tomli; tomli.loads(open('$(CONF_FILES)', encoding='utf8').read().lstrip('﻿'))")
 
 image:  ## Build the full amd64 Docker image
 	docker buildx build --build-arg BUILD_TYPE=full --platform linux/amd64 --load -t $(REPOSITORY):$(TAG) .

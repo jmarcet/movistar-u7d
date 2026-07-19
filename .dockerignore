@@ -6,7 +6,6 @@ __pycache__/
 mpv/
 LICENSE
 requirements-*.txt
-setup.py
 *.conf
 *.json
 *.md
