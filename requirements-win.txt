@@ -12,6 +12,7 @@ sanic
 sanic-prometheus @ git+https://github.com/AltanAlpay/sanic-prometheus
 setuptools==80.8.0
 tomli
+tracerite<2.6
 ujson
 wmi
 xmltodict
