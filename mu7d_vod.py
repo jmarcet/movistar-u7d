@@ -566,8 +566,10 @@ async def postprocess(vod_info):  # pylint: disable=too-many-statements
 
                 ch = chr(ord(ch) + 1)
                 merged = round(sum(end - start for start, end in cuts))
+                cmrcls = f"{timedelta(seconds=_args.time - merged)}s"
+                length = f"[{timedelta(seconds=_args.time)}s - {cmrcls}] = [{timedelta(seconds=merged)}s]"
                 msg1 = f"POSTPROCESS #{step}{ch} - Merging recording w/o commercials"
-                log.info(DIV_LOG, msg1, f"[{timedelta(seconds=merged)}s = {merged}s] / [{str(_args.time):>5}s]")
+                log.info(DIV_LOG, msg1, length)
                 proc = await asyncio.create_subprocess_exec(*cmd, stdin=NULL, stdout=PIPE, stderr=OUT)
 
                 await _check_process("Failed merging recording w/o commercials")
@@ -589,10 +591,7 @@ async def postprocess(vod_info):  # pylint: disable=too-many-statements
         step += 1
 
         duration = await _get_duration(_tmpname + TMP_EXT)
-        length = f"[{str(timedelta(seconds=duration))}s]"
-        if COMSKIP and _args.time != duration:
-            cmrcls = f"{str(timedelta(seconds=_args.time - duration))}s]"
-            length = f" [{str(timedelta(seconds=_args.time))}s - {cmrcls} = {length}"
+        length = f"[{timedelta(seconds=duration)}s = {str(duration):>5}s] / [{str(_args.time):>5}s]"
         log.info(DIV_LOG, f"POSTPROCESS #{step}  - Archiving recording", length)
 
         await _archive_recording()
