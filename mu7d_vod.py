@@ -401,6 +401,68 @@ async def postprocess(vod_info):  # pylint: disable=too-many-statements
                 log.info(msg)
 
     async def _step_2():
+        nonlocal mtime, proc, skip_start, step, tags
+
+        step += 1
+
+        if not RECORDINGS_TRANSCODE_OUTPUT:
+            log.info(f"POSTPROCESS #{step}  - Skipped. Remuxing/Transcoding disabled")
+            return
+
+        cmd = ["ffmpeg"] + RECORDINGS_TRANSCODE_INPUT + ["-i", _tmpname + TMP_EXT]
+
+        if _args.vo:
+            cmd += ["-map", "0:v", "-map", "0:a:1?", "-map", "0:a:0", "-map", "0:s?"]
+        else:
+            cmd += ["-map", "0:v", "-map", "0:a", "-map", "0:s?"]
+
+        cmd += RECORDINGS_TRANSCODE_OUTPUT
+
+        if NO_SUBS:
+            log.info(f"POSTPROCESS #{step}  - Dropping subs")
+            cmd.append("-sn")
+
+        cmd += [*tags, "-v", "info", "-y", "-f", "mpegts", _tmpname + TMP_EXT2]
+
+        if re.search(r"-c[:\w]* (?!copy)", " ".join(RECORDINGS_TRANSCODE_OUTPUT)):
+            _msg = "Transcoding"
+        else:
+            _msg = "Remuxing"
+
+        msg = msg1 = f"POSTPROCESS #{step}A - {_msg}"
+        if skip_start:
+            msg = DIV_LOG % (msg1, f"Cutting first [{skip_start}s]")
+            cmd += ["-ss", str(timedelta(seconds=skip_start))]
+
+        log.info(msg)
+        async with async_open(TRANSCODE_LOG, "ab") as f:
+            start = time()
+            proc = await asyncio.create_subprocess_exec(*cmd, stdin=NULL, stdout=f, stderr=f)
+            await _check_process(f"Failed {_msg}")
+            end = time()
+
+        if _msg == "Transcoding":
+            size_orig = (await aio_os.stat(_tmpname + TMP_EXT)).st_size
+            size_dest = (await aio_os.stat(_tmpname + TMP_EXT2)).st_size
+            if size_dest < size_orig:
+
+                def _h(num):
+                    for unit in ("", "Ki", "Mi", "Gi", "Ti", "Pi", "Ei", "Zi"):
+                        if abs(num) < 1024.0:
+                            return f"{num:3.1f}{unit}B"
+                        num /= 1024.0
+                    return f"{num:.1f}YiB"
+
+                msg1 += f" - Saved [{_h(size_orig)} - {_h(size_dest)}] ="
+                msg1 += f" [{_h(size_orig - size_dest)} ({(size_orig - size_dest) / size_orig * 100:.2f}%)]"
+
+        await rename(_tmpname + TMP_EXT2, _tmpname + TMP_EXT)
+
+        msg1 = msg1.replace(f"#{step}A", f"#{step}B").replace("ing", "ed")
+        msg = "%-84s%20s" % (msg1, f"In [{str(timedelta(seconds=round(end - start)))}s]")
+        log.info(msg)
+
+    async def _step_3():
         global COMSKIP
         nonlocal proc, step
 
@@ -421,8 +483,8 @@ async def postprocess(vod_info):  # pylint: disable=too-many-statements
         msg = DIV_LOG % (msg1, msg2)
         log.warning(msg) if proc.returncode else log.info(msg)
 
-    async def _step_3():
-        nonlocal proc, skip_start, step, tags
+    async def _step_4():
+        nonlocal proc, step, tags
 
         if COMSKIP:
             intervals = []
@@ -442,16 +504,6 @@ async def postprocess(vod_info):  # pylint: disable=too-many-statements
                 for segment in segments:
                     r = re.match(r" TIMEBASE=[^ ]+ START=([^ ]+) END=([^ ]+) .+", segment)
                     intervals.append(tuple(map(lambda x: int(x) / 100, r.groups())))
-
-                if skip_start:
-                    while True:
-                        if skip_start <= intervals[0][0]:
-                            skip_start = None
-                            break
-                        if intervals[0][0] < skip_start < intervals[0][1]:
-                            skip_start -= intervals[0][0]
-                            break
-                        intervals = intervals[1:]
 
                 # ffmpeg filters cut points by DTS, so with reordered video every cut keeps the
                 # audio of its last frames but loses their video, desyncing both streams a bit
@@ -531,68 +583,6 @@ async def postprocess(vod_info):  # pylint: disable=too-many-statements
                 await _cleanup(CAT_EXT, CHP_EXT)
             await _cleanup(".log", ".logo.txt", ".txt")
 
-    async def _step_4():
-        nonlocal mtime, proc, skip_start, step, tags
-
-        step += 1
-
-        if not RECORDINGS_TRANSCODE_OUTPUT:
-            log.info(f"POSTPROCESS #{step}  - Skipped. Remuxing/Transcoding disabled")
-            return
-
-        cmd = ["ffmpeg"] + RECORDINGS_TRANSCODE_INPUT + ["-i", _tmpname + TMP_EXT]
-
-        if _args.vo:
-            cmd += ["-map", "0:v", "-map", "0:a:1?", "-map", "0:a:0", "-map", "0:s?"]
-        else:
-            cmd += ["-map", "0:v", "-map", "0:a", "-map", "0:s?"]
-
-        cmd += RECORDINGS_TRANSCODE_OUTPUT
-
-        if NO_SUBS:
-            log.info(f"POSTPROCESS #{step}  - Dropping subs")
-            cmd.append("-sn")
-
-        cmd += [*tags, "-v", "info", "-y", "-f", "mpegts", _tmpname + TMP_EXT2]
-
-        if re.search(r"-c[:\w]* (?!copy)", " ".join(RECORDINGS_TRANSCODE_OUTPUT)):
-            _msg = "Transcoding"
-        else:
-            _msg = "Remuxing"
-
-        msg = msg1 = f"POSTPROCESS #{step}A - {_msg}"
-        if skip_start:
-            msg = DIV_LOG % (msg1, f"Cutting first [{skip_start}s]")
-            cmd += ["-ss", str(timedelta(seconds=skip_start))]
-
-        log.info(msg)
-        async with async_open(TRANSCODE_LOG, "ab") as f:
-            start = time()
-            proc = await asyncio.create_subprocess_exec(*cmd, stdin=NULL, stdout=f, stderr=f)
-            await _check_process(f"Failed {_msg}")
-            end = time()
-
-        if _msg == "Transcoding":
-            size_orig = (await aio_os.stat(_tmpname + TMP_EXT)).st_size
-            size_dest = (await aio_os.stat(_tmpname + TMP_EXT2)).st_size
-            if size_dest < size_orig:
-
-                def _h(num):
-                    for unit in ("", "Ki", "Mi", "Gi", "Ti", "Pi", "Ei", "Zi"):
-                        if abs(num) < 1024.0:
-                            return f"{num:3.1f}{unit}B"
-                        num /= 1024.0
-                    return f"{num:.1f}YiB"
-
-                msg1 += f" - Saved [{_h(size_orig)} - {_h(size_dest)}] ="
-                msg1 += f" [{_h(size_orig - size_dest)} ({(size_orig - size_dest) / size_orig * 100:.2f}%)]"
-
-        await rename(_tmpname + TMP_EXT2, _tmpname + TMP_EXT)
-
-        msg1 = msg1.replace(f"#{step}A", f"#{step}B").replace("ing", "ed")
-        msg = "%-84s%20s" % (msg1, f"In [{str(timedelta(seconds=round(end - start)))}s]")
-        log.info(msg)
-
     async def _step_5():
         nonlocal mtime, step
 
@@ -647,11 +637,11 @@ async def postprocess(vod_info):  # pylint: disable=too-many-statements
 
         await _step_1()  # Check actual length
 
-        if COMSKIP:
-            await _step_2()  # Comskip analysis
-            await _step_3()  # Cut/Merge chapters
+        await _step_2()  # Remux/Transcode
 
-        await _step_4()  # Remux/Transcode
+        if COMSKIP:
+            await _step_3()  # Comskip analysis
+            await _step_4()  # Cut/Merge chapters
 
         await asyncio.shield(_step_5())  # Archive recording
 
