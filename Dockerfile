@@ -112,8 +112,14 @@ RUN --mount=type=cache,target=/root/.cache \
        && uv pip uninstall --system $( awk '/==/ { print $2 }' /tmp/lint-install.txt ); \
    fi
 
-RUN apt-get purge -y binutils-common build-essential dpkg-dev git git-man gpg-agent libcurl3-gnutls liberror-perl libnghttp2-14 \
-                     libperl5.40 librtmp1 libsasl2-2 libsasl2-modules-db libssh2-1 patch perl perl-modules-5.40 pkgconf \
+RUN --mount=type=cache,sharing=locked,target=/var/cache/apt \
+    if [ "$TARGETARCH" = "amd64" ] && [ "$BUILD_TYPE" = "full" ]; then \
+        apt-get install --no-install-recommends --no-install-suggests -y make \
+        && apt-get purge -y binutils-common build-essential dpkg-dev gpg-agent patch pkgconf; \
+    else \
+        apt-get purge -y binutils-common build-essential dpkg-dev git git-man gpg-agent libcurl3-gnutls liberror-perl libnghttp2-14 \
+                         libperl5.40 librtmp1 libsasl2-2 libsasl2-modules-db libssh2-1 patch perl perl-modules-5.40 pkgconf; \
+    fi \
     && apt-get clean autoclean -y \
     && apt-get autoremove -y
 
