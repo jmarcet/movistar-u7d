@@ -27,7 +27,7 @@ pywin32==312
 sanic==25.12.1
 sanic-prometheus @ git+https://github.com/AltanAlpay/sanic-prometheus@966b60c4e71a8851b050fdf86c19776610fd205d
 sanic-routing==23.12.0
-setuptools==80.8.0
+setuptools==83.0.0
 striprtf==0.0.32
 tomli==2.4.1
 tracerite==2.5.2

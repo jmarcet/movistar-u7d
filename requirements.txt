@@ -10,7 +10,7 @@ ifaddr
 psutil
 sanic @ git+https://github.com/jmarcet/sanic
 sanic-prometheus @ git+https://github.com/AltanAlpay/sanic-prometheus
-setuptools==80.8.0
+setuptools==83.0.0
 setproctitle
 tomli
 tracerite<2.6
