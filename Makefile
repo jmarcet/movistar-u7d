@@ -38,9 +38,9 @@ buildx:  ## Build & push the multiarch images, as the CI does
 	docker buildx build --build-arg BUILD_TYPE=full --platform $(PLATFORMS) --provenance false --push -t $(REPOSITORY):$(TAG) .
 	docker buildx build --platform $(PLATFORMS) --provenance false --push -t $(REPOSITORY):$(TAG)-slim .
 
-freeze:  ## Regenerate the frozen requirements
-	uv pip compile --no-annotate --no-header -q requirements.txt -o requirements-frozen.txt
-	uv pip compile --no-annotate --no-header -q --python-platform windows requirements-win.txt -o requirements-frozen-win.txt
+freeze:  ## Record the versions installed in this image
+	uv pip freeze --system | grep -v '^uv==' > requirements-frozen.txt
+	uv pip compile -U --no-annotate --no-header -q --python-platform windows requirements-win.txt -o requirements-frozen-win.txt
 
 start: ## Start mu7d with init service
 	/etc/init.d/mu7d start
